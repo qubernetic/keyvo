@@ -12,6 +12,7 @@ authors = ["Qubernetic"]
 publish = false
 
 [workspace.dependencies]
+clap = { version = "4", features = ["derive"] }
 keyvo-core = { path = "crates/keyvo-core" }
 keyvo-hid = { path = "crates/keyvo-hid" }
 
