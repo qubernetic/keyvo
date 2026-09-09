@@ -1,0 +1,54 @@
+name: Feature request
+description: A new capability or a change in behaviour
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check `docs/roadmap.md` and the open issues first; the feature may already be planned.
+        Use the terms from `CONTEXT.md` (profile, page, overlay, action, ...) so the request maps onto the design.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that keyvo does not let you do today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: How should it work from the user's side? A profile snippet or a CLI invocation is ideal.
+      placeholder: |
+        [[page.keys]]
+        id = 5
+        action = { kind = "exec", cmd = "just test" }
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other ways to solve the problem, including doing it with a plugin or a script over the socket.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Device protocol (keyvo-hid)
+        - Profiles, rendering, actions (keyvo-core)
+        - Daemon, window watching, socket (keyvo-daemon)
+        - CLI (keyvo-cli)
+        - GUI (app)
+        - Integrations (Claude Code, VS Code, tmux, git, ...)
+        - Windows / Logi Actions plugin
+        - Packaging (udev, systemd, Flatpak, cargo-dist)
+        - Documentation
+  - type: checkboxes
+    id: hardware
+    attributes:
+      label: Hardware
+      options:
+        - label: I have the hardware and can test a branch
+        - label: This needs the Dialpad
+        - label: This needs a Windows machine or VM
