@@ -8,7 +8,7 @@ hardware; this directory is the evidence trail.
 
 | Path | Tracked | Content |
 |---|---|---|
-| `external/hcooper/` | README, license, `derived/` | Hunter Cooper's USBPcap captures of Logi Options+ driving the Keypad on Windows (MIT, see `LICENSE.hcooper`). The README and the derived fixtures are copied verbatim from the upstream repository. |
+| `external/hcooper/` | README, license, `derived/` | Hunter Cooper's USBPcap captures of Logi Options+ driving the Keypad on Windows (MIT, see `LICENSE.hcooper`). The README (punctuation normalised) and the derived fixtures come from the upstream repository. |
 | `external/hcooper/*.pcap` | no | The raw captures. Fetch them from <https://github.com/hcooper-idealbuilders/mx-creative-controller> (`captures/`). |
 | `local/` | no | Captures taken on this project's own Windows VM (M0-2). Published as release assets (`captures-YYYY-MM`), never committed. |
 | `fixtures/` | yes | Golden frames and NDJSON fixtures extracted from captures, shared by the Rust, TypeScript, and C# test suites (lands with M0-2). |

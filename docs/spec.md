@@ -1,4 +1,4 @@
-# keyvo — Software Specification (v0.2)
+# keyvo Software Specification (v0.2)
 
 > Context-aware, scriptable control-surface daemon, CLI and desktop app for the
 > Logitech MX Creative Console family (Keypad, Dialpad) and related HID++
@@ -45,7 +45,7 @@ developers only; see §10.
 - Cloud sync, accounts, telemetry.
 - macOS support (may come for free via the Actions SDK plugin; not a target).
 - Haptics on the MX Master 4.
-- Embedded scripting language (Lua) — see §8 and ADR-0003.
+- Embedded scripting language (Lua), see §8 and ADR-0003.
 
 ---
 
@@ -199,7 +199,7 @@ both planes, and never hard-code them.
   expiry presumably flips back to it.
 - **The device publishes its own key geometry** via display fn1: panel
   480×480, 9 keys, per key `index, x, y, w, h` (w = h = 118, x ∈ {24, 182,
-  340}, y ∈ {6/7, 164, 322} in the capture — close to, but not identical
+  340}, y ∈ {6/7, 164, 322} in the capture, close to, but not identical
   with, Julusian's `23 + col*158`). keyvo queries the table on every claim
   and uses it for placement; nothing about the grid is hard-coded. This is
   what makes the 2026 MX Keypad a runtime question rather than a code change.
@@ -435,15 +435,15 @@ platform-specific actions are imported best-effort and flagged. Placement:
 
 ## 8. Scripting and control API
 
-**Outward — key → script.** `exec` actions receive `KEYVO_KEY`,
+**Outward (key → script).** `exec` actions receive `KEYVO_KEY`,
 `KEYVO_PROFILE`, `KEYVO_PAGE`, `KEYVO_WINDOW_CLASS`, `KEYVO_WINDOW_TITLE`,
 `KEYVO_PRESS`, `KEYVO_SOCKET`. Exec is always non-blocking with a
 configurable timeout; the daemon never blocks on user scripts or network.
 
-**Inward — script → daemon.** Unix domain socket at
+**Inward (script → daemon).** Unix domain socket at
 `$XDG_RUNTIME_DIR/keyvo/keyvo.sock`, mode `0600`, owned by the session
 user (named pipe on Windows). Newline-delimited JSON, **versioned from day
-one**: every message carries `"v": 1`. Trust model: same as `ssh-agent` —
+one**: every message carries `"v": 1`. Trust model: same as `ssh-agent`:
 any process running as the user may control the pad (see `SECURITY.md`).
 No D-Bus façade in v1 (ADR-0003); the KWin script talks to a private D-Bus
 object owned by the daemon, which is an implementation detail, not an API.
@@ -615,22 +615,22 @@ Detailed issue lists, definitions of done and the measurement list are in
 
 0. **Bootstrap**: repository, docs foundation, workspace skeleton,
    devcontainer, CI, diagrams.
-1. **M0 — Protocol (hardware truth)**: TS quick-test with Julusian's
+1. **M0: Protocol (hardware truth)**. TS quick-test with Julusian's
    library, Windows VM + USB capture toolkit, HID++ 2.0 core, keypad
    enumeration + keep-alive, VLP display plane, key and page-button input,
    brightness, `keyvo probe|keys|fill|paint-test|doctor`,
    `docs/protocol.md`, `docs/hardware-notes.md`; Windows build green.
-2. **M1 — Static pad (v0.1.0)**: TOML profiles with schema and round-trip,
+2. **M1: Static pad (v0.1.0)**. TOML profiles with schema and round-trip,
    renderer + snapshots, `preview`, actions, press kinds, hot-reload,
    systemd unit, udev rule + `doctor`, cargo-dist release.
-3. **M2 — Context**: KWin script + X11 watcher, auto/manual state machine,
+3. **M2: Context**. KWin script + X11 watcher, auto/manual state machine,
    page buttons, overlays + `general_hint`, socket API v1 + `subscribe`,
    `keyvo ctl`, plugin supervisor, Claude Code plugin, tmux and git
    integrations, `.lp5` import (if not M1).
-4. **M3 — Desk state and Dialpad**: Dialpad over Bolt, Bluetooth
+4. **M3: Desk state and Dialpad**. Dialpad over Bolt, Bluetooth
    verification, Solaar-backed settings per profile, VS Code extension.
-5. **M4a — GUI** · **M4b — Flathub**.
-6. **M5 — Windows**: C# Actions SDK plugin, Marketplace listing; native
+5. **M4a: GUI** and **M4b: Flathub**.
+6. **M5: Windows**. C# Actions SDK plugin, Marketplace listing; native
    mode with ownership detection.
 
 ---
@@ -665,7 +665,7 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
-- **v0.2 (2026-09-09)** — renamed `tessera` → `keyvo`; §1 prior art
+- **v0.2 (2026-09-09)**: renamed `tessera` → `keyvo`; §1 prior art
   restated (logimap, logilinux, Solaar called not copied); §2 MX Keypad
   status, Dialpad facts, Bolt receiver row; §3 standalone daemon primary,
   Flatpak moved to M4b, udev rule mandatory; §4 architecture tree from the
@@ -683,4 +683,4 @@ Status of the v0.1 questions after the grill and the research.
   prior-art table replaced with the credited list; §15 milestones aligned
   with the plan; §16 every question resolved, linked to a measurement item,
   or marked open.
-- **v0.1 (draft)** — initial specification from design discussions.
+- **v0.1 (draft)**: initial specification from design discussions.

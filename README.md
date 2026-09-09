@@ -29,20 +29,20 @@ developer's desk.
 
 ## What it will do
 
-- **Context profiles** — the active application (KDE Wayland first, X11 fallback)
+- **Context profiles**: the active application (KDE Wayland first, X11 fallback)
   selects a page; overlays layer on top for transient state such as a running
   build or a waiting coding agent.
-- **Nine LCD keys** — icons and labels rendered locally, updated live; page buttons
+- **Nine LCD keys**: icons and labels rendered locally, updated live; page buttons
   for manual navigation.
-- **Actions** — key chords via `uinput`, shell commands, HTTP calls, text, page and
+- **Actions**: key chords via `uinput`, shell commands, HTTP calls, text, page and
   profile switches; short, long, and repeat presses.
-- **Scriptable** — an NDJSON socket API (`keyvo ctl`) and supervised plugin
+- **Scriptable**: an NDJSON socket API (`keyvo ctl`) and supervised plugin
   processes; first-party integrations for Claude Code, VS Code, tmux, and git.
-- **Text first** — profiles live in `~/.config/keyvo/` as TOML with a JSON Schema;
+- **Text first**: profiles live in `~/.config/keyvo/` as TOML with a JSON Schema;
   the GUI edits the same files without destroying comments.
-- **Dialpad** — buttons, dial, and roller over the Logi Bolt receiver via a small
+- **Dialpad**: buttons, dial, and roller over the Logi Bolt receiver via a small
   in-house HID++ 2.0 subset.
-- **Windows bridge** — a Logi Actions SDK plugin so the same profiles work next to
+- **Windows bridge**: a Logi Actions SDK plugin so the same profiles work next to
   Logi Options+.
 
 ## Hardware
@@ -56,10 +56,10 @@ developer's desk.
 
 ## Documentation
 
-- [Specification](docs/spec.md) — what keyvo is and why.
-- [Project plan](docs/plans/2026-09-09-project-plan.md) — decisions, architecture,
+- [Specification](docs/spec.md): what keyvo is and why.
+- [Project plan](docs/plans/2026-09-09-project-plan.md): decisions, architecture,
   milestones.
-- [Research](docs/research/) — protocol findings and prior-art analyses.
+- [Research](docs/research/): protocol findings and prior-art analyses.
 
 ## Contributing
 

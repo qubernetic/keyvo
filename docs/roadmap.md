@@ -10,15 +10,15 @@ decisions behind the order are in `docs/plans/2026-09-09-project-plan.md` and
 
 Repository, policy and skeleton, before any protocol code.
 
-- B1 Rename `qubernetic/tessera` to `qubernetic/keyvo` — done.
-- B2 Bootstrap commit on `main` (README, LICENSE, NOTICE, .gitignore), `develop` created — done.
-- B3 GitHub settings: merge commits only, auto-delete branches, branch protection, labels, milestones — done.
-- #1 `docs: project foundation` — spec v0.2, roadmap, ADRs, glossary, research, policies, templates.
-- #2 `chore: workspace skeleton and dev environment` — four crates, toolchain pin, devcontainer, justfile.
-- #3 `ci: build, test, lint, coverage, CodeQL` — Linux and Windows jobs, cargo-deny, coverage, docs to Pages.
-- #4 `docs: architecture diagrams with archify` — first five diagrams, CI freshness check.
+- B1 Rename `qubernetic/tessera` to `qubernetic/keyvo` (done).
+- B2 Bootstrap commit on `main` (README, LICENSE, NOTICE, .gitignore), `develop` created (done).
+- B3 GitHub settings: merge commits only, auto-delete branches, branch protection, labels, milestones (done).
+- #1 `docs: project foundation`: spec v0.2, roadmap, ADRs, glossary, research, policies, templates.
+- #2 `chore: workspace skeleton and dev environment`: four crates, toolchain pin, devcontainer, justfile.
+- #3 `ci: build, test, lint, coverage, CodeQL`: Linux and Windows jobs, cargo-deny, coverage, docs to Pages.
+- #4 `docs: architecture diagrams with archify`: first five diagrams, CI freshness check.
 
-## M0 — Protocol · [milestone 1](https://github.com/qubernetic/keyvo/milestone/1)
+## M0: Protocol ([milestone 1](https://github.com/qubernetic/keyvo/milestone/1))
 
 **Goal.** Hardware truth: measure the Keypad on Linux, capture Options+ on
 Windows, and implement the HID++ and VLP planes in Rust against those numbers.
@@ -38,7 +38,7 @@ Windows build green.
 - M0-8 `feat(cli): probe, keys, fill, paint-test, doctor (hardware checks)`
 - M0-9 `docs: protocol.md and hardware-notes.md`
 
-## M1 — Static pad, v0.1.0 · [milestone 2](https://github.com/qubernetic/keyvo/milestone/2)
+## M1: Static pad, v0.1.0 ([milestone 2](https://github.com/qubernetic/keyvo/milestone/2))
 
 **Goal.** A usable static macro pad: profiles on disk, keys rendered and
 actions fired, installable as a user service.
@@ -51,7 +51,7 @@ cargo-dist release tagged `v0.1.0`.
 
 Open: `.lp5` (Options+ profile) import lands here or in M2.
 
-## M2 — Context · [milestone 3](https://github.com/qubernetic/keyvo/milestone/3)
+## M2: Context ([milestone 3](https://github.com/qubernetic/keyvo/milestone/3))
 
 **Goal.** The pad follows the focused window and external tools can drive it.
 
@@ -61,7 +61,7 @@ watcher; auto/manual state machine with page buttons; overlays and
 Claude Code plugin (hooks and MCP server); tmux and git integrations; `.lp5`
 import if not done in M1.
 
-## M3 — Desk state and Dialpad · [milestone 4](https://github.com/qubernetic/keyvo/milestone/4)
+## M3: Desk state and Dialpad ([milestone 4](https://github.com/qubernetic/keyvo/milestone/4))
 
 **Goal.** The rest of the desk: Dialpad input and per-profile mouse and keyboard
 settings.
@@ -70,20 +70,20 @@ settings.
 `0x4610`) with Bluetooth verified as fallback; optional Solaar-backed desk state
 per profile; VS Code extension.
 
-## M4a — GUI · [milestone 5](https://github.com/qubernetic/keyvo/milestone/5)
+## M4a: GUI ([milestone 5](https://github.com/qubernetic/keyvo/milestone/5))
 
 **Goal.** A Tauri 2 + Svelte 5 app for people who prefer arranging nine tiles
 visually: grid layout editor, icon picker, simple actions, dashboard, first-run
 flow. Scripts open in the user's editor; TOML round-trip is preserved. Design
 grill before planning.
 
-## M4b — Flathub · [milestone 6](https://github.com/qubernetic/keyvo/milestone/6)
+## M4b: Flathub ([milestone 6](https://github.com/qubernetic/keyvo/milestone/6))
 
 **Goal.** One-click install on any Linux desktop. Flatpak manifest, portal and
 device permissions, Flathub submission; udev rule upstreamed to systemd so
 Flathub users need no manual step.
 
-## M5 — Windows · [milestone 7](https://github.com/qubernetic/keyvo/milestone/7)
+## M5: Windows ([milestone 7](https://github.com/qubernetic/keyvo/milestone/7))
 
 **Goal.** The same profiles next to Logi Options+ on Windows through a C# Logi
 Actions SDK plugin built and tested in the Windows VM. Native mode (raw HID

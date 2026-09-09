@@ -36,12 +36,12 @@ opening a pull request.
 
 ## Prerequisites
 
-- **Docker** (or Podman with the docker-compose shim) — all Rust and Node
+- **Docker** (or Podman with the docker-compose shim): all Rust and Node
   tooling runs in a container
-- **[just](https://just.systems/)** — command runner
-- **[direnv](https://direnv.net/)** — optional, per-directory environment
-- **GitHub CLI (`gh`)** — recommended for issue and PR management
-- **VS Code / Cursor** — optional, supports "Reopen in Container"
+- **[just](https://just.systems/)**: command runner
+- **[direnv](https://direnv.net/)**: optional, per-directory environment
+- **GitHub CLI (`gh`)**: recommended for issue and PR management
+- **VS Code / Cursor**: optional, supports "Reopen in Container"
 
 No Rust toolchain is required on the host, and on an immutable desktop (the
 maintainer runs Aurora / Fedora Kinoite) there is none.
@@ -186,9 +186,9 @@ responsible for the change, regardless of which tools helped write it.
 
 Tests come first. For every change:
 
-1. **Red** — write a test that fails for the right reason.
-2. **Green** — write the smallest change that makes it pass.
-3. **Refactor** — clean up with the test still green.
+1. **Red**: write a test that fails for the right reason.
+2. **Green**: write the smallest change that makes it pass.
+3. **Refactor**: clean up with the test still green.
 
 Where the tests live:
 

@@ -73,15 +73,15 @@ Platform traits in `keyvo-core`: `HidTransport`, `InputInjector`, `WindowWatcher
 
 Every change follows this loop. Do not skip steps, do not reorder them.
 
-1. **Grill** — `/grill-me` or `/grill-with-docs` until the design is settled. One question at a time, each with a recommended answer. Anything that can be found in a file or on the machine is not asked.
-2. **Plan file** — `docs/plans/<YYYY-MM-DD>-<slug>.md`: what and why, acceptance criteria, User test steps.
-3. **Approval** — the owner approves the plan in chat.
-4. **Issue + branch** — Claude creates the GitHub issue (label, milestone) and the branch `feature/<issue>-<slug>` from a freshly pulled `develop`.
-5. **TDD in the container** — red, green, refactor; `just fmt lint test deny` green before every commit.
-6. **PR to `develop`** — title `<type>(<scope>): <desc> (#N)`, body `Closes #N`, the PR template's `## Automated checks` and `## User test` checklists filled in. The owner ticks User test on real hardware.
-7. **Docs in the same PR** — spec, ADRs, hardware notes, mdBook pages updated together with the code.
-8. **Merge `--no-ff`** — merge commit only; never squash or rebase into `develop` or `main`.
-9. **Cleanup** — remote branch auto-deleted; locally `git checkout develop && git pull && git fetch --prune && git branch -d <branch>`; `git status` and `git clean -n` must show nothing unexpected.
+1. **Grill**: `/grill-me` or `/grill-with-docs` until the design is settled. One question at a time, each with a recommended answer. Anything that can be found in a file or on the machine is not asked.
+2. **Plan file**: `docs/plans/<YYYY-MM-DD>-<slug>.md`: what and why, acceptance criteria, User test steps.
+3. **Approval**: the owner approves the plan in chat.
+4. **Issue + branch**: Claude creates the GitHub issue (label, milestone) and the branch `feature/<issue>-<slug>` from a freshly pulled `develop`.
+5. **TDD in the container**: red, green, refactor; `just fmt lint test deny` green before every commit.
+6. **PR to `develop`**: title `<type>(<scope>): <desc> (#N)`, body `Closes #N`, the PR template's `## Automated checks` and `## User test` checklists filled in. The owner ticks User test on real hardware.
+7. **Docs in the same PR**: spec, ADRs, hardware notes, mdBook pages updated together with the code.
+8. **Merge `--no-ff`**: merge commit only; never squash or rebase into `develop` or `main`.
+9. **Cleanup**: remote branch auto-deleted; locally `git checkout develop && git pull && git fetch --prune && git branch -d <branch>`; `git status` and `git clean -n` must show nothing unexpected.
 
 Research tasks run as background agents; the report goes into `docs/research/`, and only the items that change the plan are discussed in chat. Large command outputs go to a file or through the context-mode tools, not into the conversation.
 
@@ -131,11 +131,11 @@ Known traps:
 
 ## Reference Documentation
 
-- `CONTEXT.md` — glossary; use these terms exactly
-- `docs/spec.md` — specification (what and why)
-- `docs/roadmap.md` — milestones M0 to M5 and their definitions of done
-- `docs/adr/` — architecture decision records; read before changing direction
-- `docs/plans/` — per-issue implementation plans; `2026-09-09-project-plan.md` is the master plan
-- `docs/research/` — protocol findings, captures decoded, prior-art analyses
-- `CONTRIBUTING.md` — process, TDD, hardware test policy, DCO
-- `SECURITY.md` — threat model (socket trusts the same user, like ssh-agent)
+- `CONTEXT.md`: glossary; use these terms exactly
+- `docs/spec.md`: specification (what and why)
+- `docs/roadmap.md`: milestones M0 to M5 and their definitions of done
+- `docs/adr/`: architecture decision records; read before changing direction
+- `docs/plans/`: per-issue implementation plans; `2026-09-09-project-plan.md` is the master plan
+- `docs/research/`: protocol findings, captures decoded, prior-art analyses
+- `CONTRIBUTING.md`: process, TDD, hardware test policy, DCO
+- `SECURITY.md`: threat model (socket trusts the same user, like ssh-agent)

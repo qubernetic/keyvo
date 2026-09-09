@@ -1,4 +1,4 @@
-# keyvo — Project Plan (v1, 2026-09-09)
+# keyvo: Project Plan (v1, 2026-09-09)
 
 > Outcome of the planning grill of 2026-09-09 plus three research passes
 > (`docs/research/`). This document is the bridge between `docs/spec.md` (what and why)
@@ -38,7 +38,7 @@ hardware tests on the host. Quality bar: `qubernetic/copia-cli`. The name change
 
 ## 2. What the research changed (must be reflected in spec v0.2)
 
-1. **Prior art exists**: logimap (Python, KDE, 2026-04) and logilinux (LauzHack 2025) — spec §1
+1. **Prior art exists**: logimap (Python, KDE, 2026-04) and logilinux (LauzHack 2025), see spec §1
    "nothing provides" becomes "no mature, scriptable solution"; both credited in a Prior-art
    table together with Julusian, hcooper, shensquared, notno, Bitfocus, mx-console-suite.
 2. **Two protocol planes** on the Keypad: classic HID++ `0x11` (18 features, incl. 0x0008
@@ -46,7 +46,7 @@ hardware tests on the host. Quality bar: `qubernetic/copia-cli`. The name change
    / `0x14` bulk, own root, display feature 0x19A1 at VLP index 2). Images are baseline JPEG,
    118×118 per key or full panel 435×434 at (23,6) on a 480×480 canvas; 24-bit length field;
    per-fragment ACKs on `0x13` enable ACK-driven flow control. Device publishes its own key
-   geometry (display fn1) — query it, do not hard-code.
+   geometry (display fn1): query it, do not hard-code.
 3. **Keep-alive is mandatory**: no pings → no input, no paints held. Options+ sets 3000 ms and
    pings every ~1 s. Firmware self-dims after idle/USB suspend; brightness re-assert needed.
 4. **Dialpad**: 4 divertable buttons on 0x1B04 (CIDs 0x0053/56/59/5A), dial and roller on
@@ -59,9 +59,9 @@ hardware tests on the host. Quality bar: `qubernetic/copia-cli`. The name change
 7. **Flatpak cannot deliver hidraw/uinput permissions**: a udev rule is required regardless;
    plan to upstream a `046d:c354` `uaccess` rule to systemd (Boatswain model).
 8. **Options+ `.lp5` profiles are importable** (ZIP + JSON + base64 SVG): new M2/M3 feature.
-9. **Logi Actions SDK**: only C# renders dynamic key images — confirms the C# plugin.
+9. **Logi Actions SDK**: only C# renders dynamic key images, which confirms the C# plugin.
 10. **New hardware**: "MX Keypad" for developers launched 2026-09-08 (Windows/macOS only). Same
-    audience as keyvo; PID/firmware compatibility **[open]** — confirm as soon as any owner
+    audience as keyvo; PID/firmware compatibility **[open]**: confirm as soon as any owner
     publishes `lsusb`/`solaar show`.
 
 ## 3. Architecture (post-research)
@@ -101,58 +101,58 @@ rendering is the pure function `(profile, page, mode, overlay_stack, window_ctx)
 - B3 GitHub settings: merge commits only, auto-delete branches, branch protection on
   `main`/`develop` (admin not exempt), labels (`bug`, `enhancement`, `documentation`, `hotfix`,
   `chore`, `hardware`, `windows`, `research`), milestones M0–M5, close-linked-issues workflow.
-- Issue #1 `docs: project foundation` — spec v0.2 (all changes from §2), roadmap.md, ADR-0001…0007,
+- Issue #1 `docs: project foundation`: spec v0.2 (all changes from §2), roadmap.md, ADR-0001…0007,
   CONTEXT.md glossary, research reports, this plan, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT,
   CLAUDE.md, PR template with "User test" section, `.github/ISSUE_TEMPLATE`.
-- Issue #2 `chore: workspace skeleton and dev environment` — Cargo workspace with the four
+- Issue #2 `chore: workspace skeleton and dev environment`: Cargo workspace with the four
   crates (empty but compiling), rust-toolchain.toml, Dockerfile (Rust + Node), docker-compose,
   devcontainer.json, justfile (`setup dev test build lint fmt deny cov run test-hw diagrams docs`),
   `.editorconfig`, `.gitattributes`, dependabot.
-- Issue #3 `ci: build, test, lint, coverage, CodeQL` — Linux + Windows jobs, cargo-deny, llvm-cov
+- Issue #3 `ci: build, test, lint, coverage, CodeQL`: Linux + Windows jobs, cargo-deny, llvm-cov
   → codecov, CodeQL, docs (mdBook) to Pages.
-- Issue #4 `docs: architecture diagrams with archify` — install skill, pin tag, `just diagrams`,
+- Issue #4 `docs: architecture diagrams with archify`: install skill, pin tag, `just diagrams`,
   first five diagrams (architecture, key-press data flow, mode/page lifecycle, Claude hook
   sequence, dev/release workflow), CI check that SVGs are up to date.
 
-### M0 — Protocol (hardware truth)
+### M0: Protocol (hardware truth)
 DoD: `keyvo probe`, `keyvo keys --json`, `keyvo fill <color|png> [--key N|--all|--panel]`,
 `keyvo paint-test`, brightness get/set, keep-alive task, hot-plug, page-button divert,
 `docs/protocol.md`, `docs/hardware-notes.md` with measured numbers; Windows build green.
 Issues (each with its own plan file):
-- M0-1 `research: TS quick-test with Julusian's library` (hardware, host) — answers §5 list A.
-- M0-2 `chore: Windows VM and USB capture toolkit` — VM scripts, USBPcap procedure,
+- M0-1 `research: TS quick-test with Julusian's library` (hardware, host): answers §5 list A.
+- M0-2 `chore: Windows VM and USB capture toolkit`: VM scripts, USBPcap procedure,
   Keypad + Dialpad (Bolt) captures under Options+, ownership test (Q11), release asset
   `captures-2026-09`, fixtures extracted.
-- M0-3 `feat(hid): HID++ 2.0 core` — report framing (0x10/0x11), ROOT/FEATURE_SET walk, feature
+- M0-3 `feat(hid): HID++ 2.0 core`: report framing (0x10/0x11), ROOT/FEATURE_SET walk, feature
   index resolution, swid, error handling, golden-buffer tests.
-- M0-4 `feat(hid): keypad enumeration and keep-alive` — hidraw enumerate by VID/PID (+ descriptor
+- M0-4 `feat(hid): keypad enumeration and keep-alive`: hidraw enumerate by VID/PID (+ descriptor
   dump), KEEP_ALIVE 0x0008 (range, timeout, 1 s task), display mode claim (VLP fn4 `a0`),
   hot-plug reconnect (re-claim, re-divert).
-- M0-5 `feat(hid): VLP display plane` — 0x13/0x14 framing, geometry query (fn1), image writer
+- M0-5 `feat(hid): VLP display plane`: 0x13/0x14 framing, geometry query (fn1), image writer
   with 24-bit length, fragment ACK flow control, per-key and full-panel paint, JPEG size guard.
-- M0-6 `feat(hid): key and page-button input` — 0x13 key reports (held-set → press/release),
+- M0-6 `feat(hid): key and page-button input`: 0x13 key reports (held-set → press/release),
   0x1B04 divert for 0x01A1/0x01A2, ACK/echo filtering.
-- M0-7 `feat(hid): brightness` — 0x8040 range/get/set, unit resolved by measurement, idle-dim
+- M0-7 `feat(hid): brightness`: 0x8040 range/get/set, unit resolved by measurement, idle-dim
   re-assert policy.
 - M0-8 `feat(cli): probe, keys, fill, paint-test, doctor (hardware checks)`.
 - M0-9 `docs: protocol.md and hardware-notes.md`.
 
-### M1 — Static pad (v0.1.0)
+### M1: Static pad (v0.1.0)
 Profiles (TOML, schema, round-trip), renderer (+ insta snapshots), `preview`, actions `chord`
 (uinput), `exec`, `http`, `text`, `page`, `profile`, `mode`; press kinds short/long/repeat;
 inotify hot-reload; systemd user unit; udev rule + `doctor` checks; cargo-dist release;
 `.lp5` import **[open: M1 or M2]**.
 
-### M2 — Context
+### M2: Context
 KWin script + daemon D-Bus object, X11 watcher, auto/manual state machine, page buttons,
 overlays + `general_hint`, socket API v1 + `subscribe`, `keyvo ctl`, plugin supervisor,
 Claude Code plugin (hooks → overlay, MCP server), tmux and git integrations, `.lp5` import.
 
-### M3 — Desk state and Dialpad
+### M3: Desk state and Dialpad
 Dialpad over Bolt (0x1B04 buttons, 0x4610 MultiRoller), Bluetooth verification, Solaar-backed
 mouse/keyboard settings per profile (optional), VS Code extension.
 
-### M4a — GUI · M4b — Flathub · M5 — Windows
+### M4a: GUI · M4b: Flathub · M5: Windows
 As decided (§1 rows 9, 10, 16). Each gets its own grill before planning.
 
 ## 5. M0 measurement list (consolidated from research)
