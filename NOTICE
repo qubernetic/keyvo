@@ -1,0 +1,14 @@
+keyvo
+Copyright (c) 2026 Qubernetic / Csaba Attila Biró
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Logitech, Logi, MX, MX Creative Console, MX Creative Keypad, MX Creative
+Dialpad, Logi Bolt and Logi Options+ are trademarks or registered trademarks of
+Logitech International S.A. keyvo is an independent community project and is
+not affiliated with, endorsed by, or supported by Logitech.
+
+keyvo re-derives its device protocol from public reverse-engineering work and
+from its own hardware captures. No code is copied from third-party projects
+unless stated in the file header together with the original license. See the
+"Prior art" section of README.md for the projects that made this possible.

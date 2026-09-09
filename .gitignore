@@ -1,0 +1,55 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+
+# Node / Tauri / integrations
+node_modules/
+dist/
+.svelte-kit/
+/app/src-tauri/target/
+/app/src-tauri/gen/schemas/
+
+# .NET (Logi Actions SDK plugin)
+/plugins/logi/bin/
+/plugins/logi/obj/
+
+# Coverage and tooling output
+/coverage/
+lcov.info
+*.profraw
+*.profdata
+
+# mdBook build
+/docs/book/
+
+# Raw captures are external (release assets); derived fixtures are tracked
+/captures/external/**/*.pcap
+/captures/external/**/*.pcapng
+/captures/local/
+
+# Devcontainer / local environment
+.envrc
+!.envrc.example
+.env*
+/.devcontainer/.cache/
+/tools/windows-vm/*.iso
+/tools/windows-vm/*.qcow2
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+desktop.ini
+thumbs.db
+
+# Local scratch
+/scratch/
+AUDIT.md
