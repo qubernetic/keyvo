@@ -1,0 +1,73 @@
+name: Bug report
+description: Something is broken
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please check the glossary in `CONTEXT.md` for the terms used below.
+        For security-relevant issues use the private advisory route described in `SECURITY.md` instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, and what keyvo did. Include the command or the profile snippet.
+      placeholder: |
+        Ran `keyvo fill red --key 5`; key 5 stayed on the Logitech logo.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and doctor output
+      description: Daemon log around the failure and the output of `keyvo doctor`. Paste as text, not screenshots.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: keyvo version
+      description: Output of `keyvo --version`, or the commit hash if built from source.
+    validations:
+      required: true
+  - type: dropdown
+    id: desktop
+    attributes:
+      label: Desktop session
+      options:
+        - KDE Plasma on Wayland
+        - KDE Plasma on X11
+        - GNOME on Wayland
+        - GNOME on X11
+        - Hyprland / Sway / other wlroots
+        - Other (say which below)
+        - Windows (Logi Actions plugin)
+    validations:
+      required: true
+  - type: input
+    id: distro
+    attributes:
+      label: Distribution and kernel
+      placeholder: Aurora 44, Linux 7.1.8
+    validations:
+      required: true
+  - type: checkboxes
+    id: devices
+    attributes:
+      label: Devices involved
+      options:
+        - label: MX Creative Keypad over USB
+        - label: MX Creative Dialpad over Logi Bolt
+        - label: MX Creative Dialpad over Bluetooth
+        - label: MX Keypad (2026)
+        - label: Other Logitech device over Bolt (say which below)
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Was Solaar running? Any diverts set in Solaar? Options+ in a VM on the same USB device?

@@ -1,0 +1,50 @@
+name: Research or measurement
+description: A question to answer on hardware, in a capture, or by studying prior art
+labels: ["research"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Research issues produce a document or a fixture, not code. The result lands under `docs/research/`,
+        `docs/hardware-notes.md`, `captures/`, or `tests/protocol-fixtures/` and is linked from the issue.
+        The consolidated M0 measurement list lives in `docs/plans/2026-09-09-project-plan.md` section 5.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What exactly do we need to know, and which decision or issue depends on the answer?
+      placeholder: |
+        How long does a painted key survive without keep-alive pings? Blocks the keep-alive interval default (M0-4).
+    validations:
+      required: true
+  - type: checkboxes
+    id: hardware
+    attributes:
+      label: Hardware needed
+      options:
+        - label: MX Creative Keypad over USB
+        - label: MX Creative Dialpad over Logi Bolt
+        - label: MX Creative Dialpad over Bluetooth
+        - label: Windows VM with USB passthrough (USBPcap, Logi Options+)
+        - label: None (desk research, prior art, source reading)
+  - type: textarea
+    id: method
+    attributes:
+      label: Method
+      description: How the answer will be obtained. Tools, scripts, what to vary, what to record. Note whether Solaar must be stopped.
+    validations:
+      required: true
+  - type: textarea
+    id: artefact
+    attributes:
+      label: Expected artefact
+      description: The file(s) that will exist when this is done and where they go.
+      placeholder: |
+        docs/hardware-notes.md section "Keep-alive" with a table of interval vs. time-to-logo; raw capture attached to the captures release.
+    validations:
+      required: true
+  - type: textarea
+    id: prior
+    attributes:
+      label: What is already known
+      description: Links to research reports, upstream code, captures, or issues that partially answer the question.
