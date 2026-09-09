@@ -1,0 +1,20 @@
+[package]
+name = "keyvo-daemon"
+description = "keyvo background service: socket server, window watchers, input injection"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "keyvo-daemon"
+path = "src/main.rs"
+
+[dependencies]
+keyvo-core.workspace = true
+
+[lints]
+workspace = true
