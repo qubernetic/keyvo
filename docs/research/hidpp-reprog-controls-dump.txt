@@ -1,0 +1,19 @@
+
+## MX Master 4 wpid=B042
+  0x1B04 at index 13, control count 9
+  ctrl  0: cid=0x0050 tid=0x0038 flags=[mouse] add=[analytics_key_events] pos=0 group=1 gmask=0x00
+  ctrl  1: cid=0x0051 tid=0x0039 flags=[mouse] add=[analytics_key_events] pos=0 group=1 gmask=0x00
+  ctrl  2: cid=0x0052 tid=0x003A flags=[mouse reprogrammable divertable] add=[raw_xy analytics_key_events] pos=0 group=2 gmask=0x03
+  ctrl  3: cid=0x0053 tid=0x003C flags=[mouse reprogrammable divertable] add=[raw_xy analytics_key_events] pos=0 group=2 gmask=0x03
+  ctrl  4: cid=0x0056 tid=0x003E flags=[mouse reprogrammable divertable] add=[raw_xy analytics_key_events] pos=0 group=2 gmask=0x03
+  ctrl  5: cid=0x00C3 tid=0x009C flags=[mouse reprogrammable divertable] add=[raw_xy analytics_key_events] pos=0 group=2 gmask=0x03
+  ctrl  6: cid=0x00C4 tid=0x009D flags=[mouse reprogrammable divertable] add=[raw_xy analytics_key_events] pos=0 group=2 gmask=0x03
+  ctrl  7: cid=0x01A0 tid=0x0109 flags=[mouse reprogrammable divertable] add=[raw_xy analytics_key_events] pos=0 group=2 gmask=0x03
+  ctrl  8: cid=0x00D7 tid=0x00B4 flags=[divertable virtual] add=[raw_xy force_raw_xy] pos=0 group=3 gmask=0x00
+
+## MX Creative Dialpad wpid=BC00
+  0x1B04 at index 10, control count 4
+  ctrl  0: cid=0x0053 tid=0x003C flags=[mouse reprogrammable divertable] add=[analytics_key_events] pos=0 group=1 gmask=0x01
+  ctrl  1: cid=0x0056 tid=0x003E flags=[mouse reprogrammable divertable] add=[analytics_key_events] pos=0 group=1 gmask=0x01
+  ctrl  2: cid=0x0059 tid=0x0109 flags=[mouse reprogrammable divertable] add=[analytics_key_events] pos=0 group=1 gmask=0x01
+  ctrl  3: cid=0x005A tid=0x0109 flags=[mouse reprogrammable divertable] add=[analytics_key_events] pos=0 group=1 gmask=0x01

@@ -1,0 +1,33 @@
+rules cannot access modifier keys in Wayland, accessing process only works on GNOME with Solaar Gnome extension installed
+solaar version 1.1.20
+
+  3: MX Creative Dialpad
+     Device path  : None
+     WPID         : BC00
+     Codename     : MX Dialpad
+     Kind         : headset
+     Protocol     : HID++ 4.5
+     Serial number: B978A829
+     Model ID:      BC0000000000
+     Unit ID:       B978A829
+                 1: BL2 18.00.B0016
+                 0: RBO 07.00.B0016
+                 3: 
+                 2: 72
+     The power switch is located on the (unknown).
+     Supports 30 HID++ 2.0 features:
+solaar: error: Traceback (most recent call last):
+  File "/app/lib/python3.13/site-packages/solaar/cli/__init__.py", line 244, in run
+    m.run(c, args, _find_receiver, _find_device)
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/lib/python3.13/site-packages/solaar/cli/show.py", line 498, in run
+    _print_device(dev)
+    ~~~~~~~~~~~~~^^^^^
+  File "/app/lib/python3.13/site-packages/solaar/cli/show.py", line 229, in _print_device
+    settings_templates.check_feature_settings(dev, dev_settings)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/app/lib/python3.13/site-packages/logitech_receiver/settings_templates.py", line 4703, in check_feature_settings
+    if isinstance(setting, list):
+                  ^^^^^^^
+UnboundLocalError: cannot access local variable 'setting' where it is not associated with a value
+
