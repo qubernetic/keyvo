@@ -1,0 +1,4 @@
+# Bumped together with the base image tag in the Dockerfile.
+[toolchain]
+channel = "1.98.0"
+components = ["rustfmt", "clippy", "llvm-tools-preview"]

@@ -1,0 +1,17 @@
+# Rust source and lockfile
+*.rs text diff=rust
+Cargo.lock text
+*.toml text
+
+# Snapshot fixtures (insta)
+*.snap text
+
+# Shell scripts and task runner
+*.sh text eol=lf
+justfile text eol=lf
+
+# Documentation
+*.md text diff=markdown
+
+# Force LF line endings for cross-platform consistency
+* text=auto eol=lf

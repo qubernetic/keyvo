@@ -1,0 +1,45 @@
+# cargo-deny policy: licenses, advisories, bans and sources.
+# Run with `just deny`; CI runs the same check (Issue #3).
+
+[graph]
+all-features = true
+
+[advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+yanked = "deny"
+unmaintained = "all"
+ignore = []
+
+[licenses]
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "OFL-1.1",
+    # Weak copyleft, file-scoped; allowed but review each new MPL crate in the PR.
+    "MPL-2.0",
+]
+confidence-threshold = 0.9
+# The allow list is the policy, not the current dependency set.
+unused-allowed-license = "allow"
+exceptions = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Path dependencies inside the workspace carry no version; that is fine for private crates.
+allow-wildcard-paths = true
+highlight = "all"
+deny = []
+skip = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
