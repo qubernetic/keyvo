@@ -178,6 +178,13 @@ git commit -s -m "feat(hid): add keep-alive task"
 This appends `Signed-off-by: Your Name <you@example.com>`. Commits without a
 sign-off, or signed off with a pseudonym, are not merged.
 
+One exception: the `q-horde` machine account (`bot@qubernetic.com`) commits on
+behalf of the project's AI development team, each agent under its own name
+(for example `Signed-off-by: Jade (q-horde) <bot@qubernetic.com>`). Such a
+sign-off is accepted as the account's. The maintainer who reviews and merges
+the pull request makes the DCO certification for those commits and is the
+author of record.
+
 Do not add `Co-Authored-By`, `Generated-by`, or similar trailers for AI
 assistants or tools. The person who signs off is the author of record and is
 responsible for the change, regardless of which tools helped write it.
