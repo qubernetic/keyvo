@@ -1,0 +1,15 @@
+[package]
+name = "keyvo-core"
+description = "Hardware-free core of keyvo: profiles, state machine, renderer, protocol types"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

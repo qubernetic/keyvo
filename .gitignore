@@ -53,3 +53,6 @@ thumbs.db
 # Local scratch
 /scratch/
 AUDIT.md
+
+# Host-runnable binaries copied by `just build`
+/bin/

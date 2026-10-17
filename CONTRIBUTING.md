@@ -60,23 +60,30 @@ keyvo separates *where code is built* from *where it touches hardware*
 git clone https://github.com/qubernetic/keyvo.git
 cd keyvo
 
-just setup        # build the dev image, fetch dependencies
+just setup        # build the dev image, start the container, fetch dependencies
 just dev          # start the dev container (detached)
-just test         # cargo test inside the container
-just build        # cargo build inside the container; binary lands in target/
-just lint         # clippy with -D warnings
-just fmt          # rustfmt
-just deny         # cargo-deny (licenses, advisories, bans)
-just cov          # cargo-llvm-cov report
+just test         # cargo nextest inside the container
+just build        # cargo build inside the container; host-runnable binaries in bin/
+just lint         # clippy on all targets with -D warnings
+just fmt          # rustfmt (just fmt-check only verifies)
+just deny         # cargo-deny (licenses, advisories, bans, sources)
+just cov          # cargo-llvm-cov report (coverage/lcov.info plus a summary)
+just ci           # fmt-check, lint, test, deny: the sequence CI runs
 just run -- probe # run the container-built binary on the host against real hardware
-just test-hw      # hardware test suite on the host
-just diagrams     # regenerate docs/diagrams from the archify IR
-just docs         # build the mdBook
+just test-hw      # hardware checks on the host
+just diagrams     # regenerate docs/diagrams from the archify IR (lands with Issue #4)
+just docs         # build the mdBook (lands with Issue #3)
+just shell        # interactive shell in the container
+just clean        # stop the container, drop the cargo volumes, delete target/ and bin/
 ```
 
-The `justfile`, `Dockerfile`, `docker-compose.yml`, and `.devcontainer/` land
-with Issue #2 (workspace skeleton and dev environment). Until then this section
-describes the target, not the current tree.
+The container image is `rust:<version>-slim-trixie` plus Node LTS, `just`,
+`cargo-deny`, `cargo-llvm-cov`, `cargo-nextest` and `cargo-insta`; the Rust
+version is pinned in `rust-toolchain.toml` and bumped together with the
+`Dockerfile`. The container runs as a non-root user with the host's UID and GID
+(passed by the `justfile`), so files under the bind-mounted `target/` stay owned
+by you. Podman users set `COMPOSE_CMD="podman compose"` in the environment or in
+`.env`.
 
 The container has no access to `/dev/hidraw*` or `/dev/uinput`. Anything that
 needs the device runs on the host with the container-built binary. Claude Code

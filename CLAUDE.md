@@ -27,21 +27,22 @@ Two-layer model ([ADR-0002](docs/adr/0002-two-layer-dev-model.md)):
 | Hardware execution | host, with the container-built binary | `just run -- <args>`, `just test-hw` |
 
 ```bash
-just setup        # build the dev image, fetch dependencies (first time)
+just setup        # build the dev image, start the container, fetch dependencies (first time)
 just dev          # start the dev container (detached)
-just test         # cargo test (inside the container)
-just build        # cargo build (inside the container), binary in target/
-just lint         # cargo clippy --all-targets -- -D warnings
-just fmt          # cargo fmt
+just test         # cargo nextest run --workspace (inside the container)
+just build        # cargo build (inside the container), host-runnable binaries copied to bin/
+just lint         # cargo clippy --workspace --all-targets -- -D warnings
+just fmt          # cargo fmt --all (fmt-check only verifies)
 just deny         # cargo-deny check
 just cov          # cargo-llvm-cov report
-just run -- probe # run the built binary on the host against real hardware
-just test-hw      # hardware test suite on the host
-just diagrams     # regenerate docs/diagrams with archify
-just docs         # build the mdBook
+just ci           # fmt-check + lint + test + deny, the sequence CI runs
+just run -- probe # run the built binary (bin/keyvo) on the host against real hardware
+just test-hw      # hardware checks on the host
+just diagrams     # regenerate docs/diagrams with archify (Issue #4)
+just docs         # build the mdBook (Issue #3)
 ```
 
-**Claude Code runs on the host**, never inside the devcontainer. The container cannot see `/dev/hidraw*` or `/dev/uinput`; anything touching a device runs on the host. The `justfile`, `Dockerfile`, compose files, and `.devcontainer/` land with Issue #2.
+**Claude Code runs on the host**, never inside the devcontainer. The container cannot see `/dev/hidraw*` or `/dev/uinput`; anything touching a device runs on the host. Never call `cargo` on the host; use the `just` recipes, or `docker compose exec rust cargo ...` for anything the justfile does not cover. The container runs as user `dev` with the host UID/GID passed from the justfile (`KEYVO_UID`/`KEYVO_GID`); `target/` is on the bind mount, the cargo registry and git caches are named volumes. Pin bumps: `rust-toolchain.toml` and the Dockerfile base tag move together; cargo tool versions are Dockerfile build args.
 
 ## Repository Layout
 
