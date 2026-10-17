@@ -35,14 +35,14 @@ just lint         # cargo clippy --workspace --all-targets -- -D warnings
 just fmt          # cargo fmt --all (fmt-check only verifies)
 just deny         # cargo-deny check
 just cov          # cargo-llvm-cov report
-just ci           # fmt-check + lint + test + deny, the sequence CI runs
+just ci           # fmt-check + lint + test --profile ci + deny, the sequence CI runs
 just run -- probe # run the built binary (bin/keyvo) on the host against real hardware
 just test-hw      # hardware checks on the host
 just diagrams     # regenerate docs/diagrams with archify (Issue #4)
 just docs         # build the mdBook (Issue #3)
 ```
 
-**Claude Code runs on the host**, never inside the devcontainer. The container cannot see `/dev/hidraw*` or `/dev/uinput`; anything touching a device runs on the host. Never call `cargo` on the host; use the `just` recipes, or `docker compose exec rust cargo ...` for anything the justfile does not cover. The container runs as user `dev` with the host UID/GID passed from the justfile (`KEYVO_UID`/`KEYVO_GID`); `target/` is on the bind mount, the cargo registry and git caches are named volumes. Pin bumps: `rust-toolchain.toml` and the Dockerfile base tag move together, and the tag carries its `@sha256:` digest; Node and cargo-binstall versions are build args with a committed sha256 per architecture that moves with the version; cargo tool versions are Dockerfile build args (see CONTRIBUTING.md, "Bumping a pinned version").
+**Claude Code runs on the host**, never inside the devcontainer. The container cannot see `/dev/hidraw*` or `/dev/uinput`; anything touching a device runs on the host. CI (`.github/workflows/ci.yml`) builds the same image from the `Dockerfile` and runs the four `just ci` commands in it in the same order; the nextest `ci` profile (`.config/nextest.toml`: no fail-fast, JUnit report in `target/nextest/ci/junit.xml`) is what `just ci` and CI share. Never call `cargo` on the host; use the `just` recipes, or `docker compose exec rust cargo ...` for anything the justfile does not cover. The container runs as user `dev` with the host UID/GID passed from the justfile (`KEYVO_UID`/`KEYVO_GID`); `target/` is on the bind mount, the cargo registry and git caches are named volumes. Pin bumps: `rust-toolchain.toml` and the Dockerfile base tag move together, and the tag carries its `@sha256:` digest; Node and cargo-binstall versions are build args with a committed sha256 per architecture that moves with the version; cargo tool versions are Dockerfile build args (see CONTRIBUTING.md, "Bumping a pinned version").
 
 ## Repository Layout
 

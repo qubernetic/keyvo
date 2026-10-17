@@ -83,8 +83,8 @@ cov: _up
     {{ exec }} cargo llvm-cov nextest --workspace --lcov --output-path coverage/lcov.info
     {{ exec }} cargo llvm-cov report --summary-only
 
-# The exact sequence CI runs (Issue #3)
-ci: fmt-check lint test deny
+# The exact sequence CI runs (.github/workflows/ci.yml), tests in the nextest ci profile
+ci: fmt-check lint (test "--profile" "ci") deny
 
 # ---- Host (hardware) -------------------------------------------------------
 
