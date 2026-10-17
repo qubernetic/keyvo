@@ -16,8 +16,7 @@
       "settings": {
         "editor.formatOnSave": true,
         "rust-analyzer.check.command": "clippy",
-        "rust-analyzer.check.allTargets": true,
-        "security.workspace.trust.startupPrompt": "never"
+        "rust-analyzer.check.allTargets": true
       }
     }
   }

@@ -85,6 +85,32 @@ version is pinned in `rust-toolchain.toml` and bumped together with the
 by you. Podman users set `COMPOSE_CMD="podman compose"` in the environment or in
 `.env`.
 
+### Bumping a pinned version
+
+Everything the image downloads is pinned and verified, and the build fails on a
+checksum mismatch. A bump changes the version and its checksums in the same
+commit:
+
+- **Base image.** The `FROM` line carries the tag and the multi-arch index
+  digest (`rust:<version>-slim-trixie@sha256:<digest>`). Bump the tag together
+  with `rust-toolchain.toml`, then take the new digest from
+  `docker buildx imagetools inspect rust:<version>-slim-trixie` (the top-level
+  `Digest:`). Dependabot proposes digest updates for the same tag.
+- **Node.** `NODE_VERSION` plus `NODE_SHA256_X64` and `NODE_SHA256_ARM64`, taken
+  from `https://nodejs.org/dist/v<version>/SHASUMS256.txt` (the
+  `node-v<version>-linux-x64.tar.xz` and `-linux-arm64.tar.xz` lines).
+- **cargo-binstall.** `CARGO_BINSTALL_VERSION` plus
+  `CARGO_BINSTALL_SHA256_X86_64` and `CARGO_BINSTALL_SHA256_AARCH64`: download
+  `cargo-binstall-<arch>-unknown-linux-musl.tgz` from the
+  `v<version>` GitHub release and run `sha256sum` on it.
+- **Cargo tools** (`just`, `cargo-deny`, `cargo-llvm-cov`, `cargo-nextest`,
+  `cargo-insta`). Only the version build arg changes. `cargo binstall` runs with
+  `--disable-strategies quick-install,compile`, so it installs from the tool's
+  own release assets or fails; it never falls back to a third-party mirror or a
+  source build.
+
+After a bump, `just setup` from a clean cache (`just clean` first) must build.
+
 The container has no access to `/dev/hidraw*` or `/dev/uinput`. Anything that
 needs the device runs on the host with the container-built binary. Claude Code
 and other agents run on the host as well, never inside the container.

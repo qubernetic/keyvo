@@ -42,7 +42,7 @@ just diagrams     # regenerate docs/diagrams with archify (Issue #4)
 just docs         # build the mdBook (Issue #3)
 ```
 
-**Claude Code runs on the host**, never inside the devcontainer. The container cannot see `/dev/hidraw*` or `/dev/uinput`; anything touching a device runs on the host. Never call `cargo` on the host; use the `just` recipes, or `docker compose exec rust cargo ...` for anything the justfile does not cover. The container runs as user `dev` with the host UID/GID passed from the justfile (`KEYVO_UID`/`KEYVO_GID`); `target/` is on the bind mount, the cargo registry and git caches are named volumes. Pin bumps: `rust-toolchain.toml` and the Dockerfile base tag move together; cargo tool versions are Dockerfile build args.
+**Claude Code runs on the host**, never inside the devcontainer. The container cannot see `/dev/hidraw*` or `/dev/uinput`; anything touching a device runs on the host. Never call `cargo` on the host; use the `just` recipes, or `docker compose exec rust cargo ...` for anything the justfile does not cover. The container runs as user `dev` with the host UID/GID passed from the justfile (`KEYVO_UID`/`KEYVO_GID`); `target/` is on the bind mount, the cargo registry and git caches are named volumes. Pin bumps: `rust-toolchain.toml` and the Dockerfile base tag move together, and the tag carries its `@sha256:` digest; Node and cargo-binstall versions are build args with a committed sha256 per architecture that moves with the version; cargo tool versions are Dockerfile build args (see CONTRIBUTING.md, "Bumping a pinned version").
 
 ## Repository Layout
 
