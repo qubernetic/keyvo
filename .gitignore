@@ -37,6 +37,7 @@ lcov.info
 /tools/windows-vm/*.qcow2
 
 # IDE
+.claude/
 .idea/
 .vscode/*
 !.vscode/extensions.json
