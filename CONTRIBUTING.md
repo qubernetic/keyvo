@@ -68,7 +68,7 @@ just lint         # clippy on all targets with -D warnings
 just fmt          # rustfmt (just fmt-check only verifies)
 just deny         # cargo-deny (licenses, advisories, bans, sources)
 just cov          # cargo-llvm-cov report (coverage/lcov.info plus a summary)
-just ci           # fmt-check, lint, test, deny: the sequence CI runs
+just ci           # fmt-check, lint, test (nextest ci profile), deny: the sequence CI runs
 just run -- probe # run the container-built binary on the host against real hardware
 just test-hw      # hardware checks on the host
 just diagrams     # regenerate docs/diagrams from the archify IR (lands with Issue #4)
@@ -84,6 +84,15 @@ version is pinned in `rust-toolchain.toml` and bumped together with the
 (passed by the `justfile`), so files under the bind-mounted `target/` stay owned
 by you. Podman users set `COMPOSE_CMD="podman compose"` in the environment or in
 `.env`.
+
+CI parity: `.github/workflows/ci.yml` builds the same image from the
+`Dockerfile` (the runner's UID and GID as build args) and runs the four `just ci`
+commands inside it in the same order: `cargo fmt --all -- --check`,
+`cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo nextest run --workspace --profile ci` and `cargo deny check`. The nextest
+`ci` profile in `.config/nextest.toml` runs every test even after a failure and
+writes a JUnit report to `target/nextest/ci/junit.xml`. A command that passes in
+`just ci` passes in CI; the workflow never repeats a tool version.
 
 ### Bumping a pinned version
 

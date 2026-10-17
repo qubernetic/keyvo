@@ -1,0 +1,90 @@
+# Linux CI (ADR-0002 parity): build the dev image from the repository
+# Dockerfile and run the `just ci` sequence inside it, with the same command
+# lines as the justfile recipes. Tool versions live in the Dockerfile and
+# rust-toolchain.toml only.
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main, "epic/**"]
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: ci
+    runs-on: ubuntu-24.04
+    env:
+      IMAGE: keyvo-dev:ci
+      CONTAINER: keyvo-ci
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read runner UID and GID
+        id: ids
+        run: |
+          echo "uid=$(id -u)" >> "$GITHUB_OUTPUT"
+          echo "gid=$(id -g)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build the dev image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: ${{ env.IMAGE }}
+          build-args: |
+            UID=${{ steps.ids.outputs.uid }}
+            GID=${{ steps.ids.outputs.gid }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Cache the cargo registry
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo-ci/registry
+            ~/.cargo-ci/git
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-registry-${{ runner.os }}-
+
+      # Same mounts as the `rust` compose service; target/ stays on the
+      # bind mount and is not cached.
+      - name: Start the dev container
+        run: |
+          mkdir -p "$HOME/.cargo-ci/registry" "$HOME/.cargo-ci/git"
+          docker run --detach --init --name "$CONTAINER" \
+            --env CARGO_TERM_COLOR=always \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --volume "$HOME/.cargo-ci/registry:/usr/local/cargo/registry" \
+            --volume "$HOME/.cargo-ci/git:/usr/local/cargo/git" \
+            "$IMAGE" sleep infinity
+
+      - name: fmt-check
+        run: docker exec "$CONTAINER" cargo fmt --all -- --check
+
+      - name: lint
+        run: docker exec "$CONTAINER" cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: test
+        run: docker exec "$CONTAINER" cargo nextest run --workspace --profile ci
+
+      - name: deny
+        run: docker exec "$CONTAINER" cargo deny check
+
+      - name: Stop the dev container
+        if: always()
+        run: docker rm --force "$CONTAINER"
