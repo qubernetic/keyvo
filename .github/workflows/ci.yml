@@ -21,10 +21,14 @@ jobs:
   ci:
     name: ci
     runs-on: ubuntu-24.04
-    # id-token: write lets the Codecov uploads authenticate with GitHub OIDC.
+    # A cold run (image build without cache plus every check) took about 3.5
+    # minutes on ubuntu-24.04; 20 minutes leaves room for a slow runner and a
+    # growing workspace while still stopping a hung step early.
+    timeout-minutes: 20
+    # This job builds and runs pull request code, so it gets no OIDC token;
+    # the uploads run in the separate `codecov` job below.
     permissions:
       contents: read
-      id-token: write
     env:
       IMAGE: keyvo-dev:ci
       CONTAINER: keyvo-ci
@@ -53,10 +57,25 @@ jobs:
           build-args: |
             UID=${{ steps.ids.outputs.uid }}
             GID=${{ steps.ids.outputs.gid }}
+          # Pull request runs only read the cache; pushes to develop and main
+          # write it, so pull request code cannot seed a cache for them.
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max' || '' }}
+
+      # Same split as the image cache: restore only on pull requests, restore
+      # and save on push.
+      - name: Restore the cargo registry
+        if: ${{ github.event_name != 'push' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo-ci/registry
+            ~/.cargo-ci/git
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-registry-${{ runner.os }}-
 
       - name: Cache the cargo registry
+        if: ${{ github.event_name == 'push' }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -95,12 +114,53 @@ jobs:
           docker exec "$CONTAINER" cargo llvm-cov nextest --workspace --profile ci --lcov --output-path coverage/lcov.info
           docker exec "$CONTAINER" cargo llvm-cov report --summary-only
 
-      # Tokenless upload through GitHub OIDC. Without an OIDC token (Dependabot,
-      # forks) the upload fails but the job stays green (fail_ci_if_error false).
+      - name: Upload the reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: reports
+          path: |
+            coverage/lcov.info
+            target/nextest/ci/junit.xml
+          retention-days: 3
+
+      - name: Stop the dev container
+        if: always()
+        run: docker rm --force "$CONTAINER"
+
+  # The only job with an OIDC token. It never builds or runs repository code:
+  # it checks out the commit for the Codecov metadata, takes the reports from
+  # the `ci` job and uploads them. Without an OIDC token (Dependabot, forks)
+  # the upload fails but the job stays green (fail_ci_if_error false).
+  codecov:
+    name: codecov
+    needs: ci
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    # Two uploads took about 15 seconds; 10 minutes covers a slow Codecov API.
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download the reports
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: reports
+
+      # version pins the Codecov CLI to v11.3.1; cleanup downloads it into a
+      # temporary directory and removes it after the step.
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           use_oidc: true
+          version: v11.3.1
+          cleanup: true
           files: coverage/lcov.info
           disable_search: true
 
@@ -109,10 +169,8 @@ jobs:
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           use_oidc: true
+          version: v11.3.1
+          cleanup: true
           report_type: test_results
           files: target/nextest/ci/junit.xml
           disable_search: true
-
-      - name: Stop the dev container
-        if: always()
-        run: docker rm --force "$CONTAINER"

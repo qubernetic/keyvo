@@ -92,12 +92,17 @@ commands inside it in the same order: `cargo fmt --all -- --check`,
 `cargo nextest run --workspace --profile ci`, `cargo deny check` and
 `cargo llvm-cov nextest --workspace --profile ci --lcov --output-path coverage/lcov.info`.
 The nextest `ci` profile in `.config/nextest.toml` runs every test even after a
-failure and writes a JUnit report to `target/nextest/ci/junit.xml`. The runner
-then uploads `coverage/lcov.info` and the JUnit report to Codecov (coverage and
-Test Analytics) with GitHub OIDC, so no token is stored. A pull request without
-an OIDC token (Dependabot, forks) still gets a green test run; only the upload is
-skipped. A command that passes in `just ci` passes in CI; the workflow never
-repeats a tool version.
+failure and writes a JUnit report to `target/nextest/ci/junit.xml`. The `ci`
+job has read-only repository access and hands `coverage/lcov.info` and the JUnit
+report to the next job as a short-lived workflow artifact. A separate `codecov`
+job, the only one allowed to request a GitHub OIDC token, checks out the commit,
+downloads the artifact and uploads both files to Codecov (coverage and Test
+Analytics) with a pinned Codecov CLI; it never builds or runs repository code.
+OIDC means no long-lived token is stored. A pull request without an OIDC token
+(Dependabot, forks) still gets a green test run; only the upload is skipped.
+Pull request runs only restore the image and cargo registry caches; pushes to
+`develop` and `main` save them. A command that passes in `just ci` passes in CI;
+the workflow never repeats a tool version.
 
 ### Bumping a pinned version
 
