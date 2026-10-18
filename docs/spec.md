@@ -499,7 +499,8 @@ justfile page, `gh`, `kubectl`, other agent CLIs, Kitty/WezTerm.
 - Accent color per profile is the primary context indicator; optional
   ~300 ms full-grid splash on profile switch (**[OPEN]**: default on/off).
 - Test policy: `keyvo-core` ≥ 85 % and `keyvo-hid` ≥ 80 % line coverage,
-  reported (not enforced) via `cargo-llvm-cov` → codecov;
+  goals measured via `cargo-llvm-cov` → codecov, whose org gates block a PR
+  (patch >= 80 %, project at most 1 % below the base);
   `FakeHidTransport` integration tests replay golden captures.
 
 ---

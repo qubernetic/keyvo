@@ -21,6 +21,10 @@ jobs:
   ci:
     name: ci
     runs-on: ubuntu-24.04
+    # id-token: write lets the Codecov uploads authenticate with GitHub OIDC.
+    permissions:
+      contents: read
+      id-token: write
     env:
       IMAGE: keyvo-dev:ci
       CONTAINER: keyvo-ci
@@ -84,6 +88,30 @@ jobs:
 
       - name: deny
         run: docker exec "$CONTAINER" cargo deny check
+
+      - name: cov
+        run: |
+          docker exec "$CONTAINER" mkdir -p coverage
+          docker exec "$CONTAINER" cargo llvm-cov nextest --workspace --profile ci --lcov --output-path coverage/lcov.info
+          docker exec "$CONTAINER" cargo llvm-cov report --summary-only
+
+      # Tokenless upload through GitHub OIDC. Without an OIDC token (Dependabot,
+      # forks) the upload fails but the job stays green (fail_ci_if_error false).
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          use_oidc: true
+          files: coverage/lcov.info
+          disable_search: true
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          use_oidc: true
+          report_type: test_results
+          files: target/nextest/ci/junit.xml
+          disable_search: true
 
       - name: Stop the dev container
         if: always()
