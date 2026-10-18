@@ -114,8 +114,41 @@ jobs:
           docker exec "$CONTAINER" cargo llvm-cov nextest --workspace --profile ci --lcov --output-path coverage/lcov.info
           docker exec "$CONTAINER" cargo llvm-cov report --summary-only
 
-      - name: Upload the reports
+      # upload-artifact follows symlinks, so code in the container could point
+      # a report at a host file (for example /proc/self/environ). Every report
+      # that exists must resolve to a regular file inside the workspace; a
+      # directory is rejected too, because upload-artifact uploads it
+      # recursively and follows the symlinks inside it. A report that was
+      # never written (an earlier step failed) is skipped, as before.
+      - name: Check the report paths
+        id: report-paths
         if: ${{ !cancelled() }}
+        run: |
+          workspace="$(realpath -e "$GITHUB_WORKSPACE")"
+          for report in coverage/lcov.info target/nextest/ci/junit.xml; do
+            if [ ! -e "$report" ] && [ ! -L "$report" ]; then
+              echo "$report: not written, skipped"
+              continue
+            fi
+            resolved="$(realpath -e "$report")" || {
+              echo "::error::$report does not resolve to an existing file"
+              exit 1
+            }
+            [ -f "$resolved" ] || {
+              echo "::error::$report is not a regular file: $resolved"
+              exit 1
+            }
+            case "$resolved" in
+              "$workspace"/*) echo "$report: $resolved" ;;
+              *)
+                echo "::error::$report resolves outside the workspace: $resolved"
+                exit 1
+                ;;
+            esac
+          done
+
+      - name: Upload the reports
+        if: ${{ !cancelled() && steps.report-paths.outcome == 'success' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: reports
@@ -154,13 +187,16 @@ jobs:
           name: reports
 
       # version pins the Codecov CLI to v11.3.1; cleanup downloads it into a
-      # temporary directory and removes it after the step.
+      # temporary directory and removes it after the step. plugins: noop stops
+      # the CLI from running its default xcode, gcov and pycoverage plugins
+      # over the pull request checkout.
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           use_oidc: true
           version: v11.3.1
           cleanup: true
+          plugins: noop
           files: coverage/lcov.info
           disable_search: true
 
