@@ -67,8 +67,8 @@ just build        # cargo build inside the container; host-runnable binaries in 
 just lint         # clippy on all targets with -D warnings
 just fmt          # rustfmt (just fmt-check only verifies)
 just deny         # cargo-deny (licenses, advisories, bans, sources)
-just cov          # cargo-llvm-cov report (coverage/lcov.info plus a summary)
-just ci           # fmt-check, lint, test, deny: the sequence CI runs
+just cov          # cargo-llvm-cov in the nextest ci profile (coverage/lcov.info plus a summary)
+just ci           # fmt-check, lint, test (nextest ci profile), deny, cov: the sequence CI runs
 just run -- probe # run the container-built binary on the host against real hardware
 just test-hw      # hardware checks on the host
 just diagrams     # regenerate docs/diagrams from the archify IR (lands with Issue #4)
@@ -84,6 +84,28 @@ version is pinned in `rust-toolchain.toml` and bumped together with the
 (passed by the `justfile`), so files under the bind-mounted `target/` stay owned
 by you. Podman users set `COMPOSE_CMD="podman compose"` in the environment or in
 `.env`.
+
+CI parity: `.github/workflows/ci.yml` builds the same image from the
+`Dockerfile` (the runner's UID and GID as build args) and runs the `just ci`
+commands inside it in the same order: `cargo fmt --all -- --check`,
+`cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo nextest run --workspace --profile ci`, `cargo deny check` and
+`cargo llvm-cov nextest --workspace --profile ci --lcov --output-path coverage/lcov.info`.
+The nextest `ci` profile in `.config/nextest.toml` runs every test even after a
+failure and writes a JUnit report to `target/nextest/ci/junit.xml`. The `ci`
+job has read-only repository access and hands `coverage/lcov.info` and the JUnit
+report to the next job as a short-lived workflow artifact, after checking that
+each report resolves to a file inside the workspace, so a symlink cannot carry a
+host file into the artifact. A separate `codecov`
+job, the only one allowed to request a GitHub OIDC token, checks out the commit,
+downloads the artifact and uploads both files to Codecov (coverage and Test
+Analytics) with a pinned Codecov CLI and none of its plugins; it never builds or
+runs repository code.
+OIDC means no long-lived token is stored. A pull request without an OIDC token
+(Dependabot, forks) still gets a green test run; only the upload is skipped.
+Pull request runs only restore the image and cargo registry caches; pushes to
+`develop` and `main` save them. A command that passes in `just ci` passes in CI;
+the workflow never repeats a tool version.
 
 ### Bumping a pinned version
 
@@ -241,10 +263,13 @@ Where the tests live:
 | Renderer | [insta](https://insta.rs/) snapshot tests of rendered key images | none |
 | `just test-hw` | Hardware suite on the host: probe, paint, keep-alive, brightness, input | Keypad / Dialpad |
 
-Coverage is measured with `cargo-llvm-cov` and reported to Codecov. Targets are
-`keyvo-core` at or above 85 % and `keyvo-hid` at or above 80 %. The report is
-informational: CI does not fail on coverage, but a PR must not lower it without
-saying why.
+Coverage is measured with `cargo-llvm-cov` and uploaded to Codecov. The
+organisation's Codecov gates are blocking: `codecov/patch` needs at least 80 %
+of the changed lines covered, and `codecov/project` may drop by at most 1 %
+against the base. The per-crate goals are `keyvo-core` at or above 85 % and
+`keyvo-hid` at or above 80 %. Code that cannot be tested sensibly (entry points
+and wiring, generated code, a thin hardware or OS layer) is excluded in
+`codecov.yml` with the reason next to the entry; there are no exclusions yet.
 
 ## Hardware test policy
 

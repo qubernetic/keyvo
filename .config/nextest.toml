@@ -1,0 +1,9 @@
+# cargo-nextest configuration. `just ci` and the CI workflow run the `ci`
+# profile: every test runs even after a failure, and a JUnit report lands in
+# target/nextest/ci/junit.xml.
+
+[profile.ci]
+fail-fast = false
+
+[profile.ci.junit]
+path = "junit.xml"

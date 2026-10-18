@@ -78,13 +78,15 @@ fmt-check: _up
 deny: _up
     {{ exec }} cargo deny check
 
-# Coverage report with cargo-llvm-cov: lcov in coverage/lcov.info plus a summary
+# Coverage with cargo-llvm-cov in the nextest ci profile: lcov in coverage/lcov.info,
+# JUnit in target/nextest/ci/junit.xml, plus a summary
 cov: _up
-    {{ exec }} cargo llvm-cov nextest --workspace --lcov --output-path coverage/lcov.info
+    {{ exec }} mkdir -p coverage
+    {{ exec }} cargo llvm-cov nextest --workspace --profile ci --lcov --output-path coverage/lcov.info
     {{ exec }} cargo llvm-cov report --summary-only
 
-# The exact sequence CI runs (Issue #3)
-ci: fmt-check lint test deny
+# The exact sequence CI runs (.github/workflows/ci.yml), tests in the nextest ci profile
+ci: fmt-check lint (test "--profile" "ci") deny cov
 
 # ---- Host (hardware) -------------------------------------------------------
 
