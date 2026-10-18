@@ -116,8 +116,10 @@ jobs:
 
       # upload-artifact follows symlinks, so code in the container could point
       # a report at a host file (for example /proc/self/environ). Every report
-      # that exists must resolve to a path inside the workspace; a report that
-      # was never written (an earlier step failed) is skipped, as before.
+      # that exists must resolve to a regular file inside the workspace; a
+      # directory is rejected too, because upload-artifact uploads it
+      # recursively and follows the symlinks inside it. A report that was
+      # never written (an earlier step failed) is skipped, as before.
       - name: Check the report paths
         id: report-paths
         if: ${{ !cancelled() }}
@@ -130,6 +132,10 @@ jobs:
             fi
             resolved="$(realpath -e "$report")" || {
               echo "::error::$report does not resolve to an existing file"
+              exit 1
+            }
+            [ -f "$resolved" ] || {
+              echo "::error::$report is not a regular file: $resolved"
               exit 1
             }
             case "$resolved" in
