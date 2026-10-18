@@ -154,13 +154,16 @@ jobs:
           name: reports
 
       # version pins the Codecov CLI to v11.3.1; cleanup downloads it into a
-      # temporary directory and removes it after the step.
+      # temporary directory and removes it after the step. plugins: noop stops
+      # the CLI from running its default xcode, gcov and pycoverage plugins
+      # over the pull request checkout.
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           use_oidc: true
           version: v11.3.1
           cleanup: true
+          plugins: noop
           files: coverage/lcov.info
           disable_search: true
 

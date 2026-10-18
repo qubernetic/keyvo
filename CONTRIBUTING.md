@@ -97,7 +97,8 @@ job has read-only repository access and hands `coverage/lcov.info` and the JUnit
 report to the next job as a short-lived workflow artifact. A separate `codecov`
 job, the only one allowed to request a GitHub OIDC token, checks out the commit,
 downloads the artifact and uploads both files to Codecov (coverage and Test
-Analytics) with a pinned Codecov CLI; it never builds or runs repository code.
+Analytics) with a pinned Codecov CLI and none of its plugins; it never builds or
+runs repository code.
 OIDC means no long-lived token is stored. A pull request without an OIDC token
 (Dependabot, forks) still gets a green test run; only the upload is skipped.
 Pull request runs only restore the image and cargo registry caches; pushes to
