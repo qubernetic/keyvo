@@ -53,10 +53,25 @@ jobs:
           build-args: |
             UID=${{ steps.ids.outputs.uid }}
             GID=${{ steps.ids.outputs.gid }}
+          # Pull request runs only read the cache; pushes to develop and main
+          # write it, so pull request code cannot seed a cache for them.
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max' || '' }}
+
+      # Same split as the image cache: restore only on pull requests, restore
+      # and save on push.
+      - name: Restore the cargo registry
+        if: ${{ github.event_name != 'push' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo-ci/registry
+            ~/.cargo-ci/git
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-registry-${{ runner.os }}-
 
       - name: Cache the cargo registry
+        if: ${{ github.event_name == 'push' }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |

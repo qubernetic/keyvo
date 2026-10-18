@@ -100,7 +100,8 @@ downloads the artifact and uploads both files to Codecov (coverage and Test
 Analytics) with a pinned Codecov CLI; it never builds or runs repository code.
 OIDC means no long-lived token is stored. A pull request without an OIDC token
 (Dependabot, forks) still gets a green test run; only the upload is skipped.
-A command that passes in `just ci` passes in CI;
+Pull request runs only restore the image and cargo registry caches; pushes to
+`develop` and `main` save them. A command that passes in `just ci` passes in CI;
 the workflow never repeats a tool version.
 
 ### Bumping a pinned version
