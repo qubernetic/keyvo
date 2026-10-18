@@ -21,6 +21,10 @@ jobs:
   ci:
     name: ci
     runs-on: ubuntu-24.04
+    # A cold run (image build without cache plus every check) took about 3.5
+    # minutes on ubuntu-24.04; 20 minutes leaves room for a slow runner and a
+    # growing workspace while still stopping a hung step early.
+    timeout-minutes: 20
     # This job builds and runs pull request code, so it gets no OIDC token;
     # the uploads run in the separate `codecov` job below.
     permissions:
@@ -133,6 +137,8 @@ jobs:
     needs: ci
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
+    # Two uploads took about 15 seconds; 10 minutes covers a slow Codecov API.
+    timeout-minutes: 10
     permissions:
       contents: read
       id-token: write
