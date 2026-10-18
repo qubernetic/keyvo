@@ -34,8 +34,8 @@ just build        # cargo build (inside the container), host-runnable binaries c
 just lint         # cargo clippy --workspace --all-targets -- -D warnings
 just fmt          # cargo fmt --all (fmt-check only verifies)
 just deny         # cargo-deny check
-just cov          # cargo-llvm-cov report
-just ci           # fmt-check + lint + test --profile ci + deny, the sequence CI runs
+just cov          # cargo-llvm-cov in the nextest ci profile; CI uploads it to Codecov
+just ci           # fmt-check + lint + test --profile ci + deny + cov, the sequence CI runs
 just run -- probe # run the built binary (bin/keyvo) on the host against real hardware
 just test-hw      # hardware checks on the host
 just diagrams     # regenerate docs/diagrams with archify (Issue #4)
@@ -107,7 +107,7 @@ Follow the `git-workflow` skill strictly. In short:
 - HID++ feature indices differ per device (`0x1B04` is index `0x0b` on the Keypad and `0x0a` on the Dialpad). **Always resolve through `ROOT.getFeature` at runtime; never hard-code an index.**
 - Key geometry comes from the device (VLP display feature fn1); do not hard-code the layout.
 - Timing constants (focus hysteresis, render coalescing, long-press, keep-alive interval, return-to-context timeout) live under `[timing]` in the configuration with a documented default. No bare timing literals in code.
-- Tests: unit tests in `keyvo-core`, golden-buffer tests in `keyvo-hid` against captured frames, `FakeHidTransport` integration tests, `insta` snapshots for the renderer. Coverage targets `core >= 85 %`, `hid >= 80 %`, report-only.
+- Tests: unit tests in `keyvo-core`, golden-buffer tests in `keyvo-hid` against captured frames, `FakeHidTransport` integration tests, `insta` snapshots for the renderer. Coverage goals `core >= 85 %`, `hid >= 80 %`; the Codecov org gates block a PR (`codecov/patch` >= 80 %, `codecov/project` at most 1 % below the base).
 - Third-party code is never copied without the origin and licence in the file header. Protocol knowledge is re-derived from research and our own captures.
 
 ## Hardware Facts (owner's machine)
