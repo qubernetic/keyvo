@@ -21,6 +21,10 @@ jobs:
   ci:
     name: ci
     runs-on: ubuntu-24.04
+    # id-token: write lets the Codecov uploads authenticate with GitHub OIDC.
+    permissions:
+      contents: read
+      id-token: write
     env:
       IMAGE: keyvo-dev:ci
       CONTAINER: keyvo-ci
