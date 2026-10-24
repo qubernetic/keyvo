@@ -823,12 +823,33 @@ justfile page, `gh`, `kubectl`, other agent CLIs, Kitty/WezTerm.
 - Icon sources: `lucide:`, `phosphor:`, `simple-icons:` (bundled, MIT/CC0),
   `file:` (user PNG/SVG).
 - Pipeline: `tiny-skia` raster + `resvg` for SVG + embedded Inter (OFL)
-  text → baseline JPEG via `jpeg-encoder` (quality 85–95, 4:2:0 default).
+  text → baseline JPEG via the `image` crate's encoder (quality 90, inside
+  85–95; it writes 4:4:4, no chroma subsampling). `jpeg-encoder`, named
+  here before, carries the IJG licence, which `cargo-deny` refuses.
   Rendered tiles are content-hashed and cached; rendering runs off the
   device thread. A size guard rejects frames above the device limit before
   they are queued.
 - Key images are rendered at the geometry the device published (§5.4);
   the full-panel path is used for splashes and previews.
+- Renderer as built (`keyvo_core::render`, pre-alpha subset): a key spec
+  (background color, profile accent, icon, label) renders to a tile of any
+  size; every size and position is a fraction of the tile height, so other
+  key sizes keep the proportions. Layers: the background, a rounded
+  rectangle in the key's `color` or the theme's dark gray; the accent, a
+  rounded bar centered near the bottom edge, drawn on every key of a
+  profile with an `accent`; the icon, centered, smaller and higher when
+  the key has a label; the label, Inter 4.1 semibold, below the icon or
+  centered without one, shrunk from 17 % to 12 % of the tile height to fit
+  and then cut with an ellipsis. Icon and label are white on a dark key
+  and near-black on a light one (Rec. 709 luma above 140). Icons are a
+  bundled subset of lucide 1.61.0 (ISC) under
+  `crates/keyvo-core/assets/lucide/`, with lucide's deprecated names
+  (`git-commit`, `circle-help`) accepted; an unknown icon, and every
+  `phosphor:`, `simple-icons:` and `file:` reference until their issues,
+  draws `lucide:circle-question-mark` and `keyvo preview` names it. Only
+  the embedded font is loaded, never a system font, so a spec renders to
+  the same pixels everywhere. The theme file, badges, gradients, caching
+  and the size guard come with later issues.
 - Animation = frame push; renderer supports spinner/progress/blink
   primitives. Sustainable frame rate is measured in M0-1 (plan §5 item 9)
   and documented; there is no native animated format.
@@ -842,12 +863,19 @@ justfile page, `gh`, `kubectl`, other agent CLIs, Kitty/WezTerm.
   desktop notification is optional, default only on `error`. The GUI shows the
   same looks in its mirror and respects the system's reduced-motion setting
   for the flash (the pad does not).
-- `keyvo preview` renders the grid to PNG with no hardware; `insta`
-  snapshot tests cover every renderer primitive and the demo profiles.
+- `keyvo preview <profile> [--page N] -o <file.png>` renders one page
+  (counted from 1, default 1) onto the panel with no hardware: the
+  captured MX Creative Keypad geometry (480×480, the nine key rectangles
+  of §5.4), black between the keys. `<profile>` is a profile file when it
+  names an existing file or ends in `.toml`, else a profile id from the
+  configuration directory (§7.1). `insta` snapshot tests cover every
+  renderer primitive and the demo profile
+  (`crates/keyvo-core/tests/snapshots/`, PNG files next to the `.snap`
+  metadata).
 - Accent color per profile is the primary context indicator; optional
-  ~300 ms full-grid splash on profile switch, `[render].splash`
-  (**[OPEN]**: default on/off, decided with the M1 renderer issue; a Settings
-  toggle in the GUI either way).
+  ~300 ms full-grid splash on profile switch, `[render].splash`, **default
+  `false`** (owner decision, §16 question 16): the accent bar on every key
+  already shows the switch. A Settings toggle in the GUI turns it on.
 - Test policy: `keyvo-core` ≥ 85 % and `keyvo-hid` ≥ 80 % line coverage,
   goals measured via `cargo-llvm-cov` → codecov, whose org gates block a PR
   (patch >= 80 %, project at most 1 % below the base);
@@ -958,7 +986,8 @@ the rest of the system must provide.
 - Crates (v1): `tokio` (daemon only; `keyvo-core` is sync), `zbus`,
   `hidapi` (non-Linux) with a direct hidraw path on Linux, `evdev`
   (uinput), `x11rb`, `toml_edit`, `serde`, `schemars`, `tiny-skia`,
-  `resvg`, `jpeg-encoder`, `insta` (tests), `clap`, `tracing`.
+  `resvg`, `image` (JPEG and PNG encoding), `insta` (tests), `clap`,
+  `tracing`.
 
 ---
 
@@ -1062,7 +1091,7 @@ Status of the v0.1 questions after the grill and the research.
 | 13 | MX Master 4 haptics from profiles | resolved → no haptics in v1 |
 | 14 | Name collisions | resolved → `keyvo` (free on crates.io / npm / PyPI / Flathub, ADR-0005) |
 | 15 | `.lp5` import placement | **[OPEN]** M1 or M2 (plan §8) |
-| 16 | Splash on profile switch default | **[OPEN]** (§9) |
+| 16 | Splash on profile switch default | resolved → off, `[render].splash = false` (owner decision, §9) |
 | 17 | MX Keypad (2026) PID / firmware compatibility | **[OPEN]** until an owner publishes `lsusb` / `solaar show` |
 | 18 | Is the VLP root fn2 `5e..65` registration required | → item 5 |
 | 19 | Brightness unit and the meaning of value 0 | → item 11 (M0-7) |
@@ -1072,6 +1101,13 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 8 (2026-10-25)**: §9 the JPEG encoder is the
+  `image` crate's (4:4:4) instead of the IJG-licensed `jpeg-encoder`, the
+  renderer as built (layers, proportions, label fitting, contrast, the
+  bundled lucide subset and its fallback), `keyvo preview` and its panel,
+  `[render].splash` defaults to `false`; §12 the crate list; §16 question
+  16 resolved.
 
 - **v0.3, pre-alpha slice 7 (2026-10-25)**: §7.1 how the configuration
   directory is found and loaded, durations in milliseconds, unknown keys as
