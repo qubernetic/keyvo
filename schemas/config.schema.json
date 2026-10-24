@@ -17,6 +17,11 @@
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
+        },
+        "splash": {
+          "default": false,
+          "description": "Show the profile's accent on the whole grid for about 300 ms on a\nprofile switch. Default `false` (spec §16, question 16).",
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -107,7 +112,8 @@
       "$ref": "#/$defs/Render",
       "default": {
         "feedback_hold": 2000,
-        "long_run_threshold": 10000
+        "long_run_threshold": 10000,
+        "splash": false
       },
       "description": "Rendering settings (spec §9)."
     },

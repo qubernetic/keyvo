@@ -44,8 +44,17 @@ fn defaults_match_spec_6_1_and_9() {
         Render {
             feedback_hold: ms(2000),
             long_run_threshold: ms(10_000),
+            splash: false,
         }
     );
+}
+
+#[test]
+fn the_profile_switch_splash_can_be_turned_on() {
+    let config = Config::from_toml("[render]\nsplash = true\n", Path::new("config.toml")).unwrap();
+    assert!(config.render.splash);
+    let error = Config::from_toml("[render]\nsplash = 1\n", Path::new("config.toml")).unwrap_err();
+    assert_eq!(error.position.map(|p| (p.line, p.column)), Some((2, 10)));
 }
 
 #[test]

@@ -115,6 +115,9 @@ pub struct Render {
     #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub long_run_threshold: Duration,
+    /// Show the profile's accent on the whole grid for about 300 ms on a
+    /// profile switch. Default `false` (spec §16, question 16).
+    pub splash: bool,
 }
 
 impl Default for Render {
@@ -122,6 +125,7 @@ impl Default for Render {
         Self {
             feedback_hold: Duration::from_millis(2000),
             long_run_threshold: Duration::from_millis(10_000),
+            splash: false,
         }
     }
 }
