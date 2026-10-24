@@ -6,7 +6,9 @@ Raw dumps: `solaar-show.txt` (`solaar show`, crashes on the Dialpad, Solaar bug 
 `FEATURE_SET.getFeatureID` walk via Solaar's `logitech_receiver` library),
 `hidpp-reprog-controls-dump.txt` (`REPROG_CONTROLS_V4.getCidInfo` walk).
 Feature names come from Solaar's `SupportedFeature` table; "unknown" means Solaar has no
-name for it, not that it is undocumented elsewhere.
+name for it, not that it is undocumented elsewhere. Names marked "from the Options+
+inventory" were recovered from symbol names in Logitech's own software; see
+[options-plus-inventory.md](options-plus-inventory.md), finding 3, and ADR-0008.
 
 ## MX Creative Keypad (USB 046d:C354, HID++ 4.5, hidraw direct)
 
@@ -21,17 +23,17 @@ Firmware: `U1 66.00.B0017`, bootloader `BL2 20.00.B0017`, unit ID `33005400`.
 | 4 | **0x0008 KEEP_ALIVE** | 1 | | Standard HID++ keep-alive feature exists. Spec Q2 ("keys revert to logo") is probably answered by this feature: `keepAlive()` / `getTimeout()`. Measure. |
 | 5 | 0x0011 PROPERTY_ACCESS | 0 | | |
 | 6 | 0x00C3 DFUCONTROL | 1 | | firmware update, out of scope |
-| 7 | 0x1602 unknown | 0 | | present on all four devices |
+| 7 | 0x1602 PASSWORD_AUTHENTICATION | 0 | | present on all four devices; name from the Options+ inventory (`startSession`, `passwd0`, `passwd1`, `endSession`); the Plugin Service helper opens a session at start |
 | 8 | 0x1802 DEVICE_RESET | 0 | hidden | |
 | 9 | 0x1805 OOBSTATE | 0 | hidden | |
-| 10 | 0x1807 unknown | 0 | hidden | |
+| 10 | 0x1807 CONFIGURABLE_PROPERTIES | 0 | hidden | name from the Options+ inventory (`getPropertyInfo`, `selectProperty`, `readProperty`, `writeProperty`, `deleteProperty`) |
 | 11 | **0x1B04 REPROG_CONTROLS_V4** | 6 | | 2 controls: CID `0x01A1` and `0x01A2` = the page buttons (matches logilinux `P1_LEFT=0xa1`, `P2_RIGHT=0xa2`). Divertable. |
 | 12 | 0x1E00 ENABLE_HIDDEN_FEATURES | 0 | hidden | |
-| 13 | 0x1E02 unknown | 0 | hidden | |
-| 14 | 0x1EB0 unknown | 0 | hidden | |
+| 13 | 0x1E02 MANAGE_DEACTIVATABLE_FEATURES | 0 | hidden | name from the Options+ inventory (`getInfo`, `getReactInfo`, `enableFeatures`, `disableFeatures`); the Plugin Service helper enables hidden features through it |
+| 14 | 0x1EB0 unknown | 0 | hidden | not referenced by Options+ 2.8 or the Plugin Service (inventory, finding 3) |
 | 15 | **0x8040 BRIGHTNESS_CONTROL** | 1 | | LCD brightness. Spec §5 brightness command comes from here, not from a vendor report. |
-| 16 | 0x92E2 unknown | 0 | hidden | Keypad-only, hidden. Candidate for the LCD image channel or display config. Capture under Options+ to find out. |
-| 17 | 0x180B unknown | 0 | hidden | |
+| 16 | 0x92E2 unknown | 0 | hidden | Keypad-only, hidden. Not referenced anywhere in Options+ 2.8 or the Plugin Service (inventory, finding 2); the LCD goes through the VLP plane (0x19A1), so this is treated as an engineering feature and ignored. |
+| 17 | 0x180B unknown | 0 | hidden | not referenced by Options+ 2.8 or the Plugin Service (inventory, finding 3) |
 
 Note: `solaar show` prints unknown feature IDs byte-swapped in braces (`unknown:1602 {0216}`);
 the raw walk confirms the real IDs are as listed above.
