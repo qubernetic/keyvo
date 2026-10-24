@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use keyvo_core::hid::FakeHidTransport;
 use keyvo_hid::hidpp::{DEVICE_DIRECT, Hidpp, HidppError, Plane, SoftwareId};
+use keyvo_hid::keep_alive::{self, TimeoutRange};
 use keyvo_hid::root::{FeatureInfo, ProtocolVersion, VlpFeatureInfo, feature};
 
 /// Options+ tags the captured requests with software id 0xe.
@@ -101,4 +102,17 @@ fn feature_index_of_an_absent_feature_is_an_error() {
             feature: 0x0020,
         })
     );
+}
+
+#[test]
+fn hcooper_keep_alive_range_is_500_to_10000_ms() {
+    let mut hidpp = replay(fixture!("keep-alive-range.txt"));
+    assert_eq!(
+        keep_alive::timeout_range(&mut hidpp).unwrap(),
+        TimeoutRange {
+            min: Duration::from_millis(500),
+            max: Duration::from_millis(10_000),
+        }
+    );
+    assert!(hidpp.transport_mut().is_done());
 }

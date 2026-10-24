@@ -7,4 +7,5 @@
 
 pub mod frame;
 pub mod hidpp;
+pub mod keep_alive;
 pub mod root;
