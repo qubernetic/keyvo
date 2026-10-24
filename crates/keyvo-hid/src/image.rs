@@ -10,7 +10,10 @@ use std::time::Duration;
 
 use crate::display::Geometry;
 use crate::frame::{Frame, ReportId, VLP_SEQ_LAST};
-use crate::hidpp::{HidppError, SoftwareId};
+use keyvo_core::hid::HidTransport;
+
+use crate::hidpp::{Hidpp, HidppError, Plane, SoftwareId};
+use crate::root::feature;
 
 /// `setImage`, the display function the fragments carry.
 const FN_SET_IMAGE: u8 = 2;
@@ -337,9 +340,61 @@ pub fn fragments(
         .collect()
 }
 
+/// What one [`write`] sent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Written {
+    /// Fragments sent.
+    pub fragments: usize,
+    /// Fragments the device acknowledged within `[timing].ack_timeout`.
+    pub acked: usize,
+}
+
+/// Paints `jpeg` at `rect`: resolves the display index, then sends the
+/// fragments one by one, each after the device acknowledged the one before
+/// on `0x13` (`13 ff <display> <fn|swid> c<index> 00 <index>`, captured).
+/// When an ACK does not come within `[timing].ack_timeout` the next fragment
+/// goes out anyway; [`Written::acked`] tells how many came. Other reports
+/// read while waiting stay with the [`Hidpp`] for the input path.
+///
+/// # Errors
+///
+/// The errors of [`fragments`], the feature lookup and the transport.
+pub fn write<T: HidTransport>(
+    hidpp: &mut Hidpp<T>,
+    config: &ImageConfig,
+    rect: Rect,
+    jpeg: &[u8],
+) -> Result<Written, ImageError> {
+    let display_index = hidpp.feature_index(Plane::Vlp, feature::VLP_DISPLAY)?;
+    let device_index = hidpp.device_index();
+    let fragments = fragments(device_index, display_index, config, rect, jpeg)?;
+    let mut acked = 0;
+    for fragment in &fragments {
+        hidpp
+            .transport_mut()
+            .write(fragment)
+            .map_err(HidppError::from)?;
+        let index = fragment[4] & SEQ_INDEX;
+        let ack = hidpp.wait_for_within(config.ack_timeout, |frame| {
+            frame.report == ReportId::VlpControl
+                && frame.device_index == device_index
+                && frame.feature_index == display_index
+                && frame.function == FN_SET_IMAGE
+                && frame.swid == config.swid.get()
+                && frame.seq.is_some_and(|seq| seq & SEQ_INDEX == index)
+        })?;
+        acked += usize::from(ack.is_some());
+    }
+    Ok(Written {
+        fragments: fragments.len(),
+        acked,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use keyvo_core::hid::FakeHidTransport;
 
     const KEY: Rect = Rect {
         x: 181,
@@ -361,6 +416,32 @@ mod tests {
         bytes.extend([0x03, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]);
         bytes.resize(len, 0x55);
         bytes
+    }
+
+    #[test]
+    fn an_ack_for_another_software_id_does_not_count() {
+        let config = ImageConfig::default();
+        let image = jpeg(118, 118, 300);
+        let fragment = fragments(0xff, 2, &config, KEY, &image).unwrap().remove(0);
+        let mut get_feature = vec![0x13, 0xff, 0x00, 0x0d, 0xe0, 0x19, 0xa1];
+        get_feature.resize(32, 0);
+        let mut found = vec![0x13, 0xff, 0x00, 0x0d, 0xc0, 0x19, 0xa1, 0x02];
+        found.resize(32, 0);
+        // Fragment 0's ACK, but tagged with swid 0xe, not the writer's 0xd.
+        let mut other_ack = vec![0x13, 0xff, 0x02, 0x2e, 0xc0];
+        other_ack.resize(32, 0);
+        let transport = FakeHidTransport::new()
+            .expect(&get_feature, &[&found])
+            .expect(&fragment, &[&other_ack]);
+        let mut hidpp = Hidpp::new(transport, 0xff, config.swid, Duration::from_secs(1));
+        assert_eq!(
+            write(&mut hidpp, &config, KEY, &image),
+            Ok(Written {
+                fragments: 1,
+                acked: 0
+            })
+        );
+        assert_eq!(hidpp.take_unmatched(), Some(other_ack));
     }
 
     #[test]

@@ -10,7 +10,7 @@ use keyvo_core::clock::FakeClock;
 use keyvo_core::hid::FakeHidTransport;
 use keyvo_hid::display::{self, DisplayMode};
 use keyvo_hid::hidpp::{DEVICE_DIRECT, Hidpp, HidppError, Plane, SoftwareId};
-use keyvo_hid::image::{self, ImageConfig, ImageError, Rect, Target};
+use keyvo_hid::image::{self, ImageConfig, ImageError, Rect, Target, Written};
 use keyvo_hid::keep_alive::{self, KeepAlive, KeepAliveTiming, TimeoutRange};
 use keyvo_hid::root::{FeatureInfo, ProtocolVersion, VlpFeatureInfo, VlpProtocol, feature};
 
@@ -289,4 +289,96 @@ fn hcooper_two_fragment_panel_write_is_reproduced() {
     .unwrap();
     // Sequence bytes a0 (first, index 0) and 61 (last, index 1).
     assert_eq!(fragments, captured);
+}
+
+/// The ACK lines of `image-write-panel.txt`: `13 ff 02 2e c<index> ...`.
+const ACK_PREFIX: &str = "< 13 ff 02 2e";
+
+/// The startup capture's write settings: swid 0xe, index base 0.
+fn startup_write_config() -> ImageConfig {
+    ImageConfig {
+        swid: SoftwareId::new(CAPTURE_SWID).unwrap(),
+        ..ImageConfig::default()
+    }
+}
+
+/// The JPEG the fixture's `0x14` writes carry.
+fn startup_jpeg() -> Vec<u8> {
+    let writes: Vec<_> = fixture!("image-write-panel.txt")
+        .lines()
+        .filter_map(|line| line.strip_prefix("> 14 "))
+        .map(|hex| decode_hex(&format!("14{}", hex.replace(' ', ""))))
+        .collect();
+    captured_jpeg(&writes)
+}
+
+#[test]
+fn hcooper_panel_write_sends_each_fragment_after_the_ack_of_the_one_before() {
+    let mut hidpp = replay(fixture!("image-write-panel.txt"));
+    let jpeg = startup_jpeg();
+    assert_eq!(jpeg.len(), 0x110a);
+    let written = image::write(&mut hidpp, &startup_write_config(), CAPTURED_PANEL, &jpeg).unwrap();
+    assert_eq!(
+        written,
+        Written {
+            fragments: 2,
+            acked: 2
+        }
+    );
+    // The ACKs are consumed; none reaches the input path as a key 1 press.
+    assert_eq!(hidpp.take_unmatched(), None);
+    assert!(hidpp.transport_mut().is_done());
+}
+
+#[test]
+fn a_missing_ack_times_out_and_the_next_fragment_goes_out_anyway() {
+    let without_acks = fixture!("image-write-panel.txt")
+        .lines()
+        .filter(|line| !line.starts_with(ACK_PREFIX))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut hidpp = replay(&without_acks);
+    let written = image::write(
+        &mut hidpp,
+        &startup_write_config(),
+        CAPTURED_PANEL,
+        &startup_jpeg(),
+    )
+    .unwrap();
+    assert_eq!(
+        written,
+        Written {
+            fragments: 2,
+            acked: 0
+        }
+    );
+    assert!(hidpp.transport_mut().is_done());
+}
+
+#[test]
+fn a_key_report_while_waiting_for_an_ack_is_kept_for_the_input_path() {
+    // Key 1 held (function 0, spec §5.6) arrives before the first ACK.
+    let key_press = format!("< 13 ff 02 00 c0 01 01{}", " 00".repeat(25));
+    let script = fixture!("image-write-panel.txt")
+        .lines()
+        .flat_map(|line| {
+            let before = line
+                .starts_with("< 13 ff 02 2e c0")
+                .then(|| key_press.clone());
+            before.into_iter().chain([line.to_owned()])
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut hidpp = replay(&script);
+    let written = image::write(
+        &mut hidpp,
+        &startup_write_config(),
+        CAPTURED_PANEL,
+        &startup_jpeg(),
+    )
+    .unwrap();
+    assert_eq!(written.acked, 2);
+    let kept = hidpp.take_unmatched().unwrap();
+    assert_eq!(kept[..7], [0x13, 0xff, 0x02, 0x00, 0xc0, 0x01, 0x01]);
+    assert_eq!(hidpp.take_unmatched(), None);
 }
