@@ -17,6 +17,12 @@ pub const DEVICE_DIRECT: u8 = 0xff;
 /// Feature index byte that marks an HID++ 2.0 error reply.
 const ERROR_INDEX: u8 = 0xff;
 
+/// Most reports kept for the input path while waiting for replies; past it
+/// the oldest is dropped (QUB-533). Generous for human input: a key report
+/// per press or release, and a write of sixteen fragments waits at most
+/// sixteen ACK timeouts.
+pub const UNMATCHED_CAP: usize = 64;
+
 /// The two protocol planes of the Keypad (spec §5.2), each with its own root
 /// and its own feature index space.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -170,6 +176,7 @@ pub struct Hidpp<T> {
     swid: SoftwareId,
     reply_timeout: Duration,
     unmatched: VecDeque<Vec<u8>>,
+    dropped: u64,
     /// Feature indices resolved so far, per plane and feature id.
     pub(crate) features: HashMap<(Plane, u16), u8>,
 }
@@ -184,6 +191,7 @@ impl<T: HidTransport> Hidpp<T> {
             swid,
             reply_timeout,
             unmatched: VecDeque::new(),
+            dropped: 0,
             features: HashMap::new(),
         }
     }
@@ -255,7 +263,7 @@ impl<T: HidTransport> Hidpp<T> {
                     partial = Some(joined);
                 }
                 Some(Err(error)) => return Err(error),
-                None => self.unmatched.push_back(raw),
+                None => self.keep(raw),
             }
         }
     }
@@ -307,7 +315,7 @@ impl<T: HidTransport> Hidpp<T> {
             };
             match Frame::parse(&raw) {
                 Ok(frame) if matches(&frame) => return Ok(Some(frame)),
-                _ => self.unmatched.push_back(raw),
+                _ => self.keep(raw),
             }
         }
     }
@@ -316,6 +324,28 @@ impl<T: HidTransport> Hidpp<T> {
     /// no request (device events, other software's traffic).
     pub fn take_unmatched(&mut self) -> Option<Vec<u8>> {
         self.unmatched.pop_front()
+    }
+
+    /// Reports dropped instead of kept for the input path: the ones that do
+    /// not parse as a frame and the oldest ones pushed out past
+    /// [`UNMATCHED_CAP`].
+    #[must_use]
+    pub const fn dropped_reports(&self) -> u64 {
+        self.dropped
+    }
+
+    /// Keeps `raw` for the input path when it parses, dropping the oldest
+    /// kept report when the queue is full.
+    fn keep(&mut self, raw: Vec<u8>) {
+        if Frame::parse(&raw).is_err() {
+            self.dropped += 1;
+            return;
+        }
+        if self.unmatched.len() == UNMATCHED_CAP {
+            self.unmatched.pop_front();
+            self.dropped += 1;
+        }
+        self.unmatched.push_back(raw);
     }
 
     /// The HID++ device index requests go to.
@@ -406,6 +436,50 @@ mod tests {
         let unmatched: Vec<_> = std::iter::from_fn(|| hidpp.take_unmatched()).collect();
         assert_eq!(unmatched.len(), 3);
         assert_eq!(unmatched[0][..4], [0x13, 0xff, 0x02, 0x10]);
+    }
+
+    #[test]
+    fn the_unmatched_queue_keeps_the_newest_reports_up_to_its_cap() {
+        let extra = 3;
+        let events = (0..UNMATCHED_CAP + extra)
+            .map(|n| format!("< {}", vlp(&format!("13 ff 02 00 c0 01 {:02x}", n % 256))))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let script = format!(
+            "> {}\n{events}\n< 13 ff 02 00\n< {}\n",
+            long("11 ff 04 0e"),
+            long("11 ff 04 0e 01 f4 27 10"),
+        );
+        let mut hidpp = hidpp(&script);
+        hidpp.request(Plane::Classic, 0x04, 0x0, &[]).unwrap();
+
+        let kept: Vec<_> = std::iter::from_fn(|| hidpp.take_unmatched()).collect();
+        assert_eq!(kept.len(), UNMATCHED_CAP);
+        assert!(kept.iter().all(|raw| raw.len() == 32));
+        // The oldest `extra` are gone; the last one read is still there.
+        let numbers: Vec<_> = kept.iter().map(|raw| usize::from(raw[6])).collect();
+        let newest: Vec<_> = (extra..UNMATCHED_CAP + extra).map(|n| n % 256).collect();
+        assert_eq!(numbers, newest);
+        assert_eq!(hidpp.dropped_reports(), extra as u64 + 1);
+    }
+
+    #[test]
+    fn a_report_that_does_not_parse_is_not_kept() {
+        let script = format!(
+            "> {}\n< 02 00 01\n< 13 ff 02 00\n< {}\n",
+            long("11 ff 04 0e"),
+            long("11 ff 04 0e 01"),
+        );
+        let mut hidpp = hidpp(&script);
+        hidpp.request(Plane::Classic, 0x04, 0x0, &[]).unwrap();
+        assert_eq!(hidpp.take_unmatched(), None);
+        assert_eq!(hidpp.dropped_reports(), 2);
+
+        // wait_for skips it the same way.
+        let mut waiting = self::hidpp("< 13 ff 02\n");
+        assert_eq!(waiting.wait_for(|_| true).unwrap(), None);
+        assert_eq!(waiting.take_unmatched(), None);
+        assert_eq!(waiting.dropped_reports(), 1);
     }
 
     #[test]
