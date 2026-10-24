@@ -30,7 +30,8 @@ opening a pull request.
 | `documentation` | Documentation only |
 | `chore` | Maintenance, config, dependencies |
 | `hotfix` | Urgent production fix, branched from `main` |
-| `hardware` | Needs the physical device on the host to reproduce or verify |
+| `hardware` | Needs the physical device on the host to reproduce or verify (hardware-bound issue, see below) |
+| `sandbox` | Buildable, testable and reviewable entirely in the devcontainer (sandbox-complete issue, see below) |
 | `windows` | Windows VM, USB capture, or the Logi Actions SDK plugin |
 | `research` | Investigation, measurement, prior-art analysis; output is a document or a capture |
 
@@ -106,6 +107,32 @@ OIDC means no long-lived token is stored. A pull request without an OIDC token
 Pull request runs only restore the image and cargo registry caches; pushes to
 `develop` and `main` save them. A command that passes in `just ci` passes in CI;
 the workflow never repeats a tool version.
+
+### Sandbox-complete and hardware-bound issues
+
+Every planned issue in `docs/roadmap.md` carries a layer, and the issue on
+GitHub carries the matching label:
+
+- **Sandbox-complete** (`sandbox`): the whole change can be built, tested and
+  reviewed inside the devcontainer. The plan file under `docs/plans/` has a
+  "Proof" block naming the fixtures and the exact `just` commands with their
+  expected output (`just test`, `just lint`, `just fmt-check`, `just deny`,
+  `just cov`, `just ci`, or `docker compose exec rust cargo ...` where no
+  recipe exists). It never names `just run`, `just test-hw`, Solaar, udev,
+  systemd, the KWin script or the Windows VM. The project's agents (the
+  `q-horde` account, working in a docker sandbox without `/dev/hidraw*` or
+  `/dev/uinput`) take sandbox-complete issues only.
+- **Hardware-bound** (`hardware`): a step needs the device, `/dev/uinput`,
+  Solaar, udev, systemd, KWin or the Windows VM. The PR carries the
+  `## User test` checklist and the maintainer runs it on the host. Keep these
+  issues small: they verify a sandbox-complete issue on the device, record the
+  measured numbers in `docs/hardware-notes.md` and fix only what the device
+  contradicts. Code that grows inside a hardware-bound issue moves to a new
+  sandbox-complete issue.
+
+A hardware feature is therefore two issues: the sandbox-complete one
+implements against `FakeHidTransport`, golden fixtures and captures, citing
+the protocol facts from `docs/research/`; the hardware-bound one proves it.
 
 ### Bumping a pinned version
 

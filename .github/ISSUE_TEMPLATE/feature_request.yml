@@ -7,6 +7,8 @@ body:
       value: |
         Please check `docs/roadmap.md` and the open issues first; the feature may already be planned.
         Use the terms from `CONTEXT.md` (profile, page, overlay, action, ...) so the request maps onto the design.
+        Say whether the work can be proven in the devcontainer alone or needs a device; CONTRIBUTING.md
+        ("Sandbox-complete and hardware-bound issues") explains the two kinds.
   - type: textarea
     id: problem
     attributes:
@@ -49,6 +51,7 @@ body:
     attributes:
       label: Hardware
       options:
+        - label: This can be built and tested entirely in the devcontainer (no device needed)
         - label: I have the hardware and can test a branch
         - label: This needs the Dialpad
         - label: This needs a Windows machine or VM
