@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use keyvo_core::hid::{HidTransport, TransportError, to_hex};
 
-use crate::frame::{Frame, FrameError, ReportId, VLP_SEQ_SINGLE};
+use crate::frame::{Frame, FrameError, ReportId, VLP_SEQ_LAST, VLP_SEQ_SINGLE};
 
 /// HID++ device index of a device attached directly (USB), not via a receiver.
 pub const DEVICE_DIRECT: u8 = 0xff;
@@ -189,7 +189,9 @@ impl<T: HidTransport> Hidpp<T> {
     }
 
     /// Sends one request and returns the reply that matches it. VLP requests
-    /// go out as a single packet (sequence byte `e0`).
+    /// go out as a single packet (sequence byte `e0`); a VLP reply over
+    /// several packets comes back as one frame whose parameters are the
+    /// packets' parameters joined, up to the packet with [`VLP_SEQ_LAST`].
     ///
     /// # Errors
     ///
@@ -218,6 +220,9 @@ impl<T: HidTransport> Hidpp<T> {
         self.transport.write(&request.encode()?)?;
 
         let deadline = Instant::now() + self.reply_timeout;
+        // The packets of a VLP reply read so far, joined; the deadline covers
+        // the whole reply.
+        let mut partial: Option<Frame> = None;
         loop {
             // Checked before every read: a device that streams events must
             // not keep the loop alive past the deadline.
@@ -234,10 +239,24 @@ impl<T: HidTransport> Hidpp<T> {
                     function,
                 });
             };
-            if let Some(result) = self.answer(&request, &raw) {
-                return result;
+            match self.answer(&request, &raw) {
+                Some(Ok(frame)) => {
+                    let last = frame.seq.is_none_or(|seq| seq & VLP_SEQ_LAST != 0);
+                    let joined = match partial.take() {
+                        Some(mut head) => {
+                            head.params.extend(frame.params);
+                            head
+                        }
+                        None => frame,
+                    };
+                    if last {
+                        return Ok(joined);
+                    }
+                    partial = Some(joined);
+                }
+                Some(Err(error)) => return Err(error),
+                None => self.unmatched.push_back(raw),
             }
-            self.unmatched.push_back(raw);
         }
     }
 
@@ -343,6 +362,41 @@ mod tests {
         let reply = hidpp.request(Plane::Vlp, 0x00, 0x0, &[0x19, 0xa1]).unwrap();
         assert_eq!(reply.seq, Some(0xc0));
         assert_eq!(&reply.params[..3], &[0x19, 0xa1, 0x02]);
+    }
+
+    #[test]
+    fn a_vlp_reply_over_several_packets_is_joined_until_the_last_one() {
+        let script = format!(
+            "> {}\n< {}\n< {}\n< {}\n< {}\n",
+            vlp("13 ff 02 1e e0 01"),
+            vlp("13 ff 02 1e 80 01 02"), // first of several
+            vlp("13 ff 02 10 c6 a0"),    // unsolicited event in between
+            vlp("13 ff 02 1e 01 03"),    // continuation 1
+            vlp("13 ff 02 1e 42 04"),    // last, index 2
+        );
+        let mut hidpp = hidpp(&script);
+        let reply = hidpp.request(Plane::Vlp, 0x02, 0x1, &[0x01]).unwrap();
+        let packet = ReportId::VlpControl.size() - ReportId::VlpControl.header_len();
+        assert_eq!(reply.params.len(), 3 * packet);
+        assert_eq!(&reply.params[..2], &[0x01, 0x02]);
+        assert_eq!(reply.params[packet], 0x03);
+        assert_eq!(reply.params[2 * packet], 0x04);
+        assert_eq!(hidpp.take_unmatched().map(|r| r[3]), Some(0x10));
+        assert!(hidpp.transport_mut().is_done());
+    }
+
+    #[test]
+    fn a_vlp_reply_missing_its_last_packet_times_out() {
+        let script = format!(
+            "> {}\n< {}\n",
+            vlp("13 ff 02 1e e0 01"),
+            vlp("13 ff 02 1e 80 01 02"),
+        );
+        let mut hidpp = hidpp(&script);
+        assert!(matches!(
+            hidpp.request(Plane::Vlp, 0x02, 0x1, &[0x01]),
+            Err(HidppError::Timeout { .. })
+        ));
     }
 
     #[test]
