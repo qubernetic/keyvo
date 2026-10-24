@@ -2,12 +2,13 @@
 //! tables, pre-alpha subset. Durations are integer milliseconds; a key left
 //! out keeps its documented default; unknown keys are errors.
 
+use std::fmt;
 use std::path::Path;
 use std::time::Duration;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
-use serde::de::{self, Deserializer, Unexpected};
+use serde::de::{self, Deserializer, Unexpected, Visitor};
 
 use crate::diagnostic::Diagnostic;
 
@@ -128,8 +129,25 @@ impl Default for Render {
 }
 
 fn millis<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Duration, D::Error> {
-    let n = i64::deserialize(deserializer)?;
-    u64::try_from(n)
-        .map(Duration::from_millis)
-        .map_err(|_| de::Error::invalid_value(Unexpected::Signed(n), &"a duration in milliseconds"))
+    struct MillisVisitor;
+
+    impl Visitor<'_> for MillisVisitor {
+        type Value = Duration;
+
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("a duration in milliseconds")
+        }
+
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<Duration, E> {
+            u64::try_from(v)
+                .map(Duration::from_millis)
+                .map_err(|_| E::invalid_value(Unexpected::Signed(v), &self))
+        }
+
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<Duration, E> {
+            Ok(Duration::from_millis(v))
+        }
+    }
+
+    deserializer.deserialize_u64(MillisVisitor)
 }
