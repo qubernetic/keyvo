@@ -24,6 +24,10 @@ const ERROR_INDEX: u8 = 0xff;
 /// sixteen ACK timeouts.
 pub const UNMATCHED_CAP: usize = 64;
 
+/// Default of `[timing].reply_timeout` (spec §6.1): how long a request waits
+/// for its matching reply. The captured replies come within about 1 ms.
+pub const DEFAULT_REPLY_TIMEOUT: Duration = Duration::from_millis(1000);
+
 /// The two protocol planes of the Keypad (spec §5.2), each with its own root
 /// and its own feature index space.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

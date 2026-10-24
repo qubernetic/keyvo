@@ -14,8 +14,10 @@ name = "keyvo"
 path = "src/main.rs"
 
 [dependencies]
+anyhow = "1"
 clap.workspace = true
 keyvo-core.workspace = true
+keyvo-hid.workspace = true
 
 [lints]
 workspace = true
