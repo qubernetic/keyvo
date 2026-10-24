@@ -1,0 +1,22 @@
+# Diverted page-button notifications of 0x1B04 at classic index 0x0b
+# (spec §5.6): a u16 CID list, 0x01A1 left, 0x01A2 right.
+# Expected: press left, press right, release left, release right; the
+# setCidReporting reply in between yields nothing.
+#
+# The hcooper captures carry no page-button events. The notifications
+# follow logilinux's `11 ff 0b 00 01 a1` and Julusian's CID list
+# (docs/research/logilinux-and-julusian-analysis.md §4.6); both buttons
+# held at once is their list form, not yet seen on hardware (plan §5
+# item 13). The reply is frame #1719 of hcooper 03-options-plus-startup.pcap
+# (MIT, see README.md).
+#
+# 1. Left held.
+< 11 ff 0b 00 01 a1 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 2. Left and right held.
+< 11 ff 0b 00 01 a1 01 a2 00 00 00 00 00 00 00 00 00 00 00 00
+# 3. setCidReporting(0x01A1, 0x03) reply (#1719).
+< 11 ff 0b 3e 01 a1 03 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 4. Right held only.
+< 11 ff 0b 00 01 a2 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 5. Nothing held.
+< 11 ff 0b 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00

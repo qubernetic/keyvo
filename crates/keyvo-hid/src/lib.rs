@@ -9,5 +9,7 @@ pub mod display;
 pub mod frame;
 pub mod hidpp;
 pub mod image;
+pub mod input;
 pub mod keep_alive;
+pub mod reprog;
 pub mod root;
