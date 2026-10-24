@@ -5,6 +5,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
+pub mod clock;
 pub mod hid;
 
 /// Version of the keyvo workspace, taken from `Cargo.toml` at compile time.
