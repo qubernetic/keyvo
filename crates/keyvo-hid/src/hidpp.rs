@@ -219,8 +219,15 @@ impl<T: HidTransport> Hidpp<T> {
 
         let deadline = Instant::now() + self.reply_timeout;
         loop {
+            // Checked before every read: a device that streams events must
+            // not keep the loop alive past the deadline.
             let remaining = deadline.saturating_duration_since(Instant::now());
-            let Some(raw) = self.transport.read(remaining)? else {
+            let raw = if remaining.is_zero() {
+                None
+            } else {
+                self.transport.read(remaining)?
+            };
+            let Some(raw) = raw else {
                 return Err(HidppError::Timeout {
                     report,
                     feature_index,
@@ -384,6 +391,26 @@ mod tests {
                 function: 0x0,
             })
         );
+    }
+
+    #[test]
+    fn a_passed_deadline_stops_reading_even_while_reports_keep_coming() {
+        let script = format!(
+            "> {}\n< {}\n< {}\n",
+            long("11 ff 04 0e"),
+            vlp("13 ff 02 10 c6 a0"),
+            long("11 ff 04 0e 01 f4 27 10"),
+        );
+        let mut hidpp = Hidpp::new(
+            FakeHidTransport::from_script(&script).unwrap(),
+            DEVICE_DIRECT,
+            SoftwareId::new(SWID).unwrap(),
+            Duration::ZERO,
+        );
+        assert!(matches!(
+            hidpp.request(Plane::Classic, 0x04, 0x0, &[]),
+            Err(HidppError::Timeout { .. })
+        ));
     }
 
     #[test]
