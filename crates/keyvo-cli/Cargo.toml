@@ -14,11 +14,15 @@ name = "keyvo"
 path = "src/main.rs"
 
 [dependencies]
+anyhow = "1"
 clap.workspace = true
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 keyvo-core.workspace = true
+keyvo-hid.workspace = true
 
 [lints]
 workspace = true
 
 [dev-dependencies]
 assert_cmd = "2"
+tempfile = "3"

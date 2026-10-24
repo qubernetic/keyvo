@@ -104,7 +104,7 @@ test-hw *args: _host_only
     @echo "hidraw nodes:"; ls -l /dev/hidraw* 2>/dev/null || echo "  none"
     @echo "uinput:"; ls -l /dev/uinput 2>/dev/null || echo "  none"
     @echo "groups of $(id -un): $(id -nG)"
-    @echo "keyvo doctor lands with M0; nothing else to run yet"
+    @echo "keyvo doctor lands with M0; for the Keypad itself: just run -- probe"
 
 # ---- Docs ------------------------------------------------------------------
 

@@ -6,10 +6,14 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod display;
+pub mod firmware;
 pub mod frame;
 pub mod hidpp;
+#[cfg(target_os = "linux")]
+pub mod hidraw;
 pub mod image;
 pub mod input;
 pub mod keep_alive;
 pub mod reprog;
 pub mod root;
+pub mod sysfs;

@@ -1,0 +1,36 @@
+# Classic DEVICE_FW_VERSION (0x0003) walk: getFeature(0x0003) -> index 0x02,
+# version 7; fn0 getEntityCount -> 4; fn1 getFwInfo for entities 0 to 3.
+# A getFwInfo reply reads `<type> <prefix:3 ascii> <number> <revision>
+# <build:u16> <active> <transport pid:u16> ...`, version and build in BCD:
+#   entity 0: type 1 bootloader  "BL2" 20.00 build 0017, inactive -> BL2 20.00.B0017
+#   entity 1: type 0 application "U1"  66.00 build 0017, active   -> U1 66.00.B0017
+#   entity 2: type 0x0b          "IM"  01.00 build 0017, inactive
+#   entity 3: type 2 hardware    "HW " 00.00 build 0000, inactive
+# which matches the firmware Solaar reports on the author's unit
+# (docs/research/hidpp-features.md).
+#
+# Entities 2 and 3 come from the first walk, where Options+ used swid 0xd
+# (frames #1309 to #1315); they are retagged to swid 0xe (byte 3 `1d` ->
+# `1e`) like the rest, nothing else changed.
+#
+# 1. ROOT getFeature(0x0003) (frames #1567, #1569; lines 39-40)
+> 11 ff 00 0e 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 00 0e 02 00 07 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 2. fn0 getEntityCount (frames #1571, #1573; lines 41-42)
+> 11 ff 02 0e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 02 0e 04 29 00 1e 00 00 08 c3 54 00 00 00 00 00 01 00
+# 3. fn1 getFwInfo(0) (frames #1575, #1577; lines 43-44)
+> 11 ff 02 1e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 02 1e 01 42 4c 32 20 00 00 17 00 ab d4 00 00 00 00 00
+# 4. fn1 getFwInfo(1) (frames #1579, #1581; lines 45-46)
+> 11 ff 02 1e 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 02 1e 00 55 31 00 66 00 00 17 01 c3 54 00 00 00 00 00
+# 5. fn1 getFwInfo(2) (frames #1309, #1311; lines 29-30), retagged
+> 11 ff 02 1e 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 02 1e 0b 49 4d 00 01 00 00 17 00 c3 54 00 00 00 00 00
+# 6. fn1 getFwInfo(3) (frames #1313, #1315; lines 31-32), retagged
+> 11 ff 02 1e 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 02 1e 02 48 57 20 00 00 00 00 00 00 00 00 00 00 00 00
+#
+# Source: hcooper 03-options-plus-startup.pcap; line numbers refer to
+# docs/research/hcooper-startup-keypad-sequence.txt. MIT, see README.md.

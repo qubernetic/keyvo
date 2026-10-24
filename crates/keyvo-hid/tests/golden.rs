@@ -9,6 +9,7 @@ use std::time::Duration;
 use keyvo_core::clock::FakeClock;
 use keyvo_core::hid::FakeHidTransport;
 use keyvo_hid::display::{self, DisplayMode};
+use keyvo_hid::firmware::{self, FirmwareEntity, FirmwareKind};
 use keyvo_hid::hidpp::{DEVICE_DIRECT, Hidpp, HidppError, Plane, SoftwareId};
 use keyvo_hid::image::{self, ImageConfig, ImageError, Rect, Target, Written};
 use keyvo_hid::input::{Control, Input, InputEvent};
@@ -94,6 +95,69 @@ fn feature_index_resolves_through_get_feature_once() {
             .feature_index(Plane::Vlp, feature::VLP_DISPLAY)
             .unwrap(),
         2
+    );
+}
+
+#[test]
+fn a_get_feature_answer_is_cached_for_feature_index() {
+    let mut hidpp = replay(fixture!("root-get-feature-reprog.txt"));
+    hidpp.get_feature(feature::REPROG_CONTROLS_V4).unwrap();
+    // The script is exhausted: a second getFeature would fail.
+    assert_eq!(
+        hidpp
+            .feature_index(Plane::Classic, feature::REPROG_CONTROLS_V4)
+            .unwrap(),
+        0x0b
+    );
+    let mut vlp = replay(fixture!("vlp-get-feature-display.txt"));
+    vlp.vlp_get_feature(feature::VLP_DISPLAY).unwrap();
+    assert_eq!(
+        vlp.feature_index(Plane::Vlp, feature::VLP_DISPLAY).unwrap(),
+        2
+    );
+}
+
+#[test]
+fn hcooper_firmware_walk_gives_the_four_entities() {
+    let mut hidpp = replay(fixture!("firmware-version.txt"));
+    let entities = firmware::entities(&mut hidpp).unwrap();
+    assert!(hidpp.transport_mut().is_done());
+    assert_eq!(
+        entities[1],
+        FirmwareEntity {
+            kind: FirmwareKind::Application,
+            name: "U1".into(),
+            version: 0x66,
+            revision: 0x00,
+            build: 0x0017,
+            active: true,
+            transport_pid: 0xc354,
+        }
+    );
+    let shown: Vec<_> = entities
+        .iter()
+        .map(|e| (e.kind, e.to_string(), e.active))
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            (
+                FirmwareKind::Bootloader,
+                "BL2 20.00.B0017".to_owned(),
+                false
+            ),
+            (FirmwareKind::Application, "U1 66.00.B0017".to_owned(), true),
+            (
+                FirmwareKind::Other(0x0b),
+                "IM 01.00.B0017".to_owned(),
+                false
+            ),
+            (FirmwareKind::Hardware, "HW 00.00.B0000".to_owned(), false),
+        ]
+    );
+    assert_eq!(
+        firmware::active_application(&entities).map(ToString::to_string),
+        Some("U1 66.00.B0017".to_owned())
     );
 }
 

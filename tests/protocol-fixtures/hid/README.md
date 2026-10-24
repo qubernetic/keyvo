@@ -2,7 +2,8 @@
 
 Request/response scripts replayed by `FakeHidTransport` (`keyvo-core`,
 `FakeHidTransport::from_script`) in the `keyvo-hid` golden tests
-(`crates/keyvo-hid/tests/golden.rs`).
+(`crates/keyvo-hid/tests/golden.rs`) and the `keyvo-cli` command tests
+(`crates/keyvo-cli/src/`).
 
 ## Notation
 
@@ -35,6 +36,8 @@ id `0xe` in these frames, so the tests use it too.
 | `reprog-divert.txt` | #1681 to #1731 (selected) | getFeature(0x1B04) = 0x0b, getCount = 2, getCidInfo for 0x01A1 and 0x01A2, then per page button setCidReporting(cid, 0x03) and getCidReporting (keyvo's order; Options+ reads it before the set) |
 | `key-input.txt` | #1770, #1782, #1785 | LCD key held-set reports interleaved with two image ACKs and the mode-change event; the key reports are not captured (layout from logilinux and Julusian) |
 | `page-buttons.txt` | #1719 | diverted page-button CID lists around a setCidReporting reply; the notifications are not captured (layout from logilinux and Julusian) |
+| `firmware-version.txt` | #1567 to #1581, #1309 to #1315 | getFeature(0x0003) = 2, four firmware entities: `BL2 20.00.B0017`, `U1 66.00.B0017` (active), `IM 01.00.B0017`, `HW 00.00.B0000`; entities 2 and 3 retagged from swid 0xd to 0xe |
+| `probe.txt` | #1559 to #1691 (selected), #1309 to #1315 | `keyvo probe` in its request order: ping, getFeature for 0x0003, 0x0008, 0x1B04 and 0x8040, the firmware walk, the keep-alive range, the VLP protocol, getFeature(0x19A1), display modes, mode and geometry (replayed by `crates/keyvo-cli/src/probe.rs`) |
 | `image-write-panel.txt` | #1643, #1645, #1779 to #1785 | a 4362-byte panel JPEG in two `0x14` fragments, each followed by its `0x13` ACK (keyvo's order; Options+ sends both fragments first) |
 
 The image writer's golden tests also reproduce the LCD writes of
