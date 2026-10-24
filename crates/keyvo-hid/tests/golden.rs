@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use keyvo_core::clock::FakeClock;
 use keyvo_core::hid::FakeHidTransport;
+use keyvo_hid::display;
 use keyvo_hid::hidpp::{DEVICE_DIRECT, Hidpp, HidppError, Plane, SoftwareId};
 use keyvo_hid::keep_alive::{self, KeepAlive, KeepAliveTiming, TimeoutRange};
 use keyvo_hid::root::{FeatureInfo, ProtocolVersion, VlpFeatureInfo, feature};
@@ -134,5 +135,34 @@ fn hcooper_keep_alive_pings_once_per_period_with_the_default_timing() {
     assert_eq!(keep_alive.poll(&mut hidpp).unwrap(), granted);
     clock.advance(Duration::from_millis(1000));
     assert_eq!(keep_alive.poll(&mut hidpp).unwrap(), granted);
+    assert!(hidpp.transport_mut().is_done());
+}
+
+#[test]
+fn hcooper_geometry_is_a_480_panel_with_nine_118_pixel_keys() {
+    let mut hidpp = replay(fixture!("display-geometry.txt"));
+    let geometry = display::geometry(&mut hidpp).unwrap();
+    assert_eq!((geometry.width, geometry.height), (480, 480));
+    let origins: Vec<_> = geometry.keys.iter().map(|k| (k.index, k.x, k.y)).collect();
+    assert_eq!(
+        origins,
+        [
+            (1, 24, 6),
+            (2, 182, 7),
+            (3, 340, 6),
+            (4, 23, 164),
+            (5, 181, 163),
+            (6, 339, 164),
+            (7, 23, 322),
+            (8, 181, 321),
+            (9, 340, 321),
+        ]
+    );
+    assert!(
+        geometry
+            .keys
+            .iter()
+            .all(|k| (k.width, k.height) == (118, 118))
+    );
     assert!(hidpp.transport_mut().is_done());
 }

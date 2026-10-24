@@ -1,0 +1,18 @@
+# VLP ROOT getFeature(0x19A1 display) -> VLP index 0x02, then display fn1
+# getGeometry(screen 1), answered in four packets (sequence bytes 80, 01, 02,
+# 43). Joined parameters: shape 01, dimension 0x0060, panel 0x01e0 x 0x01e0
+# (480 x 480), 9 keys, a second count 00, then nine 9-byte records
+# `shape x:u16 y:u16 w:u16 h:u16`, all 118 x 118:
+#   key 1 (24, 6)    key 2 (182, 7)    key 3 (340, 6)
+#   key 4 (23, 164)  key 5 (181, 163)  key 6 (339, 164)
+#   key 7 (23, 322)  key 8 (181, 321)  key 9 (340, 321)
+# Source: hcooper 03-options-plus-startup.pcap, frames #1643, #1645, #1667,
+# #1669, #1671, #1673, #1675
+# (docs/research/hcooper-startup-keypad-sequence.txt lines 77-78, 89-93). MIT, see README.md.
+> 13 ff 00 0e e0 19 a1 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 00 0e c0 19 a1 02 00 00 00 01 e8 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+> 13 ff 02 1e e0 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 1e 80 01 00 60 01 e0 01 e0 09 00 01 00 18 00 06 00 76 00 76 01 00 b6 00 07 00 76 00 76
+< 13 ff 02 1e 01 01 01 54 00 06 00 76 00 76 01 00 17 00 a4 00 76 00 76 01 00 b5 00 a3 00 76 00 76
+< 13 ff 02 1e 02 01 01 53 00 a4 00 76 00 76 01 00 17 01 42 00 76 00 76 01 00 b5 01 41 00 76 00 76
+< 13 ff 02 1e 43 01 01 54 01 41 00 76 00 76 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
