@@ -41,7 +41,7 @@ impl Plane {
 /// The 4-bit software id the host puts in every request; `0` is reserved for
 /// device notifications.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SoftwareId(u8);
+pub struct SoftwareId(pub(crate) u8);
 
 impl SoftwareId {
     /// A software id in `1..=15`.
@@ -270,6 +270,20 @@ impl<T: HidTransport> Hidpp<T> {
     /// The transport errors.
     pub fn wait_for(
         &mut self,
+        matches: impl FnMut(&Frame) -> bool,
+    ) -> Result<Option<Frame>, HidppError> {
+        self.wait_for_within(self.reply_timeout, matches)
+    }
+
+    /// [`Hidpp::wait_for`] with its own `timeout` instead of the reply
+    /// timeout.
+    ///
+    /// # Errors
+    ///
+    /// The transport errors.
+    pub fn wait_for_within(
+        &mut self,
+        timeout: Duration,
         mut matches: impl FnMut(&Frame) -> bool,
     ) -> Result<Option<Frame>, HidppError> {
         let kept = self
@@ -282,7 +296,7 @@ impl<T: HidTransport> Hidpp<T> {
                 .remove(position)
                 .and_then(|raw| Frame::parse(&raw).ok()));
         }
-        let deadline = Instant::now() + self.reply_timeout;
+        let deadline = Instant::now() + timeout;
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
@@ -302,6 +316,12 @@ impl<T: HidTransport> Hidpp<T> {
     /// no request (device events, other software's traffic).
     pub fn take_unmatched(&mut self) -> Option<Vec<u8>> {
         self.unmatched.pop_front()
+    }
+
+    /// The HID++ device index requests go to.
+    #[must_use]
+    pub const fn device_index(&self) -> u8 {
+        self.device_index
     }
 
     /// The underlying transport.
