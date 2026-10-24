@@ -75,7 +75,7 @@ Platform traits in `keyvo-core`: `HidTransport`, `InputInjector`, `WindowWatcher
 Every change follows this loop. Do not skip steps, do not reorder them.
 
 1. **Grill**: `/grill-me` or `/grill-with-docs` until the design is settled. One question at a time, each with a recommended answer. Anything that can be found in a file or on the machine is not asked.
-2. **Plan file**: `docs/plans/<YYYY-MM-DD>-<slug>.md`: what and why, acceptance criteria, User test steps.
+2. **Plan file or issue body**: `docs/plans/<YYYY-MM-DD>-<slug>.md` or the GitHub issue body: what and why, acceptance criteria, the Proof block (sandbox-complete) or User test steps (hardware-bound). The project's agents use the issue body and commit no plan file (CONTRIBUTING.md, "Sandbox-complete and hardware-bound issues").
 3. **Approval**: the owner approves the plan in chat.
 4. **Issue + branch**: Claude creates the GitHub issue (label, milestone) and the branch `feature/<issue>-<slug>` from a freshly pulled `develop`.
 5. **TDD in the container**: red, green, refactor; `just fmt lint test deny` green before every commit.

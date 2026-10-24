@@ -1,7 +1,9 @@
 # keyvo roadmap
 
 Milestones run in order; each gets its own planning round before its issues
-are opened, and every issue carries a plan file under `docs/plans/`. Definition
+are opened, and every issue carries its plan in a plan file under `docs/plans/`
+or in the issue body (CONTRIBUTING.md, "Sandbox-complete and hardware-bound
+issues"). Definition
 of done (DoD) is what must be true on `develop` for the milestone to close. The
 decisions behind the order are in `docs/plans/2026-09-09-project-plan.md`,
 `docs/plans/2026-10-24-gui-ux-grill-decisions.md` and `docs/adr/`.
@@ -15,8 +17,9 @@ Every planned issue below carries a **Layer**:
   check every acceptance criterion from the diff, the fixtures and the test
   output. These are the issues the project's agents (the `q-horde` account,
   working in a docker sandbox without `/dev/hidraw*` or `/dev/uinput`) take.
-  The plan file of an S issue names its fixtures and the exact `just`
-  commands with their expected output; it never names `just run`,
+  The "Proof" block of an S issue, in its plan file or in its issue body,
+  names its fixtures and the exact `just` commands with their expected
+  output; the project's agents use the issue body. It never names `just run`,
   `just test-hw`, Solaar, udev, systemd, the KWin script or the Windows VM.
 - **H (hardware-bound)**: a step needs the device, `/dev/uinput`, Solaar,
   udev, systemd, KWin or the Windows VM. The owner runs the User test on the

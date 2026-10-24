@@ -123,11 +123,13 @@ Every planned issue in `docs/roadmap.md` carries a layer, and the issue on
 GitHub carries the matching label:
 
 - **Sandbox-complete** (`sandbox`): the whole change can be built, tested and
-  reviewed inside the devcontainer. The plan file under `docs/plans/` has a
-  "Proof" block naming the fixtures and the exact `just` commands with their
-  expected output (`just test`, `just lint`, `just fmt-check`, `just deny`,
-  `just cov`, `just ci`, or `docker compose exec rust cargo ...` where no
-  recipe exists). It never names `just run`, `just test-hw`, Solaar, udev,
+  reviewed inside the devcontainer. The issue has a "Proof" block naming the
+  fixtures and the exact `just` commands with their expected output
+  (`just test`, `just lint`, `just fmt-check`, `just deny`, `just cov`,
+  `just ci`, or `docker compose exec rust cargo ...` where no recipe exists).
+  The Proof block lives in the plan file under `docs/plans/` or in the GitHub
+  issue body; the project's agents use the issue body and commit no plan file
+  for the issue. It never names `just run`, `just test-hw`, Solaar, udev,
   systemd, the KWin script or the Windows VM. The project's agents (the
   `q-horde` account, working in a docker sandbox without `/dev/hidraw*` or
   `/dev/uinput`) take sandbox-complete issues only.
