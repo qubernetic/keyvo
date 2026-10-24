@@ -24,18 +24,31 @@ sequence. Evidence: `13 ff 00 0e e0 19 a1` → `c0 19 a1 02 …` (VLP root getFe
 
 1. Classic HID++: root ping (`11 ff 00 1d … 39` → `04 05 39`, HID++ 4.5), DEVICE_FW_VERSION
    entity walk (index 2), DFUCONTROL (index 6) query, repeated several times.
-2. `13 ff 00 1e e0` → `c0 01 00 00 01 e8 20`: VLP root, fn 1 (protocol/version info, unclear).
+2. `13 ff 00 1e e0` → `c0 01 00 00 01 e8 20`: VLP root fn1 `ProtocolCapabilities`: major 1,
+   minor 0, availableMemory `0x0001e820` = 124 960 bytes
+   ([options-plus-inventory.md](options-plus-inventory.md), finding 1; medium).
 3. `11 ff 04 0e` → `01 f4 27 10`: **KEEP_ALIVE fn0 = timeout range 500 ms .. 10000 ms**.
-4. `13 ff 00 2e e0 5e 5f 60 61 62 63 64 65` → echoed back: VLP root fn 2 with the eight values
-   `0x5e..0x65` (notno's "key CIDs"). Meaning unclear; possibly a registration of software IDs
-   or areas. Must test whether it is required.
+4. `13 ff 00 2e e0 5e 5f 60 61 62 63 64 65` → echoed back: VLP root fn2 `Ping` with an
+   arbitrary payload that the device echoes (the `0x5e..0x65` bytes are not CIDs and not a
+   registration; [options-plus-inventory.md](options-plus-inventory.md), finding 1; medium).
+   Not required for painting; confirm on hardware.
 5. `13 ff 00 0e e0 19 a1` → `c0 19 a1 02 00 00 00 01 e8 03`: VLP root fn0 getFeature(0x19A1)
    → VLP index 2.
-6. `13 ff 02 7e e0` → `c0 00 01`: display fn7, unclear (status?). Repeated.
-7. `13 ff 02 3e e0` → `c0 a0 a1 a2 a4 a5 a6 d0 d1 d2 d3 d4 d5 d6`: display fn3, list of 13
-   IDs. `a0`/`a1` reappear below as **display modes**; `d0..d6` unclear.
+6. `13 ff 02 7e e0` → `c0 00 01`: display fn7 `getConfig` → `deviceAdopted` = 1
+   ([options-plus-inventory.md](options-plus-inventory.md), finding 1; fn6/fn7 order medium).
+   Repeated.
+7. `13 ff 02 3e e0` → `c0 a0 a1 a2 a4 a5 a6 d0 d1 d2 d3 d4 d5 d6`: display fn3
+   `getSupportedDeviceStates`, 13 device states. Host states: `a0` Streaming, `a1` Standby,
+   `a2` StandbyBright, `a4` Splash, `a5` SplashBright, `a6` OnboardingBright; device-internal
+   states `d0..d6`: Unknown, USB Preconfiguration, Idle, Low Power, TDE embedded image,
+   TDE embedded animation, TDE pattern, reported through the 0x19A1 event
+   ([options-plus-inventory.md](options-plus-inventory.md), finding 1; mapping medium).
 8. `13 ff 02 5e e0` → `c0 a1`: display fn5 = **get current mode; `a1` at boot**.
-9. `13 ff 02 0e e0` → `c0 01 00 7a 1e 00 00 00 1b 01`: display fn0 capabilities (unclear fields).
+9. `13 ff 02 0e e0` → `c0 01 00 7a 1e 00 00 00 1b 01`: display fn0 `getCapabilities`:
+   fields `deviceScreenCount`, `maxImageSize`, `maxImageFPS`, format flags `rgb565`, `rgb888`,
+   `jpeg`, `calibrated`, `origin`, `deferrableDisplayUpdate`; the byte widths still need the
+   hardware re-decode ([options-plus-inventory.md](options-plus-inventory.md), finding 1,
+   note A; names high, widths low).
 10. `13 ff 02 1e e0 01` → 4 packets (`80`, `01`, `02`, `43` sequence bytes): display fn1 =
     **display/key geometry table**. First packet: `01 00 60 01 e0 01 e0 09 00 01 00 18 00 06 00 76 00 76 01 00 b6 00 07 00 76 00 76`,
     reading: panel **480 × 480 (0x01e0)**, **9 keys**, then per key: index, x(u16), y(u16), w(u16), h(u16) with
@@ -83,7 +96,8 @@ report dev vlpidx fn/swid seq  ?           x=23   y=6    w=435   h=434   len=0x0
 
 ## Quick-test items derived from this file (add to the M0 measurement list)
 
-1. Is step 4 (`5e..65` registration) required for input or painting?
+1. Step 4 is a VLP `Ping` echo, not a registration (options-plus-inventory.md, finding 1);
+   confirm on hardware that input and painting work without it.
 2. Decode fn1 geometry table exactly and compare with Julusian's constants.
 3. What does mode `a1` look like (logo?) and does keep-alive expiry flip `a0` → `a1`? Measure
    with timeout 500, 3000, 10000 ms and no pings.
