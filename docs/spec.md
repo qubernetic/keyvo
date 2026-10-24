@@ -1,13 +1,16 @@
-# keyvo Software Specification (v0.2)
+# keyvo Software Specification (v0.3)
 
 > Context-aware, scriptable control-surface daemon, CLI and desktop app for the
 > Logitech MX Creative Console family (Keypad, Dialpad) and related HID++
 > devices. Linux-native first (KDE Wayland, X11 fallback); Windows via a
 > Logi Actions SDK plugin and an optional native mode.
 >
-> Status: v0.2, research-corrected. Supersedes draft v0.1. Decisions were
-> taken in the planning grill of 2026-09-09 and are recorded in
-> `docs/plans/2026-09-09-project-plan.md` (§1) and in `docs/adr/`. Protocol
+> Status: v0.3, UX-revised. Supersedes v0.2. Decisions were taken in the
+> planning grill of 2026-09-09 (`docs/plans/2026-09-09-project-plan.md` §1)
+> and the UI/UX grill of 2026-10-24
+> (`docs/plans/2026-10-24-gui-ux-grill-decisions.md`), and are recorded in
+> `docs/adr/`; the desktop app screens and flows are in
+> `docs/design/gui-ux.md`. Protocol
 > statements come from the reports in `docs/research/` and are marked
 > *measured* only when observed on the author's hardware; everything else
 > is *reported* by prior art or *captured* from Options+ traffic and must be
@@ -301,9 +304,12 @@ active_profile : chosen by WindowWatcher rules (auto) or user (manual)
 overlay_stack  : ordered overlays pushed via the socket API (e.g. Claude Code status)
 ```
 
-Rendering is a **stack**: global layer < app profile < overlays. Overlays
-apply to the *context* page only, never to the *general* page, so media
-keys stay reachable while an agent is working. A profile may declare an
+Rendering is a **stack**: global layer < app profile < project layer <
+overlays (ADR-0009). The project layer (§7.4) is the nearest `.keyvo/`
+directory above the working directory of the focused window's context (§6.2)
+and overrides single keys of the global and app layers. Overlays apply to the
+*context* page only, never to the *general* page, so media keys stay reachable
+while an agent is working. A profile may declare an
 optional `general_hint`: a single key on the general page that mirrors the
 top overlay's state (decided in the grill).
 
@@ -338,6 +344,15 @@ Defaults, all configurable under `[timing]` in `config.toml`:
   language pages, terminal title → Claude Code), explicit priority, and
   **external hooks** via `notify_context`, which take precedence over
   heuristics.
+- **Project context (M2).** Integrations push the working directory with
+  `notify_context` (`cwd` field): shell prompt hooks for bash, zsh and fish,
+  the VS Code extension, tmux. The daemon binds the directory to the focused
+  window by matching the hook's ancestor pids with the pid the window watcher
+  reports. Fallback: the window title matched against the project registry
+  (trusted roots from `trust.toml` plus recently seen roots); file managers
+  such as Dolphin live on this fallback. Otherwise the context is "unknown
+  project" and the reason (no hook, no pid match, no title match) is part of
+  the status and of every trace entry.
 
 ### 6.3 Page buttons
 
@@ -360,11 +375,18 @@ Defaults, all configurable under `[timing]` in `config.toml`:
 
 ```
 ~/.config/keyvo/
-├── config.toml            # [timing], [daemon], [render], [desk_state], socket, editor
+├── config.toml            # [timing], [daemon], [render], [desk_state], [project_layer], socket, editor
 ├── profiles/<id>.toml     # one profile per file; <id> is the profile id
 ├── icons/                 # user PNG/SVG
 ├── themes/                # theme TOML files
+├── recipes/<id>.toml      # user recipes (§7.5)
+├── trust.toml             # trusted project layers, keyed by content hash (§7.4)
 └── plugins/<name>/        # plugin.toml + executable
+
+~/.local/state/keyvo/
+├── trace.ndjson           # unified trace, rotated (§8)
+├── snapshots/             # profile file copies taken before every GUI write
+└── sandbox/               # the simulator's working copy while a sandbox is open
 ```
 
 Profiles are plain TOML with a `schema_version`. `keyvo-core` reads and
@@ -398,6 +420,14 @@ action = { type = "chord", keys = "ctrl+shift+g" }
 color = "#e0a83b"
 badge = "●"
 
+[pages.keys.1]
+icon    = "lucide:hammer"
+label   = "Build"
+action  = { type = "recipe", id = "project.build" }   # resolved at press time (§7.5)
+on_fail = { type = "exec", cmd = "notify-send 'build failed'" }
+[pages.keys.1.states.error]  # overrides the theme's built-in error look
+badge = "!"
+
 [dialpad]
 dial   = { type = "chord", cw = "ctrl+]", ccw = "ctrl+[" }
 roller = { type = "chord", cw = "ctrl+tab", ccw = "ctrl+shift+tab" }
@@ -411,9 +441,18 @@ mouse.dpi            = 1200
 - Action types (v1): `chord` (key combo, sequences with `,`, per-step
   delays, hold/release), `exec` (non-blocking subprocess with `KEYVO_*`
   env, §8), `http` (GET/POST), `text` (type a string), `page` / `profile` /
-  `mode` (internal). Chord aliases (`ctrl`/`control`, `super`/`meta`) and
-  shifted symbols (`ctrl+?`) are accepted; the full evdev keycode table is
-  supported.
+  `mode` (internal), `recipe` (§7.5, resolved to one of the others at press
+  time). Chord aliases (`ctrl`/`control`, `super`/`meta`) and shifted symbols
+  (`ctrl+?`) are accepted; the full evdev keycode table is supported.
+- `on_fail` (optional, per key or per press kind): an action run when the
+  primary action fails (non-zero exit, timeout, non-2xx, unresolved recipe).
+  It is not retried and has no `on_fail` of its own.
+- Automatic states: an `exec` or `http` action switches the key's state to
+  `running` while it runs, then to `success` or `error`; the looks are the
+  theme's built-in feedback primitives (§9) unless the key's own
+  `states.running`, `states.success` or `states.error` override them. A
+  script may select a custom state by printing `KEYVO_STATE=<name>` on
+  stdout. `error` stays until the next press of the key.
 - Press kinds: `short`, `long`, `repeat` (hold).
 - A global profile always exists; app profiles overlay it; matching priority
   is explicit, never alphabetical.
@@ -431,14 +470,87 @@ simple chords into a keyvo profile; layout-id-encoded chords and
 platform-specific actions are imported best-effort and flagged. Placement:
 **[OPEN]** M1 or M2 (plan §8; the plan proposes M2).
 
+`keyvo profile export <id|all> <file.zip>` and `keyvo profile import
+<file.zip>` (M1) bundle profiles, referenced icons and the theme file; the GUI
+exposes both. Import passes the trust gate (§7.4) when the bundle contains
+`exec`, `http` or `recipe` actions.
+
+### 7.4 Project layer (`.keyvo/`, M2)
+
+Decided in ADR-0009. A repository may carry a `.keyvo/` directory that the
+daemon finds by walking up from the context's working directory (§6.2), like
+`git` finds `.git`; the nearest one wins.
+
+| File | Scope | Notes |
+|---|---|---|
+| `.keyvo/profile.toml` | every app profile | committed, shared with the team |
+| `.keyvo/profiles/<app-id>.toml` | one app profile | committed |
+| `.keyvo/local.toml` | every app, this user | `.gitignore` candidate; also holds recipe answers (§7.5) |
+
+- Same schema as a profile minus `[profile].match`; `schema_version` is
+  required. Keys override at key level; `[pages.keys.N] clear = true` removes
+  a key the lower layers define. `[recipes.<id>]` tables supply recipe
+  parameters.
+- `exec` actions from the layer run with the project root as working
+  directory and receive `KEYVO_PROJECT_ROOT`, `KEYVO_PROJECT_NAME` and
+  `KEYVO_GIT_BRANCH` (§8).
+- `[project_layer]` in `config.toml`:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled` | `true` | read `.keyvo/` at all |
+| `position` | `"above_app"` | `"above_app"` (default stack) or `"above_global"` (app profiles win over the project) |
+| `allowed_keys` | `[1, 2, 3, 4, 5, 6, 7, 8, 9]` | keys a project may define or clear |
+| `allowed_action_types` | `["chord", "exec", "http", "text", "page", "recipe"]` | `profile` and `mode` are never allowed from a project |
+| `allowed_apps` | `["*"]` | app profile ids a project may override |
+| `trust` | `"ask"` | `ask`, `never` (render only, no prompt) or `always` (`keyvo doctor` warns) |
+
+- **Trust.** A project layer is rendered as soon as it is found, but none of
+  its actions runs until the project is trusted. `~/.config/keyvo/trust.toml`
+  records, per project root, the SHA-256 of the three files' contents, the
+  date and the decision. Any change to the files invalidates the record;
+  `keyvo project trust [<root>]` (and the GUI prompt) lists every action the
+  layer would run and the keys it overrides before asking. `keyvo project
+  revoke <root>` and `keyvo project list` complete the command. Pressing an
+  untrusted project key does nothing but write a trace entry with the block
+  reason. The threat model is in `SECURITY.md`.
+
+### 7.5 Recipes and starter packs (M1, mini-wizard M4a)
+
+A recipe is a named action resolved at press time:
+
+```toml
+action = { type = "recipe", id = "project.build" }
+```
+
+Resolution order: parameters in the project layer (`[recipes."project.build"]`
+in `.keyvo/local.toml` or `.keyvo/profile.toml`), then detectors (file
+presence at the project root: `Cargo.toml`, `package.json`, `platformio.ini`,
+`CMakeLists.txt`, `west.yml`, `*.tsproj` with a "configure manually" hint),
+then the two-step mini-wizard (tool, then command line) whose answer is written
+to `.keyvo/local.toml`. Recipes are TOML files in the bundle,
+`~/.config/keyvo/recipes/` and `.keyvo/recipes/`, each declaring its
+parameters, detectors and the concrete action template. "Expand to a concrete
+action" (CLI and GUI) rewrites the key to the resolved plain action.
+
+Starter packs (Rust, web, Python, embedded, PLC, AI-Assisted Coding) are
+profile bundles (§7.3) built from recipes; they are copied into the user's
+profiles through the trust gate and never referenced. "Make this a keyvo
+action" from shell history yields a plain `exec` key.
+
 ---
 
 ## 8. Scripting and control API
 
 **Outward (key → script).** `exec` actions receive `KEYVO_KEY`,
 `KEYVO_PROFILE`, `KEYVO_PAGE`, `KEYVO_WINDOW_CLASS`, `KEYVO_WINDOW_TITLE`,
-`KEYVO_PRESS`, `KEYVO_SOCKET`. Exec is always non-blocking with a
-configurable timeout; the daemon never blocks on user scripts or network.
+`KEYVO_PRESS`, `KEYVO_SOCKET`, `KEYVO_LAYER` (`global`, `app`, `project`,
+`overlay`) and, when a project context is known, `KEYVO_PROJECT_ROOT`,
+`KEYVO_PROJECT_NAME`, `KEYVO_GIT_BRANCH`. Exec is always non-blocking with a
+configurable timeout; the daemon never blocks on user scripts or network. A
+script selects a custom key state by printing `KEYVO_STATE=<name>` (§7.2).
+`keyvo exec-check <script>` runs a script with the environment a key would
+give it and prints the trace entry.
 
 **Inward (script → daemon).** Unix domain socket at
 `$XDG_RUNTIME_DIR/keyvo/keyvo.sock`, mode `0600`, owned by the session
@@ -450,12 +562,34 @@ object owned by the daemon, which is an implementation detail, not an API.
 
 Commands (v1): `set_key`, `set_badge`, `set_state`, `push_overlay`,
 `pop_overlay`, `switch_profile`, `set_mode`, `set_page`, `notify_context`
-(external hook asserting the active context), `reload`, `status`,
-`subscribe` (event stream: key events, profile/page/mode changes, device
-connect/disconnect, focus changes). `keyvo ctl <command> [json]` is the
-CLI front-end; `keyvo ctl subscribe` streams events. Wire details live in
+(external hook asserting the active context: class, title, and optionally
+`cwd` and the sender's pid for project binding, §6.2), `press` (a key or
+control press from a client; with `"dry_run": true` the daemon resolves and
+traces but executes nothing: the simulator's path), `reload`, `status`,
+`trace` (`last`, `follow`), `project` (`trust`, `revoke`, `list`), `setup`
+(drive the first-run steps, §10), `doctor`, `subscribe` (event stream:
+key events, profile/page/mode changes, device connect/disconnect, focus and
+context changes, trace entries, config reloads, `trust_requested`,
+`recipe_unresolved`). `keyvo ctl <command> [json]` is the CLI front-end;
+`keyvo ctl subscribe` streams events, `keyvo ctl trace` prints the last
+entries and `keyvo ctl tail` follows them. Wire details live in
 `docs/socket-api.md`; fixtures in `tests/protocol-fixtures/` are shared by
 the Rust, TypeScript and C# clients.
+
+**Trace.** Every press, real or simulated, produces one trace entry:
+timestamp; trigger (device, key or control, press kind, real or simulated);
+context snapshot (window class and title, project root and name, git branch,
+trust state, mode, page, overlay stack); layer resolution (which layer
+supplied the binding, which were shadowed); each condition with its result;
+the resolved action with every variable substituted (recipe id and detector
+when applicable); the execution result (`exec`: exit code, duration, bounded
+stdout and stderr tail; `http`: status and body excerpt; `chord`: event
+sequence); the `on_fail` branch taken; the block reason (untrusted project,
+disabled key, dry run). Entries live in a ring buffer (`[trace].ring`,
+default 1000) and in `~/.local/state/keyvo/trace.ndjson` (rotated at
+`[trace].max_size`, default 8 MiB, `[trace].keep`, default 3). Debug mode
+(`[trace].debug`) adds HID-level events to a separate device log, never to the
+entries. The trace core lands in M1, the context fields in M2.
 
 **Plugins.** `~/.config/keyvo/plugins/<name>/plugin.toml` declares an
 executable, its arguments, restart policy and the profiles it serves. The
@@ -494,10 +628,22 @@ justfile page, `gh`, `kubectl`, other agent CLIs, Kitty/WezTerm.
 - Animation = frame push; renderer supports spinner/progress/blink
   primitives. Sustainable frame rate is measured in M0-1 (plan §5 item 9)
   and documented; there is no native animated format.
+- Feedback primitives (M1), the built-in looks of the automatic states
+  (§7.2): `running` dims the icon and draws an accent arc with the spinner
+  primitive, replaced by a static badge after `[render].long_run_threshold`
+  (default 10 s); `success` shows a green badge and a single flash and reverts
+  after `[render].feedback_hold` (default 2 s); `error` shows a red badge that
+  stays until the next press or until the GUI inspects the trace entry. The
+  theme file defines the three looks; per-key `states` override them. A
+  desktop notification is optional, default only on `error`. The GUI shows the
+  same looks in its mirror and respects the system's reduced-motion setting
+  for the flash (the pad does not).
 - `keyvo preview` renders the grid to PNG with no hardware; `insta`
   snapshot tests cover every renderer primitive and the demo profiles.
 - Accent color per profile is the primary context indicator; optional
-  ~300 ms full-grid splash on profile switch (**[OPEN]**: default on/off).
+  ~300 ms full-grid splash on profile switch, `[render].splash`
+  (**[OPEN]**: default on/off, decided with the M1 renderer issue; a Settings
+  toggle in the GUI either way).
 - Test policy: `keyvo-core` ≥ 85 % and `keyvo-hid` ≥ 80 % line coverage,
   goals measured via `cargo-llvm-cov` → codecov, whose org gates block a PR
   (patch >= 80 %, project at most 1 % below the base);
@@ -507,25 +653,68 @@ justfile page, `gh`, `kubectl`, other agent CLIs, Kitty/WezTerm.
 
 ## 10. Desktop app (`app/`, M4a)
 
+Screens, flows, states and the keyboard map are specified in
+`docs/design/gui-ux.md`; the decisions behind them in
+`docs/plans/2026-10-24-gui-ux-grill-decisions.md`. This section fixes what
+the rest of the system must provide.
+
 - Tauri 2 with a Svelte 5 frontend (TypeScript). Audience: developers only;
-  the GUI exists for layout editing and for onboarding a junior developer,
-  not to hide the text files.
-- Talks to the daemon only via the socket API (no device access from the
-  GUI, no privileged code).
-- Scope (v1 GUI): 3×3 grid layout editor (drag and drop, per-page), icon
-  picker, simple actions (`chord`, `page`, `profile`, `mode`, `text`,
-  `http`), dashboard (device status, active profile/page/mode, overlays,
-  log), first-run wizard. `exec` scripts are opened in a configurable
-  external editor rather than edited in the GUI. Shortcut entry is
-  text-first with capture as a helper (compositor-grabbed chords cannot be
-  captured).
-- Every edit goes through `keyvo-core`'s `toml_edit` round-trip; the GUI
-  never rewrites a profile file wholesale.
-- First-run wizard (Linux): install the udev rule via `pkexec`, install the
-  KWin script, enable the systemd user unit, run `keyvo doctor`.
+  the GUI exists for layout editing, for debugging a customised pad and for
+  onboarding a junior developer, not to hide the text files.
+- **Device mirror.** Home is a live copy of the pad: the GUI subscribes to the
+  daemon and renders with the same `keyvo-core` renderer, so a tile on screen
+  is bit-identical to the LCD. Profiles are edited on the same mirror.
+- **Native theme by default.** A Rust-side theme bridge reads the desktop's
+  colours, accent, fonts, contrast and motion settings (KDE, GNOME, Windows in
+  M5) and exposes them as CSS custom properties, followed live. Built-in
+  themes are opt-in overrides.
+- **Immediate apply, undo, no save button.** Every edit goes through
+  `keyvo-core`'s `toml_edit` round-trip (ADR-0004) and lands on disk at once;
+  the daemon hot-reloads. A snapshot of the file is taken under
+  `~/.local/state/keyvo/snapshots/` before every GUI write (`keyvo profile
+  restore` brings one back); undo and redo are per GUI session. The GUI
+  watches the files and reloads on external change; on a schema error the
+  daemon keeps the last good state and the GUI shows file and line and opens
+  the external editor. The GUI never rewrites a profile file wholesale.
+- **Simulator.** A sandbox switch copies the edited profiles to
+  `~/.local/state/keyvo/sandbox/`; the virtual pad renders the copy; Apply
+  merges it into the real files, Discard drops it. Without a device the GUI
+  starts in the simulator writing directly. Simulated presses are `press`
+  requests with `dry_run` (§8): resolved and traced, never executed. Without
+  a daemon the simulator runs in process against `keyvo-core`.
+- **Behaviors.** The GUI's view of a key binding (trigger rows per press kind,
+  conditions, actions, feedback, "Test this behavior"); not a TOML entity.
+  Templates and starter packs are copied, never referenced.
+- **Trace.** One entry per press (§8), reachable from the result line, the
+  Home event list and a key's error badge, rendered as a drawer.
+- **Talks to the daemon only via the socket API** (no device access from the
+  GUI, no privileged code). GUI edits never use `set_key`.
+- **First run.** `keyvo setup` (interactive CLI, M1) owns the four steps:
+  device and system (`doctor` results with one button per fix, each with its
+  own approval: udev rule via `pkexec`, KWin script, systemd user unit),
+  starter pack (previewed in the simulator), integrations (commands shown,
+  all skippable), review and Finish as a transaction (file list with backups,
+  system commands, atomic apply, schema validation, reload, smoke paint). The
+  GUI wizard drives the same steps over the `setup` socket command; each step
+  is re-runnable from Settings. No tutorial overlay; one dismissable hint bar.
+- **Shortcut entry** is text-first with capture as a helper
+  (compositor-grabbed chords cannot be captured). `exec` scripts open in the
+  configurable external editor; the GUI embeds no code editor.
+- **Keyboard first.** Full keyboard traversal, `1`..`9` and arrows on the
+  grid, `Ctrl+K` palette, `Ctrl+1`..`7` rail, `aria-label` everywhere, 32 px
+  minimum targets, 4.5:1 contrast on every token pair, reduced motion
+  respected. English only in v1, i18n-ready.
+- **Dialpad** appears as a second, collapsible panel in the mirror (schematic
+  dial, roller, buttons with GUI labels); MX Master 4 and MX Mechanical
+  controls (M3) appear as trigger sources in Behaviors and in Devices.
+- Tray icon from the GUI in v1. `keyvo profile export|import` in the header
+  menu.
 - Flatpak (M4b): `--device=all`, `--socket=wayland`, `--socket=fallback-x11`,
   `--talk-name=org.kde.KWin`, socket dir under `xdg-run`; the daemon runs on
   the host as a systemd user service, the Flatpak ships the GUI and CLI.
+- Windows (M5): the same app behind the C# plugin's named pipe; differences
+  only in the theme bridge and `doctor`; no project layer via shell hook, no
+  MX triggers, no desk state in v1.
 
 ---
 
@@ -622,15 +811,21 @@ Detailed issue lists, definitions of done and the measurement list are in
    brightness, `keyvo probe|keys|fill|paint-test|doctor`,
    `docs/protocol.md`, `docs/hardware-notes.md`; Windows build green.
 2. **M1: Static pad (v0.1.0)**. TOML profiles with schema and round-trip,
-   renderer + snapshots, `preview`, actions, press kinds, hot-reload,
-   systemd unit, udev rule + `doctor`, cargo-dist release.
+   renderer + snapshots, `preview`, actions, `on_fail`, automatic states and
+   feedback primitives, recipes and detectors, press kinds, hot-reload, trace
+   core, `keyvo setup`, `profile export|import`, systemd unit, udev rule +
+   `doctor`, cargo-dist release.
 3. **M2: Context**. KWin script + X11 watcher, auto/manual state machine,
    page buttons, overlays + `general_hint`, socket API v1 + `subscribe`,
-   `keyvo ctl`, plugin supervisor, Claude Code plugin, tmux and git
-   integrations, `.lp5` import (if not M1).
+   `keyvo ctl`, project layer and trust, context source (shell hooks, pid
+   binding, registry fallback), plugin supervisor with two reference plugins,
+   Claude Code plugin, tmux and git integrations, `.lp5` import (if not M1).
 4. **M3: Desk state and Dialpad**. Dialpad over Bolt, Bluetooth
-   verification, Solaar-backed settings per profile, VS Code extension.
-5. **M4a: GUI** and **M4b: Flathub**.
+   verification, MX Master 4 and MX Mechanical controls as trigger sources,
+   Solaar-backed settings per profile (open), VS Code extension.
+5. **M4a: GUI** (shell, mirror, simulator, wizard, mini-wizard) and **M4b:
+   Flathub**. Sandbox-complete issues of M4a may start once the M2 socket
+   exists (`docs/roadmap.md`).
 6. **M5: Windows**. C# Actions SDK plugin, Marketplace listing; native
    mode with ownership detection.
 
@@ -661,11 +856,23 @@ Status of the v0.1 questions after the grill and the research.
 | 17 | MX Keypad (2026) PID / firmware compatibility | **[OPEN]** until an owner publishes `lsusb` / `solaar show` |
 | 18 | Is the VLP root fn2 `5e..65` registration required | → item 5 |
 | 19 | Brightness unit and the meaning of value 0 | → item 11 (M0-7) |
+| 20 | Desk state per profile without Solaar (M3) | **[OPEN]** decided before the M3 desk-state issue; facts in `docs/research/options-plus-inventory.md` |
+| 21 | Project layer on Windows (shell hook, pid binding) | deferred past M5 v1 (ADR-0009, §10) |
 
 ---
 
 ## Changelog
 
+- **v0.3 (2026-10-24)**: UI/UX grill applied
+  (`docs/plans/2026-10-24-gui-ux-grill-decisions.md`): §6 project layer in
+  the stack and project context source; §7 `recipe` action, `on_fail`,
+  automatic states, `.keyvo/` files and `[project_layer]` (§7.4), recipes and
+  starter packs (§7.5), state directory, export and import; §8 project
+  environment variables, `press` with dry run, `trace`, `project`, `setup`
+  and `doctor` commands, the unified trace; §9 feedback primitives; §10
+  rewritten around the device mirror, native theme, simulator and the
+  `keyvo setup` flow, pointing at `docs/design/gui-ux.md`; §15 milestone
+  texts; §16 questions 20 and 21.
 - **v0.2 (2026-09-09)**: renamed `tessera` → `keyvo`; §1 prior art
   restated (logimap, logilinux, Solaar called not copied); §2 MX Keypad
   status, Dialpad facts, Bolt receiver row; §3 standalone daemon primary,
