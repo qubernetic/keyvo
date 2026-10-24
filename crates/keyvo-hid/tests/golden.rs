@@ -10,6 +10,7 @@ use keyvo_core::clock::FakeClock;
 use keyvo_core::hid::FakeHidTransport;
 use keyvo_hid::display::{self, DisplayMode};
 use keyvo_hid::hidpp::{DEVICE_DIRECT, Hidpp, HidppError, Plane, SoftwareId};
+use keyvo_hid::image::{self, ImageConfig, Rect};
 use keyvo_hid::keep_alive::{self, KeepAlive, KeepAliveTiming, TimeoutRange};
 use keyvo_hid::root::{FeatureInfo, ProtocolVersion, VlpFeatureInfo, VlpProtocol, feature};
 
@@ -188,4 +189,79 @@ fn hcooper_claim_takes_the_display_from_logo_to_streaming_mode() {
     // The mode-change event is consumed, not left for the input path.
     assert_eq!(hidpp.take_unmatched(), None);
     assert!(hidpp.transport_mut().is_done());
+}
+
+/// The panel the Options+ captures paint: the bounding box of the nine keys.
+const CAPTURED_PANEL: Rect = Rect {
+    x: 23,
+    y: 6,
+    width: 435,
+    height: 434,
+};
+
+/// One 4095-byte LCD write of `02-binding-paint.pcap` by frame number, from
+/// `captures/external/hcooper/derived/binding-paint-frames.tsv`.
+fn binding_paint(frame: &str) -> Vec<u8> {
+    let tsv = include_str!("../../../captures/external/hcooper/derived/binding-paint-frames.tsv");
+    let hex = tsv
+        .lines()
+        .filter_map(|line| line.split('\t').collect::<Vec<_>>().try_into().ok())
+        .find_map(|[number, _, hex]: [&str; 3]| (number == frame).then_some(hex))
+        .unwrap();
+    decode_hex(hex)
+}
+
+fn decode_hex(hex: &str) -> Vec<u8> {
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+        .collect()
+}
+
+/// The JPEG a captured write carries: the 24-bit length in the first
+/// fragment's header, the bytes after the 20-byte first and the 5-byte
+/// continuation headers.
+fn captured_jpeg(fragments: &[Vec<u8>]) -> Vec<u8> {
+    let len = usize::from(fragments[0][17]) << 16
+        | usize::from(fragments[0][18]) << 8
+        | usize::from(fragments[0][19]);
+    let mut jpeg = fragments[0][20..].to_vec();
+    for fragment in &fragments[1..] {
+        jpeg.extend_from_slice(&fragment[5..]);
+    }
+    jpeg.truncate(len);
+    jpeg
+}
+
+#[test]
+fn hcooper_single_fragment_panel_write_is_reproduced() {
+    let captured = vec![binding_paint("521")];
+    let jpeg = captured_jpeg(&captured);
+    assert_eq!(jpeg.len(), 1460);
+    let fragments = image::fragments(
+        DEVICE_DIRECT,
+        2,
+        &ImageConfig::default(),
+        CAPTURED_PANEL,
+        &jpeg,
+    )
+    .unwrap();
+    assert_eq!(fragments, captured);
+}
+
+#[test]
+fn hcooper_two_fragment_panel_write_is_reproduced() {
+    let captured = vec![binding_paint("639"), binding_paint("640")];
+    let jpeg = captured_jpeg(&captured);
+    assert_eq!(jpeg.len(), 0x110b);
+    let fragments = image::fragments(
+        DEVICE_DIRECT,
+        2,
+        &ImageConfig::default(),
+        CAPTURED_PANEL,
+        &jpeg,
+    )
+    .unwrap();
+    // Sequence bytes a0 (first, index 0) and 61 (last, index 1).
+    assert_eq!(fragments, captured);
 }

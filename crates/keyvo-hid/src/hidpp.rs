@@ -41,7 +41,7 @@ impl Plane {
 /// The 4-bit software id the host puts in every request; `0` is reserved for
 /// device notifications.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SoftwareId(u8);
+pub struct SoftwareId(pub(crate) u8);
 
 impl SoftwareId {
     /// A software id in `1..=15`.
