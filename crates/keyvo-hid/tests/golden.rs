@@ -11,7 +11,9 @@ use keyvo_core::hid::FakeHidTransport;
 use keyvo_hid::display::{self, DisplayMode};
 use keyvo_hid::hidpp::{DEVICE_DIRECT, Hidpp, HidppError, Plane, SoftwareId};
 use keyvo_hid::image::{self, ImageConfig, ImageError, Rect, Target, Written};
+use keyvo_hid::input::{Control, Input, InputEvent};
 use keyvo_hid::keep_alive::{self, KeepAlive, KeepAliveTiming, TimeoutRange};
+use keyvo_hid::reprog::{self, ControlInfo, DivertTiming};
 use keyvo_hid::root::{FeatureInfo, ProtocolVersion, VlpFeatureInfo, VlpProtocol, feature};
 
 /// Options+ tags the captured requests with software id 0xe.
@@ -352,6 +354,85 @@ fn a_missing_ack_times_out_and_the_next_fragment_goes_out_anyway() {
             acked: 0
         }
     );
+    assert!(hidpp.transport_mut().is_done());
+}
+
+/// Every event the fixture's reports cause, read through `Hidpp::next_frame`.
+fn events(script: &str, mut input: Input) -> Vec<InputEvent> {
+    let mut hidpp = replay(script);
+    let mut events = Vec::new();
+    while let Some(frame) = hidpp.next_frame(Duration::ZERO).unwrap() {
+        events.extend(input.feed(&frame));
+    }
+    assert!(hidpp.transport_mut().is_done());
+    events
+}
+
+#[test]
+fn key_input_fixture_gives_the_exact_press_release_list() {
+    let input = Input::new(DEVICE_DIRECT, 2, 9);
+    assert_eq!(
+        events(fixture!("key-input.txt"), input),
+        [
+            InputEvent::press(Control::Key(5)),
+            InputEvent::press(Control::Key(1)),
+            InputEvent::release(Control::Key(5)),
+            InputEvent::release(Control::Key(1)),
+        ]
+    );
+}
+
+#[test]
+fn page_button_fixture_gives_the_exact_press_release_list() {
+    let input = Input::new(DEVICE_DIRECT, 2, 9).with_page_buttons(0x0b);
+    let (left, right) = (
+        Control::Page(reprog::PAGE_LEFT),
+        Control::Page(reprog::PAGE_RIGHT),
+    );
+    assert_eq!(
+        events(fixture!("page-buttons.txt"), input),
+        [
+            InputEvent::press(left),
+            InputEvent::press(right),
+            InputEvent::release(left),
+            InputEvent::release(right),
+        ]
+    );
+}
+
+#[test]
+fn hcooper_divert_walks_the_controls_and_diverts_both_page_buttons() {
+    let mut hidpp = replay(fixture!("reprog-divert.txt"));
+    let mut slept = Vec::new();
+    let diverted = reprog::divert_page_buttons(&mut hidpp, &DivertTiming::default(), |pause| {
+        slept.push(pause.as_millis());
+    })
+    .unwrap();
+    assert_eq!(diverted.reprog_index, 0x0b);
+    assert_eq!(
+        diverted.controls,
+        [
+            ControlInfo {
+                cid: reprog::PAGE_LEFT,
+                task_id: 0,
+                flags: reprog::FLAG_DIVERTABLE,
+                position: 0,
+                group: 1,
+                group_mask: 0,
+            },
+            ControlInfo {
+                cid: reprog::PAGE_RIGHT,
+                task_id: 0,
+                flags: reprog::FLAG_DIVERTABLE,
+                position: 0,
+                group: 1,
+                group_mask: 0,
+            },
+        ]
+    );
+    // The settle once, then the spacing before each further 0x1B04 request:
+    // getCidInfo twice, set and verify per button.
+    assert_eq!(slept, [100, 20, 20, 20, 20, 20, 20]);
     assert!(hidpp.transport_mut().is_done());
 }
 

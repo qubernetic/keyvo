@@ -173,7 +173,11 @@ measured in M0-2 (plan §5 item 16).
   share the Bolt receiver; keyvo filters HID++ traffic by device index and
   matches replies on report id + device index + feature index +
   function/swid byte, never on "first inbound report". Reports that answer
-  no pending request are kept for the input path, not dropped.
+  no pending request are kept for the input path, not dropped; the queue
+  holds at most `UNMATCHED_CAP` (64) reports and drops the oldest past it,
+  and a report that does not parse as a frame is dropped at once. Both
+  kinds of drop are counted (`Hidpp::dropped_reports`). The input path
+  reads the kept reports first (`Hidpp::next_frame`).
 - HID++ 2.0 error replies arrive on the request's report with feature index
   `0xff`, followed by the request's feature index, its function/swid byte and
   the error code (`11 ff ff <index> <fn|swid> <code>`; codes from the HID++
@@ -319,12 +323,34 @@ parameters up to the last one, all within the one reply timeout.
   (function/swid) is `0` for input and non-zero for ACKs; the parser gates
   on it. Repeat rate while held, the meaning of the sequence byte, chords and
   the maximum listed keys are measured in M0-1 (plan §5 item 13).
+- The decoder (`keyvo_hid::input::Input`) takes a report as input only
+  when it comes from the device's index with byte 3 `00`: an LCD key
+  report on the display's VLP index whose first parameter is the key-list
+  marker `01`, or a diverted-control notification on the `0x1B04` index.
+  Held keys are read up to the first `00`; keys outside the geometry's
+  key count and repeats are ignored. Each report yields the releases of
+  what is no longer held, in press order, then the presses of what is
+  newly held, in report order; a report with the same held set yields
+  nothing. Keys and page buttons are held independently. An image ACK
+  carries the write's non-zero function and software id and never yields
+  an event.
 - Page buttons are `0x1B04 REPROG_CONTROLS_V4` controls CID `0x01A1`
   (left) and `0x01A2` (right), flags `0x20` divertable (measured). Divert
   with `setCidReporting(cid, 0x03)` after a 100 ms settle and 20 ms between
   writes; verify with `fn2 getCidReporting`; the divert is volatile and is
   re-sent on every open and reconnect. Diverted presses arrive as `0x11`
   notifications carrying a u16 CID list; both buttons held is representable.
+- keyvo's divert (`keyvo_hid::reprog::divert_page_buttons`, after the
+  keep-alive has started): wait `[timing].divert_settle`, resolve the
+  `0x1B04` index, `fn0 getCount`, `fn1 getCidInfo(n)` for every control
+  (`<cid:u16> <task:u16> <flags> <position> <group> <group mask>`), refuse
+  unless both page buttons are listed and divertable, then per button
+  `fn3 setCidReporting(cid, 0x03)` (echoed) and `fn2 getCidReporting(cid)`,
+  whose reply `<cid:u16> <flags>` must carry the divert bit `0x01`. Every
+  `0x1B04` request after `getCount` waits `[timing].divert_spacing` first.
+  The caller supplies the wait, so the function does not pick a runtime.
+  Options+ reads `getCidReporting` before the set and finds the divert bit
+  already set (captured); keyvo reads it after the set as the check.
 - Long-press is derived in `keyvo-core` from press/release timing
   (`[timing].long_press`, default 1000 ms).
 
@@ -405,6 +431,8 @@ Defaults, all configurable under `[timing]` in `config.toml`:
 | `keep_alive_period` | 1000 ms | time between two keep-alive pings, §5.3 |
 | `keep_alive_timeout` | 3000 ms | timeout requested with every ping: how long the device holds the claim without the next one, §5.3 |
 | `ack_timeout` | 50 ms | how long an image fragment waits for its ACK before the next one goes out anyway, §5.5 (captured ACK latency about 1 ms) |
+| `divert_settle` | 100 ms | wait before the first page-button divert request, §5.6 (Julusian PR #22) |
+| `divert_spacing` | 20 ms | wait between two `0x1B04` divert requests, §5.6 (Julusian PR #22) |
 
 ### 6.2 Window/context detection
 
@@ -951,6 +979,11 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 4 (2026-10-25)**: §5.1 the cap on the unmatched
+  queue, unparsable reports dropped and counted, the input read order;
+  §5.6 the input decoder's gates and event order, keyvo's divert sequence
+  and its verify step; §6.1 rows for `divert_settle` and `divert_spacing`.
 
 - **v0.3, pre-alpha slice 3 (2026-10-24)**: §5.5 the fragment payload
   sizes, the sequence byte bits, index base and software id as writer
