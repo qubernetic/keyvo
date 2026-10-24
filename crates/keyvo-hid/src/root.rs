@@ -11,6 +11,8 @@ use crate::hidpp::{Hidpp, HidppError, Plane};
 pub mod feature {
     /// Classic ROOT.
     pub const ROOT: u16 = 0x0000;
+    /// Classic `DEVICE_FW_VERSION`.
+    pub const DEVICE_FW_VERSION: u16 = 0x0003;
     /// Classic `KEEP_ALIVE` (Keypad only).
     pub const KEEP_ALIVE: u16 = 0x0008;
     /// Classic `REPROG_CONTROLS_V4` (page buttons, Dialpad buttons).
@@ -99,6 +101,7 @@ impl<T: HidTransport> Hidpp<T> {
     }
 
     /// Classic ROOT `getFeature(id)`; `None` when the device does not have it.
+    /// A present feature's index is cached for [`Hidpp::feature_index`].
     ///
     /// # Errors
     ///
@@ -113,13 +116,15 @@ impl<T: HidTransport> Hidpp<T> {
         let [index, flags, version, ..] = reply.params[..] else {
             return Err(HidppError::Malformed("short getFeature reply".into()));
         };
-        Ok(
-            (index != ROOT_INDEX || id == feature::ROOT).then_some(FeatureInfo {
-                index,
-                flags,
-                version,
-            }),
-        )
+        let present = index != ROOT_INDEX || id == feature::ROOT;
+        if present {
+            self.features.insert((Plane::Classic, id), index);
+        }
+        Ok(present.then_some(FeatureInfo {
+            index,
+            flags,
+            version,
+        }))
     }
 
     /// VLP root `ProtocolCapabilities`, the first request of the display
@@ -141,6 +146,7 @@ impl<T: HidTransport> Hidpp<T> {
     }
 
     /// VLP root `getFeature(id)`; `None` when the device does not have it.
+    /// A present feature's index is cached for [`Hidpp::feature_index`].
     ///
     /// # Errors
     ///
@@ -156,6 +162,9 @@ impl<T: HidTransport> Hidpp<T> {
             return Err(HidppError::Malformed(format!(
                 "VLP getFeature(0x{id:04x}) answered for 0x{echoed:04x}"
             )));
+        }
+        if index != ROOT_INDEX {
+            self.features.insert((Plane::Vlp, id), index);
         }
         Ok((index != ROOT_INDEX).then_some(VlpFeatureInfo {
             index,
