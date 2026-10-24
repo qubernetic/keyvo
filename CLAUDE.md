@@ -75,7 +75,7 @@ Platform traits in `keyvo-core`: `HidTransport`, `InputInjector`, `WindowWatcher
 Every change follows this loop. Do not skip steps, do not reorder them.
 
 1. **Grill**: `/grill-me` or `/grill-with-docs` until the design is settled. One question at a time, each with a recommended answer. Anything that can be found in a file or on the machine is not asked.
-2. **Plan file**: `docs/plans/<YYYY-MM-DD>-<slug>.md`: what and why, acceptance criteria, User test steps.
+2. **Plan file or issue body**: `docs/plans/<YYYY-MM-DD>-<slug>.md` or the GitHub issue body: what and why, acceptance criteria, the Proof block (sandbox-complete) or User test steps (hardware-bound). The project's agents use the issue body and commit no plan file (CONTRIBUTING.md, "Sandbox-complete and hardware-bound issues").
 3. **Approval**: the owner approves the plan in chat.
 4. **Issue + branch**: Claude creates the GitHub issue (label, milestone) and the branch `feature/<issue>-<slug>` from a freshly pulled `develop`.
 5. **TDD in the container**: red, green, refactor; `just fmt lint test deny` green before every commit.
@@ -92,6 +92,7 @@ Follow the `git-workflow` skill strictly. In short:
 
 - Gitflow: `main` and `develop` are protected; PR-only; merge commits only.
 - Every branch starts from an issue; one PR closes exactly one issue.
+- Slices of one plan that share `Cargo.toml`, `Cargo.lock` or a crate branch from an epic branch `epic/<issue>-<slug>` (base `develop`) and merge into it on the Reviewer's approval; the owner's merge gate applies to the epic PR into `develop` only (CONTRIBUTING.md, "Branch types").
 - Conventional Commits, imperative mood, lowercase, no trailing period, at most 72 characters.
 - Atomic commits: one logical change each.
 - DCO: every commit is signed off with `git commit -s` by the human author.

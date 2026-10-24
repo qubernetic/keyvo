@@ -64,7 +64,8 @@ their TOML shape in the spec.
    measured numbers in `docs/hardware-notes.md`, and fixes only what the device
    contradicts. H issues are kept small; if an H issue grows code, the code moves to a
    new S issue.
-3. Every S issue's plan file has a "Proof" block: fixture paths and the exact `just`
+3. Every S issue has a "Proof" block in its plan file or in its issue body (the
+   project's agents use the issue body): fixture paths and the exact `just`
    commands with expected output. Proof commands are the devcontainer recipes only
    (`just test`, `just lint`, `just fmt-check`, `just deny`, `just cov`, `just ci`, and
    `docker compose exec rust cargo ...` where the justfile has no recipe). No `just run`,

@@ -123,11 +123,13 @@ Every planned issue in `docs/roadmap.md` carries a layer, and the issue on
 GitHub carries the matching label:
 
 - **Sandbox-complete** (`sandbox`): the whole change can be built, tested and
-  reviewed inside the devcontainer. The plan file under `docs/plans/` has a
-  "Proof" block naming the fixtures and the exact `just` commands with their
-  expected output (`just test`, `just lint`, `just fmt-check`, `just deny`,
-  `just cov`, `just ci`, or `docker compose exec rust cargo ...` where no
-  recipe exists). It never names `just run`, `just test-hw`, Solaar, udev,
+  reviewed inside the devcontainer. The issue has a "Proof" block naming the
+  fixtures and the exact `just` commands with their expected output
+  (`just test`, `just lint`, `just fmt-check`, `just deny`, `just cov`,
+  `just ci`, or `docker compose exec rust cargo ...` where no recipe exists).
+  The Proof block lives in the plan file under `docs/plans/` or in the GitHub
+  issue body; the project's agents use the issue body and commit no plan file
+  for the issue. It never names `just run`, `just test-hw`, Solaar, udev,
   systemd, the KWin script or the Windows VM. The project's agents (the
   `q-horde` account, working in a docker sandbox without `/dev/hidraw*` or
   `/dev/uinput`) take sandbox-complete issues only.
@@ -208,8 +210,17 @@ keyvo follows a strict Gitflow. Every contribution goes through these steps:
 | Bug fix | `fix/` | `develop` | `fix/57-brightness-unit` |
 | Hotfix on a release | `hotfix/` | `main` | `hotfix/89-daemon-crash` |
 | Release preparation | `release/` | `develop` | `release/0.1.0` |
+| Epic of several slices | `epic/` | `develop` | `epic/34-pre-alpha` |
 
 Branch names are lowercase, hyphen-separated, prefixed with the issue number.
+
+An epic branch `epic/<issue>-<slug>` collects the slices of one plan that
+would conflict if they merged into `develop` one by one (shared `Cargo.toml`,
+`Cargo.lock` or crate). Each slice branches from the epic branch, its PR
+targets the epic branch, and it merges there with a merge commit once the
+Reviewer approves it. The maintainer's merge gate applies to the epic PR into
+`develop` only; the `## User test` checklists of the slices are run before
+that PR merges.
 
 ### Commit format
 
