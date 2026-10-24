@@ -6,9 +6,10 @@
 
 use std::time::Duration;
 
+use keyvo_core::clock::FakeClock;
 use keyvo_core::hid::FakeHidTransport;
 use keyvo_hid::hidpp::{DEVICE_DIRECT, Hidpp, HidppError, Plane, SoftwareId};
-use keyvo_hid::keep_alive::{self, TimeoutRange};
+use keyvo_hid::keep_alive::{self, KeepAlive, KeepAliveTiming, TimeoutRange};
 use keyvo_hid::root::{FeatureInfo, ProtocolVersion, VlpFeatureInfo, feature};
 
 /// Options+ tags the captured requests with software id 0xe.
@@ -114,5 +115,24 @@ fn hcooper_keep_alive_range_is_500_to_10000_ms() {
             max: Duration::from_millis(10_000),
         }
     );
+    assert!(hidpp.transport_mut().is_done());
+}
+
+#[test]
+fn hcooper_keep_alive_pings_once_per_period_with_the_default_timing() {
+    let mut hidpp = replay(fixture!("keep-alive-ping.txt"));
+    let clock = FakeClock::new();
+    let mut keep_alive = KeepAlive::new(&clock, KeepAliveTiming::default());
+    let granted = Some(Duration::from_millis(3000));
+
+    // Due at once: the first ping goes out before anything else is read.
+    assert_eq!(keep_alive.poll(&mut hidpp).unwrap(), granted);
+    clock.advance(Duration::from_millis(999));
+    assert_eq!(keep_alive.poll(&mut hidpp).unwrap(), None);
+    assert_eq!(keep_alive.until_due(), Duration::from_millis(1));
+    clock.advance(Duration::from_millis(1));
+    assert_eq!(keep_alive.poll(&mut hidpp).unwrap(), granted);
+    clock.advance(Duration::from_millis(1000));
+    assert_eq!(keep_alive.poll(&mut hidpp).unwrap(), granted);
     assert!(hidpp.transport_mut().is_done());
 }
