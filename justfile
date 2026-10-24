@@ -2,6 +2,9 @@
 # Container recipes run inside the `rust` compose service; `run` and `test-hw`
 # execute the container-built binary on the host, where the hardware is.
 # Podman users: `COMPOSE_CMD="podman compose" just ...` or put it in `.env`.
+# Native mode: with AGENT_HORDE=1 the check and build recipes run the toolchain
+# directly (for a shell that already is the container, such as the project's
+# agent sandbox or `just shell`); the lifecycle and hardware recipes refuse.
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 set dotenv-load := true
@@ -13,7 +16,8 @@ uid     := `id -u`
 gid     := `id -g`
 env     := "KEYVO_UID=" + uid + " KEYVO_GID=" + gid
 dc      := env + " " + compose
-exec    := dc + " exec " + service
+native  := env("AGENT_HORDE", "")
+exec    := if native == "1" { "" } else { dc + " exec " + service }
 
 # List recipes
 default:
@@ -22,30 +26,30 @@ default:
 # ---- Lifecycle -------------------------------------------------------------
 
 # First-time setup: build the image, start the container, fetch dependencies
-setup:
+setup: _container_only
     {{ dc }} build
     {{ dc }} up -d
     {{ exec }} cargo fetch
 
 # Start the dev container (detached)
-dev:
+dev: _container_only
     {{ dc }} up -d
 
 # Stop the container (keep volumes and target/)
-down:
+down: _container_only
     {{ dc }} down
 
 # Stop the container, remove volumes, delete target/ and bin/
-clean:
+clean: _container_only
     {{ dc }} down -v
     rm -rf target bin
 
 # Rebuild the image without cache (after Dockerfile changes)
-rebuild:
+rebuild: _container_only
     {{ dc }} build --no-cache
 
 # Interactive shell in the container
-shell: _up
+shell: _container_only _up
     {{ exec }} bash
 
 # ---- Build and checks (container) -----------------------------------------
@@ -91,12 +95,12 @@ ci: fmt-check lint (test "--profile" "ci") deny cov
 # ---- Host (hardware) -------------------------------------------------------
 
 # Run the container-built keyvo binary on the host: just run -- --version
-run *args:
+run *args: _host_only
     @[ -x bin/keyvo ] || { echo "bin/keyvo is missing: run 'just build' first" >&2; exit 1; }
     @[ "${1:-}" = "--" ] && shift; exec bin/keyvo "$@"
 
 # Hardware checks on the host; runs `keyvo doctor` once it exists (roadmap M0)
-test-hw *args:
+test-hw *args: _host_only
     @echo "hidraw nodes:"; ls -l /dev/hidraw* 2>/dev/null || echo "  none"
     @echo "uinput:"; ls -l /dev/uinput 2>/dev/null || echo "  none"
     @echo "groups of $(id -un): $(id -nG)"
@@ -114,7 +118,17 @@ docs:
 
 # ---- Helpers ---------------------------------------------------------------
 
-# Start the container if it is not running
+# Start the container if it is not running (no-op in native mode)
 [private]
 _up:
-    @if [ -z "$({{ dc }} ps --status running -q {{ service }})" ]; then {{ dc }} up -d; fi
+    @if [ "{{ native }}" != "1" ] && [ -z "$({{ dc }} ps --status running -q {{ service }})" ]; then {{ dc }} up -d; fi
+
+# Refuse the container lifecycle recipes in native mode
+[private]
+_container_only:
+    @if [ "{{ native }}" = "1" ]; then echo "not applicable in native mode (AGENT_HORDE=1): no container to manage" >&2; exit 1; fi
+
+# Refuse the host hardware recipes in native mode
+[private]
+_host_only:
+    @if [ "{{ native }}" = "1" ]; then echo "not applicable in native mode (AGENT_HORDE=1): hardware recipes run on the owner's host" >&2; exit 1; fi
