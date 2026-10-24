@@ -1,0 +1,211 @@
+{
+  "$defs": {
+    "Action": {
+      "description": "What a key press does (pre-alpha: `chord` and `exec`).",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Send a key combination, for example `ctrl+shift+g`.",
+          "properties": {
+            "keys": {
+              "description": "The chord.",
+              "type": "string"
+            },
+            "type": {
+              "const": "chord",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "keys"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Run a command without blocking, with `KEYVO_*` in its environment.",
+          "properties": {
+            "cmd": {
+              "description": "The command line.",
+              "type": "string"
+            },
+            "type": {
+              "const": "exec",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "cmd"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Color": {
+      "description": "An RGB color, written #rrggbb (either case).",
+      "pattern": "^#[0-9a-fA-F]{6}$",
+      "type": "string"
+    },
+    "Key": {
+      "additionalProperties": false,
+      "description": "One LCD key.",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/Action",
+          "description": "What a press does; a key without an action only displays."
+        },
+        "color": {
+          "$ref": "#/$defs/Color",
+          "description": "Background color."
+        },
+        "icon": {
+          "description": "Icon reference, for example `lucide:hammer` or `file:icons/x.png`.",
+          "type": "string"
+        },
+        "label": {
+          "description": "Text drawn on the key.",
+          "type": "string"
+        },
+        "states": {
+          "additionalProperties": {
+            "$ref": "#/$defs/KeyState"
+          },
+          "description": "Named looks that replace parts of the key while the state is active.",
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "KeyState": {
+      "additionalProperties": false,
+      "description": "The overrides of one key state.",
+      "properties": {
+        "badge": {
+          "description": "Corner badge text in this state.",
+          "type": "string"
+        },
+        "color": {
+          "$ref": "#/$defs/Color",
+          "description": "Background color in this state."
+        },
+        "icon": {
+          "description": "Icon in this state.",
+          "type": "string"
+        },
+        "label": {
+          "description": "Label in this state.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Match": {
+      "additionalProperties": false,
+      "description": "Window match rules of a profile (spec §6.2).",
+      "properties": {
+        "class": {
+          "default": [],
+          "description": "Window classes, reverse-DNS (`org.kde.konsole`) or short (`konsole`).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "$ref": "#/$defs/TitleRegex",
+          "description": "Regular expression on the window title."
+        }
+      },
+      "type": "object"
+    },
+    "Page": {
+      "additionalProperties": false,
+      "description": "One `[[pages]]` entry.",
+      "properties": {
+        "keys": {
+          "additionalProperties": false,
+          "description": "The keys of the page by number; absent keys are blank.",
+          "patternProperties": {
+            "^[1-9]$": {
+              "$ref": "#/$defs/Key"
+            }
+          },
+          "type": "object"
+        },
+        "name": {
+          "description": "Page name, for example `context` or `general`.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ProfileInfo": {
+      "additionalProperties": false,
+      "description": "The `[profile]` table.",
+      "properties": {
+        "accent": {
+          "$ref": "#/$defs/Color",
+          "description": "Accent color, the primary context indicator on the pad."
+        },
+        "id": {
+          "description": "The profile id; equals the file name without `.toml`.",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "type": "string"
+        },
+        "match": {
+          "$ref": "#/$defs/Match",
+          "description": "Which focused windows select this profile."
+        },
+        "name": {
+          "description": "Display name.",
+          "type": "string"
+        },
+        "priority": {
+          "default": 0,
+          "description": "Higher wins when several profiles match; never alphabetical.",
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "TitleRegex": {
+      "description": "A regular expression (Rust regex syntax) searched in the window title.",
+      "format": "regex",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A whole profile file.",
+  "properties": {
+    "pages": {
+      "description": "The pages of the profile, in order.",
+      "items": {
+        "$ref": "#/$defs/Page"
+      },
+      "type": "array"
+    },
+    "profile": {
+      "$ref": "#/$defs/ProfileInfo",
+      "description": "Identity, window match rules and look of the profile."
+    },
+    "schema_version": {
+      "const": 1,
+      "description": "Version of the profile format; this build reads `1`.",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "profile"
+  ],
+  "title": "keyvo profile",
+  "type": "object"
+}

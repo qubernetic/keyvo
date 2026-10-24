@@ -1,0 +1,12 @@
+schema_version = 1
+
+[profile]
+id   = "global"
+name = "Everywhere"
+
+[[pages]]
+name = "context"
+
+[pages.keys.5]
+label  = "Mute"
+action = { type = "exec", cmd = "wpctl set-mute @DEFAULT_SINK@ toggle" }

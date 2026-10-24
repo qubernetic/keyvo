@@ -1,0 +1,133 @@
+{
+  "$defs": {
+    "Render": {
+      "additionalProperties": false,
+      "description": "The `[render]` table (spec §9).",
+      "properties": {
+        "feedback_hold": {
+          "default": 2000,
+          "description": "How long the `success` look stays before the key reverts. Default\n2000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "long_run_threshold": {
+          "default": 10000,
+          "description": "After this long the `running` spinner becomes a static badge.\nDefault 10000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "Timing": {
+      "additionalProperties": false,
+      "description": "The `[timing]` table (spec §6.1).",
+      "properties": {
+        "ack_timeout": {
+          "default": 50,
+          "description": "How long an image fragment waits for its ACK (spec §5.5). Default\n50 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "divert_settle": {
+          "default": 100,
+          "description": "Wait before the first page-button divert request (spec §5.6).\nDefault 100 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "divert_spacing": {
+          "default": 20,
+          "description": "Wait between two divert requests (spec §5.6). Default 20 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "focus_hysteresis": {
+          "default": 150,
+          "description": "A focus change shorter than this does not repaint. Default 150 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "keep_alive_period": {
+          "default": 1000,
+          "description": "Time between two keep-alive pings (spec §5.3). Default 1000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "keep_alive_timeout": {
+          "default": 3000,
+          "description": "How long the device holds the claim without the next ping (spec\n§5.3). Default 3000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "long_press": {
+          "default": 1000,
+          "description": "Hold duration that turns a press into `long`. Default 1000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "page_grace": {
+          "default": 10000,
+          "description": "After a page-button use, an app switch keeps the general page for\nthis long (spec §6.3). Default 10000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "render_coalesce": {
+          "default": 50,
+          "description": "Repaints within this window are merged. Default 50 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reply_timeout": {
+          "default": 1000,
+          "description": "How long an HID++ request waits for its reply (spec §5.1). Default\n1000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The whole `config.toml`.",
+  "properties": {
+    "render": {
+      "$ref": "#/$defs/Render",
+      "default": {
+        "feedback_hold": 2000,
+        "long_run_threshold": 10000
+      },
+      "description": "Rendering settings (spec §9)."
+    },
+    "timing": {
+      "$ref": "#/$defs/Timing",
+      "default": {
+        "ack_timeout": 50,
+        "divert_settle": 100,
+        "divert_spacing": 20,
+        "focus_hysteresis": 150,
+        "keep_alive_period": 1000,
+        "keep_alive_timeout": 3000,
+        "long_press": 1000,
+        "page_grace": 10000,
+        "render_coalesce": 50,
+        "reply_timeout": 1000
+      },
+      "description": "Timing constants, all in milliseconds (spec §6.1)."
+    }
+  },
+  "title": "keyvo config",
+  "type": "object"
+}

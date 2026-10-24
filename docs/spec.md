@@ -566,6 +566,29 @@ survive a GUI or CLI edit (**round-trip is an M1 invariant**, ADR-0004). A
 JSON Schema generated with `schemars` ships with every release and backs
 editor validation. Validation errors carry file, line and column.
 
+Loading (`keyvo_core::layout`, pre-alpha subset: `config.toml` with
+`[timing]` and `[render]`, and `profiles/`):
+
+- The directory is `$XDG_CONFIG_HOME/keyvo` when that variable is an
+  absolute path, else `$HOME/.config/keyvo`. A missing directory,
+  `config.toml` or `profiles/` is not an error: the defaults apply.
+- Every `profiles/*.toml` is read, other files are ignored; the profile id
+  must equal the file name without `.toml` (lowercase letters, digits, `.`,
+  `_`, `-`). Without `profiles/global.toml` a built-in global profile with
+  one empty page is used, so the global profile always exists.
+- Durations in `config.toml` are integer milliseconds; a key left out keeps
+  its default (§6.1, §9).
+- Unknown keys are errors in both files, so a typo never silently disables
+  a setting or a key.
+- One load reports every invalid or unreadable file, each as
+  `<file>:<line>:<column>: <message>`, the position pointing at the
+  offending value or key.
+- The generated schemas are committed as `schemas/profile.schema.json` and
+  `schemas/config.schema.json`; a test fails when they differ from the
+  types (`KEYVO_BLESS=1 just test schema` rewrites them). An editor with a
+  TOML language server (taplo, Even Better TOML) validates a file with a
+  first line `#:schema <path to the schema>`.
+
 ### 7.2 Profile format
 
 ```toml
@@ -609,6 +632,16 @@ keyboard.backlight   = { mode = "static", brightness = 60 }
 mouse.dpi            = 1200
 ```
 
+- Pre-alpha subset (schema version 1 as `keyvo-core` reads it today):
+  `schema_version`; `[profile]` with `id`, `name`, `match` (`class` list,
+  `title` regex, checked when the file loads), `accent`, `priority`
+  (integer, default 0); `[[pages]]` with an optional `name` and
+  `keys.1` to `keys.9`, each with `icon`, `label`, `color`, `action` and
+  `states.<name>` (`icon`, `label`, `color`, `badge`). Colors are
+  `#rrggbb`. Actions are `chord` (`keys`) and `exec` (`cmd`). The other
+  keys of the example above (`general_hint`, `on_fail`, the `recipe` action,
+  `[dialpad]`, `[desk_state]`) are rejected as unknown until their issues
+  add them.
 - Action types (v1): `chord` (key combo, sequences with `,`, per-step
   delays, hold/release), `exec` (non-blocking subprocess with `KEYVO_*`
   env, §8), `http` (GET/POST), `text` (type a string), `page` / `profile` /
@@ -1039,6 +1072,12 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 7 (2026-10-25)**: §7.1 how the configuration
+  directory is found and loaded, durations in milliseconds, unknown keys as
+  errors, diagnostics with file, line and column, the committed JSON
+  Schemas in `schemas/`; §7.2 the schema version 1 subset that `keyvo-core`
+  reads.
 
 - **v0.3, pre-alpha slice 5 (2026-10-25)**: §5.1 keyvo's sysfs node search
   and the hidraw transport; §5.2 direct `getFeature` answers cached, the

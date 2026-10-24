@@ -53,8 +53,9 @@ measurements they serve.
   profile switches; short, long, and repeat presses.
 - **Scriptable**: an NDJSON socket API (`keyvo ctl`) and supervised plugin
   processes; first-party integrations for Claude Code, VS Code, tmux, and git.
-- **Text first**: profiles live in `~/.config/keyvo/` as TOML with a JSON Schema;
-  the GUI edits the same files without destroying comments.
+- **Text first**: profiles live in `~/.config/keyvo/` as TOML with a JSON Schema
+  ([`schemas/`](schemas/)); the GUI edits the same files without destroying
+  comments.
 - **Dialpad**: buttons, dial, and roller over the Logi Bolt receiver via a small
   in-house HID++ 2.0 subset.
 - **Windows bridge**: a Logi Actions SDK plugin so the same profiles work next to

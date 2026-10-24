@@ -1,0 +1,8 @@
+schema_version = 1
+
+[profile]
+id       = "konsole"
+name     = "Konsole"
+match    = { class = ["org.kde.konsole", "konsole"] }
+accent   = "#2ecc71"
+priority = 5

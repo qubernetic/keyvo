@@ -1,0 +1,7 @@
+# Durations are integer milliseconds; keys left out keep their default.
+[timing]
+focus_hysteresis = 200
+long_press       = 800
+
+[render]
+feedback_hold = 3000
