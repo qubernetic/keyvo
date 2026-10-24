@@ -32,6 +32,9 @@ id `0xe` in these frames, so the tests use it too.
 | `keep-alive-ping.txt` | #1631, #1633, #1753 to #1801 | getFeature(0x0008) = 4, three keepAlive(3000) pings echoed |
 | `display-geometry.txt` | #1643, #1645, #1667 to #1675 | display fn1 geometry over four packets: 480x480, nine 118x118 keys |
 | `display-claim.txt` | #1559 to #1773 (selected) | the claim of spec §5.4 in keyvo's order, ending with setMode(a0) and the mode-change event |
+| `reprog-divert.txt` | #1681 to #1731 (selected) | getFeature(0x1B04) = 0x0b, getCount = 2, getCidInfo for 0x01A1 and 0x01A2, then per page button setCidReporting(cid, 0x03) and getCidReporting (keyvo's order; Options+ reads it before the set) |
+| `key-input.txt` | #1770, #1782, #1785 | LCD key held-set reports interleaved with two image ACKs and the mode-change event; the key reports are not captured (layout from logilinux and Julusian) |
+| `page-buttons.txt` | #1719 | diverted page-button CID lists around a setCidReporting reply; the notifications are not captured (layout from logilinux and Julusian) |
 | `image-write-panel.txt` | #1643, #1645, #1779 to #1785 | a 4362-byte panel JPEG in two `0x14` fragments, each followed by its `0x13` ACK (keyvo's order; Options+ sends both fragments first) |
 
 The image writer's golden tests also reproduce the LCD writes of

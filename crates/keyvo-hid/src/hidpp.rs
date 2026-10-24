@@ -2,7 +2,8 @@
 //!
 //! A reply matches its request on report id, device index, feature index and
 //! the `(function << 4) | swid` byte (spec §5.1), never on "the next inbound
-//! report". Reports that answer nothing are kept for the input path.
+//! report". Reports that answer nothing are kept for the input path, at
+//! most [`UNMATCHED_CAP`] of them.
 
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
