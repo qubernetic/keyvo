@@ -235,6 +235,15 @@ fn hcooper_geometry_is_a_480_panel_with_nine_118_pixel_keys() {
 }
 
 #[test]
+fn the_captured_geometry_is_the_hcooper_reply() {
+    let mut hidpp = replay(fixture!("display-geometry.txt"));
+    assert_eq!(
+        display::captured_geometry(),
+        display::geometry(&mut hidpp).unwrap()
+    );
+}
+
+#[test]
 fn hcooper_claim_takes_the_display_from_logo_to_streaming_mode() {
     let mut hidpp = replay(fixture!("display-claim.txt"));
     let claim = display::claim(&mut hidpp).unwrap();

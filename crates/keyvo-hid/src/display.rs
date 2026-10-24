@@ -7,6 +7,7 @@
 //! ([`crate::keep_alive::KeepAlive`]) before it claims the display.
 
 use keyvo_core::hid::HidTransport;
+use keyvo_core::render::{KeyPlace, Panel, TileSize};
 
 use crate::frame::ReportId;
 use crate::hidpp::{Hidpp, HidppError, Plane};
@@ -201,6 +202,72 @@ pub struct Geometry {
     pub keys: Vec<KeyRect>,
 }
 
+impl Geometry {
+    /// The panel the renderer draws on: the panel size and every key's
+    /// rectangle, in table order.
+    #[must_use]
+    pub fn panel(&self) -> Panel {
+        Panel {
+            size: TileSize {
+                width: self.width,
+                height: self.height,
+            },
+            keys: self
+                .keys
+                .iter()
+                .map(|key| KeyPlace {
+                    x: key.x,
+                    y: key.y,
+                    size: TileSize {
+                        width: key.width,
+                        height: key.height,
+                    },
+                })
+                .collect(),
+        }
+    }
+}
+
+/// Origins of the nine 118x118 keys in the captured table (spec §5.4).
+const CAPTURED_ORIGINS: [(u16, u16); 9] = [
+    (24, 6),
+    (182, 7),
+    (340, 6),
+    (23, 164),
+    (181, 163),
+    (339, 164),
+    (23, 322),
+    (181, 321),
+    (340, 321),
+];
+/// Side of every key in the captured table.
+const CAPTURED_KEY_SIDE: u16 = 118;
+
+/// The MX Creative Keypad's geometry as captured (spec §5.4, fixture
+/// `display-geometry.txt`), for rendering without a device (`keyvo
+/// preview`). With a device, keyvo always uses the table the device
+/// publishes.
+#[must_use]
+pub fn captured_geometry() -> Geometry {
+    Geometry {
+        shape: 1,
+        dimension: 0x0060,
+        width: 480,
+        height: 480,
+        keys: (1..)
+            .zip(CAPTURED_ORIGINS)
+            .map(|(index, (x, y))| KeyRect {
+                index,
+                shape: 1,
+                x,
+                y,
+                width: CAPTURED_KEY_SIDE,
+                height: CAPTURED_KEY_SIDE,
+            })
+            .collect(),
+    }
+}
+
 /// Asks the display for its geometry table, resolving the display index
 /// first.
 ///
@@ -273,6 +340,30 @@ mod tests {
     use crate::hidpp::{DEVICE_DIRECT, SoftwareId};
     use keyvo_core::hid::FakeHidTransport;
     use std::time::Duration;
+
+    #[test]
+    fn the_panel_places_every_key_at_its_rectangle() {
+        let panel = captured_geometry().panel();
+        assert_eq!(
+            panel.size,
+            TileSize {
+                width: 480,
+                height: 480
+            }
+        );
+        assert_eq!(panel.keys.len(), 9);
+        assert_eq!(
+            panel.keys[4],
+            KeyPlace {
+                x: 181,
+                y: 163,
+                size: TileSize {
+                    width: 118,
+                    height: 118
+                }
+            }
+        );
+    }
 
     /// One VLP report, swid 1, zero-padded.
     fn vlp(index: u8, function: u8, seq: u8, params: &[u8]) -> String {
