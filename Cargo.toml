@@ -15,7 +15,10 @@ publish = false
 clap = { version = "4", features = ["derive"] }
 keyvo-core = { path = "crates/keyvo-core" }
 keyvo-hid = { path = "crates/keyvo-hid" }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+insta = "1"
 regex = "1"
+resvg = { version = "0.49", default-features = false, features = ["text"] }
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

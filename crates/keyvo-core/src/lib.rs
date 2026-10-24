@@ -11,6 +11,7 @@ pub mod diagnostic;
 pub mod hid;
 pub mod layout;
 pub mod profile;
+pub mod render;
 pub mod schema;
 
 /// Version of the keyvo workspace, taken from `Cargo.toml` at compile time.
