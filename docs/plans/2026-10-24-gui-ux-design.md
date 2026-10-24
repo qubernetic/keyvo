@@ -35,7 +35,7 @@ sandbox/hardware line.
 | File | Change |
 |---|---|
 | `docs/design/gui-ux.md` | New. The design document, derived from the decisions file. Sections: 1 Mental model (d1, d3); 2 Shell and navigation (d8, layout reference `docs/ui-concepts/v3/...-3.png`); 3 Screens, one subsection each: Home, Profiles, Behaviors, Projects, Integrations, Devices, Settings (d4, d5, d13, d16, d17); 4 Flows: edit and apply (d2, d14), simulate (d3, d9), first run (d11), trust prompt (d6), recipe mini-wizard (d10), export and import (d17); 5 States: key feedback (d12), empty, loading, error, offline device (d3); 6 Keyboard map and accessibility (d15); 7 Theme bridge (P1): token list as CSS custom properties, source per desktop, live update, contrast check; 8 Trace drawer and debug log (P4, d9); 9 Socket surface used by the GUI (which `subscribe` events, `set_key`, `push_overlay`, `notify_context`, dry run); 10 Windows differences (d18); 11 Out of scope for v1 (d17 closures). Each section opens with the decision numbers it implements. Wireframes as ASCII only where the prose is ambiguous; the PNGs are not referenced as the visual spec. |
-| `docs/spec.md` | §6: project layer position in the stack, context source and its fallback (d5, d7). §7.2: `recipe` action type, `on_fail`, automatic `states` from `exec` results, `.keyvo/` files and precedence, `[project_layer]` table with every key and default (d4, d5, d6, d10). §8: trace record fields and the `ctl trace`, `ctl tail`, `exec-check` commands, `notify_context` carries the working directory (d9, d7). §9: feedback primitives and `[render].feedback_hold = 2000` ms (d12). §10: rewritten around d1, d2, d3, d8, d13, d15, d18, pointing at the design document for screens. §16: close question 16 (splash default: see §9 feedback), add rows for the open items in §7 below. Changelog entry v0.3. |
+| `docs/spec.md` | §6: project layer position in the stack, context source and its fallback (d5, d7). §7.2: `recipe` action type, `on_fail`, automatic `states` from `exec` results, `.keyvo/` files and precedence, `[project_layer]` table with every key and default (d4, d5, d6, d10). §8: trace record fields and the `ctl trace`, `ctl tail`, `exec-check` commands, `notify_context` carries the working directory (d9, d7). §9: feedback primitives and `[render].feedback_hold = 2000` ms (d12). §10: rewritten around d1, d2, d3, d8, d13, d15, d18, pointing at the design document for screens. §16: question 16 (splash default) stays open and is decided with the M1 renderer issue, since the grill did not fix it; add rows for the open items in §7 below. Changelog entry v0.3. |
 | `docs/roadmap.md` | Revised as described in §4 below: S/H classification, per-issue proof, the M4a split and the new ordering constraints. The DoD texts of M1, M2, M3, M4a and M5 take the additions listed under "Documents this changes" in the decisions file. |
 | `docs/adr/0009-project-layer-and-trust.md`, `docs/adr/README.md` | New ADR (Proposed, Accepted on merge): the project layer as a fourth stack level with key-level override, and direnv-style trust bound to a content hash (d5, d6). Alternatives: per-repo profiles by `match`, trust on first use, signed packs. |
 | `SECURITY.md` | New subsection under "Threat model": "The project layer is the first foreign input": what is rendered before trust, what never runs, where trust is stored, how `trust = always` is surfaced by `doctor` (d6). |
@@ -197,7 +197,7 @@ Before every commit: `git status --short | awk '{print $2}' | xargs grep -nP
 | # | Question | Recommendation |
 |---|---|---|
 | 1 | Issue label and milestone | `documentation`, no milestone (the roadmap revision spans all milestones); the design document itself is referenced from M4a. |
-| 2 | `docs/ui-concepts/` storage (11 PNG, 18 MB) | Downscale on the host with `magick` to 1200 px wide, PNG, which lands under about 5 MB total; commit as plain files; no LFS. The originals stay in the owner's ChatGPT history. |
+| 2 | `docs/ui-concepts/` storage (11 PNG, 18 MB) | Downscale on the host with `magick` to 1200 px wide; commit as plain files; no LFS. The originals stay in the owner's ChatGPT history. (Done as JPEG quality 88, 1.9 MB total: 1200 px PNG still came to 11 MB.) |
 | 3 | Label name | `sandbox` (short, pairs with the existing `hardware`). |
 | 4 | M3-5 desk state without Solaar | Not decided here; the roadmap row says "decision pending" and §16 of the spec gets a row. |
 
@@ -210,8 +210,9 @@ Before every commit: `git status --short | awk '{print $2}' | xargs grep -nP
       detail the decisions file does not fix (for example exact token names), it is marked
       "design detail, not a grill decision".
 - [ ] Every issue row in `docs/roadmap.md` has a Layer value, a Proof or User test cell and
-      a Depends on cell; no S row names `just run`, `just test-hw`, Solaar, udev, systemd
-      or the VM.
+      a Depends on cell; no S row's Proof cell names `just run`, `just test-hw`, Solaar,
+      udev, systemd or the VM (a title may name the file an S issue produces, such as the
+      unit file or the KWin script).
 - [ ] Every S row's proof names only recipes that exist in the justfile or are introduced
       by that row (M4a-1 introduces `just app-test`).
 - [ ] ADR-0009 is listed in `docs/adr/README.md` as Proposed; the owner flips it to
