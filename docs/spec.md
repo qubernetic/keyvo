@@ -165,6 +165,21 @@ measured in M0-2 (plan §5 item 16).
   descriptor (the node that carries report `0x14`), never first-match. The
   kernel binds `hid-generic` to `c354`, so the node is clean of HID++ driver
   quirks.
+- keyvo's search (`keyvo_hid::sysfs::find_keypad`): every
+  `/sys/class/hidraw/<node>` whose `device/uevent` carries `HID_ID=<bus>:
+  <vendor>:<product>`, ordered by node number; the report ids are the
+  Report ID items (`0x85`) of `device/report_descriptor`, read with a short
+  and long item walk. Among the nodes of `046d:c354` the one that carries
+  `0x14` wins; none of them carrying it is an error that lists the nodes
+  and their reports, and no node at all is "not found". `keyvo --device
+  <path>` skips the search. How many nodes Linux creates for the Keypad is
+  not measured yet (plan §5 item 1); the fixtures follow the macOS
+  collection list.
+- The Linux transport (`keyvo_hid::hidraw::HidrawTransport`) opens the node
+  read-write, never exclusively. One `read` is one report (up to 4096
+  bytes), its timeout a `poll`; `write` must take the whole report at once.
+  `EIO`, `ENODEV`, `EPIPE`, an end of file and `POLLHUP` without queued data
+  are a disconnect; queued reports are read before a hang-up is reported.
 - Hot-plug via udev netlink; `POLLHUP`/`EIO`/`ENODEV` mean disconnect. On
   reconnect the driver re-runs the claim sequence (§5.4), re-diverts the page
   buttons (§5.6) and replays the last wanted frame set. Never sleep under a
@@ -205,11 +220,22 @@ the one index the protocol fixes. Classic `getFeature(id)` answers `<index>
 <type flags> <version>`, index 0 meaning absent; VLP root `getFeature(id)`
 (captured) echoes the id first: `<id:u16> <index> <hidden> <version>
 <maxMemory:u32>`, e.g. `19 a1 02 00 00 00 01 e8 03`. Resolved indices are
-cached per connection. Host requests on `0x13` that fit one packet carry the
+cached per connection, including those a direct `getFeature` call
+returned. Host requests on `0x13` that fit one packet carry the
 sequence byte `e0`. Bit `0x40` of the sequence byte marks the last packet of
 a message (`e0`, `c0`); a reply over several packets starts without it
 (display fn1: `80`, `01`, `02`, `43`), and keyvo joins the packets'
-parameters up to the last one, all within the one reply timeout.
+parameters up to the last one, all within the one reply timeout
+(`[timing].reply_timeout`, §6.1).
+
+The firmware version (`keyvo_hid::firmware`, classic `0x0003
+DEVICE_FW_VERSION`, captured): `fn0 getEntityCount` answers the count
+first; `fn1 getFwInfo(n)` answers `<type> <prefix:3 ascii> <number>
+<revision> <build:u16> <active> <transport pid:u16>`, number, revision and
+build in BCD, shown as Solaar does (`U1 66.00.B0017`). Type 0 is the
+application, 1 the bootloader, 2 the hardware; the Keypad also lists a
+type `0x0b` entity (`IM`). The active application entity is the firmware
+version `docs/hardware-notes.md` records.
 
 ### 5.3 Keep-alive (mandatory)
 
@@ -398,6 +424,39 @@ numbers and line range of the decode. Every protocol claim above that is not mar
 *measured* is an item in the M0 measurement list (plan §5) and is recorded
 with numbers in `docs/hardware-notes.md`.
 
+### 5.10 Device commands (`keyvo-cli`)
+
+The first CLI commands talk to the Keypad directly, without the daemon, for
+the hardware check. They use the node of §5.1 or `--device <path>`, the
+Keypad's device index `0xff`, software id `0xe` for requests (as Options+)
+and `[timing].reply_timeout`.
+
+- `keyvo probe`: read-only, no keep-alive, no claim, so it reports the mode
+  the device is in. It prints the chosen node and its report ids, the HID++
+  version (ROOT ping), the index and version of every classic feature keyvo
+  uses (`0x0003`, `0x0008`, `0x1B04`, `0x8040`), the firmware entities,
+  the keep-alive range, the VLP protocol and the `0x19A1` index, the
+  display mode with the supported modes, and the geometry. A step the
+  device refuses is reported in its line and the probe goes on; a
+  transport error ends it.
+- `keyvo keys [--json]`: first keep-alive ping, claim (§5.4), page-button
+  divert (§5.6), then one line per press and release until interrupted:
+  `press key 5`, `release page left`, or with `--json` one NDJSON object
+  per event, `{"edge":"press","key":5}`, `{"edge":"release","page":"left"}`
+  (another diverted control: `"cid":<n>`). The keep-alive runs between
+  reads.
+- `keyvo fill <#rrggbb|png> [--key N|--all|--panel]`: first ping and claim,
+  then a baseline JPEG (quality 90) of the color, or of the PNG scaled to
+  the rectangle, per key in the geometry's order (`--all`, the default) or
+  on the panel's rectangle (§5.5); one line per write with the JPEG size,
+  the fragments and the ACKs. `--hold <seconds>` keeps the claim and the
+  keep-alive afterwards; `--index-base` and `--swid` set the writer
+  settings the hardware check compares.
+- `keys` and `fill` take `--no-keep-alive`, `--keep-alive-period <ms>` and
+  `--keep-alive-timeout <ms>` for the keep-alive measurements; without them
+  the `[timing]` defaults apply (the configuration file is read from the
+  profile slice on).
+
 ---
 
 ## 6. Context engine
@@ -433,6 +492,7 @@ Defaults, all configurable under `[timing]` in `config.toml`:
 | `ack_timeout` | 50 ms | how long an image fragment waits for its ACK before the next one goes out anyway, §5.5 (captured ACK latency about 1 ms) |
 | `divert_settle` | 100 ms | wait before the first page-button divert request, §5.6 (Julusian PR #22) |
 | `divert_spacing` | 20 ms | wait between two `0x1B04` divert requests, §5.6 (Julusian PR #22) |
+| `reply_timeout` | 1000 ms | how long an HID++ request waits for its matching reply, §5.1 and §5.2 (captured replies come within about 1 ms) |
 
 ### 6.2 Window/context detection
 
@@ -979,6 +1039,11 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 5 (2026-10-25)**: §5.1 keyvo's sysfs node search
+  and the hidraw transport; §5.2 direct `getFeature` answers cached, the
+  firmware version decode; §5.10 the device commands `keyvo probe`, `keys`
+  and `fill`; §6.1 a row for `reply_timeout`.
 
 - **v0.3, pre-alpha slice 4 (2026-10-25)**: §5.1 the cap on the unmatched
   queue, unparsable reports dropped and counted, the input read order;

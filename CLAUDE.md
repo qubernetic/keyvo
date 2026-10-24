@@ -139,5 +139,6 @@ Known traps:
 - `docs/adr/`: architecture decision records; read before changing direction
 - `docs/plans/`: per-issue implementation plans; `2026-09-09-project-plan.md` is the master plan
 - `docs/research/`: protocol findings, captures decoded, prior-art analyses
+- `docs/hardware-notes.md`: measured device behaviour (date, firmware version, method) and the first-light checklist
 - `CONTRIBUTING.md`: process, TDD, hardware test policy, DCO
 - `SECURITY.md`: threat model (socket trusts the same user, like ssh-agent)

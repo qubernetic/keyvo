@@ -27,6 +27,21 @@ developer's desk.
 > installable yet. Follow the [roadmap](docs/roadmap.md) and the
 > [milestones](https://github.com/qubernetic/keyvo/milestones) for progress.
 
+From a checkout, the first device commands already run against a Keypad
+(build in the devcontainer, run on the host; see
+[CONTRIBUTING.md](CONTRIBUTING.md)):
+
+```bash
+just build
+just run -- probe                   # features, firmware, display mode, geometry
+just run -- keys --json             # one JSON object per press and release
+just run -- fill '#ff8000' --key 5  # or a PNG; --all (default) or --panel
+```
+
+The commands need read-write access to the Keypad's `/dev/hidraw*` node and
+Solaar stopped; [docs/hardware-notes.md](docs/hardware-notes.md) lists the
+measurements they serve.
+
 ## What it will do
 
 - **Context profiles**: the active application (KDE Wayland first, X11 fallback)
