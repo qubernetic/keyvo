@@ -1,0 +1,7 @@
+schema_version = 1
+
+[profile]
+id   = "broken"
+name = "Broken"
+
+priority = "high"

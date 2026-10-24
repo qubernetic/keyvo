@@ -350,9 +350,14 @@ impl PartialEq for TitleRegex {
 impl<'de> Deserialize<'de> for TitleRegex {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let s = String::deserialize(deserializer)?;
-        regex::Regex::new(&s)
-            .map(Self)
-            .map_err(|e| de::Error::custom(format!("invalid title regex: {e}")))
+        regex::Regex::new(&s).map(Self).map_err(|e| {
+            // The syntax error is a multi-line caret diagram; its last
+            // line names the problem, the diagnostic carries the place.
+            let text = e.to_string();
+            let reason = text.lines().last().unwrap_or_default();
+            let reason = reason.strip_prefix("error: ").unwrap_or(reason);
+            de::Error::custom(format!("invalid title regex: {reason}"))
+        })
     }
 }
 

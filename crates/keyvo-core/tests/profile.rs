@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+use keyvo_core::diagnostic::{Diagnostic, Position};
 use keyvo_core::profile::{Action, Color, KeySlot, Profile};
 
 fn fixture(name: &str) -> PathBuf {
@@ -10,7 +11,7 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn parse(name: &str) -> Result<Profile, keyvo_core::diagnostic::Diagnostic> {
+fn parse(name: &str) -> Result<Profile, Diagnostic> {
     let path = fixture(name);
     let text = std::fs::read_to_string(&path).unwrap();
     Profile::from_toml(&text, &path)
@@ -69,6 +70,101 @@ fn full_profile_parses_every_field() {
     assert_eq!(dirty.badge.as_deref(), Some("*"));
 
     let general = &profile.pages[1];
+    assert_eq!(general.name.as_deref(), Some("general"));
     assert_eq!(general.keys[&slot(9)].label.as_deref(), Some("Mute"));
     assert_eq!(general.keys[&slot(9)].action, None);
+}
+
+/// Every invalid fixture with the position and the message of its diagnostic.
+const INVALID: &[(&str, usize, usize, &str)] = &[
+    (
+        "bad-color.toml",
+        9,
+        9,
+        "invalid value: string \"blue\", expected a color written #rrggbb",
+    ),
+    (
+        "bad-id.toml",
+        4,
+        8,
+        "invalid value: string \"VS Code\", expected an id of lowercase letters",
+    ),
+    (
+        "bad-title-regex.toml",
+        6,
+        37,
+        "invalid title regex: unclosed group",
+    ),
+    ("chord-without-keys.toml", 9, 10, "missing field `keys`"),
+    (
+        "key-out-of-range.toml",
+        8,
+        13,
+        "invalid value: string \"10\", expected a key number from 1 to 9",
+    ),
+    ("missing-name.toml", 3, 1, "missing field `name`"),
+    (
+        "priority-not-integer.toml",
+        7,
+        12,
+        "invalid type: string \"high\", expected i32",
+    ),
+    ("syntax-error.toml", 9, 22, "invalid basic string"),
+    (
+        "unknown-action.toml",
+        9,
+        19,
+        "unknown variant `recipe`, expected `chord` or `exec`",
+    ),
+    (
+        "unknown-field.toml",
+        10,
+        1,
+        "unknown field `colour`, expected one of",
+    ),
+    (
+        "wrong-schema-version.toml",
+        1,
+        18,
+        "unsupported schema_version 2, this keyvo reads 1",
+    ),
+];
+
+#[test]
+fn invalid_fixtures_report_file_line_and_column() {
+    for &(name, line, column, message) in INVALID {
+        let diagnostic = parse(&format!("invalid/{name}")).unwrap_err();
+        assert_eq!(
+            diagnostic.path,
+            fixture(&format!("invalid/{name}")),
+            "{name}"
+        );
+        assert_eq!(
+            diagnostic.position,
+            Some(Position { line, column }),
+            "{name}: {diagnostic}"
+        );
+        assert!(
+            diagnostic.message.starts_with(message),
+            "{name}: {}",
+            diagnostic.message
+        );
+        assert!(
+            diagnostic
+                .to_string()
+                .contains(&format!("{name}:{line}:{column}: ")),
+            "{diagnostic}"
+        );
+    }
+}
+
+#[test]
+fn every_invalid_fixture_is_in_the_table() {
+    let mut files: Vec<String> = std::fs::read_dir(fixture("invalid"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    files.sort();
+    let table: Vec<&str> = INVALID.iter().map(|row| row.0).collect();
+    assert_eq!(files, table);
 }
