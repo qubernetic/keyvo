@@ -7,13 +7,25 @@ choices behind these terms are recorded in `docs/adr/`; defaults and numbers in
 `docs/spec.md`.
 
 **Action**: What a key does when pressed: `chord`, `exec`, `http`, `text`,
-`page`, `profile` or `mode`. Defined per key in a profile's TOML; executed by
-`keyvo-core` (internal kinds) or `keyvo-daemon` (injection, processes, HTTP).
+`page`, `profile`, `mode` or `recipe`. Defined per key in a profile's TOML;
+executed by `keyvo-core` (internal kinds) or `keyvo-daemon` (injection,
+processes, HTTP). An optional `on_fail` action runs when the primary one fails.
+
+**Behavior**: The GUI's view of one key binding: a key (or Dialpad or MX
+control) on a page of a profile with its trigger rows, conditions, actions and
+feedback. A view over the profile TOML, not a TOML entity; the key stays the
+unit of truth. Spelled `behavior` in GUI labels and code.
 
 **Bolt receiver**: Logitech's USB dongle (`046d:c548`) through which the
 Dialpad, MX Master 4 and MX Mechanical connect; one hidraw node carries several
 devices distinguished by a device index. `keyvo-hid` opens it for the Dialpad
 (ADR-0006).
+
+**Context source**: Whatever tells the daemon which project the focused window
+belongs to: the working directory pushed by an integration with
+`notify_context` (shell prompt hook, VS Code, tmux), bound to the window by
+pid; or, as fallback, the window title matched against the project registry.
+Otherwise the context is "unknown project" with a visible reason.
 
 **Chord**: A key combination such as `ctrl+shift+g`, written as a string in a
 profile and turned into evdev key codes by the chord parser in `keyvo-core`,
@@ -43,6 +55,12 @@ released on exit. Part of the Keypad driver in `keyvo-hid`.
 **Feature index**: The per-device slot number under which an HID++ feature
 (such as `0x1B04`) answers; it differs between Keypad and Dialpad and is resolved
 through `ROOT.getFeature` at connect time, never hard-coded.
+
+**Feedback state**: One of the automatic key states `running`, `success` and
+`error` that an `exec` or `http` action sets while it runs and when it ends,
+drawn with the theme's feedback primitives unless the key's own `states`
+override them. `success` reverts after `[render].feedback_hold`; `error`
+stays until the next press.
 
 **Focus hysteresis**: The delay (default 150 ms, `[timing].focus_hysteresis`)
 that a focus change must survive before the state machine switches profile, so
@@ -98,18 +116,53 @@ protocol on stdin and stdout (ADR-0003).
 `[timing].long_press`, default 1000) or `repeat` (held, re-fired). Each kind
 can bind a different action.
 
+**Project layer**: The `.keyvo/` directory of a repository (`profile.toml`,
+`profiles/<app-id>.toml`, `local.toml`), found by walking up from the context
+source's working directory, that overrides single keys between the app profile
+and the overlays (ADR-0009). Rendered at once, executed only once trusted.
+
 **Profile**: One TOML file under `~/.config/keyvo/profiles/<id>.toml` that
 describes the whole desk for one context: match rules (window class as
 reverse-DNS or short name), accent colour, pages, Dialpad bindings and desk
 state. The global profile always exists; app profiles layer on top of it.
 
+**Recipe**: A named action (`type = "recipe"`, for example
+`project.build`) resolved at press time from the project layer's parameters,
+then from detectors (files at the project root), then from a two-step
+mini-wizard whose answer is stored in `.keyvo/local.toml`. Recipes are TOML
+files in the bundle, `~/.config/keyvo/recipes/` and `.keyvo/recipes/`.
+
 **Render coalescing**: The window (default 50 ms, `[timing].render_coalesce`)
 in which several state changes are merged into one repaint of the nine keys, so
 that bursts of socket messages do not flood the device.
 
+**Simulator**: The GUI's virtual pad, rendered by the same renderer as the
+device. In sandbox mode it works on a copy of the profiles that Apply merges
+and Discard drops; simulated presses are dry runs on the socket, resolved and
+traced but never executed.
+
+**Snapshot**: A copy of a profile file taken under
+`~/.local/state/keyvo/snapshots/` before every GUI write, rotated, restored
+with `keyvo profile restore`.
+
 **Socket API**: The newline-delimited JSON protocol, every message tagged
 `"v": 1`, served on `$XDG_RUNTIME_DIR/keyvo/keyvo.sock` (mode 0600) and spoken by
 `keyvo ctl`, plugins and integrations. The only inward control surface in v1.
+
+**Starter pack**: A profile bundle (Rust, web, Python, embedded, PLC,
+AI-Assisted Coding) built from recipes and copied into the user's profiles
+through the trust gate; never referenced after copying.
+
+**Trace**: One record per press, real or simulated: trigger, context snapshot,
+layer resolution, condition results, resolved action with substituted
+variables, execution result, `on_fail` branch and block reason. Kept in a ring
+buffer and in `~/.local/state/keyvo/trace.ndjson`; reachable from the GUI
+drawer, `keyvo ctl trace|tail` and `subscribe`.
+
+**Trust**: The user's recorded decision that a project layer may run its
+actions, bound in `~/.config/keyvo/trust.toml` to the content hash of its
+three files and re-asked whenever they change (direnv style). Granted with
+`keyvo project trust` or the GUI prompt.
 
 **VLP plane**: The Keypad's second protocol, on report IDs `0x13` (control,
 per-fragment acknowledgements) and `0x14` (bulk), with its own root and the
