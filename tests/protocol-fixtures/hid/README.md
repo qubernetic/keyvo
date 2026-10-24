@@ -29,3 +29,6 @@ id `0xe` in these frames, so the tests use it too.
 | `vlp-get-feature-display.txt` | #1643, #1645 | VLP getFeature(0x19A1) = VLP index 2 |
 | `root-get-feature-absent.txt` | #1713, #1715 | getFeature(0x0020) = 0, not present |
 | `root-get-feature-reprog.txt` | #1681, #1683 | getFeature(0x1B04) = 0x0b |
+| `keep-alive-ping.txt` | #1631, #1633, #1753 to #1801 | getFeature(0x0008) = 4, three keepAlive(3000) pings echoed |
+| `display-geometry.txt` | #1643, #1645, #1667 to #1675 | display fn1 geometry over four packets: 480x480, nine 118x118 keys |
+| `display-claim.txt` | #1559 to #1773 (selected) | the claim of spec §5.4 in keyvo's order, ending with setMode(a0) and the mode-change event |

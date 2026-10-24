@@ -132,6 +132,12 @@ resolution live in `keyvo-hid`. `FakeHidTransport` replays a script of
 request/response pairs in the fixture notation of §5.9 and fails on any
 write the script does not expect.
 
+Timing logic (keep-alive cadence, later long press and hysteresis) reads
+time through the `Clock` trait (`keyvo_core::clock`): `SystemClock` in
+production, `FakeClock` in tests, which moves only when a test advances it.
+No timing logic in `keyvo-core` or `keyvo-hid` depends on `tokio`; the
+daemon decides how to wait.
+
 Core rendering is the pure function
 
 ```
@@ -196,7 +202,10 @@ the one index the protocol fixes. Classic `getFeature(id)` answers `<index>
 (captured) echoes the id first: `<id:u16> <index> <hidden> <version>
 <maxMemory:u32>`, e.g. `19 a1 02 00 00 00 01 e8 03`. Resolved indices are
 cached per connection. Host requests on `0x13` that fit one packet carry the
-sequence byte `e0`.
+sequence byte `e0`. Bit `0x40` of the sequence byte marks the last packet of
+a message (`e0`, `c0`); a reply over several packets starts without it
+(display fn1: `80`, `01`, `02`, `43`), and keyvo joins the packets'
+parameters up to the last one, all within the one reply timeout.
 
 ### 5.3 Keep-alive (mandatory)
 
@@ -208,6 +217,12 @@ sequence byte `e0`.
   keep-alive task with the same defaults from the moment the device opens,
   before any read; period and requested timeout are configurable under
   `[timing]`. Repainting is not a substitute (it flickers).
+- The scheduler (`keyvo_hid::keep_alive::KeepAlive`) is driven by the
+  `Clock` trait (§4.1): the first ping is due at once, each next one a
+  period after the previous due time, so the cadence does not drift; after a
+  stall longer than a period it sends one ping and restarts from then
+  instead of catching up with a burst. A failed ping stays due. The device
+  echoes the granted timeout.
 - The firmware self-dims after idle or USB suspend while still accepting
   writes; the daemon re-asserts brightness after resume, after reconnect and
   on wake events (§5.7). Exact revert and dim timings are measured in M0-1
@@ -222,12 +237,29 @@ sequence byte `e0`.
   display fn4 `setMode(a0)` = host-controlled display, acknowledged by an
   unsolicited mode-change event. `a1` is the device/logo mode; keep-alive
   expiry presumably flips back to it.
-- **The device publishes its own key geometry** via display fn1: panel
-  480×480, 9 keys, per key `index, x, y, w, h` (w = h = 118, x ∈ {24, 182,
-  340}, y ∈ {6/7, 164, 322} in the capture, close to, but not identical
-  with, Julusian's `23 + col*158`). keyvo queries the table on every claim
-  and uses it for placement; nothing about the grid is hard-coded. This is
-  what makes the 2026 MX Keypad a runtime question rather than a code change.
+- keyvo's claim (`keyvo_hid::display::claim`, after the keep-alive has
+  started): VLP root fn1, `getFeature(0x19A1)`, display fn3 (refused unless
+  the list holds `a0`), display fn5, display fn1 geometry, then, unless the
+  display already reports `a0`, fn4 `setMode(a0)` confirmed by a second fn5
+  read, as Options+ does. The mode-change event (`13 ff <display> 10 <seq>
+  a0`, function 1, swid 0) arrives during that read in the capture; keyvo
+  consumes it, waiting at most the reply timeout, and records whether it
+  came. A missing event is not an error, a mode other than `a0` after
+  `setMode` is. VLP root fn2 is left out until the hardware check shows it
+  is needed.
+- **The device publishes its own key geometry** via display fn1
+  `getGeometry(01)`, answered over four packets. The joined reply: display
+  shape (u8, 1), a dimension field (u16, `0x0060`, meaning unconfirmed),
+  panel width and height (u16, 480×480), the key count (9), a second count
+  (0, meaning unconfirmed), then one 9-byte record per key: shape (u8, 1),
+  x, y, w, h (u16 each). The capture gives w = h = 118 and the origins
+  (24, 6), (182, 7), (340, 6), (23, 164), (181, 163), (339, 164), (23, 322),
+  (181, 321), (340, 321) for keys 1 to 9, close to, but not identical with,
+  Julusian's `23 + col*158`. keyvo numbers the keys by their position in
+  the table, rejects a table shorter than its key count or with a key
+  outside the panel, queries it on every claim and uses it for placement;
+  nothing about the grid is hard-coded. This is what makes the 2026 MX
+  Keypad a runtime question rather than a code change.
 
 ### 5.5 Image writes and flow control
 
@@ -347,7 +379,8 @@ Defaults, all configurable under `[timing]` in `config.toml`:
 | `render_coalesce` | 50 ms | repaints within this window are merged |
 | `long_press` | 1000 ms | hold duration that turns a press into `long` |
 | `page_grace` | 10 s | see §6.3 |
-| `keep_alive_period` / `keep_alive_timeout` | 1000 ms / 3000 ms | §5.3 |
+| `keep_alive_period` | 1000 ms | time between two keep-alive pings, §5.3 |
+| `keep_alive_timeout` | 3000 ms | timeout requested with every ping: how long the device holds the claim without the next one, §5.3 |
 
 ### 6.2 Window/context detection
 
@@ -894,6 +927,12 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 2 (2026-10-24)**: §4.1 the `Clock` trait; §5.2
+  multi-packet VLP replies and the last-packet bit; §5.3 the keep-alive
+  scheduler; §5.4 keyvo's claim order, the mode-change event handling and
+  the exact geometry table layout with all nine key origins; §6.1 one row
+  each for `keep_alive_period` and `keep_alive_timeout`.
 
 - **v0.3, pre-alpha slice 1 (2026-10-24)**: §4.1 the `HidTransport`
   signature and `FakeHidTransport`; §5.1 reply matching includes the device
