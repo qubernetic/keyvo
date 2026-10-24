@@ -15,6 +15,7 @@ publish = false
 clap = { version = "4", features = ["derive"] }
 keyvo-core = { path = "crates/keyvo-core" }
 keyvo-hid = { path = "crates/keyvo-hid" }
+thiserror = "2"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
