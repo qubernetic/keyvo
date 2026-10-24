@@ -326,6 +326,40 @@ impl<T: HidTransport> Hidpp<T> {
         self.unmatched.pop_front()
     }
 
+    /// The next inbound frame for the input path: the reports kept while
+    /// waiting for replies first, then one read from the transport, waiting
+    /// at most `timeout`. Reports that do not parse are dropped and
+    /// counted. `None` when nothing arrived in time.
+    ///
+    /// # Errors
+    ///
+    /// The transport errors.
+    pub fn next_frame(&mut self, timeout: Duration) -> Result<Option<Frame>, HidppError> {
+        // Kept reports parsed when they were kept.
+        if let Some(frame) = self
+            .unmatched
+            .pop_front()
+            .and_then(|raw| Frame::parse(&raw).ok())
+        {
+            return Ok(Some(frame));
+        }
+        let deadline = Instant::now() + timeout;
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let Some(raw) = self.transport.read(remaining)? else {
+                return Ok(None);
+            };
+            match Frame::parse(&raw) {
+                Ok(frame) => return Ok(Some(frame)),
+                Err(_) => self.dropped += 1,
+            }
+            // A device that streams garbage must not keep the loop alive.
+            if Instant::now() >= deadline {
+                return Ok(None);
+            }
+        }
+    }
+
     /// Reports dropped instead of kept for the input path: the ones that do
     /// not parse as a frame and the oldest ones pushed out past
     /// [`UNMATCHED_CAP`].
@@ -480,6 +514,35 @@ mod tests {
         assert_eq!(waiting.wait_for(|_| true).unwrap(), None);
         assert_eq!(waiting.take_unmatched(), None);
         assert_eq!(waiting.dropped_reports(), 1);
+    }
+
+    #[test]
+    fn next_frame_returns_kept_reports_before_new_ones_and_skips_garbage() {
+        let script = format!(
+            "> {}\n< {}\n< {}\n< 02 00 01\n< {}\n",
+            long("11 ff 04 0e"),
+            vlp("13 ff 02 00 c0 01 01"),
+            long("11 ff 04 0e 01"),
+            vlp("13 ff 02 00 c1 01"),
+        );
+        let mut hidpp = hidpp(&script);
+        hidpp.request(Plane::Classic, 0x04, 0x0, &[]).unwrap();
+        let kept = hidpp.next_frame(TIMEOUT).unwrap().unwrap();
+        assert_eq!(kept.seq, Some(0xc0));
+        let read = hidpp.next_frame(TIMEOUT).unwrap().unwrap();
+        assert_eq!(read.seq, Some(0xc1));
+        assert_eq!(hidpp.dropped_reports(), 1);
+        assert_eq!(hidpp.next_frame(TIMEOUT).unwrap(), None);
+    }
+
+    #[test]
+    fn next_frame_gives_up_at_its_deadline_on_a_stream_of_garbage() {
+        let mut hidpp = hidpp(&format!(
+            "< 02 00\n< 02 01\n< {}\n",
+            vlp("13 ff 02 00 c0 01")
+        ));
+        assert_eq!(hidpp.next_frame(Duration::ZERO).unwrap(), None);
+        assert_eq!(hidpp.dropped_reports(), 1);
     }
 
     #[test]
