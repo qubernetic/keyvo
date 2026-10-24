@@ -77,7 +77,7 @@ fn format_event(event: InputEvent, json: bool) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::tests::{exchanges, fixture, replay};
     use keyvo_core::clock::FakeClock;
@@ -86,7 +86,7 @@ mod tests {
     use keyvo_hid::keep_alive::KeepAliveTiming;
 
     /// Keep-alive start, claim and divert, then the two input fixtures.
-    fn script() -> String {
+    pub(crate) fn script() -> String {
         format!(
             "{}{}{}{}{}",
             exchanges(&fixture("keep-alive-ping.txt"), 0..2),

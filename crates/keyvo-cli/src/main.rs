@@ -5,12 +5,13 @@ mod keys;
 mod probe;
 mod session;
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-use keyvo_core::clock::SystemClock;
+use keyvo_core::clock::{Clock, SystemClock};
 use keyvo_core::hid::{HidTransport, to_hex};
 use keyvo_hid::hidpp::{DEFAULT_REPLY_TIMEOUT, DEVICE_DIRECT, Hidpp, SoftwareId};
 use keyvo_hid::hidraw::HidrawTransport;
@@ -136,21 +137,50 @@ impl KeepAliveArgs {
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let (transport, device) = open(cli.device.as_deref())?;
-    let mut hidpp = hidpp(transport)?;
-    let mut stdout = std::io::stdout().lock();
-    match cli.command {
-        Command::Probe => probe::probe(&mut hidpp, &device, &mut stdout),
+    let (transport, device) = open(
+        cli.device.as_deref(),
+        Path::new(sysfs::SYSFS_HIDRAW),
+        Path::new(sysfs::DEV_DIR),
+    )?;
+    run(
+        cli.command,
+        hidpp(transport)?,
+        &device,
+        &SystemClock,
+        std::thread::sleep,
+        || true,
+        &mut std::io::stdout().lock(),
+    )
+}
+
+/// Runs `command` on the Keypad behind `hidpp`, described as `device`.
+/// Time comes from `clock`, waits go through `sleep`, and `keys` streams
+/// until `keep_going` says stop.
+///
+/// # Errors
+///
+/// The command's errors.
+fn run<T: HidTransport, C: Clock>(
+    command: Command,
+    mut hidpp: Hidpp<T>,
+    device: &str,
+    clock: &C,
+    sleep: impl FnMut(Duration),
+    keep_going: impl FnMut() -> bool,
+    out: &mut impl Write,
+) -> anyhow::Result<()> {
+    match command {
+        Command::Probe => probe::probe(&mut hidpp, device, out),
         Command::Keys { json, keep_alive } => {
-            let mut session = Session::open(hidpp, SystemClock, keep_alive.timing())?;
+            let mut session = Session::open(hidpp, clock, keep_alive.timing())?;
             eprintln!("keyvo keys on {device}; Ctrl-C to stop");
             keys::keys(
                 &mut session,
                 &DivertTiming::default(),
-                std::thread::sleep,
+                sleep,
                 json,
-                &mut stdout,
-                || true,
+                out,
+                keep_going,
             )
         }
         Command::Fill {
@@ -173,31 +203,24 @@ fn main() -> anyhow::Result<()> {
                 },
                 ..ImageConfig::default()
             };
-            let mut session = Session::open(hidpp, SystemClock, keep_alive.timing())?;
-            fill::fill(
-                &mut session,
-                &source,
-                placement(key, panel),
-                &config,
-                &mut stdout,
-            )?;
-            fill::hold(
-                &mut session,
-                &SystemClock,
-                Duration::from_secs(hold),
-                std::thread::sleep,
-            )
+            let mut session = Session::open(hidpp, clock, keep_alive.timing())?;
+            fill::fill(&mut session, &source, placement(key, panel), &config, out)?;
+            fill::hold(&mut session, clock, Duration::from_secs(hold), sleep)
         }
     }
 }
 
-/// Opens `device`, or the Keypad's node found through sysfs, and describes
-/// it for the user.
-fn open(device: Option<&Path>) -> anyhow::Result<(HidrawTransport, String)> {
+/// Opens `device`, or the Keypad's node found under the sysfs `class_dir`
+/// with its device file in `dev_dir`, and describes it for the user.
+fn open(
+    device: Option<&Path>,
+    class_dir: &Path,
+    dev_dir: &Path,
+) -> anyhow::Result<(HidrawTransport, String)> {
     let (path, description) = if let Some(path) = device {
         (path.to_path_buf(), path.display().to_string())
     } else {
-        let node = sysfs::find_keypad(Path::new(sysfs::SYSFS_HIDRAW), Path::new(sysfs::DEV_DIR))?;
+        let node = sysfs::find_keypad(class_dir, dev_dir)?;
         let description = format!(
             "{} ({}, {}, reports {})",
             node.path.display(),
@@ -225,9 +248,107 @@ fn hidpp<T: HidTransport>(transport: T) -> anyhow::Result<Hidpp<T>> {
 mod tests {
     use super::{Cli, Command, KeepAliveTiming};
     use clap::Parser;
+    use keyvo_core::clock::FakeClock;
     use keyvo_core::hid::FakeHidTransport;
     use keyvo_hid::hidpp::Hidpp;
+    use keyvo_hid::image::{ImageConfig, Target};
+    use std::path::Path;
     use std::time::Duration;
+
+    fn command(args: &[&str]) -> Command {
+        Cli::try_parse_from([&["keyvo"], args].concat())
+            .unwrap()
+            .command
+    }
+
+    /// `run` on a replayed device, with a fake clock that the sleeps move.
+    fn run(args: &[&str], script: &str) -> String {
+        let clock = FakeClock::new();
+        let mut out = Vec::new();
+        super::run(
+            command(args),
+            replay(script),
+            "/dev/hidraw2",
+            &clock,
+            |wait| clock.advance(wait),
+            || false,
+            &mut out,
+        )
+        .unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn run_dispatches_probe() {
+        let text = run(&["probe"], &fixture("probe.txt"));
+        assert!(
+            text.starts_with("device      /dev/hidraw2\nhid++       4.5\n"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn run_dispatches_keys() {
+        let text = run(&["keys", "--json"], &crate::keys::tests::script());
+        assert_eq!(text.lines().count(), 8);
+        assert_eq!(text.lines().next(), Some(r#"{"edge":"press","key":5}"#));
+    }
+
+    #[test]
+    fn run_dispatches_fill_and_holds() {
+        let source = crate::fill::Source::parse("#ff8000").unwrap();
+        let config = ImageConfig {
+            index_base: keyvo_hid::image::IndexBase::One,
+            ..ImageConfig::default()
+        };
+        let script = crate::fill::tests::script(&source, &[Target::Key(5)], &config);
+        let text = run(
+            &[
+                "fill",
+                "#ff8000",
+                "--key",
+                "5",
+                "--index-base",
+                "1",
+                "--hold",
+                "2",
+                "--no-keep-alive",
+            ],
+            &script,
+        );
+        assert!(text.starts_with("key 5  118x118 at 181,163  "), "{text}");
+    }
+
+    #[test]
+    fn open_finds_the_keypad_node_or_takes_the_given_one() {
+        let root = tempfile::tempdir().unwrap();
+        let device = root.path().join("class/hidraw2/device");
+        std::fs::create_dir_all(&device).unwrap();
+        std::fs::write(
+            device.join("uevent"),
+            "HID_ID=0003:0000046D:0000C354\nHID_NAME=Logitech MX Creative Keypad\n",
+        )
+        .unwrap();
+        std::fs::write(device.join("report_descriptor"), [0x85, 0x11, 0x85, 0x14]).unwrap();
+        let dev = root.path().join("dev");
+        std::fs::create_dir_all(&dev).unwrap();
+        std::fs::write(dev.join("hidraw2"), []).unwrap();
+
+        let (_, description) = super::open(None, &root.path().join("class"), &dev).unwrap();
+        assert_eq!(
+            description,
+            format!(
+                "{} (Logitech MX Creative Keypad, 046d:c354, reports 11 14)",
+                dev.join("hidraw2").display()
+            )
+        );
+        let given = dev.join("hidraw2");
+        let (_, description) = super::open(Some(&given), Path::new("/absent"), &dev).unwrap();
+        assert_eq!(description, given.display().to_string());
+
+        let error = super::open(None, Path::new("/absent"), &dev).unwrap_err();
+        assert_eq!(error.to_string(), "no hidraw node for 046d:c354");
+    }
 
     fn keep_alive(args: &[&str]) -> Option<KeepAliveTiming> {
         let cli = Cli::try_parse_from([&["keyvo", "keys"], args].concat()).unwrap();

@@ -163,7 +163,7 @@ pub fn hold<T: HidTransport, C: Clock>(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::tests::{exchanges, fixture, replay};
     use keyvo_core::clock::FakeClock;
@@ -191,7 +191,7 @@ mod tests {
 
     /// The claim, then for every target the fragments of `source`'s JPEG,
     /// each answered by its ACK (`13 ff 02 <fn|swid> c<index> 00 <index>`).
-    fn script(source: &Source, targets: &[Target], config: &ImageConfig) -> String {
+    pub(crate) fn script(source: &Source, targets: &[Target], config: &ImageConfig) -> String {
         let geometry = geometry();
         let mut script = fixture("display-claim.txt");
         for target in targets {
