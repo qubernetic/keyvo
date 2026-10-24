@@ -13,6 +13,10 @@ hardware; this directory is the evidence trail.
 | `local/` | no | Captures taken on this project's own Windows VM (M0-2). Published as release assets (`captures-YYYY-MM`), never committed. |
 | `fixtures/` | yes | Golden frames and NDJSON fixtures extracted from captures, shared by the Rust, TypeScript, and C# test suites (lands with M0-2). |
 
+The HID++ golden scripts replayed by `FakeHidTransport` live in
+[`tests/protocol-fixtures/hid/`](../tests/protocol-fixtures/hid/README.md);
+each names the hcooper capture frames it was copied from.
+
 Decoded walkthroughs of the external captures live in
 [`docs/research/hcooper-captures.md`](../docs/research/hcooper-captures.md) and
 [`docs/research/hcooper-startup-keypad-sequence.txt`](../docs/research/hcooper-startup-keypad-sequence.txt).
