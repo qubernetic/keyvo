@@ -13,7 +13,7 @@ use keyvo_hid::hidpp::{DEVICE_DIRECT, Hidpp, HidppError, Plane, SoftwareId};
 use keyvo_hid::image::{self, ImageConfig, ImageError, Rect, Target, Written};
 use keyvo_hid::input::{Control, Input, InputEvent};
 use keyvo_hid::keep_alive::{self, KeepAlive, KeepAliveTiming, TimeoutRange};
-use keyvo_hid::reprog;
+use keyvo_hid::reprog::{self, ControlInfo, DivertTiming};
 use keyvo_hid::root::{FeatureInfo, ProtocolVersion, VlpFeatureInfo, VlpProtocol, feature};
 
 /// Options+ tags the captured requests with software id 0xe.
@@ -398,6 +398,42 @@ fn page_button_fixture_gives_the_exact_press_release_list() {
             InputEvent::release(right),
         ]
     );
+}
+
+#[test]
+fn hcooper_divert_walks_the_controls_and_diverts_both_page_buttons() {
+    let mut hidpp = replay(fixture!("reprog-divert.txt"));
+    let mut slept = Vec::new();
+    let diverted = reprog::divert_page_buttons(&mut hidpp, &DivertTiming::default(), |pause| {
+        slept.push(pause.as_millis());
+    })
+    .unwrap();
+    assert_eq!(diverted.reprog_index, 0x0b);
+    assert_eq!(
+        diverted.controls,
+        [
+            ControlInfo {
+                cid: reprog::PAGE_LEFT,
+                task_id: 0,
+                flags: reprog::FLAG_DIVERTABLE,
+                position: 0,
+                group: 1,
+                group_mask: 0,
+            },
+            ControlInfo {
+                cid: reprog::PAGE_RIGHT,
+                task_id: 0,
+                flags: reprog::FLAG_DIVERTABLE,
+                position: 0,
+                group: 1,
+                group_mask: 0,
+            },
+        ]
+    );
+    // The settle once, then the spacing before each further 0x1B04 request:
+    // getCidInfo twice, set and verify per button.
+    assert_eq!(slept, [100, 20, 20, 20, 20, 20, 20]);
+    assert!(hidpp.transport_mut().is_done());
 }
 
 #[test]
