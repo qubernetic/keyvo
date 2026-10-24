@@ -1,14 +1,164 @@
-//! The VLP contextual display feature `0x19A1` (spec §5.4): the key geometry
-//! the device publishes. Its index is resolved through the VLP root on every
-//! connection; nothing about the grid is hard-coded.
+//! The VLP contextual display feature `0x19A1` (spec §5.4): the display claim
+//! that hands the panel from the device's logo mode to the host, and the key
+//! geometry the device publishes. The display index is resolved through the
+//! VLP root on every connection; nothing about the grid is hard-coded.
+//!
+//! Keep-alive comes first: the caller starts pinging
+//! ([`crate::keep_alive::KeepAlive`]) before it claims the display.
 
 use keyvo_core::hid::HidTransport;
 
+use crate::frame::ReportId;
 use crate::hidpp::{Hidpp, HidppError, Plane};
-use crate::root::feature;
+use crate::root::{VlpProtocol, feature};
 
 /// `getGeometry(screen)`.
 const FN_GET_GEOMETRY: u8 = 1;
+/// `getSupportedDeviceStates`: the modes the display accepts.
+const FN_GET_MODES: u8 = 3;
+/// `setMode(mode)`.
+const FN_SET_MODE: u8 = 4;
+/// `getMode`: the current mode.
+const FN_GET_MODE: u8 = 5;
+/// Function byte of the unsolicited mode-change event (`13 ff 02 10 c6 a0`).
+const EVENT_MODE_CHANGED: u8 = 1;
+
+/// A display mode (device state) byte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DisplayMode(pub u8);
+
+impl DisplayMode {
+    /// `a0`: host-controlled display (Options+ `Streaming`); what the claim
+    /// sets.
+    pub const STREAMING: Self = Self(0xa0);
+    /// `a1`: the device/logo mode (Options+ `Standby`), current at boot.
+    pub const STANDBY: Self = Self(0xa1);
+}
+
+/// What the claim found and did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Claim {
+    /// The VLP root's protocol capabilities.
+    pub protocol: VlpProtocol,
+    /// Index of the display feature on the VLP plane.
+    pub display_index: u8,
+    /// The modes the display accepts.
+    pub modes: Vec<DisplayMode>,
+    /// The mode the display was in before the claim.
+    pub boot_mode: DisplayMode,
+    /// The key geometry.
+    pub geometry: Geometry,
+    /// True when the device announced the switch with its mode-change event.
+    /// The switch itself is verified with `getMode`; the event is consumed so
+    /// it does not reach the input path.
+    pub mode_event: bool,
+}
+
+/// Errors of [`claim`].
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum ClaimError {
+    /// A request failed.
+    #[error(transparent)]
+    Hidpp(#[from] HidppError),
+    /// The display does not list the streaming mode.
+    #[error("display does not support streaming mode a0; modes: {modes:02x?}")]
+    StreamingUnsupported {
+        /// The mode bytes it lists.
+        modes: Vec<u8>,
+    },
+    /// After `setMode(a0)` the display still reports another mode.
+    #[error("display stayed in mode 0x{mode:02x} after setMode(a0)")]
+    ModeNotConfirmed {
+        /// The mode `getMode` reported.
+        mode: u8,
+    },
+}
+
+/// Claims the display (spec §5.4): VLP root protocol capabilities, the
+/// display index, the supported modes, the current mode, the geometry, then
+/// `setMode(a0)` confirmed with `getMode` unless the display already streams.
+/// VLP root fn2 (the ping Options+ sends) is left out until the hardware
+/// check shows it is needed.
+///
+/// # Errors
+///
+/// [`ClaimError::StreamingUnsupported`], [`ClaimError::ModeNotConfirmed`],
+/// and the request errors.
+pub fn claim<T: HidTransport>(hidpp: &mut Hidpp<T>) -> Result<Claim, ClaimError> {
+    let protocol = hidpp.vlp_protocol()?;
+    let display_index = hidpp.feature_index(Plane::Vlp, feature::VLP_DISPLAY)?;
+    let modes = supported_modes(hidpp)?;
+    if !modes.contains(&DisplayMode::STREAMING) {
+        return Err(ClaimError::StreamingUnsupported {
+            modes: modes.iter().map(|mode| mode.0).collect(),
+        });
+    }
+    let boot_mode = current_mode(hidpp)?;
+    let geometry = geometry(hidpp)?;
+    let mut mode_event = false;
+    if boot_mode != DisplayMode::STREAMING {
+        hidpp.request(
+            Plane::Vlp,
+            display_index,
+            FN_SET_MODE,
+            &[DisplayMode::STREAMING.0],
+        )?;
+        let mode = current_mode(hidpp)?;
+        if mode != DisplayMode::STREAMING {
+            return Err(ClaimError::ModeNotConfirmed { mode: mode.0 });
+        }
+        mode_event = hidpp
+            .wait_for(|frame| {
+                frame.report == ReportId::VlpControl
+                    && frame.feature_index == display_index
+                    && frame.function == EVENT_MODE_CHANGED
+                    && frame.swid == 0
+                    && frame.params.first() == Some(&DisplayMode::STREAMING.0)
+            })?
+            .is_some();
+    }
+    Ok(Claim {
+        protocol,
+        display_index,
+        modes,
+        boot_mode,
+        geometry,
+        mode_event,
+    })
+}
+
+/// The modes the display accepts (display fn3), in the device's order.
+///
+/// # Errors
+///
+/// The request errors.
+pub fn supported_modes<T: HidTransport>(
+    hidpp: &mut Hidpp<T>,
+) -> Result<Vec<DisplayMode>, HidppError> {
+    let index = hidpp.feature_index(Plane::Vlp, feature::VLP_DISPLAY)?;
+    let reply = hidpp.request(Plane::Vlp, index, FN_GET_MODES, &[])?;
+    Ok(reply
+        .params
+        .iter()
+        .take_while(|&&mode| mode != 0)
+        .map(|&mode| DisplayMode(mode))
+        .collect())
+}
+
+/// The display's current mode (display fn5).
+///
+/// # Errors
+///
+/// [`HidppError::Malformed`] for an empty reply, plus the request errors.
+pub fn current_mode<T: HidTransport>(hidpp: &mut Hidpp<T>) -> Result<DisplayMode, HidppError> {
+    let index = hidpp.feature_index(Plane::Vlp, feature::VLP_DISPLAY)?;
+    let reply = hidpp.request(Plane::Vlp, index, FN_GET_MODE, &[])?;
+    reply
+        .params
+        .first()
+        .map(|&mode| DisplayMode(mode))
+        .ok_or_else(|| HidppError::Malformed("empty getMode reply".into()))
+}
 
 /// The screen keyvo asks about; the Keypad has one (captured request `01`).
 const SCREEN: u8 = 1;
@@ -120,6 +270,124 @@ fn key_rect(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hidpp::{DEVICE_DIRECT, SoftwareId};
+    use keyvo_core::hid::FakeHidTransport;
+    use std::time::Duration;
+
+    /// One VLP report, swid 1, zero-padded.
+    fn vlp(index: u8, function: u8, seq: u8, params: &[u8]) -> String {
+        let mut bytes = vec![0x13, 0xff, index, (function << 4) | 0x1, seq];
+        bytes.extend(params);
+        bytes.resize(32, 0);
+        bytes
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// The claim up to and including the geometry, with `modes` and `boot`.
+    fn claim_head(modes: &[u8], boot: u8) -> String {
+        let geometry = [
+            0x01, 0x00, 0x60, 0x01, 0xe0, 0x01, 0xe0, 0x01, 0x00, 0x01, 0x00, 0x18, 0x00, 0x06,
+            0x00, 0x76, 0x00, 0x76,
+        ];
+        [
+            format!("> {}", vlp(0, 1, 0xe0, &[])),
+            format!(
+                "< {}",
+                vlp(0, 1, 0xc0, &[0x01, 0x00, 0x00, 0x01, 0xe8, 0x20])
+            ),
+            format!("> {}", vlp(0, 0, 0xe0, &[0x19, 0xa1])),
+            format!("< {}", vlp(0, 0, 0xc0, &[0x19, 0xa1, 0x02])),
+            format!("> {}", vlp(2, 3, 0xe0, &[])),
+            format!("< {}", vlp(2, 3, 0xc0, modes)),
+            format!("> {}", vlp(2, 5, 0xe0, &[])),
+            format!("< {}", vlp(2, 5, 0xc0, &[boot])),
+            format!("> {}", vlp(2, 1, 0xe0, &[0x01])),
+            format!("< {}", vlp(2, 1, 0xc0, &geometry)),
+        ]
+        .join("\n")
+            + "\n"
+    }
+
+    fn hidpp(script: &str) -> Hidpp<FakeHidTransport> {
+        Hidpp::new(
+            FakeHidTransport::from_script(script).unwrap(),
+            DEVICE_DIRECT,
+            SoftwareId::new(0x1).unwrap(),
+            Duration::from_secs(1),
+        )
+    }
+
+    #[test]
+    fn a_display_that_already_streams_is_not_switched_again() {
+        let mut hidpp = hidpp(&claim_head(&[0xa0, 0xa1], 0xa0));
+        let claim = claim(&mut hidpp).unwrap();
+        assert_eq!(claim.boot_mode, DisplayMode::STREAMING);
+        assert!(!claim.mode_event);
+        assert!(hidpp.transport_mut().is_done());
+    }
+
+    #[test]
+    fn a_display_without_streaming_mode_is_refused() {
+        let mut hidpp = hidpp(&claim_head(&[0xa1, 0xa2], 0xa1));
+        assert_eq!(
+            claim(&mut hidpp),
+            Err(ClaimError::StreamingUnsupported {
+                modes: vec![0xa1, 0xa2],
+            })
+        );
+    }
+
+    #[test]
+    fn a_mode_that_does_not_change_is_not_a_claim() {
+        let script = claim_head(&[0xa0, 0xa1], 0xa1)
+            + &format!(
+                "> {}\n< {}\n> {}\n< {}\n",
+                vlp(2, 4, 0xe0, &[0xa0]),
+                vlp(2, 4, 0xc0, &[0xa0]),
+                vlp(2, 5, 0xe0, &[]),
+                vlp(2, 5, 0xc0, &[0xa1]),
+            );
+        let mut hidpp = hidpp(&script);
+        assert_eq!(
+            claim(&mut hidpp),
+            Err(ClaimError::ModeNotConfirmed { mode: 0xa1 })
+        );
+    }
+
+    #[test]
+    fn a_missing_mode_change_event_is_reported_not_fatal() {
+        let script = claim_head(&[0xa0, 0xa1], 0xa1)
+            + &format!(
+                "> {}\n< {}\n> {}\n< {}\n",
+                vlp(2, 4, 0xe0, &[0xa0]),
+                vlp(2, 4, 0xc0, &[0xa0]),
+                vlp(2, 5, 0xe0, &[]),
+                vlp(2, 5, 0xc0, &[0xa0]),
+            );
+        let mut hidpp = hidpp(&script);
+        let claim = claim(&mut hidpp).unwrap();
+        assert!(!claim.mode_event);
+        assert!(hidpp.transport_mut().is_done());
+    }
+
+    #[test]
+    fn claim_errors_name_the_mode_bytes() {
+        let unsupported = ClaimError::StreamingUnsupported {
+            modes: vec![0xa1, 0xd0],
+        };
+        assert_eq!(
+            unsupported.to_string(),
+            "display does not support streaming mode a0; modes: [a1, d0]"
+        );
+        let stuck = ClaimError::ModeNotConfirmed { mode: 0xa1 };
+        assert_eq!(
+            stuck.to_string(),
+            "display stayed in mode 0xa1 after setMode(a0)"
+        );
+    }
 
     fn table(count: u8, records: &[[u8; KEY_RECORD_LEN]]) -> Vec<u8> {
         let mut bytes = vec![0x01, 0x00, 0x60, 0x01, 0xe0, 0x01, 0xe0, count, 0x00];

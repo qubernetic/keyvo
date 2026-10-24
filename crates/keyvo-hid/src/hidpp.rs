@@ -260,6 +260,44 @@ impl<T: HidTransport> Hidpp<T> {
         }
     }
 
+    /// Waits for an unsolicited report that `matches` accepts: first among
+    /// the reports kept while waiting for earlier replies, then on the
+    /// transport for at most the reply timeout. Reports it skips are kept
+    /// for the input path. `None` when nothing matched in time.
+    ///
+    /// # Errors
+    ///
+    /// The transport errors.
+    pub fn wait_for(
+        &mut self,
+        mut matches: impl FnMut(&Frame) -> bool,
+    ) -> Result<Option<Frame>, HidppError> {
+        let kept = self
+            .unmatched
+            .iter()
+            .position(|raw| Frame::parse(raw).is_ok_and(|frame| matches(&frame)));
+        if let Some(position) = kept {
+            return Ok(self
+                .unmatched
+                .remove(position)
+                .and_then(|raw| Frame::parse(&raw).ok()));
+        }
+        let deadline = Instant::now() + self.reply_timeout;
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Ok(None);
+            }
+            let Some(raw) = self.transport.read(remaining)? else {
+                return Ok(None);
+            };
+            match Frame::parse(&raw) {
+                Ok(frame) if matches(&frame) => return Ok(Some(frame)),
+                _ => self.unmatched.push_back(raw),
+            }
+        }
+    }
+
     /// The next inbound report read while waiting for a reply that answered
     /// no request (device events, other software's traffic).
     pub fn take_unmatched(&mut self) -> Option<Vec<u8>> {
@@ -397,6 +435,35 @@ mod tests {
             hidpp.request(Plane::Vlp, 0x02, 0x1, &[0x01]),
             Err(HidppError::Timeout { .. })
         ));
+    }
+
+    #[test]
+    fn wait_for_reads_past_other_reports_and_keeps_them() {
+        let script = format!(
+            "< {}\n< {}\n",
+            long("11 ff 04 00 01"), // classic notification
+            vlp("13 ff 02 10 c6 a0"),
+        );
+        let mut hidpp = hidpp(&script);
+        let event = hidpp.wait_for(|frame| frame.function == 0x1).unwrap();
+        assert_eq!(event.map(|frame| frame.params[0]), Some(0xa0));
+        assert_eq!(hidpp.take_unmatched().map(|raw| raw[0]), Some(0x11));
+        // Nothing left: the wait ends with `None`, not an error.
+        assert_eq!(hidpp.wait_for(|_| true).unwrap(), None);
+    }
+
+    #[test]
+    fn wait_for_finds_a_report_kept_during_an_earlier_request() {
+        let script = format!(
+            "> {}\n< {}\n< {}\n",
+            vlp("13 ff 02 5e e0"),
+            vlp("13 ff 02 10 c6 a0"),
+            vlp("13 ff 02 5e c0 a0"),
+        );
+        let mut hidpp = hidpp(&script);
+        hidpp.request(Plane::Vlp, 0x02, 0x5, &[]).unwrap();
+        assert!(hidpp.wait_for(|frame| frame.swid == 0).unwrap().is_some());
+        assert_eq!(hidpp.take_unmatched(), None);
     }
 
     #[test]

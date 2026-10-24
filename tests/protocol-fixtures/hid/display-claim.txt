@@ -1,0 +1,36 @@
+# The display claim of spec §5.4 in keyvo's order. Every exchange is copied
+# verbatim from the capture; keyvo leaves out what Options+ sends in between
+# (VLP root fn2 ping, display fn7 getConfig, display fn0 getCapabilities, the
+# classic feature walk, repeated fn5 reads). All requests use swid 0xe.
+#
+# 1. VLP root fn1 protocol capabilities -> major 1, minor 0, available
+#    memory 0x0001e820 (frames #1559, #1561; lines 35-36)
+> 13 ff 00 1e e0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 00 1e c0 01 00 00 01 e8 20 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 2. VLP root getFeature(0x19A1 display) -> VLP index 2 (frames #1643, #1645; lines 77-78)
+> 13 ff 00 0e e0 19 a1 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 00 0e c0 19 a1 02 00 00 00 01 e8 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 3. display fn3 supported modes -> a0 a1 a2 a4 a5 a6 d0..d6 (frames #1655, #1657; lines 83-84)
+> 13 ff 02 3e e0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 3e c0 a0 a1 a2 a4 a5 a6 d0 d1 d2 d3 d4 d5 d6 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 4. display fn5 current mode -> a1, the device/logo mode at boot (frames #1659, #1661; lines 85-86)
+> 13 ff 02 5e e0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 5e c0 a1 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 5. display fn1 geometry, four packets (frames #1667 to #1675; lines 89-93),
+#    decoded in display-geometry.txt
+> 13 ff 02 1e e0 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 1e 80 01 00 60 01 e0 01 e0 09 00 01 00 18 00 06 00 76 00 76 01 00 b6 00 07 00 76 00 76
+< 13 ff 02 1e 01 01 01 54 00 06 00 76 00 76 01 00 17 00 a4 00 76 00 76 01 00 b5 00 a3 00 76 00 76
+< 13 ff 02 1e 02 01 01 53 00 a4 00 76 00 76 01 00 17 01 42 00 76 00 76 01 00 b5 01 41 00 76 00 76
+< 13 ff 02 1e 43 01 01 54 01 41 00 76 00 76 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 6. display fn4 setMode(a0) -> echoed (frames #1765, #1767; lines 138-139)
+> 13 ff 02 4e e0 a0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 4e c0 a0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 7. display fn5 confirms a0; the unsolicited mode-change event (function 1,
+#    swid 0, mode a0) arrives before the reply (frames #1769, #1770, #1773; lines 140-142)
+> 13 ff 02 5e e0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 10 c6 a0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 5e c0 a0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+#
+# Source: hcooper 03-options-plus-startup.pcap; line numbers refer to
+# docs/research/hcooper-startup-keypad-sequence.txt. MIT, see README.md.

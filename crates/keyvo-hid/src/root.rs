@@ -27,6 +27,21 @@ const ROOT_INDEX: u8 = 0;
 const FN_GET_FEATURE: u8 = 0;
 /// Classic ROOT `ping` (`getProtocolVersion`).
 const FN_PING: u8 = 1;
+/// VLP root `ProtocolCapabilities`.
+const FN_VLP_PROTOCOL: u8 = 1;
+
+/// A VLP root `ProtocolCapabilities` answer. Field names come from the
+/// Options+ inventory; the widths are the capture decode (medium confidence,
+/// hardware check in M0).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VlpProtocol {
+    /// VLP protocol major version.
+    pub major: u8,
+    /// VLP protocol minor version.
+    pub minor: u8,
+    /// Memory available to the VLP features in bytes, big-endian u32.
+    pub available_memory: u32,
+}
 
 /// The HID++ protocol version a classic ping reports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,6 +120,24 @@ impl<T: HidTransport> Hidpp<T> {
                 version,
             }),
         )
+    }
+
+    /// VLP root `ProtocolCapabilities`, the first request of the display
+    /// claim (spec §5.4).
+    ///
+    /// # Errors
+    ///
+    /// [`HidppError::Malformed`] for a short reply, plus the request errors.
+    pub fn vlp_protocol(&mut self) -> Result<VlpProtocol, HidppError> {
+        let reply = self.request(Plane::Vlp, ROOT_INDEX, FN_VLP_PROTOCOL, &[])?;
+        let [major, minor, m0, m1, m2, m3, ..] = reply.params[..] else {
+            return Err(HidppError::Malformed("short VLP protocol reply".into()));
+        };
+        Ok(VlpProtocol {
+            major,
+            minor,
+            available_memory: u32::from_be_bytes([m0, m1, m2, m3]),
+        })
     }
 
     /// VLP root `getFeature(id)`; `None` when the device does not have it.
