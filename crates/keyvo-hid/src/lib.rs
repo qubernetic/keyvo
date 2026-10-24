@@ -8,6 +8,8 @@
 pub mod display;
 pub mod frame;
 pub mod hidpp;
+#[cfg(target_os = "linux")]
+pub mod hidraw;
 pub mod image;
 pub mod input;
 pub mod keep_alive;

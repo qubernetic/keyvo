@@ -209,6 +209,7 @@ name = "keyvo-hid"
 version = "0.0.0"
 dependencies = [
  "keyvo-core",
+ "rustix",
  "tempfile",
  "thiserror",
 ]
