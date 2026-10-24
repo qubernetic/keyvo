@@ -8,7 +8,10 @@
 //! no system fonts, no files, so the same spec gives the same pixels on
 //! every machine.
 
+pub mod icon;
+
 use resvg::tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect, Transform};
+use resvg::usvg;
 
 use crate::profile::Color;
 
@@ -29,6 +32,9 @@ pub struct KeySpec {
     /// The profile's accent, the primary context indicator (spec §9); no
     /// bar without one.
     pub accent: Option<Color>,
+    /// Icon reference, `lucide:<name>`; an unknown one draws
+    /// [`icon::FALLBACK`].
+    pub icon: Option<String>,
 }
 
 /// The look shared by every key. Sizes are fractions of the tile height, so
@@ -45,6 +51,14 @@ pub struct Theme {
     pub accent_height: f32,
     /// Gap between the accent bar and the bottom edge.
     pub accent_margin: f32,
+    /// Icon and label color on a dark background.
+    pub light_foreground: Color,
+    /// Icon and label color on a light background.
+    pub dark_foreground: Color,
+    /// Icon size of a key without a label.
+    pub icon_size: f32,
+    /// Vertical center of the icon of a key without a label.
+    pub icon_center: f32,
 }
 
 impl Default for Theme {
@@ -55,6 +69,26 @@ impl Default for Theme {
             accent_width: 0.4,
             accent_height: 0.05,
             accent_margin: 0.07,
+            light_foreground: Color::rgb(0xff, 0xff, 0xff),
+            dark_foreground: Color::rgb(0x11, 0x11, 0x11),
+            icon_size: 0.5,
+            icon_center: 0.45,
+        }
+    }
+}
+
+impl Theme {
+    /// The foreground with the stronger contrast on `background`.
+    #[must_use]
+    pub fn foreground(&self, background: Color) -> Color {
+        // Rec. 709 luma on the encoded values; a light key gets dark ink.
+        let luma = 0.2126 * f32::from(background.r)
+            + 0.7152 * f32::from(background.g)
+            + 0.0722 * f32::from(background.b);
+        if luma > 140.0 {
+            self.dark_foreground
+        } else {
+            self.light_foreground
         }
     }
 }
@@ -182,6 +216,19 @@ impl Renderer {
                 fill_rounded(&mut pixmap, rect, bar_height / 2.0, accent);
             }
         }
+        let foreground = self.theme.foreground(background);
+        if let Some(reference) = &spec.icon {
+            let extent = self.theme.icon_size * height;
+            let center = self.theme.icon_center * height;
+            draw_icon(
+                &mut pixmap,
+                reference,
+                foreground,
+                (width - extent) / 2.0,
+                center - extent / 2.0,
+                extent,
+            );
+        }
         Ok(Tile { pixmap })
     }
 }
@@ -192,6 +239,25 @@ fn paint(color: Color) -> Paint<'static> {
     paint.set_color_rgba8(color.r, color.g, color.b, 0xff);
     paint.anti_alias = true;
     paint
+}
+
+/// Draws the icon `reference`, or [`icon::FALLBACK`] when it does not
+/// resolve, in `color` into the square of `side` at `left`, `top`.
+fn draw_icon(pixmap: &mut Pixmap, reference: &str, color: Color, left: f32, top: f32, side: f32) {
+    let Ok(svg) = icon::lookup(reference).or_else(|_| icon::lookup(icon::FALLBACK)) else {
+        return;
+    };
+    // Lucide strokes with `currentColor`; tinting is a text substitution.
+    let svg = svg.replace("currentColor", &color.to_string());
+    let Ok(tree) = usvg::Tree::from_str(&svg, &usvg::Options::default()) else {
+        return;
+    };
+    let scale = side / tree.size().width();
+    resvg::render(
+        &tree,
+        Transform::from_row(scale, 0.0, 0.0, scale, left, top),
+        &mut pixmap.as_mut(),
+    );
 }
 
 /// Fills `rect` with corners of `radius`, clamped to half its sides.
