@@ -1,9 +1,11 @@
 //! The key renderer (spec §9): one snapshot per primitive, the JPEG frame
 //! header, and the tile of a whole demo profile page.
 
+use std::path::Path;
+
 use image::{ImageFormat, Rgb, RgbImage};
-use keyvo_core::profile::Color;
-use keyvo_core::render::{KeySpec, Renderer, TileSize};
+use keyvo_core::profile::{Color, Profile};
+use keyvo_core::render::{self, KeyPlace, KeySpec, Panel, Renderer, TileSize};
 
 /// The key size the Keypad publishes (spec §5.4).
 const KEY: TileSize = TileSize {
@@ -159,6 +161,132 @@ fn markup_in_a_label_is_text() {
     let fitted = renderer.fit_label("a<b & c>", KEY).unwrap();
     assert_eq!(fitted.text, "a<b & c>");
     assert!(white_in_rows(&labeled("a<b & c>", None), 40..65) > 50);
+}
+
+fn demo() -> Profile {
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/profiles/valid/demo.toml");
+    Profile::from_toml(&std::fs::read_to_string(&path).unwrap(), &path).unwrap()
+}
+
+/// The Keypad's panel as captured (spec §5.4): 480x480, nine 118x118 keys.
+fn captured_panel() -> Panel {
+    let origins = [
+        (24, 6),
+        (182, 7),
+        (340, 6),
+        (23, 164),
+        (181, 163),
+        (339, 164),
+        (23, 322),
+        (181, 321),
+        (340, 321),
+    ];
+    Panel {
+        size: TileSize {
+            width: 480,
+            height: 480,
+        },
+        keys: origins
+            .iter()
+            .map(|&(x, y)| KeyPlace { x, y, size: KEY })
+            .collect(),
+    }
+}
+
+#[test]
+fn a_page_gives_one_spec_per_key_with_the_profile_accent() {
+    let accent = Some(Color::rgb(0x4e, 0x8b, 0xd6));
+    let specs = render::page(&demo(), 1, 9).unwrap();
+    assert_eq!(specs.len(), 9);
+    assert_eq!(
+        specs[0],
+        KeySpec {
+            background: None,
+            accent,
+            icon: Some("lucide:hammer".to_owned()),
+            label: Some("Build".to_owned()),
+        }
+    );
+    assert_eq!(specs[1].background, Some(Color::rgb(0x2f, 0x6f, 0x3e)));
+    assert_eq!(
+        specs[6],
+        KeySpec {
+            accent,
+            ..KeySpec::default()
+        }
+    );
+    let general = render::page(&demo(), 2, 9).unwrap();
+    assert_eq!(general[4].label.as_deref(), Some("Settings"));
+    assert!(general[0].icon.is_none());
+}
+
+#[test]
+fn a_page_past_the_last_is_an_error() {
+    let error = render::page(&demo(), 3, 9).unwrap_err();
+    assert_eq!(error.to_string(), "profile `demo` has no page 3; it has 2");
+    assert!(render::page(&demo(), 0, 9).is_err());
+}
+
+#[test]
+fn the_demo_page_renders_on_the_captured_panel() {
+    let renderer = Renderer::new();
+    let specs = render::page(&demo(), 1, 9).unwrap();
+    let panel = renderer.panel(&specs, &captured_panel()).unwrap();
+    assert_eq!(
+        panel.size(),
+        TileSize {
+            width: 480,
+            height: 480
+        }
+    );
+    let rgb = panel.rgb();
+    // Between the keys the panel stays black.
+    let at = |x: usize, y: usize| &rgb[(y * 480 + x) * 3..(y * 480 + x) * 3 + 3];
+    assert_eq!(at(160, 160), &[0, 0, 0]);
+    // The middle of key 5 is the key's own tile.
+    let key5 = renderer.tile(&specs[4], KEY).unwrap().rgb();
+    assert_eq!(
+        at(181 + 10, 163 + 59),
+        &key5[(59 * 118 + 10) * 3..(59 * 118 + 10) * 3 + 3]
+    );
+    insta::assert_binary_snapshot!("demo-page-1.png", panel.png().unwrap());
+}
+
+#[test]
+fn every_key_tile_is_a_baseline_jpeg_of_the_tile_size() {
+    let renderer = Renderer::new();
+    for spec in render::page(&demo(), 1, 9).unwrap() {
+        let jpeg = renderer.tile(&spec, KEY).unwrap().jpeg().unwrap();
+        assert_eq!(sof0(&jpeg), Some((118, 118)), "{spec:?}");
+    }
+    let panel = TileSize {
+        width: 435,
+        height: 434,
+    };
+    let jpeg = renderer
+        .tile(&KeySpec::default(), panel)
+        .unwrap()
+        .jpeg()
+        .unwrap();
+    assert_eq!(sof0(&jpeg), Some((435, 434)));
+}
+
+/// Width and height of the baseline frame header (SOF0), walking the
+/// marker segments; `None` without one.
+fn sof0(jpeg: &[u8]) -> Option<(u16, u16)> {
+    let mut at = 2;
+    while let [0xff, marker, len0, len1, ..] = *jpeg.get(at..)? {
+        if marker == 0xc0 {
+            let header = jpeg.get(at + 5..at + 9)?;
+            return Some((
+                u16::from_be_bytes([header[2], header[3]]),
+                u16::from_be_bytes([header[0], header[1]]),
+            ));
+        }
+        at += 2 + usize::from(u16::from_be_bytes([len0, len1]));
+    }
+    None
 }
 
 #[test]

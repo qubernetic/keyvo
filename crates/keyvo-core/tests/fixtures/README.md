@@ -6,6 +6,7 @@ hand-written; none is derived from a capture.
 | Path | Test | What it shows |
 |---|---|---|
 | `profiles/valid/vscode.toml` | `tests/profile.rs` | every field of schema version 1 |
+| `profiles/valid/demo.toml` | `tests/render.rs`, `keyvo-cli` preview tests | the renderer demo: every primitive on page 1 (icon and label, key colors light and dark, icon only, label only, a cut label, a blank key, an unknown icon), a second page; its page 1 is the snapshot `tests/snapshots/render__demo-page-1.snap.png` |
 | `profiles/invalid/*.toml` | `tests/profile.rs` | one problem each; the `INVALID` table lists the expected line, column and message, and a test fails when a file is missing from it |
 | `config/valid/partial.toml` | `tests/config.rs` | keys left out keep their default |
 | `config/invalid/*.toml` | `tests/config.rs` | an unknown `[timing]` key, a negative duration |

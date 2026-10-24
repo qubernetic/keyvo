@@ -12,10 +12,10 @@ pub mod icon;
 
 use std::sync::Arc;
 
-use resvg::tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect, Transform};
+use resvg::tiny_skia::{self, FillRule, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Transform};
 use resvg::usvg::{self, fontdb};
 
-use crate::profile::Color;
+use crate::profile::{Color, Key, KeySlot, Profile};
 
 /// Width and height of a tile in pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +39,65 @@ pub struct KeySpec {
     pub icon: Option<String>,
     /// Text below the icon, or centered without one.
     pub label: Option<String>,
+}
+
+impl KeySpec {
+    /// What `key` shows, with the profile's `accent`; a blank key without
+    /// one.
+    #[must_use]
+    pub fn from_key(key: Option<&Key>, accent: Option<Color>) -> Self {
+        Self {
+            background: key.and_then(|key| key.color),
+            accent,
+            icon: key.and_then(|key| key.icon.clone()),
+            label: key.and_then(|key| key.label.clone()),
+        }
+    }
+}
+
+/// The specs of keys 1 to `keys` on page `page` (counted from 1) of
+/// `profile`. The key count comes from the device's geometry; keys the page
+/// does not define are blank.
+///
+/// # Errors
+///
+/// [`RenderError::NoSuchPage`].
+pub fn page(profile: &Profile, page: usize, keys: u8) -> Result<Vec<KeySpec>, RenderError> {
+    let found = page
+        .checked_sub(1)
+        .and_then(|index| profile.pages.get(index))
+        .ok_or_else(|| RenderError::NoSuchPage {
+            profile: profile.profile.id.clone(),
+            page,
+            pages: profile.pages.len(),
+        })?;
+    Ok((1..=keys)
+        .map(|n| {
+            let key = KeySlot::new(n).and_then(|slot| found.keys.get(&slot));
+            KeySpec::from_key(key, profile.profile.accent)
+        })
+        .collect())
+}
+
+/// Where one key's tile goes on the panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KeyPlace {
+    /// Left edge.
+    pub x: u16,
+    /// Top edge.
+    pub y: u16,
+    /// Tile size.
+    pub size: TileSize,
+}
+
+/// The whole display as the device publishes it: its size and the key
+/// rectangles in table order (spec §5.4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Panel {
+    /// Panel size.
+    pub size: TileSize,
+    /// The keys, numbered from 1 in this order.
+    pub keys: Vec<KeyPlace>,
 }
 
 /// The look shared by every key. Sizes are fractions of the tile height, so
@@ -133,6 +192,16 @@ pub enum RenderError {
     /// The PNG encoder failed.
     #[error("png encoding failed: {0}")]
     Png(String),
+    /// A page number the profile does not have.
+    #[error("profile `{profile}` has no page {page}; it has {pages}")]
+    NoSuchPage {
+        /// Profile id.
+        profile: String,
+        /// The requested page, counted from 1.
+        page: usize,
+        /// Pages in the profile.
+        pages: usize,
+    },
 }
 
 /// JPEG quality of a tile, inside the 85 to 95 of spec §5.5.
@@ -284,6 +353,35 @@ impl Renderer {
             if let Some(tree) = self.label_tree(&label, foreground, size, baseline) {
                 resvg::render(&tree, Transform::identity(), &mut pixmap.as_mut());
             }
+        }
+        Ok(Tile { pixmap })
+    }
+
+    /// The whole panel: black, with the tile of `specs[i]` at `panel.keys[i]`
+    /// (a blank tile where `specs` runs out). For previews; the device gets
+    /// one [`Tile`] per key.
+    ///
+    /// # Errors
+    ///
+    /// [`RenderError::EmptyTile`] for a panel or key of zero size.
+    pub fn panel(&self, specs: &[KeySpec], panel: &Panel) -> Result<Tile, RenderError> {
+        let mut pixmap = Pixmap::new(u32::from(panel.size.width), u32::from(panel.size.height))
+            .ok_or(RenderError::EmptyTile {
+                width: panel.size.width,
+                height: panel.size.height,
+            })?;
+        pixmap.fill(tiny_skia::Color::BLACK);
+        let blank = KeySpec::default();
+        for (index, place) in panel.keys.iter().enumerate() {
+            let tile = self.tile(specs.get(index).unwrap_or(&blank), place.size)?;
+            pixmap.draw_pixmap(
+                i32::from(place.x),
+                i32::from(place.y),
+                tile.pixmap.as_ref(),
+                &PixmapPaint::default(),
+                Transform::identity(),
+                None,
+            );
         }
         Ok(Tile { pixmap })
     }
