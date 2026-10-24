@@ -9,6 +9,7 @@ pub mod clock;
 pub mod config;
 pub mod diagnostic;
 pub mod hid;
+pub mod layout;
 pub mod profile;
 
 /// Version of the keyvo workspace, taken from `Cargo.toml` at compile time.
