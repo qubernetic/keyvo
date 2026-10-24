@@ -325,6 +325,20 @@ S.A. keyvo is an independent community project. Do not use the Logitech marks in
 a way that suggests endorsement, and do not copy code from third-party projects
 into keyvo without stating the origin and licence in the file header.
 
+## Static analysis of vendor software
+
+Some protocol facts (feature names, field semantics, state identifiers) exist
+only inside Logitech's own software. Looking them up is allowed for
+interoperability (EU Directive 2009/24/EC, Art. 5(3) and Art. 6), and keyvo does
+it under the rules of [ADR-0008](docs/adr/0008-static-analysis-boundary.md):
+device-communication parts only; findings recorded as facts with evidence kind
+and confidence in `docs/research/`; never decompiled code or pseudocode in the
+repository; no decryption of protected data files; no vendor binary executed.
+The tooling (a throwaway distrobox with Ghidra and the REA CLI, see the
+inventory report's method section) is research tooling on the host, not part of
+the devcontainer or the build. If you cannot work within that record, leave
+analysis work to someone who can; implementation work is unaffected.
+
 ## Reporting bugs
 
 Open an issue with the bug report template. Please include:

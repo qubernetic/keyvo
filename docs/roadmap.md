@@ -29,7 +29,7 @@ divert; `docs/protocol.md` and `docs/hardware-notes.md` with measured values;
 Windows build green.
 
 - M0-1 `research: TS quick-test with Julusian's library` (host, hardware)
-- M0-2 `chore: Windows VM and USB capture toolkit` (VM scripts, USBPcap, captures release asset, fixtures)
+- M0-2 `chore: Windows VM and USB capture toolkit` (VM scripts, USBPcap, captures release asset, fixtures; the capture target is the Logi Plugin Service traffic, which drives the Creative Console, see `docs/research/options-plus-inventory.md`)
 - M0-3 `feat(hid): HID++ 2.0 core` (framing, ROOT/FEATURE_SET, index resolution, errors, golden tests)
 - M0-4 `feat(hid): keypad enumeration and keep-alive`
 - M0-5 `feat(hid): VLP display plane` (geometry query, image writer, ACK flow control, per-key and panel paint)
@@ -67,8 +67,9 @@ import if not done in M1.
 settings.
 
 **DoD.** Dialpad over the Bolt receiver (buttons on `0x1B04`, dial and roller on
-`0x4610`) with Bluetooth verified as fallback; optional Solaar-backed desk state
-per profile; VS Code extension.
+`0x4610`) with Bluetooth verified as fallback, the `0x4610` request and response
+layouts taken from a targeted static pass under ADR-0008 plus the Bolt capture;
+optional Solaar-backed desk state per profile; VS Code extension.
 
 ## M4a: GUI ([milestone 5](https://github.com/qubernetic/keyvo/milestone/5))
 
@@ -86,8 +87,11 @@ Flathub users need no manual step.
 ## M5: Windows ([milestone 7](https://github.com/qubernetic/keyvo/milestone/7))
 
 **Goal.** The same profiles next to Logi Options+ on Windows through a C# Logi
-Actions SDK plugin built and tested in the Windows VM. Native mode (raw HID
-without Options+) depends on the M0-2 ownership measurement.
+Actions SDK plugin built and tested in the Windows VM. On Windows the Creative
+Console is owned by the Logi Plugin Service that Options+ bundles
+(`docs/research/options-plus-inventory.md`), so the plugin talks to that
+service. Native mode (raw HID without Options+) depends on the M0-2 ownership
+measurement.
 
 ## Deferred / open
 
