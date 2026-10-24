@@ -92,6 +92,7 @@ Follow the `git-workflow` skill strictly. In short:
 
 - Gitflow: `main` and `develop` are protected; PR-only; merge commits only.
 - Every branch starts from an issue; one PR closes exactly one issue.
+- Slices of one plan that share `Cargo.toml`, `Cargo.lock` or a crate branch from an epic branch `epic/<issue>-<slug>` (base `develop`) and merge into it on the Reviewer's approval; the owner's merge gate applies to the epic PR into `develop` only (CONTRIBUTING.md, "Branch types").
 - Conventional Commits, imperative mood, lowercase, no trailing period, at most 72 characters.
 - Atomic commits: one logical change each.
 - DCO: every commit is signed off with `git commit -s` by the human author.

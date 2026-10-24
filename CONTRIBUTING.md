@@ -210,8 +210,17 @@ keyvo follows a strict Gitflow. Every contribution goes through these steps:
 | Bug fix | `fix/` | `develop` | `fix/57-brightness-unit` |
 | Hotfix on a release | `hotfix/` | `main` | `hotfix/89-daemon-crash` |
 | Release preparation | `release/` | `develop` | `release/0.1.0` |
+| Epic of several slices | `epic/` | `develop` | `epic/34-pre-alpha` |
 
 Branch names are lowercase, hyphen-separated, prefixed with the issue number.
+
+An epic branch `epic/<issue>-<slug>` collects the slices of one plan that
+would conflict if they merged into `develop` one by one (shared `Cargo.toml`,
+`Cargo.lock` or crate). Each slice branches from the epic branch, its PR
+targets the epic branch, and it merges there with a merge commit once the
+Reviewer approves it. The maintainer's merge gate applies to the epic PR into
+`develop` only; the `## User test` checklists of the slices are run before
+that PR merges.
 
 ### Commit format
 
