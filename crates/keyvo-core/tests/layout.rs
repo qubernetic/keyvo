@@ -132,3 +132,30 @@ fn an_unreadable_profile_is_an_io_error_with_its_path() {
             .starts_with(&profiles.join("odd.toml").display().to_string())
     );
 }
+
+#[test]
+fn an_unreadable_config_and_profiles_path_are_both_reported() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir(tmp.path().join("config.toml")).unwrap();
+    std::fs::write(tmp.path().join("profiles"), "not a directory").unwrap();
+
+    let errors = load(tmp.path()).unwrap_err();
+    let paths: Vec<&Path> = errors
+        .0
+        .iter()
+        .map(|e| match e {
+            LoadError::Io { path, .. } => path.as_path(),
+            LoadError::Invalid(d) => panic!("{d}"),
+        })
+        .collect();
+    assert_eq!(
+        paths,
+        [tmp.path().join("config.toml"), tmp.path().join("profiles")]
+    );
+}
+
+#[test]
+fn profiles_are_never_empty() {
+    let loaded = load(&dir("full")).unwrap();
+    assert!(!loaded.profiles.is_empty());
+}
