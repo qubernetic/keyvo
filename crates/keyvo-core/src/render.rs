@@ -592,6 +592,32 @@ mod tests {
     }
 
     #[test]
+    fn tiles_encode_as_baseline_jpeg_without_chroma_subsampling() {
+        let jpeg = Renderer::new()
+            .tile(
+                &KeySpec::default(),
+                TileSize {
+                    width: 118,
+                    height: 118,
+                },
+            )
+            .unwrap()
+            .jpeg()
+            .unwrap();
+        let sof = jpeg
+            .windows(2)
+            .position(|marker| marker == [0xff, 0xc0])
+            .unwrap();
+        // Length, precision, height, width, component count, then id,
+        // sampling (h << 4 | v) and table per component.
+        let header = &jpeg[sof + 2..sof + 19];
+        assert_eq!(&header[3..7], &[0, 118, 0, 118]);
+        assert_eq!(header[7], 3);
+        let sampling: Vec<_> = header[8..].chunks(3).map(|c| c[1]).collect();
+        assert_eq!(sampling, [0x11, 0x11, 0x11], "4:4:4");
+    }
+
+    #[test]
     fn transparent_corners_are_black_in_rgb() {
         let tile = Renderer::new()
             .tile(
