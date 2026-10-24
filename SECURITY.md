@@ -85,6 +85,32 @@ user is trusted, and nothing else is.
   keyvo has no inbound network listener in v1; nothing on the network can reach
   the daemon.
 
+### The project layer is the first foreign input
+
+A repository may carry a `.keyvo/` directory (`docs/spec.md` §7.4, ADR-0009).
+Unlike everything else keyvo reads, the user did not necessarily write it: it
+arrives with a clone or a pull. keyvo treats it as untrusted data until the
+user says otherwise.
+
+- The layer is parsed and rendered as soon as it is found, so the pad shows
+  what the project offers, but none of its `exec`, `http`, `chord`, `text` or
+  `recipe` actions runs until the project is trusted. A press on an untrusted
+  key only writes a trace entry with the block reason.
+- Trust is recorded in `~/.config/keyvo/trust.toml` against the SHA-256 of the
+  three files' contents. Any change, including a pull, invalidates it and the
+  prompt is shown again. `keyvo project trust` and the GUI prompt list every
+  action and every overridden key before asking; `keyvo project revoke`
+  withdraws trust.
+- `[project_layer]` in `config.toml` limits what a project may touch: keys,
+  action types (`profile` and `mode` are never allowed from a project) and app
+  profiles. Setting `trust = "always"` disables the gate; `keyvo doctor`
+  reports it as a warning and the setting is not offered by the GUI.
+- Starter packs and imported profile bundles pass the same gate when they
+  contain `exec`, `http` or `recipe` actions.
+- A trusted project's actions run with the user's rights, like any other
+  profile action; reviewing `.keyvo/` before trusting it is the same duty as
+  reviewing a `.envrc` or a `justfile` from a clone.
+
 ### Plugins are user-installed processes
 
 Plugins under `~/.config/keyvo/plugins/` are executables the user chose to
