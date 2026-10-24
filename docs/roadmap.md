@@ -54,6 +54,47 @@ Repository, policy and skeleton, before any protocol code.
 - #27 `docs(research): Logi Options+ device-communication inventory` and ADR-0008 (done).
 - #29 `docs: GUI and UX design document, roadmap split` (S, this revision).
 
+## Pre-alpha ([milestone 8](https://github.com/qubernetic/keyvo/milestone/8))
+
+**Goal.** A pre-alpha build that shows the whole stack working end to end on
+the owner's machine: the Keypad paints profile keys, presses run actions, the
+profile follows the focused KDE window, and a minimal Tauri GUI mirrors and
+edits the pad, so the direction can change before the layers harden.
+
+**DoD.** Every slice below is merged into the epic branch `epic/34-pre-alpha`,
+the owner's two hardware checks (#40, #52) passed, and the epic PR is merged
+into `develop`.
+
+Each slice is a thin cut of the roadmap issue named in **From**; the roadmap
+issue stays open for the rest. The slices form one chain on the epic branch
+(CONTRIBUTING.md, "Branch types"), because almost every one touches the root
+`Cargo.toml`, `Cargo.lock` or the same crate. The Proof block of every slice
+is in its issue body. Out of scope: the project layer, trust, recipes, the
+Dialpad, plugins and integrations, X11, Windows and every GUI screen beyond
+Home and the one-key editor.
+
+| Slice | Issue | Title | Layer | From | Depends on |
+|---|---|---|---|---|---|
+| 0 | #34 | `docs(contributing): record issue-body proof blocks and epic branches` | S | conventions | |
+| 1 | #35 | `feat(hid): hid++ and vlp framing with feature resolution` | S | M0-3 | #34 |
+| 2 | #36 | `feat(hid): keypad claim, geometry and keep-alive` | S | M0-4a | #35 |
+| 3 | #37 | `feat(hid): vlp image writer with ack flow control` | S | M0-5a | #36 |
+| 4 | #38 | `feat(hid): key input and page button divert` | S | M0-6a | #37 |
+| 5 | #39 | `feat(cli): hidraw transport with probe, keys and fill` | S | M0-8 | #38 |
+| 6 | #40 | `test(hardware): run first light on the keypad` | H | M0-4b, M0-5b, M0-6b | #39 |
+| 6b | #41 | `docs(hardware): record the first-light measurements` | S | M0-9 | #40 |
+| 7 | #42 | `feat(core): profile model and toml loading` | S | M1-1 | #39 |
+| 8 | #43 | `feat(core): key renderer and keyvo preview` | S | M1-3 | #42 |
+| 9 | #44 | `feat(core): chord parser, press resolution and feedback states` | S | M1-4, M1-6 | #43 |
+| 10 | #45 | `feat(daemon): drive the keypad from the active profile` | S | M1-5, M1-9 | #44 |
+| 11 | #46 | `feat(core): focus context and page buttons` | S | M2-1 | #45 |
+| 12 | #47 | `feat(daemon): kwin focus watcher` | S | M2-6 | #46 |
+| 13 | #48 | `feat(daemon): socket api v1 subset and keyvo ctl` | S | M2-2, M1-8 | #47 |
+| 14 | #49 | `build(app): tauri and svelte scaffold with ci build` | S | M4a-1 | #48 |
+| 15 | #50 | `feat(app): home mirror and virtual pad` | S | M4a-2 | #49 |
+| 16 | #51 | `feat(app): edit a key with immediate apply` | S | M1-2, M4a-4 | #50 |
+| 17 | #52 | `test(hardware): run the pre-alpha end-to-end check` | H | M2-7, M4a-9 | #51, #41 |
+
 ## M0: Protocol ([milestone 1](https://github.com/qubernetic/keyvo/milestone/1))
 
 **Goal.** Hardware truth: measure the Keypad on Linux, capture Options+ on
