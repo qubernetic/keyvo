@@ -6,6 +6,10 @@ Cargo.lock text
 # Snapshot fixtures (insta)
 *.snap text
 
+# Binary assets and image snapshots
+*.ttf binary
+*.png binary
+
 # Shell scripts and task runner
 *.sh text eol=lf
 justfile text eol=lf

@@ -10,8 +10,10 @@
 
 pub mod icon;
 
+use std::sync::Arc;
+
 use resvg::tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect, Transform};
-use resvg::usvg;
+use resvg::usvg::{self, fontdb};
 
 use crate::profile::Color;
 
@@ -35,6 +37,8 @@ pub struct KeySpec {
     /// Icon reference, `lucide:<name>`; an unknown one draws
     /// [`icon::FALLBACK`].
     pub icon: Option<String>,
+    /// Text below the icon, or centered without one.
+    pub label: Option<String>,
 }
 
 /// The look shared by every key. Sizes are fractions of the tile height, so
@@ -59,6 +63,19 @@ pub struct Theme {
     pub icon_size: f32,
     /// Vertical center of the icon of a key without a label.
     pub icon_center: f32,
+    /// Icon size of a key with a label.
+    pub labeled_icon_size: f32,
+    /// Vertical center of the icon of a key with a label.
+    pub labeled_icon_center: f32,
+    /// Largest label font size.
+    pub label_size: f32,
+    /// Smallest label font size; a label that does not fit at this size is
+    /// cut.
+    pub min_label_size: f32,
+    /// Free space left and right of a label.
+    pub label_margin: f32,
+    /// Label baseline of a key with an icon.
+    pub label_baseline: f32,
 }
 
 impl Default for Theme {
@@ -73,6 +90,12 @@ impl Default for Theme {
             dark_foreground: Color::rgb(0x11, 0x11, 0x11),
             icon_size: 0.5,
             icon_center: 0.45,
+            labeled_icon_size: 0.4,
+            labeled_icon_center: 0.36,
+            label_size: 0.17,
+            min_label_size: 0.12,
+            label_margin: 0.06,
+            label_baseline: 0.8,
         }
     }
 }
@@ -177,16 +200,29 @@ impl Tile {
 }
 
 /// Renders key specs into tiles.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Renderer {
     theme: Theme,
+    /// Only the embedded font: labels look the same on every machine.
+    fonts: Arc<fontdb::Database>,
+}
+
+impl Default for Renderer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Renderer {
     /// A renderer with the default theme.
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        let mut fonts = fontdb::Database::new();
+        fonts.load_font_data(INTER.to_vec());
+        Self {
+            theme: Theme::default(),
+            fonts: Arc::new(fonts),
+        }
     }
 
     /// Renders `spec` at `size`.
@@ -217,9 +253,17 @@ impl Renderer {
             }
         }
         let foreground = self.theme.foreground(background);
+        let label = spec
+            .label
+            .as_deref()
+            .and_then(|text| self.fit_label(text, size));
         if let Some(reference) = &spec.icon {
-            let extent = self.theme.icon_size * height;
-            let center = self.theme.icon_center * height;
+            let (extent, center) = if label.is_some() {
+                (self.theme.labeled_icon_size, self.theme.labeled_icon_center)
+            } else {
+                (self.theme.icon_size, self.theme.icon_center)
+            };
+            let (extent, center) = (extent * height, center * height);
             draw_icon(
                 &mut pixmap,
                 reference,
@@ -229,8 +273,133 @@ impl Renderer {
                 extent,
             );
         }
+        if let Some(label) = label {
+            let baseline = if spec.icon.is_some() {
+                self.theme.label_baseline * height
+            } else {
+                // Centered on the icon's center line: half the cap height
+                // below it.
+                self.theme.icon_center * height + CAP_HEIGHT / 2.0 * label.font_size
+            };
+            if let Some(tree) = self.label_tree(&label, foreground, size, baseline) {
+                resvg::render(&tree, Transform::identity(), &mut pixmap.as_mut());
+            }
+        }
         Ok(Tile { pixmap })
     }
+
+    /// The largest font size, from the theme's label size down to its
+    /// minimum, at which `text` fits the key's width; below the minimum the
+    /// text is cut and ends with an ellipsis. `None` for a blank label.
+    #[must_use]
+    pub fn fit_label(&self, text: &str, size: TileSize) -> Option<FittedLabel> {
+        let text = text.trim();
+        if text.is_empty() {
+            return None;
+        }
+        let height = f32::from(size.height);
+        let room = f32::from(size.width) - 2.0 * self.theme.label_margin * height;
+        let largest = (self.theme.label_size * height).round();
+        let smallest = (self.theme.min_label_size * height).round();
+        let fits = |label: &FittedLabel| {
+            self.label_tree(label, self.theme.light_foreground, size, height / 2.0)
+                .is_some_and(|tree| tree.root().abs_bounding_box().width() <= room)
+        };
+        let mut font_size = largest;
+        while font_size >= smallest {
+            let label = FittedLabel {
+                text: text.to_owned(),
+                font_size,
+            };
+            if fits(&label) {
+                return Some(label);
+            }
+            font_size -= 1.0;
+        }
+        let chars: Vec<char> = text.chars().collect();
+        (1..chars.len())
+            .rev()
+            .map(|keep| FittedLabel {
+                text: format!(
+                    "{}\u{2026}",
+                    chars[..keep].iter().collect::<String>().trim_end()
+                ),
+                font_size: smallest,
+            })
+            .find(|label| fits(label))
+            .or(Some(FittedLabel {
+                text: "\u{2026}".to_owned(),
+                font_size: smallest,
+            }))
+    }
+
+    /// The SVG tree of `label` centered on the tile at `baseline`.
+    fn label_tree(
+        &self,
+        label: &FittedLabel,
+        color: Color,
+        size: TileSize,
+        baseline: f32,
+    ) -> Option<usvg::Tree> {
+        let svg = format!(
+            concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}">"#,
+                r#"<text x="{x}" y="{y}" font-family="{family}" font-weight="{weight}" "#,
+                r#"font-size="{size}" text-anchor="middle" fill="{color}">{text}</text></svg>"#,
+            ),
+            w = size.width,
+            h = size.height,
+            x = f32::from(size.width) / 2.0,
+            y = baseline,
+            family = FONT_FAMILY,
+            weight = FONT_WEIGHT,
+            size = label.font_size,
+            color = color,
+            text = escape(&label.text),
+        );
+        let options = usvg::Options {
+            fontdb: Arc::clone(&self.fonts),
+            font_family: FONT_FAMILY.to_owned(),
+            ..usvg::Options::default()
+        };
+        usvg::Tree::from_str(&svg, &options).ok()
+    }
+}
+
+/// A label as it is drawn: the text, cut if needed, and its font size in
+/// pixels.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FittedLabel {
+    /// The text, ending with an ellipsis when it was cut.
+    pub text: String,
+    /// Font size in pixels.
+    pub font_size: f32,
+}
+
+/// The embedded label font: Inter 4.1, semibold weight (SIL OFL 1.1,
+/// <https://github.com/rsms/inter>, licence text in
+/// `assets/fonts/LICENSE.txt`).
+const INTER: &[u8] = include_bytes!("../assets/fonts/Inter-SemiBold.ttf");
+/// The family name inside [`INTER`].
+const FONT_FAMILY: &str = "Inter";
+/// The weight of [`INTER`].
+const FONT_WEIGHT: u16 = 600;
+/// Inter's cap height as a fraction of the font size (2048 of 2816 units).
+const CAP_HEIGHT: f32 = 0.727;
+
+/// `text` with the XML special characters escaped.
+fn escape(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            _ => escaped.push(c),
+        }
+    }
+    escaped
 }
 
 /// A `tiny-skia` paint of `color`, anti-aliased.

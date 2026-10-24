@@ -1,0 +1,6 @@
+---
+source: crates/keyvo-core/tests/render.rs
+expression: "labeled(\"Run every integration test\", None).png().unwrap()"
+extension: png
+snapshot_kind: binary
+---

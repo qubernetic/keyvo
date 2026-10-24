@@ -98,6 +98,69 @@ fn deprecated_lucide_names_resolve_to_the_current_icon() {
     );
 }
 
+fn labeled(label: &str, icon: Option<&str>) -> keyvo_core::render::Tile {
+    let spec = KeySpec {
+        label: Some(label.to_owned()),
+        icon: icon.map(str::to_owned),
+        ..KeySpec::default()
+    };
+    Renderer::new().tile(&spec, KEY).unwrap()
+}
+
+/// White pixels in the rows `rows` of `tile`.
+fn white_in_rows(tile: &keyvo_core::render::Tile, rows: std::ops::Range<u32>) -> usize {
+    let picture = decoded(&tile.jpeg().unwrap());
+    picture
+        .enumerate_pixels()
+        .filter(|(_, y, p)| rows.contains(y) && close(**p, Rgb([0xff, 0xff, 0xff])))
+        .count()
+}
+
+#[test]
+fn a_label_alone_is_centered() {
+    let tile = labeled("Build", None);
+    assert!(white_in_rows(&tile, 40..65) > 100);
+    assert_eq!(white_in_rows(&tile, 0..30), 0);
+    assert_eq!(white_in_rows(&tile, 80..118), 0);
+    insta::assert_binary_snapshot!("label.png", tile.png().unwrap());
+}
+
+#[test]
+fn a_label_goes_below_the_icon() {
+    let tile = labeled("Commit", Some("lucide:git-commit"));
+    assert!(white_in_rows(&tile, 20..60) > 100, "icon");
+    assert!(white_in_rows(&tile, 80..100) > 100, "label");
+    insta::assert_binary_snapshot!("icon-label.png", tile.png().unwrap());
+}
+
+#[test]
+fn a_long_label_shrinks_then_is_cut_with_an_ellipsis() {
+    let renderer = Renderer::new();
+    let short = renderer.fit_label("Build", KEY).unwrap();
+    assert_eq!(short.text, "Build");
+    let longer = renderer.fit_label("Deployment", KEY).unwrap();
+    assert_eq!(longer.text, "Deployment");
+    assert!(longer.font_size < short.font_size, "{longer:?} {short:?}");
+    let cut = renderer
+        .fit_label("Run every integration test", KEY)
+        .unwrap();
+    assert!(cut.text.starts_with("Run every"), "{cut:?}");
+    assert!(cut.text.ends_with('\u{2026}'), "{cut:?}");
+    assert!(renderer.fit_label("  ", KEY).is_none());
+    insta::assert_binary_snapshot!(
+        "long-label.png",
+        labeled("Run every integration test", None).png().unwrap()
+    );
+}
+
+#[test]
+fn markup_in_a_label_is_text() {
+    let renderer = Renderer::new();
+    let fitted = renderer.fit_label("a<b & c>", KEY).unwrap();
+    assert_eq!(fitted.text, "a<b & c>");
+    assert!(white_in_rows(&labeled("a<b & c>", None), 40..65) > 50);
+}
+
 #[test]
 fn icon_lookup_explains_what_is_missing() {
     use keyvo_core::render::icon::{self, IconError};
