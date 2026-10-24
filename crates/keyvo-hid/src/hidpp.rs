@@ -4,7 +4,7 @@
 //! the `(function << 4) | swid` byte (spec §5.1), never on "the next inbound
 //! report". Reports that answer nothing are kept for the input path.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 
 use keyvo_core::hid::{HidTransport, TransportError, to_hex};
@@ -170,23 +170,21 @@ pub struct Hidpp<T> {
     swid: SoftwareId,
     reply_timeout: Duration,
     unmatched: VecDeque<Vec<u8>>,
+    /// Feature indices resolved so far, per plane and feature id.
+    pub(crate) features: HashMap<(Plane, u16), u8>,
 }
 
 impl<T: HidTransport> Hidpp<T> {
     /// Talks to `device_index` on `transport`, tagging requests with `swid`
     /// and waiting at most `reply_timeout` for each reply.
-    pub const fn new(
-        transport: T,
-        device_index: u8,
-        swid: SoftwareId,
-        reply_timeout: Duration,
-    ) -> Self {
+    pub fn new(transport: T, device_index: u8, swid: SoftwareId, reply_timeout: Duration) -> Self {
         Self {
             transport,
             device_index,
             swid,
             reply_timeout,
             unmatched: VecDeque::new(),
+            features: HashMap::new(),
         }
     }
 

@@ -7,3 +7,4 @@
 
 pub mod frame;
 pub mod hidpp;
+pub mod root;

@@ -1,0 +1,5 @@
+# Classic ROOT getFeature(0x0020) -> index 0: the feature is not present.
+# Source: hcooper 03-options-plus-startup.pcap, frames #1713 and #1715
+# (docs/research/hcooper-startup-keypad-sequence.txt lines 112-113). MIT, see README.md.
+> 11 ff 00 0e 00 20 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 00 0e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00

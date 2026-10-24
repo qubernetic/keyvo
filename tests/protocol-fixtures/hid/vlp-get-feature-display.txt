@@ -1,0 +1,7 @@
+# VLP ROOT fn0 getFeature(0x19A1 display) on report 0x13 (swid 0xe, sequence
+# byte e0) -> echoed id 0x19a1, VLP index 0x02, hidden 0, version 0,
+# maxMemory 0x0001e803.
+# Source: hcooper 03-options-plus-startup.pcap, frames #1643 and #1645
+# (docs/research/hcooper-startup-keypad-sequence.txt lines 77-78). MIT, see README.md.
+> 13 ff 00 0e e0 19 a1 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 00 0e c0 19 a1 02 00 00 00 01 e8 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00

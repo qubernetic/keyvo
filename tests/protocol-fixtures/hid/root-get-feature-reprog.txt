@@ -1,0 +1,6 @@
+# Classic ROOT getFeature(0x1B04 REPROG_CONTROLS_V4) -> index 0x0b, type 0,
+# version 6 (swid 0xe).
+# Source: hcooper 03-options-plus-startup.pcap, frames #1681 and #1683
+# (docs/research/hcooper-startup-keypad-sequence.txt lines 96-97). MIT, see README.md.
+> 11 ff 00 0e 1b 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 00 0e 0b 00 06 00 00 00 00 00 00 00 00 00 00 00 00 00
