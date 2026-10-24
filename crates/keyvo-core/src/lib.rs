@@ -6,6 +6,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod clock;
+pub mod config;
 pub mod diagnostic;
 pub mod hid;
 pub mod profile;
