@@ -26,6 +26,9 @@ pub struct TileSize {
 pub struct KeySpec {
     /// Background color.
     pub background: Option<Color>,
+    /// The profile's accent, the primary context indicator (spec §9); no
+    /// bar without one.
+    pub accent: Option<Color>,
 }
 
 /// The look shared by every key. Sizes are fractions of the tile height, so
@@ -36,6 +39,12 @@ pub struct Theme {
     pub background: Color,
     /// Corner radius.
     pub radius: f32,
+    /// Width of the accent bar.
+    pub accent_width: f32,
+    /// Height of the accent bar.
+    pub accent_height: f32,
+    /// Gap between the accent bar and the bottom edge.
+    pub accent_margin: f32,
 }
 
 impl Default for Theme {
@@ -43,6 +52,9 @@ impl Default for Theme {
         Self {
             background: Color::rgb(0x26, 0x28, 0x2c),
             radius: 0.12,
+            accent_width: 0.4,
+            accent_height: 0.05,
+            accent_margin: 0.07,
         }
     }
 }
@@ -159,6 +171,16 @@ impl Renderer {
         let background = spec.background.unwrap_or(self.theme.background);
         if let Some(rect) = Rect::from_xywh(0.0, 0.0, width, height) {
             fill_rounded(&mut pixmap, rect, self.theme.radius * height, background);
+        }
+        if let Some(accent) = spec.accent {
+            let bar_width = self.theme.accent_width * height;
+            let bar_height = self.theme.accent_height * height;
+            let top = height - self.theme.accent_margin * height - bar_height;
+            if let Some(rect) =
+                Rect::from_xywh((width - bar_width) / 2.0, top, bar_width, bar_height)
+            {
+                fill_rounded(&mut pixmap, rect, bar_height / 2.0, accent);
+            }
         }
         Ok(Tile { pixmap })
     }
