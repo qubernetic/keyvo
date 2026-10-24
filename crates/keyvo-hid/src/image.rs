@@ -8,6 +8,7 @@
 
 use std::time::Duration;
 
+use crate::display::Geometry;
 use crate::frame::{Frame, ReportId, VLP_SEQ_LAST};
 use crate::hidpp::{HidppError, SoftwareId};
 
@@ -46,6 +47,68 @@ pub struct Rect {
     pub width: u16,
     /// Height.
     pub height: u16,
+}
+
+/// Where an image goes. Both placements come from the geometry the device
+/// publishes (display fn1, spec §5.4); nothing about the grid is hard-coded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target {
+    /// One key, numbered from 1 in table order.
+    Key(u8),
+    /// The whole panel: the bounding box of all keys (435x434 at 23,6 on the
+    /// Keypad, as Options+ paints it).
+    Panel,
+}
+
+impl Target {
+    /// The rectangle of this target in `geometry`.
+    ///
+    /// # Errors
+    ///
+    /// [`ImageError::NoSuchKey`] for a key the table does not list,
+    /// [`ImageError::NoKeys`] for a panel without keys.
+    pub fn rect(self, geometry: &Geometry) -> Result<Rect, ImageError> {
+        match self {
+            Self::Key(key) => geometry
+                .keys
+                .iter()
+                .find(|rect| rect.index == key)
+                .map(|rect| Rect {
+                    x: rect.x,
+                    y: rect.y,
+                    width: rect.width,
+                    height: rect.height,
+                })
+                .ok_or(ImageError::NoSuchKey {
+                    key,
+                    count: geometry.keys.len(),
+                }),
+            Self::Panel => {
+                let left = geometry.keys.iter().map(|k| k.x).min();
+                let top = geometry.keys.iter().map(|k| k.y).min();
+                let right = geometry
+                    .keys
+                    .iter()
+                    .map(|k| k.x.saturating_add(k.width))
+                    .max();
+                let bottom = geometry
+                    .keys
+                    .iter()
+                    .map(|k| k.y.saturating_add(k.height))
+                    .max();
+                let (Some(x), Some(y), Some(right), Some(bottom)) = (left, top, right, bottom)
+                else {
+                    return Err(ImageError::NoKeys);
+                };
+                Ok(Rect {
+                    x,
+                    y,
+                    width: right - x,
+                    height: bottom - y,
+                })
+            }
+        }
+    }
 }
 
 /// The index the first fragment of an image carries in its sequence byte.
@@ -117,6 +180,17 @@ pub enum ImageError {
         /// [`ImageConfig::max_image_len`].
         max: usize,
     },
+    /// The geometry does not list the key.
+    #[error("no key {key}; the geometry lists {count}")]
+    NoSuchKey {
+        /// The requested key.
+        key: u8,
+        /// Keys in the geometry.
+        count: usize,
+    },
+    /// A panel paint on a geometry without keys.
+    #[error("the geometry lists no keys to place the panel by")]
+    NoKeys,
     /// The bytes do not start with the JPEG SOI marker.
     #[error("not a jpeg: no start-of-image marker")]
     NotJpeg,
@@ -287,6 +361,18 @@ mod tests {
         bytes.extend([0x03, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]);
         bytes.resize(len, 0x55);
         bytes
+    }
+
+    #[test]
+    fn a_panel_needs_at_least_one_key() {
+        let geometry = Geometry {
+            shape: 1,
+            dimension: 0x60,
+            width: 480,
+            height: 480,
+            keys: Vec::new(),
+        };
+        assert_eq!(Target::Panel.rect(&geometry), Err(ImageError::NoKeys));
     }
 
     #[test]

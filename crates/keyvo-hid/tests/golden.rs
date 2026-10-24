@@ -10,7 +10,7 @@ use keyvo_core::clock::FakeClock;
 use keyvo_core::hid::FakeHidTransport;
 use keyvo_hid::display::{self, DisplayMode};
 use keyvo_hid::hidpp::{DEVICE_DIRECT, Hidpp, HidppError, Plane, SoftwareId};
-use keyvo_hid::image::{self, ImageConfig, Rect};
+use keyvo_hid::image::{self, ImageConfig, ImageError, Rect, Target};
 use keyvo_hid::keep_alive::{self, KeepAlive, KeepAliveTiming, TimeoutRange};
 use keyvo_hid::root::{FeatureInfo, ProtocolVersion, VlpFeatureInfo, VlpProtocol, feature};
 
@@ -231,6 +231,31 @@ fn captured_jpeg(fragments: &[Vec<u8>]) -> Vec<u8> {
     }
     jpeg.truncate(len);
     jpeg
+}
+
+#[test]
+fn hcooper_geometry_places_keys_and_the_captured_panel() {
+    let mut hidpp = replay(fixture!("display-geometry.txt"));
+    let geometry = display::geometry(&mut hidpp).unwrap();
+    // The panel Options+ paints is the bounding box of the published keys.
+    assert_eq!(Target::Panel.rect(&geometry), Ok(CAPTURED_PANEL));
+    assert_eq!(
+        Target::Key(5).rect(&geometry),
+        Ok(Rect {
+            x: 181,
+            y: 163,
+            width: 118,
+            height: 118,
+        })
+    );
+    assert_eq!(
+        Target::Key(10).rect(&geometry),
+        Err(ImageError::NoSuchKey { key: 10, count: 9 })
+    );
+    assert_eq!(
+        Target::Key(0).rect(&geometry),
+        Err(ImageError::NoSuchKey { key: 0, count: 9 })
+    );
 }
 
 #[test]
