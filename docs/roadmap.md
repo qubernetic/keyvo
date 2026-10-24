@@ -48,7 +48,7 @@ Repository, policy and skeleton, before any protocol code.
 - #2 `chore: workspace skeleton and dev environment`: four crates, toolchain pin, devcontainer, justfile (done).
 - #3 `ci: build, test, lint, coverage, CodeQL`: Linux and Windows jobs, cargo-deny, coverage, docs to Pages (S, open).
 - #4 `docs: architecture diagrams with archify`: first five diagrams, CI freshness check (S, open).
-- #27 `docs(research): Logi Options+ device-communication inventory` and ADR-0008 (S, PR open).
+- #27 `docs(research): Logi Options+ device-communication inventory` and ADR-0008 (done).
 - #29 `docs: GUI and UX design document, roadmap split` (S, this revision).
 
 ## M0: Protocol ([milestone 1](https://github.com/qubernetic/keyvo/milestone/1))

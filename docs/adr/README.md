@@ -14,7 +14,7 @@ mind produces a new record that supersedes the old one.
 | [0006](0006-dialpad-own-hidpp.md) | Dialpad via an in-house HID++ 2.0 subset | Accepted |
 | [0007](0007-csharp-logi-plugin.md) | C# Logi Actions SDK plugin for Windows | Accepted |
 | [0008](0008-static-analysis-boundary.md) | Static analysis of vendor software: interoperability boundary | Accepted |
-| [0009](0009-project-layer-and-trust.md) | Project layer with direnv-style trust | Proposed |
+| [0009](0009-project-layer-and-trust.md) | Project layer with direnv-style trust | Accepted |
 
 ## Adding a record
 

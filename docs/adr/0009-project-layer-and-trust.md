@@ -1,6 +1,6 @@
 # ADR-0009: Project layer with direnv-style trust
 
-Status: Proposed
+Status: Accepted
 Date: 2026-10-24
 
 ## Context
