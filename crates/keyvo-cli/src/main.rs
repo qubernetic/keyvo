@@ -1,5 +1,6 @@
 //! keyvo command-line interface.
 
+mod fill;
 mod keys;
 mod probe;
 mod session;
@@ -13,10 +14,12 @@ use keyvo_core::clock::SystemClock;
 use keyvo_core::hid::{HidTransport, to_hex};
 use keyvo_hid::hidpp::{DEFAULT_REPLY_TIMEOUT, DEVICE_DIRECT, Hidpp, SoftwareId};
 use keyvo_hid::hidraw::HidrawTransport;
+use keyvo_hid::image::{ImageConfig, IndexBase};
 use keyvo_hid::keep_alive::KeepAliveTiming;
 use keyvo_hid::reprog::DivertTiming;
 use keyvo_hid::sysfs;
 
+use crate::fill::{Placement, Source};
 use crate::session::Session;
 
 /// Software id of keyvo's requests; Options+ uses `0xe` (captured), so the
@@ -47,6 +50,57 @@ enum Command {
         #[command(flatten)]
         keep_alive: KeepAliveArgs,
     },
+    /// Claim the Keypad and paint a color or a PNG on the keys or the panel
+    Fill {
+        /// `#rrggbb`, or the path of a PNG, scaled to each target
+        source: String,
+        /// One key, numbered from 1 in the published geometry
+        #[arg(long, value_name = "N", group = "placement")]
+        key: Option<u8>,
+        /// Every key, one write each (the default)
+        #[arg(long, group = "placement")]
+        all: bool,
+        /// The whole panel in one write
+        #[arg(long, group = "placement")]
+        panel: bool,
+        /// Keep the claim (and the keep-alive) this many seconds after painting
+        #[arg(long, value_name = "SECONDS", default_value_t = 0)]
+        hold: u64,
+        /// Fragment index of an image's first fragment (plan §5 item 7)
+        #[arg(long, value_name = "0|1", default_value_t = 0,
+              value_parser = clap::value_parser!(u8).range(0..=1))]
+        index_base: u8,
+        /// Software id of the image writes, `0x1` to `0xf` (plan §5 item 7)
+        #[arg(long, value_name = "SWID", default_value = "0xd", value_parser = parse_swid)]
+        swid: SoftwareIdArg,
+        #[command(flatten)]
+        keep_alive: KeepAliveArgs,
+    },
+}
+
+/// A parsed `--swid`.
+#[derive(Clone, Copy)]
+struct SoftwareIdArg(SoftwareId);
+
+/// `0xd` (hex) or `13` (decimal).
+fn parse_swid(text: &str) -> Result<SoftwareIdArg, String> {
+    let value = match text.strip_prefix("0x") {
+        Some(hex) => u8::from_str_radix(hex, 16),
+        None => text.parse(),
+    }
+    .map_err(|error| format!("`{text}`: {error}"))?;
+    SoftwareId::new(value)
+        .map(SoftwareIdArg)
+        .map_err(|error| error.to_string())
+}
+
+/// The placement the `fill` flags select; every key without one.
+const fn placement(key: Option<u8>, panel: bool) -> Placement {
+    match (key, panel) {
+        (Some(key), _) => Placement::Key(key),
+        (None, true) => Placement::Panel,
+        (None, false) => Placement::All,
+    }
 }
 
 /// The keep-alive settings, for the hardware check (plan §5 items 2, 3).
@@ -97,6 +151,41 @@ fn main() -> anyhow::Result<()> {
                 json,
                 &mut stdout,
                 || true,
+            )
+        }
+        Command::Fill {
+            source,
+            key,
+            panel,
+            hold,
+            index_base,
+            swid,
+            keep_alive,
+            ..
+        } => {
+            let source = Source::parse(&source)?;
+            let config = ImageConfig {
+                swid: swid.0,
+                index_base: if index_base == 0 {
+                    IndexBase::Zero
+                } else {
+                    IndexBase::One
+                },
+                ..ImageConfig::default()
+            };
+            let mut session = Session::open(hidpp, SystemClock, keep_alive.timing())?;
+            fill::fill(
+                &mut session,
+                &source,
+                placement(key, panel),
+                &config,
+                &mut stdout,
+            )?;
+            fill::hold(
+                &mut session,
+                &SystemClock,
+                Duration::from_secs(hold),
+                std::thread::sleep,
             )
         }
     }
@@ -164,6 +253,49 @@ mod tests {
             })
         );
         assert_eq!(keep_alive(&["--no-keep-alive"]), None);
+    }
+
+    /// `(placement, index base, swid)` of a `fill` command line.
+    fn fill(args: &[&str]) -> Result<(super::Placement, u8, u8), clap::Error> {
+        let cli = Cli::try_parse_from([&["keyvo", "fill", "#ff8000"], args].concat())?;
+        let Command::Fill {
+            key,
+            panel,
+            index_base,
+            swid,
+            ..
+        } = cli.command
+        else {
+            panic!("not fill");
+        };
+        Ok((super::placement(key, panel), index_base, swid.0.get()))
+    }
+
+    #[test]
+    fn fill_paints_every_key_by_default_with_the_options_plus_settings() {
+        use super::Placement;
+        assert_eq!(fill(&[]).unwrap(), (Placement::All, 0, 0xd));
+        assert_eq!(fill(&["--all"]).unwrap().0, Placement::All);
+        assert_eq!(fill(&["--key", "5"]).unwrap().0, Placement::Key(5));
+        assert_eq!(fill(&["--panel"]).unwrap().0, Placement::Panel);
+        assert_eq!(
+            fill(&["--index-base", "1", "--swid", "0xb"]).unwrap(),
+            (Placement::All, 1, 0xb)
+        );
+        assert_eq!(fill(&["--swid", "11"]).unwrap().2, 0xb);
+    }
+
+    #[test]
+    fn fill_refuses_two_placements_and_bad_settings() {
+        for args in [
+            &["--key", "5", "--panel"][..],
+            &["--index-base", "2"],
+            &["--swid", "0"],
+            &["--swid", "0x10"],
+            &["--swid", "zz"],
+        ] {
+            assert!(fill(args).is_err(), "{args:?}");
+        }
     }
 
     /// A fixture of `tests/protocol-fixtures/hid/`.
