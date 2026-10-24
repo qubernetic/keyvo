@@ -779,6 +779,7 @@ them.
 | [claude-console](https://github.com/rshankras/claude-console) (Actions SDK, macOS) | Reference for Claude Code plugin actions and opt-in live status keys that edit user config only after confirmation. |
 | [Solaar](https://github.com/pwr-Solaar/Solaar) (GPL-2.0) | HID++ engine for mice and keyboards and the source of the author's feature dumps; keyvo **calls** it for desk state and never copies its code. |
 | Logitech HID++ 2.0 public feature documents; Logi Actions SDK docs | Feature semantics (`0x0008`, `0x1B04`, `0x8040`, `0x4610`); Windows/macOS plugin API. |
+| Logi Options+ 2.8 and Logi Plugin Service 6.4 (public offline installer, analysed under ADR-0008) | Static inventory of facts: `0x19A1` ContextualDisplay function table and field names, device state names, image record layout, VLP root functions, names of the unknown features, and the finding that the Plugin Service helper, not the Options+ agent, drives the Creative Console (`docs/research/options-plus-inventory.md`). |
 
 ---
 
@@ -792,6 +793,11 @@ them.
   HID++ subset is written from Logitech's public HID++ documents, prior-art
   findings and own captures; third-party captures are used under their MIT
   licenses and credited in `captures/`.
+- Static analysis of Logitech software (Options+, Logi Plugin Service) only for
+  interoperability under Directive 2009/24/EC Art. 5(3) and Art. 6, within
+  ADR-0008: device-communication parts only, protocol facts only, never
+  decompiled code, no circumvention of protection measures on data. Findings in
+  `docs/research/options-plus-inventory.md`.
 - Trademark notice for Logitech names; descriptive use only.
 - Employer/side-project clearance obtained by the author; co-owner of the
   Qubernetic brand informed and agreed.
