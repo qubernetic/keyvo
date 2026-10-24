@@ -145,6 +145,11 @@ traced but never executed.
 `~/.local/state/keyvo/snapshots/` before every GUI write, rotated, restored
 with `keyvo profile restore`.
 
+**Software id (swid)**: The low nibble of byte 3 of every HID++ request,
+`(function << 4) | swid`, chosen by the host (1 to 15) and echoed in the reply
+so that replies can be matched to their requests; `0` marks device
+notifications.
+
 **Socket API**: The newline-delimited JSON protocol, every message tagged
 `"v": 1`, served on `$XDG_RUNTIME_DIR/keyvo/keyvo.sock` (mode 0600) and spoken by
 `keyvo ctl`, plugins and integrations. The only inward control surface in v1.

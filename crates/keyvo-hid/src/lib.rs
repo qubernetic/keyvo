@@ -3,9 +3,9 @@
 //! FFI that lands later; `unsafe_op_in_unsafe_fn` is denied workspace-wide.
 
 #![deny(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn compiles() {}
-}
+pub mod frame;
+pub mod hidpp;
+pub mod keep_alive;
+pub mod root;

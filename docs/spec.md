@@ -110,7 +110,7 @@ keyvo/
 ├── contrib/            # udev rule, KWin script, systemd unit, Flatpak manifest
 ├── captures/           # README + derived fixtures; raw pcapng external (release assets)
 ├── tools/windows-vm/   # libvirt VM scripts (from TwinCat-MCP)
-├── tests/protocol-fixtures/  # shared NDJSON fixtures for Rust/TS/C# clients
+├── tests/protocol-fixtures/  # shared NDJSON fixtures for Rust/TS/C# clients; hid/ golden HID++ scripts
 └── docs/               # spec.md, roadmap.md, adr/, diagrams/, research/, plans/, hardware-notes.md, mdBook
 ```
 
@@ -124,6 +124,13 @@ trait HidTransport   // open/read/write HID reports; hidraw on Linux, hidapi els
 trait InputInjector  // Linux: uinput (evdev); Windows: SendInput
 trait WindowWatcher  // Linux: KWin script over D-Bus (KDE), X11 _NET_ACTIVE_WINDOW; Windows: SetWinEventHook
 ```
+
+`HidTransport` (`keyvo_core::hid`) moves whole reports, report id first:
+`write(report)` and `read(timeout) -> Option<report>`, where `None` is a
+timeout. It knows nothing about HID++; framing, reply matching and feature
+resolution live in `keyvo-hid`. `FakeHidTransport` replays a script of
+request/response pairs in the fixture notation of §5.9 and fails on any
+write the script does not expect.
 
 Core rendering is the pure function
 
@@ -158,8 +165,17 @@ measured in M0-2 (plan §5 item 16).
   lock; one device actor owns the file descriptor and an mpsc queue.
 - Never exclusive-grab. Solaar and the kernel `hid-logitech-dj` driver may
   share the Bolt receiver; keyvo filters HID++ traffic by device index and
-  matches replies on report id + feature index + function/swid byte, never on
-  "first inbound report".
+  matches replies on report id + device index + feature index +
+  function/swid byte, never on "first inbound report". Reports that answer
+  no pending request are kept for the input path, not dropped.
+- HID++ 2.0 error replies arrive on the request's report with feature index
+  `0xff`, followed by the request's feature index, its function/swid byte and
+  the error code (`11 ff ff <index> <fn|swid> <code>`; codes from the HID++
+  2.0 draft: 1 unknown, 2 invalid argument, 3 out of range, 4 hardware error,
+  5 internal, 6 invalid feature index, 7 invalid function, 8 busy, 9
+  unsupported). The VLP error layout is not captured: keyvo recognises the
+  same `ff <index> <fn|swid>` prefix on `0x13` and reports the whole frame
+  until a hardware check provokes one.
 
 ### 5.2 Two protocol planes on the Keypad (captured, hcooper)
 
@@ -174,7 +190,13 @@ a sequence/flag byte after it: the host sends `e0`, the device answers
 `c0`, `c1`, … per fragment; unsolicited events use function byte `10`.
 Feature indices differ per device (`0x1B04` is `0x0b` on the Keypad and
 `0x0a` on the Dialpad): **always resolve indices via `ROOT.getFeature`**, on
-both planes, and never hard-code them.
+both planes, and never hard-code them. The root sits at index 0 of each plane,
+the one index the protocol fixes. Classic `getFeature(id)` answers `<index>
+<type flags> <version>`, index 0 meaning absent; VLP root `getFeature(id)`
+(captured) echoes the id first: `<id:u16> <index> <hidden> <version>
+<maxMemory:u32>`, e.g. `19 a1 02 00 00 00 01 e8 03`. Resolved indices are
+cached per connection. Host requests on `0x13` that fit one packet carry the
+sequence byte `e0`.
 
 ### 5.3 Keep-alive (mandatory)
 
@@ -287,7 +309,11 @@ on a timer.
 
 Golden buffers from hcooper's captured frames and notno's packetizer tests
 live in `captures/` and `tests/protocol-fixtures/`; `FakeHidTransport`
-integration tests replay them. Every protocol claim above that is not marked
+integration tests replay them. HID fixtures live in
+`tests/protocol-fixtures/hid/` as scripts: `> <hex>` is a host write,
+`< <hex>` a device report answering the write above it (or unsolicited
+before the first write), `#` a comment naming the source capture, frame
+numbers and line range of the decode. Every protocol claim above that is not marked
 *measured* is an item in the M0 measurement list (plan §5) and is recorded
 with numbers in `docs/hardware-notes.md`.
 
@@ -869,6 +895,11 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha slice 1 (2026-10-24)**: §4.1 the `HidTransport`
+  signature and `FakeHidTransport`; §5.1 reply matching includes the device
+  index, unmatched reports are kept, HID++ 2.0 error replies; §5.2 the root
+  index, both `getFeature` reply layouts, the `e0` request sequence byte;
+  §5.9 the HID fixture notation in `tests/protocol-fixtures/hid/`.
 - **v0.3 (2026-10-24)**: UI/UX grill applied
   (`docs/plans/2026-10-24-gui-ux-grill-decisions.md`): §6 project layer in
   the stack and project context source; §7 `recipe` action, `on_fail`,

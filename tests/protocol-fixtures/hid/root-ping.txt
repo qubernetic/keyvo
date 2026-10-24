@@ -1,0 +1,6 @@
+# Classic ROOT fn1 ping (swid 0xe, ping data 0x39): the Keypad answers
+# HID++ 4.5 and echoes the ping data.
+# Source: hcooper 03-options-plus-startup.pcap, frames #1563 and #1565
+# (docs/research/hcooper-startup-keypad-sequence.txt lines 37-38). MIT, see README.md.
+> 11 ff 00 1e 00 00 39 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 00 1e 04 05 39 00 00 00 00 00 00 00 00 00 00 00 00 00

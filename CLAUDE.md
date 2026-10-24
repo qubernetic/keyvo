@@ -64,7 +64,7 @@ keyvo/
 ├── contrib/            # udev rule, KWin script, systemd unit, Flatpak manifest
 ├── captures/           # README + derived fixtures; raw pcapng external (release assets)
 ├── tools/windows-vm/   # libvirt VM scripts
-├── tests/protocol-fixtures/  # shared NDJSON fixtures for Rust/TS/C# clients
+├── tests/protocol-fixtures/  # shared NDJSON fixtures for Rust/TS/C# clients; hid/ golden HID++ scripts
 └── docs/               # spec.md, roadmap.md, adr/, diagrams/, research/, plans/, hardware-notes.md
 ```
 
