@@ -117,6 +117,81 @@ pub enum ImageError {
         /// [`ImageConfig::max_image_len`].
         max: usize,
     },
+    /// The bytes do not start with the JPEG SOI marker.
+    #[error("not a jpeg: no start-of-image marker")]
+    NotJpeg,
+    /// No complete frame header (SOF) before the scan data or the end.
+    #[error("jpeg has no complete frame header")]
+    NoFrameHeader,
+    /// A frame header other than baseline SOF0 (progressive, lossless, ...).
+    #[error("jpeg frame marker 0x{marker:02x} is not baseline (0xc0)")]
+    NotBaseline {
+        /// The SOF marker byte.
+        marker: u8,
+    },
+    /// The JPEG is not the size of its rectangle; the device would draw
+    /// nothing and still accept the write (spec §5.5).
+    #[error("jpeg is {jpeg_width}x{jpeg_height}, the rectangle {width}x{height}")]
+    DimensionMismatch {
+        /// Width in the SOF header.
+        jpeg_width: u16,
+        /// Height in the SOF header.
+        jpeg_height: u16,
+        /// Rectangle width.
+        width: u16,
+        /// Rectangle height.
+        height: u16,
+    },
+}
+
+/// SOI, the first two bytes of every JPEG.
+const JPEG_SOI: [u8; 2] = [0xff, 0xd8];
+/// SOF0, the baseline frame header.
+const JPEG_SOF_BASELINE: u8 = 0xc0;
+/// SOS: scan data follows; a frame header must come before it.
+const JPEG_SOS: u8 = 0xda;
+/// EOI.
+const JPEG_EOI: u8 = 0xd9;
+
+/// Width and height from the frame header of a baseline JPEG, walking the
+/// marker segments after SOI.
+fn jpeg_dimensions(jpeg: &[u8]) -> Result<(u16, u16), ImageError> {
+    if !jpeg.starts_with(&JPEG_SOI) {
+        return Err(ImageError::NotJpeg);
+    }
+    let mut position = JPEG_SOI.len();
+    loop {
+        let Some(&[0xff, marker]) = jpeg.get(position..position + 2) else {
+            return Err(ImageError::NoFrameHeader);
+        };
+        match marker {
+            // A fill byte before the marker.
+            0xff => position += 1,
+            // Markers without a segment: TEM, RST0..RST7.
+            0x01 | 0xd0..=0xd7 => position += 2,
+            JPEG_SOS | JPEG_EOI => return Err(ImageError::NoFrameHeader),
+            _ => {
+                let segment = jpeg
+                    .get(position + 2..)
+                    .and_then(|rest| rest.split_first_chunk::<2>())
+                    .map(|(length, _)| usize::from(u16::from_be_bytes(*length)))
+                    .ok_or(ImageError::NoFrameHeader)?;
+                // SOF0..SOF15 except DHT (c4), JPG (c8) and DAC (cc).
+                if matches!(marker, 0xc0..=0xcf) && !matches!(marker, 0xc4 | 0xc8 | 0xcc) {
+                    if marker != JPEG_SOF_BASELINE {
+                        return Err(ImageError::NotBaseline { marker });
+                    }
+                    // Length (2), precision (1), height (2), width (2).
+                    let Some(&[_, _, _, h0, h1, w0, w1]) = jpeg.get(position + 2..position + 9)
+                    else {
+                        return Err(ImageError::NoFrameHeader);
+                    };
+                    return Ok((u16::from_be_bytes([w0, w1]), u16::from_be_bytes([h0, h1])));
+                }
+                position += 2 + segment;
+            }
+        }
+    }
 }
 
 /// Cuts `jpeg` into the `0x14` reports that paint it at `rect`.
@@ -136,6 +211,15 @@ pub fn fragments(
         return Err(ImageError::TooLarge {
             len: jpeg.len(),
             max: limit,
+        });
+    }
+    let (jpeg_width, jpeg_height) = jpeg_dimensions(jpeg)?;
+    if (jpeg_width, jpeg_height) != (rect.width, rect.height) {
+        return Err(ImageError::DimensionMismatch {
+            jpeg_width,
+            jpeg_height,
+            width: rect.width,
+            height: rect.height,
         });
     }
     let report = ReportId::VlpBulk;
@@ -190,8 +274,98 @@ mod tests {
         height: 118,
     };
 
+    /// `len` bytes that start like a baseline JPEG of `width` x `height`:
+    /// SOI, then a SOF0 segment; the rest is filler the writer never reads.
+    fn jpeg(width: u16, height: u16, len: usize) -> Vec<u8> {
+        jpeg_with_sof(0xc0, width, height, len)
+    }
+
+    fn jpeg_with_sof(marker: u8, width: u16, height: u16, len: usize) -> Vec<u8> {
+        let mut bytes = vec![0xff, 0xd8, 0xff, marker, 0x00, 0x11, 0x08];
+        bytes.extend(height.to_be_bytes());
+        bytes.extend(width.to_be_bytes());
+        bytes.extend([0x03, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]);
+        bytes.resize(len, 0x55);
+        bytes
+    }
+
+    #[test]
+    fn the_sof_dimensions_must_equal_the_rectangle() {
+        let config = ImageConfig::default();
+        assert_eq!(
+            fragments(0xff, 2, &config, KEY, &jpeg(118, 117, 300)),
+            Err(ImageError::DimensionMismatch {
+                jpeg_width: 118,
+                jpeg_height: 117,
+                width: 118,
+                height: 118,
+            })
+        );
+    }
+
+    #[test]
+    fn segments_before_the_frame_header_are_skipped() {
+        // SOI, APP0 (JFIF, 16 bytes), a fill byte, DQT (4 bytes), then SOF0.
+        let mut bytes = vec![0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10];
+        bytes.extend([0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0]);
+        bytes.extend([0xff, 0xff, 0xdb, 0x00, 0x04, 0x00, 0x01]);
+        bytes.extend(&jpeg(118, 118, 300)[2..]);
+        assert_eq!(
+            fragments(0xff, 2, &ImageConfig::default(), KEY, &bytes).map(|f| f.len()),
+            Ok(1)
+        );
+    }
+
+    #[test]
+    fn only_baseline_jpeg_is_written() {
+        assert_eq!(
+            fragments(
+                0xff,
+                2,
+                &ImageConfig::default(),
+                KEY,
+                &jpeg_with_sof(0xc2, 118, 118, 300)
+            ),
+            Err(ImageError::NotBaseline { marker: 0xc2 })
+        );
+    }
+
+    #[test]
+    fn bytes_without_soi_or_frame_header_are_refused() {
+        let config = ImageConfig::default();
+        assert_eq!(
+            fragments(0xff, 2, &config, KEY, &[]),
+            Err(ImageError::NotJpeg)
+        );
+        assert_eq!(
+            fragments(0xff, 2, &config, KEY, &[0x89, 0x50, 0x4e, 0x47]),
+            Err(ImageError::NotJpeg)
+        );
+        // Scan data before any frame header.
+        assert_eq!(
+            fragments(0xff, 2, &config, KEY, &[0xff, 0xd8, 0xff, 0xda, 0x00, 0x02]),
+            Err(ImageError::NoFrameHeader)
+        );
+        // A segment length that runs past the end.
+        assert_eq!(
+            fragments(
+                0xff,
+                2,
+                &config,
+                KEY,
+                &[0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a]
+            ),
+            Err(ImageError::NoFrameHeader)
+        );
+        // A frame header cut short.
+        assert_eq!(
+            fragments(0xff, 2, &config, KEY, &jpeg(118, 118, 300)[..8]),
+            Err(ImageError::NoFrameHeader)
+        );
+    }
+
     fn sequence_bytes(config: &ImageConfig, len: usize) -> Vec<u8> {
-        fragments(0xff, 2, config, KEY, &vec![0x55; len])
+        fragments(0xff, 2, config, KEY, &jpeg(118, 118, len))
             .unwrap()
             .iter()
             .map(|fragment| fragment[4])
@@ -227,7 +401,7 @@ mod tests {
         assert_eq!(base_zero.max_image_len(), max);
         assert_eq!(sequence_bytes(&base_zero, max).len(), 16);
         assert_eq!(
-            fragments(0xff, 2, &base_zero, KEY, &vec![0; max + 1]),
+            fragments(0xff, 2, &base_zero, KEY, &jpeg(118, 118, max + 1)),
             Err(ImageError::TooLarge { len: max + 1, max })
         );
         let base_one = ImageConfig {
@@ -239,12 +413,13 @@ mod tests {
 
     #[test]
     fn header_carries_the_rectangle_and_the_24_bit_length() {
-        let fragments = fragments(0xff, 2, &ImageConfig::default(), KEY, &[0x55; 300]).unwrap();
+        let fragments =
+            fragments(0xff, 2, &ImageConfig::default(), KEY, &jpeg(118, 118, 300)).unwrap();
         assert_eq!(
             fragments[0][..21],
             [
                 0x14, 0xff, 0x02, 0x2d, 0xe0, 0x01, 0x00, 0x01, 0x00, 0x00, 0xb5, 0x00, 0xa3, 0x00,
-                0x76, 0x00, 0x76, 0x00, 0x01, 0x2c, 0x55
+                0x76, 0x00, 0x76, 0x00, 0x01, 0x2c, 0xff
             ]
         );
         assert_eq!(fragments[0].len(), 4095);
