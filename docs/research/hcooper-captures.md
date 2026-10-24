@@ -56,6 +56,8 @@ sequence. Evidence: `13 ff 00 0e e0 19 a1` → `c0 19 a1 02 …` (VLP root getFe
     `0x142`(322). This is close to but not identical with Julusian's `23 + col*158` and needs an
     exact re-decode on hardware. **The device publishes its own geometry**, so keyvo should query
     it instead of hard-coding (future-proof for the 2026 MX Keypad).
+    The exact decode of all four packets (nine origins, header fields) is in spec §5.4 and
+    `tests/protocol-fixtures/hid/display-geometry.txt`.
 11. REPROG_CONTROLS_V4 (index 0x0b): getCount → 2; getCidInfo(0)/(1) → CID `0x01A1`, `0x01A2`,
     flags `0x20` (divertable); `setCidReporting(cid, 0x03)` = divert + dvalid for both page buttons.
 12. `13 ff 02 4e e0 a0` → `c0 a0`, then event `13 ff 02 10 c6 a0`: display fn4 = **set mode `a0`**

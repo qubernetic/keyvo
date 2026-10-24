@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use keyvo_core::hid::{HidTransport, TransportError, to_hex};
 
-use crate::frame::{Frame, FrameError, ReportId, VLP_SEQ_SINGLE};
+use crate::frame::{Frame, FrameError, ReportId, VLP_SEQ_LAST, VLP_SEQ_SINGLE};
 
 /// HID++ device index of a device attached directly (USB), not via a receiver.
 pub const DEVICE_DIRECT: u8 = 0xff;
@@ -189,7 +189,9 @@ impl<T: HidTransport> Hidpp<T> {
     }
 
     /// Sends one request and returns the reply that matches it. VLP requests
-    /// go out as a single packet (sequence byte `e0`).
+    /// go out as a single packet (sequence byte `e0`); a VLP reply over
+    /// several packets comes back as one frame whose parameters are the
+    /// packets' parameters joined, up to the packet with [`VLP_SEQ_LAST`].
     ///
     /// # Errors
     ///
@@ -218,6 +220,9 @@ impl<T: HidTransport> Hidpp<T> {
         self.transport.write(&request.encode()?)?;
 
         let deadline = Instant::now() + self.reply_timeout;
+        // The packets of a VLP reply read so far, joined; the deadline covers
+        // the whole reply.
+        let mut partial: Option<Frame> = None;
         loop {
             // Checked before every read: a device that streams events must
             // not keep the loop alive past the deadline.
@@ -234,10 +239,62 @@ impl<T: HidTransport> Hidpp<T> {
                     function,
                 });
             };
-            if let Some(result) = self.answer(&request, &raw) {
-                return result;
+            match self.answer(&request, &raw) {
+                Some(Ok(frame)) => {
+                    let last = frame.seq.is_none_or(|seq| seq & VLP_SEQ_LAST != 0);
+                    let joined = match partial.take() {
+                        Some(mut head) => {
+                            head.params.extend(frame.params);
+                            head
+                        }
+                        None => frame,
+                    };
+                    if last {
+                        return Ok(joined);
+                    }
+                    partial = Some(joined);
+                }
+                Some(Err(error)) => return Err(error),
+                None => self.unmatched.push_back(raw),
             }
-            self.unmatched.push_back(raw);
+        }
+    }
+
+    /// Waits for an unsolicited report that `matches` accepts: first among
+    /// the reports kept while waiting for earlier replies, then on the
+    /// transport for at most the reply timeout. Reports it skips are kept
+    /// for the input path. `None` when nothing matched in time.
+    ///
+    /// # Errors
+    ///
+    /// The transport errors.
+    pub fn wait_for(
+        &mut self,
+        mut matches: impl FnMut(&Frame) -> bool,
+    ) -> Result<Option<Frame>, HidppError> {
+        let kept = self
+            .unmatched
+            .iter()
+            .position(|raw| Frame::parse(raw).is_ok_and(|frame| matches(&frame)));
+        if let Some(position) = kept {
+            return Ok(self
+                .unmatched
+                .remove(position)
+                .and_then(|raw| Frame::parse(&raw).ok()));
+        }
+        let deadline = Instant::now() + self.reply_timeout;
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Ok(None);
+            }
+            let Some(raw) = self.transport.read(remaining)? else {
+                return Ok(None);
+            };
+            match Frame::parse(&raw) {
+                Ok(frame) if matches(&frame) => return Ok(Some(frame)),
+                _ => self.unmatched.push_back(raw),
+            }
         }
     }
 
@@ -343,6 +400,70 @@ mod tests {
         let reply = hidpp.request(Plane::Vlp, 0x00, 0x0, &[0x19, 0xa1]).unwrap();
         assert_eq!(reply.seq, Some(0xc0));
         assert_eq!(&reply.params[..3], &[0x19, 0xa1, 0x02]);
+    }
+
+    #[test]
+    fn a_vlp_reply_over_several_packets_is_joined_until_the_last_one() {
+        let script = format!(
+            "> {}\n< {}\n< {}\n< {}\n< {}\n",
+            vlp("13 ff 02 1e e0 01"),
+            vlp("13 ff 02 1e 80 01 02"), // first of several
+            vlp("13 ff 02 10 c6 a0"),    // unsolicited event in between
+            vlp("13 ff 02 1e 01 03"),    // continuation 1
+            vlp("13 ff 02 1e 42 04"),    // last, index 2
+        );
+        let mut hidpp = hidpp(&script);
+        let reply = hidpp.request(Plane::Vlp, 0x02, 0x1, &[0x01]).unwrap();
+        let packet = ReportId::VlpControl.size() - ReportId::VlpControl.header_len();
+        assert_eq!(reply.params.len(), 3 * packet);
+        assert_eq!(&reply.params[..2], &[0x01, 0x02]);
+        assert_eq!(reply.params[packet], 0x03);
+        assert_eq!(reply.params[2 * packet], 0x04);
+        assert_eq!(hidpp.take_unmatched().map(|r| r[3]), Some(0x10));
+        assert!(hidpp.transport_mut().is_done());
+    }
+
+    #[test]
+    fn a_vlp_reply_missing_its_last_packet_times_out() {
+        let script = format!(
+            "> {}\n< {}\n",
+            vlp("13 ff 02 1e e0 01"),
+            vlp("13 ff 02 1e 80 01 02"),
+        );
+        let mut hidpp = hidpp(&script);
+        assert!(matches!(
+            hidpp.request(Plane::Vlp, 0x02, 0x1, &[0x01]),
+            Err(HidppError::Timeout { .. })
+        ));
+    }
+
+    #[test]
+    fn wait_for_reads_past_other_reports_and_keeps_them() {
+        let script = format!(
+            "< {}\n< {}\n",
+            long("11 ff 04 00 01"), // classic notification
+            vlp("13 ff 02 10 c6 a0"),
+        );
+        let mut hidpp = hidpp(&script);
+        let event = hidpp.wait_for(|frame| frame.function == 0x1).unwrap();
+        assert_eq!(event.map(|frame| frame.params[0]), Some(0xa0));
+        assert_eq!(hidpp.take_unmatched().map(|raw| raw[0]), Some(0x11));
+        // Nothing left: the wait ends with `None`, not an error.
+        assert_eq!(hidpp.wait_for(|_| true).unwrap(), None);
+    }
+
+    #[test]
+    fn wait_for_finds_a_report_kept_during_an_earlier_request() {
+        let script = format!(
+            "> {}\n< {}\n< {}\n",
+            vlp("13 ff 02 5e e0"),
+            vlp("13 ff 02 10 c6 a0"),
+            vlp("13 ff 02 5e c0 a0"),
+        );
+        let mut hidpp = hidpp(&script);
+        hidpp.request(Plane::Vlp, 0x02, 0x5, &[]).unwrap();
+        assert!(hidpp.wait_for(|frame| frame.swid == 0).unwrap().is_some());
+        assert_eq!(hidpp.take_unmatched(), None);
     }
 
     #[test]

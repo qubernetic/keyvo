@@ -1,0 +1,15 @@
+# Classic ROOT getFeature(0x0008 KEEP_ALIVE) -> index 0x04, then three
+# KEEP_ALIVE fn1 keepAlive(0x0bb8 = 3000 ms) pings, each echoed (swid 0xe).
+# Options+ repeats the ping every ~1.01 s (t = 7.958 s, 8.970 s, 9.986 s).
+# Source: hcooper 03-options-plus-startup.pcap, frames #1631, #1633, #1753,
+# #1755, #1789, #1791, #1799, #1801
+# (docs/research/hcooper-startup-keypad-sequence.txt lines 71-72, 132-133,
+# 149-152). MIT, see README.md.
+> 11 ff 00 0e 00 08 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 00 0e 04 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00
+> 11 ff 04 1e 0b b8 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 04 1e 0b b8 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+> 11 ff 04 1e 0b b8 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 04 1e 0b b8 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+> 11 ff 04 1e 0b b8 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 04 1e 0b b8 00 00 00 00 00 00 00 00 00 00 00 00 00 00

@@ -10,6 +10,11 @@ use std::fmt;
 /// Sequence byte of a host request that fits one VLP packet (first and last).
 pub const VLP_SEQ_SINGLE: u8 = 0xe0;
 
+/// Bit of the VLP sequence byte that marks the last packet of a message
+/// (`e0`, `c0`, and `43` closing the four-packet display fn1 reply `80 01 02
+/// 43` in the captures).
+pub const VLP_SEQ_LAST: u8 = 0x40;
+
 /// The HID report ids keyvo speaks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ReportId {

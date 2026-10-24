@@ -6,10 +6,12 @@
 
 use std::time::Duration;
 
+use keyvo_core::clock::FakeClock;
 use keyvo_core::hid::FakeHidTransport;
+use keyvo_hid::display::{self, DisplayMode};
 use keyvo_hid::hidpp::{DEVICE_DIRECT, Hidpp, HidppError, Plane, SoftwareId};
-use keyvo_hid::keep_alive::{self, TimeoutRange};
-use keyvo_hid::root::{FeatureInfo, ProtocolVersion, VlpFeatureInfo, feature};
+use keyvo_hid::keep_alive::{self, KeepAlive, KeepAliveTiming, TimeoutRange};
+use keyvo_hid::root::{FeatureInfo, ProtocolVersion, VlpFeatureInfo, VlpProtocol, feature};
 
 /// Options+ tags the captured requests with software id 0xe.
 const CAPTURE_SWID: u8 = 0xe;
@@ -114,5 +116,76 @@ fn hcooper_keep_alive_range_is_500_to_10000_ms() {
             max: Duration::from_millis(10_000),
         }
     );
+    assert!(hidpp.transport_mut().is_done());
+}
+
+#[test]
+fn hcooper_keep_alive_pings_once_per_period_with_the_default_timing() {
+    let mut hidpp = replay(fixture!("keep-alive-ping.txt"));
+    let clock = FakeClock::new();
+    let mut keep_alive = KeepAlive::new(&clock, KeepAliveTiming::default());
+    let granted = Some(Duration::from_millis(3000));
+
+    // Due at once: the first ping goes out before anything else is read.
+    assert_eq!(keep_alive.poll(&mut hidpp).unwrap(), granted);
+    clock.advance(Duration::from_millis(999));
+    assert_eq!(keep_alive.poll(&mut hidpp).unwrap(), None);
+    assert_eq!(keep_alive.until_due(), Duration::from_millis(1));
+    clock.advance(Duration::from_millis(1));
+    assert_eq!(keep_alive.poll(&mut hidpp).unwrap(), granted);
+    clock.advance(Duration::from_millis(1000));
+    assert_eq!(keep_alive.poll(&mut hidpp).unwrap(), granted);
+    assert!(hidpp.transport_mut().is_done());
+}
+
+#[test]
+fn hcooper_geometry_is_a_480_panel_with_nine_118_pixel_keys() {
+    let mut hidpp = replay(fixture!("display-geometry.txt"));
+    let geometry = display::geometry(&mut hidpp).unwrap();
+    assert_eq!((geometry.width, geometry.height), (480, 480));
+    let origins: Vec<_> = geometry.keys.iter().map(|k| (k.index, k.x, k.y)).collect();
+    assert_eq!(
+        origins,
+        [
+            (1, 24, 6),
+            (2, 182, 7),
+            (3, 340, 6),
+            (4, 23, 164),
+            (5, 181, 163),
+            (6, 339, 164),
+            (7, 23, 322),
+            (8, 181, 321),
+            (9, 340, 321),
+        ]
+    );
+    assert!(
+        geometry
+            .keys
+            .iter()
+            .all(|k| (k.width, k.height) == (118, 118))
+    );
+    assert!(hidpp.transport_mut().is_done());
+}
+
+#[test]
+fn hcooper_claim_takes_the_display_from_logo_to_streaming_mode() {
+    let mut hidpp = replay(fixture!("display-claim.txt"));
+    let claim = display::claim(&mut hidpp).unwrap();
+    assert_eq!(
+        claim.protocol,
+        VlpProtocol {
+            major: 1,
+            minor: 0,
+            available_memory: 0x0001_e820,
+        }
+    );
+    assert_eq!(claim.display_index, 2);
+    assert_eq!(claim.modes.len(), 13);
+    assert!(claim.modes.contains(&DisplayMode::STREAMING));
+    assert_eq!(claim.boot_mode, DisplayMode::STANDBY);
+    assert_eq!(claim.geometry.keys.len(), 9);
+    assert!(claim.mode_event);
+    // The mode-change event is consumed, not left for the input path.
+    assert_eq!(hidpp.take_unmatched(), None);
     assert!(hidpp.transport_mut().is_done());
 }
