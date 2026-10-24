@@ -78,6 +78,15 @@ just shell        # interactive shell in the container
 just clean        # stop the container, drop the cargo volumes, delete target/ and bin/
 ```
 
+**Native mode.** With `AGENT_HORDE=1` in the environment the check and build
+recipes (`test`, `lint`, `fmt`, `fmt-check`, `deny`, `cov`, `ci`, `build`) run
+the toolchain directly instead of through `docker compose exec`. It is for a
+shell that already is the container: the project's agent sandbox sets the
+variable for every agent, and it works the same inside `just shell`. The
+lifecycle recipes (`setup`, `dev`, `down`, `clean`, `rebuild`, `shell`) and the
+hardware recipes (`run`, `test-hw`) refuse to run in native mode. The host
+never uses it: the host has no toolchain, and the hardware stays on the host.
+
 The container image is `rust:<version>-slim-trixie` plus Node LTS, `just`,
 `cargo-deny`, `cargo-llvm-cov`, `cargo-nextest` and `cargo-insta`; the Rust
 version is pinned in `rust-toolchain.toml` and bumped together with the
