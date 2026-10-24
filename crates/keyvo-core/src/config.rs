@@ -2,18 +2,16 @@
 //! tables, pre-alpha subset. Durations are integer milliseconds; a key left
 //! out keeps its documented default; unknown keys are errors.
 
-use std::fmt;
 use std::path::Path;
 use std::time::Duration;
 
 use schemars::JsonSchema;
-use serde::Deserialize;
-use serde::de::{self, Deserializer, Unexpected, Visitor};
+use serde::{Deserialize, Serialize};
 
 use crate::diagnostic::Diagnostic;
 
 /// The whole `config.toml`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 #[schemars(title = "keyvo config")]
 pub struct Config {
@@ -36,52 +34,52 @@ impl Config {
 }
 
 /// The `[timing]` table (spec §6.1).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct Timing {
     /// A focus change shorter than this does not repaint. Default 150 ms.
-    #[serde(deserialize_with = "millis")]
+    #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub focus_hysteresis: Duration,
     /// Repaints within this window are merged. Default 50 ms.
-    #[serde(deserialize_with = "millis")]
+    #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub render_coalesce: Duration,
     /// Hold duration that turns a press into `long`. Default 1000 ms.
-    #[serde(deserialize_with = "millis")]
+    #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub long_press: Duration,
     /// After a page-button use, an app switch keeps the general page for
     /// this long (spec §6.3). Default 10000 ms.
-    #[serde(deserialize_with = "millis")]
+    #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub page_grace: Duration,
     /// Time between two keep-alive pings (spec §5.3). Default 1000 ms.
-    #[serde(deserialize_with = "millis")]
+    #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub keep_alive_period: Duration,
     /// How long the device holds the claim without the next ping (spec
     /// §5.3). Default 3000 ms.
-    #[serde(deserialize_with = "millis")]
+    #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub keep_alive_timeout: Duration,
     /// How long an image fragment waits for its ACK (spec §5.5). Default
     /// 50 ms.
-    #[serde(deserialize_with = "millis")]
+    #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub ack_timeout: Duration,
     /// Wait before the first page-button divert request (spec §5.6).
     /// Default 100 ms.
-    #[serde(deserialize_with = "millis")]
+    #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub divert_settle: Duration,
     /// Wait between two divert requests (spec §5.6). Default 20 ms.
-    #[serde(deserialize_with = "millis")]
+    #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub divert_spacing: Duration,
     /// How long an HID++ request waits for its reply (spec §5.1). Default
     /// 1000 ms.
-    #[serde(deserialize_with = "millis")]
+    #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub reply_timeout: Duration,
 }
@@ -104,17 +102,17 @@ impl Default for Timing {
 }
 
 /// The `[render]` table (spec §9).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct Render {
     /// How long the `success` look stays before the key reverts. Default
     /// 2000 ms.
-    #[serde(deserialize_with = "millis")]
+    #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub feedback_hold: Duration,
     /// After this long the `running` spinner becomes a static badge.
     /// Default 10000 ms.
-    #[serde(deserialize_with = "millis")]
+    #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub long_run_threshold: Duration,
 }
@@ -128,7 +126,14 @@ impl Default for Render {
     }
 }
 
-fn millis<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Duration, D::Error> {
+/// A [`Duration`] written as integer milliseconds.
+mod millis {
+    use std::fmt;
+    use std::time::Duration;
+
+    use serde::de::{self, Deserializer, Unexpected, Visitor};
+    use serde::ser::Serializer;
+
     struct MillisVisitor;
 
     impl Visitor<'_> for MillisVisitor {
@@ -149,5 +154,11 @@ fn millis<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Duration, D::Err
         }
     }
 
-    deserializer.deserialize_u64(MillisVisitor)
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Duration, D::Error> {
+        deserializer.deserialize_u64(MillisVisitor)
+    }
+
+    pub fn serialize<S: Serializer>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u64(u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
+    }
 }

@@ -99,3 +99,15 @@ fn invalid_fixtures_report_file_line_and_column() {
         assert!(diagnostic.message.starts_with(message), "{diagnostic}");
     }
 }
+
+#[test]
+fn durations_serialize_as_milliseconds_and_read_back() {
+    let config = parse("valid/partial.toml").unwrap();
+    let text = toml::to_string(&config).unwrap();
+    assert!(text.contains("long_press = 800\n"), "{text}");
+    assert!(text.contains("page_grace = 10000\n"), "{text}");
+    assert_eq!(
+        Config::from_toml(&text, Path::new("config.toml")),
+        Ok(config)
+    );
+}

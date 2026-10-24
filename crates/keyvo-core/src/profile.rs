@@ -82,10 +82,8 @@ pub struct ProfileInfo {
     #[serde(default)]
     pub r#match: Match,
     /// Accent color, the primary context indicator on the pad.
-    #[serde(default)]
     pub accent: Option<Color>,
-    /// Higher wins when several profiles match; ties are an error of the
-    /// configuration, never resolved alphabetically.
+    /// Higher wins when several profiles match; never alphabetical.
     #[serde(default)]
     pub priority: i32,
 }
@@ -98,7 +96,6 @@ pub struct Match {
     #[serde(default)]
     pub class: Vec<String>,
     /// Regular expression on the window title.
-    #[serde(default)]
     pub title: Option<TitleRegex>,
 }
 
@@ -107,7 +104,6 @@ pub struct Match {
 #[serde(deny_unknown_fields)]
 pub struct Page {
     /// Page name, for example `context` or `general`.
-    #[serde(default)]
     pub name: Option<String>,
     /// The keys of the page by number; absent keys are blank.
     #[serde(default)]
@@ -120,16 +116,12 @@ pub struct Page {
 #[serde(deny_unknown_fields)]
 pub struct Key {
     /// Icon reference, for example `lucide:hammer` or `file:icons/x.png`.
-    #[serde(default)]
     pub icon: Option<String>,
     /// Text drawn on the key.
-    #[serde(default)]
     pub label: Option<String>,
     /// Background color.
-    #[serde(default)]
     pub color: Option<Color>,
     /// What a press does; a key without an action only displays.
-    #[serde(default)]
     pub action: Option<Action>,
     /// Named looks that replace parts of the key while the state is active.
     #[serde(default)]
@@ -141,16 +133,12 @@ pub struct Key {
 #[serde(deny_unknown_fields)]
 pub struct KeyState {
     /// Icon in this state.
-    #[serde(default)]
     pub icon: Option<String>,
     /// Label in this state.
-    #[serde(default)]
     pub label: Option<String>,
     /// Background color in this state.
-    #[serde(default)]
     pub color: Option<Color>,
     /// Corner badge text in this state.
-    #[serde(default)]
     pub badge: Option<String>,
 }
 
@@ -188,6 +176,10 @@ impl<'de> Deserialize<'de> for SchemaVersion {
 }
 
 impl JsonSchema for SchemaVersion {
+    fn inline_schema() -> bool {
+        true
+    }
+
     fn schema_name() -> Cow<'static, str> {
         "SchemaVersion".into()
     }
