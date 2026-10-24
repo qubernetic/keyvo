@@ -1,0 +1,404 @@
+//! The profile model: one `profiles/<id>.toml` file (spec §7.2), schema
+//! version 1, pre-alpha subset.
+//!
+//! Every value is validated while it is deserialized, so a bad value is
+//! reported with the position of the value itself. Unknown keys are errors:
+//! a typo never silently disables a key.
+
+use std::borrow::Cow;
+use std::collections::BTreeMap;
+use std::fmt;
+use std::path::Path;
+
+use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
+use serde::Deserialize;
+use serde::de::{self, Deserializer, Unexpected, Visitor};
+
+use crate::diagnostic::Diagnostic;
+
+/// The id of the profile that always exists and that app profiles overlay.
+pub const GLOBAL_ID: &str = "global";
+
+/// The profile schema version this build reads and writes.
+pub const SCHEMA_VERSION: u32 = 1;
+
+/// A whole profile file.
+#[derive(Debug, Clone, PartialEq, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(title = "keyvo profile")]
+pub struct Profile {
+    /// Version of the profile format; this build reads `1`.
+    pub schema_version: SchemaVersion,
+    /// Identity, window match rules and look of the profile.
+    pub profile: ProfileInfo,
+    /// The pages of the profile, in order.
+    #[serde(default)]
+    pub pages: Vec<Page>,
+}
+
+impl Profile {
+    /// Parses and validates the text of a profile file; `path` only labels
+    /// the diagnostic.
+    ///
+    /// # Errors
+    ///
+    /// A [`Diagnostic`] with the position of the first problem.
+    pub fn from_toml(text: &str, path: &Path) -> Result<Self, Diagnostic> {
+        toml::from_str(text).map_err(|e| Diagnostic::from_toml(path, text, &e))
+    }
+
+    /// The built-in global profile used when `profiles/global.toml` does not
+    /// exist: one empty page, no match rules.
+    #[must_use]
+    pub fn builtin_global() -> Self {
+        Self {
+            schema_version: SchemaVersion,
+            profile: ProfileInfo {
+                id: GLOBAL_ID.to_owned(),
+                name: "Global".to_owned(),
+                r#match: Match::default(),
+                accent: None,
+                priority: 0,
+            },
+            pages: vec![Page {
+                name: Some("context".to_owned()),
+                keys: BTreeMap::new(),
+            }],
+        }
+    }
+}
+
+/// The `[profile]` table.
+#[derive(Debug, Clone, PartialEq, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProfileInfo {
+    /// The profile id; equals the file name without `.toml`.
+    #[serde(deserialize_with = "profile_id")]
+    #[schemars(regex(pattern = r"^[a-z0-9][a-z0-9._-]*$"))]
+    pub id: String,
+    /// Display name.
+    pub name: String,
+    /// Which focused windows select this profile.
+    #[serde(default)]
+    pub r#match: Match,
+    /// Accent color, the primary context indicator on the pad.
+    #[serde(default)]
+    pub accent: Option<Color>,
+    /// Higher wins when several profiles match; ties are an error of the
+    /// configuration, never resolved alphabetically.
+    #[serde(default)]
+    pub priority: i32,
+}
+
+/// Window match rules of a profile (spec §6.2).
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Match {
+    /// Window classes, reverse-DNS (`org.kde.konsole`) or short (`konsole`).
+    #[serde(default)]
+    pub class: Vec<String>,
+    /// Regular expression on the window title.
+    #[serde(default)]
+    pub title: Option<TitleRegex>,
+}
+
+/// One `[[pages]]` entry.
+#[derive(Debug, Clone, PartialEq, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Page {
+    /// Page name, for example `context` or `general`.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// The keys of the page by number; absent keys are blank.
+    #[serde(default)]
+    #[schemars(schema_with = "key_map_schema")]
+    pub keys: BTreeMap<KeySlot, Key>,
+}
+
+/// One LCD key.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Key {
+    /// Icon reference, for example `lucide:hammer` or `file:icons/x.png`.
+    #[serde(default)]
+    pub icon: Option<String>,
+    /// Text drawn on the key.
+    #[serde(default)]
+    pub label: Option<String>,
+    /// Background color.
+    #[serde(default)]
+    pub color: Option<Color>,
+    /// What a press does; a key without an action only displays.
+    #[serde(default)]
+    pub action: Option<Action>,
+    /// Named looks that replace parts of the key while the state is active.
+    #[serde(default)]
+    pub states: BTreeMap<String, KeyState>,
+}
+
+/// The overrides of one key state.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct KeyState {
+    /// Icon in this state.
+    #[serde(default)]
+    pub icon: Option<String>,
+    /// Label in this state.
+    #[serde(default)]
+    pub label: Option<String>,
+    /// Background color in this state.
+    #[serde(default)]
+    pub color: Option<Color>,
+    /// Corner badge text in this state.
+    #[serde(default)]
+    pub badge: Option<String>,
+}
+
+/// What a key press does (pre-alpha: `chord` and `exec`).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
+pub enum Action {
+    /// Send a key combination, for example `ctrl+shift+g`.
+    Chord {
+        /// The chord.
+        keys: String,
+    },
+    /// Run a command without blocking, with `KEYVO_*` in its environment.
+    Exec {
+        /// The command line.
+        cmd: String,
+    },
+}
+
+/// The schema version marker; only [`SCHEMA_VERSION`] deserializes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SchemaVersion;
+
+impl<'de> Deserialize<'de> for SchemaVersion {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let version = u32::deserialize(deserializer)?;
+        if version == SCHEMA_VERSION {
+            Ok(Self)
+        } else {
+            Err(de::Error::custom(format!(
+                "unsupported schema_version {version}, this keyvo reads {SCHEMA_VERSION}"
+            )))
+        }
+    }
+}
+
+impl JsonSchema for SchemaVersion {
+    fn schema_name() -> Cow<'static, str> {
+        "SchemaVersion".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({ "type": "integer", "const": SCHEMA_VERSION })
+    }
+}
+
+fn profile_id<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    let id = String::deserialize(deserializer)?;
+    let mut chars = id.chars();
+    let valid_first = chars
+        .next()
+        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
+    let valid_rest =
+        chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-'));
+    if valid_first && valid_rest {
+        Ok(id)
+    } else {
+        Err(de::Error::invalid_value(
+            Unexpected::Str(&id),
+            &"an id of lowercase letters, digits, `.`, `_` and `-`, starting with a letter or digit",
+        ))
+    }
+}
+
+/// The number of a key, 1 to 9, row-major, top-left is 1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct KeySlot(u8);
+
+impl KeySlot {
+    /// The slot `n`, or `None` outside 1..=9.
+    #[must_use]
+    pub fn new(n: u8) -> Option<Self> {
+        (1..=9).contains(&n).then_some(Self(n))
+    }
+
+    /// The key number, 1 to 9.
+    #[must_use]
+    pub fn get(self) -> u8 {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for KeySlot {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct SlotVisitor;
+
+        impl Visitor<'_> for SlotVisitor {
+            type Value = KeySlot;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a key number from 1 to 9")
+            }
+
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<KeySlot, E> {
+                let mut bytes = v.bytes();
+                match (bytes.next(), bytes.next()) {
+                    (Some(b @ b'1'..=b'9'), None) => Ok(KeySlot(b - b'0')),
+                    _ => Err(E::invalid_value(Unexpected::Str(v), &self)),
+                }
+            }
+        }
+
+        deserializer.deserialize_str(SlotVisitor)
+    }
+}
+
+fn key_map_schema(generator: &mut SchemaGenerator) -> Schema {
+    let key = generator.subschema_for::<Key>();
+    json_schema!({
+        "type": "object",
+        "patternProperties": { "^[1-9]$": key },
+        "additionalProperties": false
+    })
+}
+
+/// An RGB color, written `#rrggbb` (either case).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Color {
+    /// Red.
+    pub r: u8,
+    /// Green.
+    pub g: u8,
+    /// Blue.
+    pub b: u8,
+}
+
+impl Color {
+    /// The color with these components.
+    #[must_use]
+    pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
+        Self { r, g, b }
+    }
+
+    fn parse(s: &str) -> Option<Self> {
+        let hex = s.strip_prefix('#')?;
+        if hex.len() != 6 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return None;
+        }
+        let channel = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).ok();
+        Some(Self::rgb(channel(0)?, channel(2)?, channel(4)?))
+    }
+}
+
+impl fmt::Display for Color {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "#{:02x}{:02x}{:02x}", self.r, self.g, self.b)
+    }
+}
+
+impl<'de> Deserialize<'de> for Color {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        Self::parse(&s).ok_or_else(|| {
+            de::Error::invalid_value(Unexpected::Str(&s), &"a color written #rrggbb")
+        })
+    }
+}
+
+impl JsonSchema for Color {
+    fn schema_name() -> Cow<'static, str> {
+        "Color".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({
+            "description": "An RGB color, written #rrggbb (either case).",
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+        })
+    }
+}
+
+/// A compiled window-title regular expression.
+#[derive(Debug, Clone)]
+pub struct TitleRegex(regex::Regex);
+
+impl TitleRegex {
+    /// Whether `title` contains a match.
+    #[must_use]
+    pub fn is_match(&self, title: &str) -> bool {
+        self.0.is_match(title)
+    }
+
+    /// The source of the expression as written in the file.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl PartialEq for TitleRegex {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl<'de> Deserialize<'de> for TitleRegex {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        regex::Regex::new(&s)
+            .map(Self)
+            .map_err(|e| de::Error::custom(format!("invalid title regex: {e}")))
+    }
+}
+
+impl JsonSchema for TitleRegex {
+    fn schema_name() -> Cow<'static, str> {
+        "TitleRegex".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({
+            "description": "A regular expression (Rust regex syntax) searched in the window title.",
+            "type": "string",
+            "format": "regex"
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn key_slot_accepts_only_one_to_nine() {
+        assert_eq!(KeySlot::new(0), None);
+        assert_eq!(KeySlot::new(1).map(KeySlot::get), Some(1));
+        assert_eq!(KeySlot::new(9).map(KeySlot::get), Some(9));
+        assert_eq!(KeySlot::new(10), None);
+    }
+
+    #[test]
+    fn color_round_trips_through_display() {
+        let c = Color::parse("#4E8bD6").unwrap();
+        assert_eq!(c, Color::rgb(0x4e, 0x8b, 0xd6));
+        assert_eq!(c.to_string(), "#4e8bd6");
+        assert_eq!(Color::parse("4e8bd6"), None);
+        assert_eq!(Color::parse("#4e8bd"), None);
+        assert_eq!(Color::parse("#4e8bdg"), None);
+        assert_eq!(Color::parse("#é4e8b"), None);
+    }
+
+    #[test]
+    fn builtin_global_has_one_empty_page_and_no_match() {
+        let global = Profile::builtin_global();
+        assert_eq!(global.profile.id, GLOBAL_ID);
+        assert_eq!(global.profile.r#match, Match::default());
+        assert_eq!(global.pages.len(), 1);
+        assert!(global.pages[0].keys.is_empty());
+    }
+}

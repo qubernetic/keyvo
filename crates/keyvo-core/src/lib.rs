@@ -6,7 +6,9 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod clock;
+pub mod diagnostic;
 pub mod hid;
+pub mod profile;
 
 /// Version of the keyvo workspace, taken from `Cargo.toml` at compile time.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
