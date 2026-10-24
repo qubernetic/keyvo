@@ -32,3 +32,9 @@ id `0xe` in these frames, so the tests use it too.
 | `keep-alive-ping.txt` | #1631, #1633, #1753 to #1801 | getFeature(0x0008) = 4, three keepAlive(3000) pings echoed |
 | `display-geometry.txt` | #1643, #1645, #1667 to #1675 | display fn1 geometry over four packets: 480x480, nine 118x118 keys |
 | `display-claim.txt` | #1559 to #1773 (selected) | the claim of spec §5.4 in keyvo's order, ending with setMode(a0) and the mode-change event |
+| `image-write-panel.txt` | #1643, #1645, #1779 to #1785 | a 4362-byte panel JPEG in two `0x14` fragments, each followed by its `0x13` ACK (keyvo's order; Options+ sends both fragments first) |
+
+The image writer's golden tests also reproduce the LCD writes of
+`02-binding-paint.pcap` (frames #521, #639, #640, software id `0xd`) from
+`captures/external/hcooper/derived/binding-paint-frames.tsv`, which carries
+the whole 4095-byte reports.

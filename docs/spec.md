@@ -268,16 +268,32 @@ parameters up to the last one, all within the one reply timeout.
   435×434 at (23, 6) on the 480×480 canvas (Options+, captured; logilinux uses
   434×434). Quality 85–95; the header dimensions must equal the JPEG SOF
   dimensions exactly (mismatch = nothing drawn, write succeeds; reported).
-- Fragment layout (`0x14`): first fragment carries a 20-byte header
+- Fragment layout (`0x14`, display fn2): first fragment carries a 20-byte header
   `14 ff 02 <fn|swid> <seq> 01 00 01 00 <x:u16> <y:u16> <w:u16> <h:u16> <len:u24>`
   then JPEG bytes; continuation fragments carry a 5-byte header; every
-  fragment is exactly 4095 bytes, zero-padded. Sequence byte: `e0` =
-  first+last, `a0` = first of several, `61`-style = continuation/last with
-  index. Options+ uses index base 0 and swid `0xd`; Julusian/logilinux use
-  base 1 and swid `0xb`; both are reported to work.
+  fragment is exactly 4095 bytes, zero-padded, so the first carries 4075
+  JPEG bytes and each continuation 4090. `01 00 01 00` reads as display 1,
+  no deferred update, one image, format JPEG (Julusian; unconfirmed).
+  Sequence byte: bit `0x80` first, bit `0x40` last, bit `0x20` always set,
+  the low four bits the fragment index: `e0` = first+last, `a0` = first of
+  several, `21` a middle one, `61`-style = last with index. Options+ uses
+  index base 0 and swid `0xd`; Julusian/logilinux use base 1 and swid
+  `0xb` (`e1`, `a1 22 63`); both are reported to work. keyvo's writer
+  (`keyvo_hid::image`) takes both as settings with the Options+ defaults
+  until the hardware check (plan §5 item 7) decides. Golden tests
+  reproduce the captured writes byte for byte (frames #521, #639/#640 of
+  `02-binding-paint`, #1779/#1780 of `03-options-plus-startup`).
+- Placement comes from the published geometry (§5.4): a key's image goes
+  to its record's rectangle; a panel paint goes to the bounding box of all
+  keys, which on the captured table is exactly the 435×434 at (23, 6) that
+  Options+ paints. Before a write the writer reads the JPEG's frame header
+  and refuses anything but baseline SOF0 at the target's width and height.
 - **The length field is 24-bit** (captured: `00 11 0a`). The 16-bit limit in
   logilinux/Julusian is a library limitation; keyvo honours 24 bits after the
   M0 check (plan §5 item 10) and guards JPEG size before encoding a frame.
+  Until then the guard is the fragment index: one write carries at most as
+  many fragments as the four index bits count from the index base without
+  wrapping (16 with base 0, 65 425 bytes; 15 with base 1, 61 335 bytes).
 - **The device ACKs every fragment on `0x13`** (`13 ff 02 <fn|swid> c0 …`
   for fragment 0, `c1 00 01 …` for fragment 1, …). The "own writes echo back
   as key 1" trap in other projects is this ACK. keyvo uses **ACK-driven flow
@@ -285,6 +301,13 @@ parameters up to the last one, all within the one reply timeout.
   with a timeout fallback. This replaces the blind 5–10 ms pacing of prior
   art and is expected to settle the "nine keys out of sync" problem
   (Julusian #11); confirmed in M0-1 (plan §5 items 8–9).
+  The ACK is `13 ff <display> <fn|swid> c<index> 00 <index>` with the
+  write's function and software id; keyvo matches it on those and the
+  index bits. Without an ACK within `[timing].ack_timeout` (§6.1) the next
+  fragment goes out anyway and the write reports how many fragments were
+  acknowledged. Reports read while waiting (key input) stay for the input
+  path. In the capture the ACKs come about 1 ms after a fragment; Options+
+  does not wait for them.
 - Single writer task; repaints are coalesced (superseded frames dropped);
   no shared static buffers.
 
@@ -381,6 +404,7 @@ Defaults, all configurable under `[timing]` in `config.toml`:
 | `page_grace` | 10 s | see §6.3 |
 | `keep_alive_period` | 1000 ms | time between two keep-alive pings, §5.3 |
 | `keep_alive_timeout` | 3000 ms | timeout requested with every ping: how long the device holds the claim without the next one, §5.3 |
+| `ack_timeout` | 50 ms | how long an image fragment waits for its ACK before the next one goes out anyway, §5.5 (captured ACK latency about 1 ms) |
 
 ### 6.2 Window/context detection
 
@@ -927,6 +951,12 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 3 (2026-10-24)**: §5.5 the fragment payload
+  sizes, the sequence byte bits, index base and software id as writer
+  settings, placement from the geometry, the frame header check, the
+  fragment-index size guard, the ACK layout and the timeout fallback; §6.1
+  a row for `ack_timeout`.
 
 - **v0.3, pre-alpha slice 2 (2026-10-24)**: §4.1 the `Clock` trait; §5.2
   multi-packet VLP replies and the last-packet bit; §5.3 the keep-alive
