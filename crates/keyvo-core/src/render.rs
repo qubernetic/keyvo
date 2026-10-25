@@ -4,6 +4,9 @@
 //! Inter through `resvg`'s text layout). A tile encodes to the baseline JPEG
 //! the device draws, or to PNG for previews.
 //!
+//! The device gets a [`Canvas`]: the panel background and every key drawn
+//! into one image of the panel size, cropped to the area that changed.
+//!
 //! Rendering is a pure function of the spec, the size and the [`Theme`]:
 //! no system fonts, no files, so the same spec gives the same pixels on
 //! every machine.
@@ -13,8 +16,8 @@ pub mod icon;
 use std::sync::Arc;
 
 use resvg::tiny_skia::{
-    self, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke,
-    Transform,
+    self, FillRule, IntRect, LineCap, LineJoin, Paint, PathBuilder, Pixmap, PixmapPaint, Rect,
+    Stroke, Transform,
 };
 use resvg::usvg::{self, fontdb};
 
@@ -142,6 +145,33 @@ pub struct Panel {
     pub size: TileSize,
     /// The keys, numbered from 1 in this order.
     pub keys: Vec<KeyPlace>,
+}
+
+impl Panel {
+    /// The bounding box of the keys at `indexes` (counted from 0), the area
+    /// a change of those keys repaints; for every key it is the union of
+    /// the key rectangles (435x434 at 23,6 on the Keypad). Indexes past the
+    /// last key are ignored; `None` when no key is left.
+    #[must_use]
+    pub fn bounds(&self, indexes: impl IntoIterator<Item = usize>) -> Option<KeyPlace> {
+        let (mut left, mut top, mut right, mut bottom) = (u16::MAX, u16::MAX, 0, 0);
+        let mut any = false;
+        for place in indexes.into_iter().filter_map(|i| self.keys.get(i)) {
+            any = true;
+            left = left.min(place.x);
+            top = top.min(place.y);
+            right = right.max(place.x.saturating_add(place.size.width));
+            bottom = bottom.max(place.y.saturating_add(place.size.height));
+        }
+        any.then(|| KeyPlace {
+            x: left,
+            y: top,
+            size: TileSize {
+                width: right - left,
+                height: bottom - top,
+            },
+        })
+    }
 }
 
 /// The look shared by every key. Sizes are fractions of the tile height, so
@@ -285,10 +315,35 @@ pub enum RenderError {
         /// Pages in the profile.
         pages: usize,
     },
+    /// A crop that does not lie inside the canvas.
+    #[error("{width}x{height} at {x},{y} is outside the {canvas_width}x{canvas_height} canvas")]
+    OutsideCanvas {
+        /// Left edge of the crop.
+        x: u16,
+        /// Top edge of the crop.
+        y: u16,
+        /// Crop width.
+        width: u16,
+        /// Crop height.
+        height: u16,
+        /// Canvas width.
+        canvas_width: u16,
+        /// Canvas height.
+        canvas_height: u16,
+    },
+    /// A key the panel does not have.
+    #[error("no key {key} on a panel of {keys} keys")]
+    NoSuchKey {
+        /// The key, counted from 1.
+        key: usize,
+        /// Keys on the panel.
+        keys: usize,
+    },
 }
 
-/// JPEG quality of a tile, inside the 85 to 95 of spec §5.5.
-pub const JPEG_QUALITY: u8 = 90;
+/// JPEG quality of a tile: 100, all quantisation values 1, as Options+
+/// sends (spec §5.5).
+pub const JPEG_QUALITY: u8 = 100;
 
 /// One rendered key.
 #[derive(Debug, Clone, PartialEq)]
@@ -387,6 +442,63 @@ impl Tile {
         self.pixmap
             .encode_png()
             .map_err(|e| RenderError::Png(e.to_string()))
+    }
+}
+
+/// The whole display as one image (spec §5.5, §9): the panel background of
+/// the active profile with every key's tile at its place. It is kept
+/// between paints; a change redraws the keys it touches and the device gets
+/// a crop of the area that changed, so a key and the background around it
+/// always come from the same image.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Canvas {
+    pixmap: Pixmap,
+    panel: Panel,
+    background: Color,
+}
+
+impl Canvas {
+    /// The panel it was made for.
+    #[must_use]
+    pub fn panel(&self) -> &Panel {
+        &self.panel
+    }
+
+    /// The panel background it was made with.
+    #[must_use]
+    pub fn background(&self) -> Color {
+        self.background
+    }
+
+    /// The pixels of `area`, as a tile to encode.
+    ///
+    /// # Errors
+    ///
+    /// [`RenderError::OutsideCanvas`] for an area that does not lie inside
+    /// the canvas or has no pixels.
+    pub fn crop(&self, area: KeyPlace) -> Result<Tile, RenderError> {
+        let outside = || RenderError::OutsideCanvas {
+            x: area.x,
+            y: area.y,
+            width: area.size.width,
+            height: area.size.height,
+            canvas_width: self.panel.size.width,
+            canvas_height: self.panel.size.height,
+        };
+        let fits = u32::from(area.x) + u32::from(area.size.width) <= self.pixmap.width()
+            && u32::from(area.y) + u32::from(area.size.height) <= self.pixmap.height();
+        if !fits {
+            return Err(outside());
+        }
+        let rect = IntRect::from_xywh(
+            i32::from(area.x),
+            i32::from(area.y),
+            u32::from(area.size.width),
+            u32::from(area.size.height),
+        )
+        .ok_or_else(outside)?;
+        let pixmap = self.pixmap.clone_rect(rect).ok_or_else(outside)?;
+        Ok(Tile { pixmap })
     }
 }
 
@@ -554,7 +666,7 @@ impl Renderer {
     }
 
     /// A tile of `size` in the panel background of a profile with
-    /// `accent`, which the device gets before the keys (spec §5.5).
+    /// `accent`.
     ///
     /// # Errors
     ///
@@ -573,30 +685,79 @@ impl Renderer {
         Ok(Tile { pixmap })
     }
 
-    /// The whole panel: the panel background of the specs' accent, with the
-    /// tile of `specs[i]` at `panel.keys[i]` (a blank tile where `specs` runs
-    /// out). For previews; the device gets the background and then one
-    /// [`Tile`] per key.
+    /// A [`Canvas`] of `panel` in the panel background of a profile with
+    /// `accent`, with no key drawn yet.
+    ///
+    /// # Errors
+    ///
+    /// [`RenderError::EmptyTile`] for a panel of zero size.
+    pub fn canvas(&self, accent: Option<Color>, panel: &Panel) -> Result<Canvas, RenderError> {
+        let Tile { pixmap } = self.backdrop(accent, panel.size)?;
+        Ok(Canvas {
+            pixmap,
+            panel: panel.clone(),
+            background: self.panel_color(accent),
+        })
+    }
+
+    /// Draws `spec` as key `index` (counted from 0) of the canvas: the key's
+    /// rectangle is reset to the panel background, then the tile goes on
+    /// it, so nothing of the key's earlier tile stays in its rounded
+    /// corners.
+    ///
+    /// # Errors
+    ///
+    /// [`RenderError::NoSuchKey`] for a key the panel does not have,
+    /// [`RenderError::EmptyTile`] for a key of zero size.
+    pub fn draw(
+        &self,
+        canvas: &mut Canvas,
+        index: usize,
+        spec: &KeySpec,
+    ) -> Result<(), RenderError> {
+        let place = *canvas.panel.keys.get(index).ok_or(RenderError::NoSuchKey {
+            key: index + 1,
+            keys: canvas.panel.keys.len(),
+        })?;
+        let tile = self.tile(spec, place.size)?;
+        if let Some(rect) = Rect::from_xywh(
+            f32::from(place.x),
+            f32::from(place.y),
+            f32::from(place.size.width),
+            f32::from(place.size.height),
+        ) {
+            canvas
+                .pixmap
+                .fill_rect(rect, &paint(canvas.background), Transform::identity(), None);
+        }
+        canvas.pixmap.draw_pixmap(
+            i32::from(place.x),
+            i32::from(place.y),
+            tile.pixmap.as_ref(),
+            &PixmapPaint::default(),
+            Transform::identity(),
+            None,
+        );
+        Ok(())
+    }
+
+    /// The whole panel: the [`Canvas`] of the specs' accent with the tile of
+    /// `specs[i]` at `panel.keys[i]` (a blank tile where `specs` runs out),
+    /// for previews.
     ///
     /// # Errors
     ///
     /// [`RenderError::EmptyTile`] for a panel or key of zero size.
     pub fn panel(&self, specs: &[KeySpec], panel: &Panel) -> Result<Tile, RenderError> {
         let accent = specs.iter().find_map(|spec| spec.accent);
-        let Tile { mut pixmap } = self.backdrop(accent, panel.size)?;
+        let mut canvas = self.canvas(accent, panel)?;
         let blank = KeySpec::default();
-        for (index, place) in panel.keys.iter().enumerate() {
-            let tile = self.tile(specs.get(index).unwrap_or(&blank), place.size)?;
-            pixmap.draw_pixmap(
-                i32::from(place.x),
-                i32::from(place.y),
-                tile.pixmap.as_ref(),
-                &PixmapPaint::default(),
-                Transform::identity(),
-                None,
-            );
+        for index in 0..panel.keys.len() {
+            self.draw(&mut canvas, index, specs.get(index).unwrap_or(&blank))?;
         }
-        Ok(Tile { pixmap })
+        Ok(Tile {
+            pixmap: canvas.pixmap,
+        })
     }
 
     /// The largest font size, from the theme's label size down to its
