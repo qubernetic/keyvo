@@ -7,7 +7,9 @@
 //! The context snapshot, layer resolution and `on_fail` branch come with
 //! their issues.
 
+use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 
 use crate::chord::KeyEvent;
 use crate::press::PressKind;
@@ -38,9 +40,28 @@ pub struct TraceRecord {
     #[serde(deserialize_with = "crate::profile::slot_number")]
     pub key: KeySlot,
     /// The action the press resolved to; `None` for an unbound key.
+    #[serde(deserialize_with = "known_action_fields")]
     pub action: Option<Action>,
     /// What came of it.
     pub result: Outcome,
+}
+
+/// The fields an [`Action`] reads; a record drops the others.
+const ACTION_FIELDS: [&str; 3] = ["type", "keys", "cmd"];
+
+/// Reads the action of a record. A profile rejects unknown action fields,
+/// a record ignores them, so a v1 client reads the records of a later
+/// daemon (`docs/socket-api.md`).
+fn known_action_fields<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Action>, D::Error> {
+    let Some(mut fields) = Option::<Map<String, Value>>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    fields.retain(|name, _| ACTION_FIELDS.contains(&name.as_str()));
+    Action::deserialize(Value::Object(fields))
+        .map(Some)
+        .map_err(de::Error::custom)
 }
 
 impl TraceRecord {

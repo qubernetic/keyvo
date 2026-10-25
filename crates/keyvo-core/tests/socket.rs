@@ -77,6 +77,51 @@ fn every_response_round_trips_its_fixture() {
     );
 }
 
+/// The line with a field `later` added to every object in it, as a later
+/// daemon might send it.
+fn with_unknown_fields(line: &str) -> String {
+    fn add(value: &mut Value) {
+        match value {
+            Value::Object(object) => {
+                object.values_mut().for_each(add);
+                object.insert("later".into(), 1.into());
+            }
+            Value::Array(items) => items.iter_mut().for_each(add),
+            _ => {}
+        }
+    }
+    let mut value = json(line);
+    add(&mut value);
+    value.to_string()
+}
+
+/// A later daemon may add fields to a response; a v1 client ignores them.
+#[test]
+fn a_response_with_unknown_fields_still_parses_to_its_reply() {
+    for line in lines(fixture!("responses.ndjson")) {
+        let known: Response = serde_json::from_str(line).unwrap();
+        let line = with_unknown_fields(line);
+        let response: Response =
+            serde_json::from_str(&line).unwrap_or_else(|e| panic!("{line}: {e}"));
+        assert_eq!(response, known, "{line}");
+        assert_eq!(
+            ServerMessage::parse(&line).unwrap(),
+            ServerMessage::Response(known)
+        );
+    }
+}
+
+/// The same holds for events.
+#[test]
+fn an_event_with_unknown_fields_still_parses() {
+    for line in lines(fixture!("events.ndjson")) {
+        let known = ServerMessage::parse(line).unwrap();
+        let line = with_unknown_fields(line);
+        let event = ServerMessage::parse(&line).unwrap_or_else(|e| panic!("{line}: {e}"));
+        assert_eq!(event, known, "{line}");
+    }
+}
+
 #[test]
 fn a_response_needs_the_version_and_one_of_result_and_error() {
     assert!(serde_json::from_str::<Response>(r#"{"v":2,"ok":true,"result":{}}"#).is_err());

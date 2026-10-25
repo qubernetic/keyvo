@@ -207,8 +207,12 @@ pub struct Response {
 }
 
 /// The result of a command that succeeded.
+///
+/// Unknown fields are ignored, so a v1 client reads the replies of a later
+/// daemon. The variants differ in their required fields and are tried in
+/// order; `Done`, which takes any object, comes last.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged, deny_unknown_fields)]
+#[serde(untagged)]
 pub enum Reply {
     /// `status`.
     Status(Status),
@@ -307,7 +311,6 @@ impl Response {
 
 /// The `status` result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Status {
     /// The daemon's version.
     pub version: String,
@@ -324,7 +327,6 @@ pub struct Status {
 
 /// The `subscribe` result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Subscribed {
     /// The event classes that will stream.
     pub events: Vec<EventClass>,
@@ -335,7 +337,6 @@ pub struct Subscribed {
 
 /// The `press` result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Pressed {
     /// The press's trace entry; an `exec` is still `pending`, its result
     /// follows as a `trace` event.
