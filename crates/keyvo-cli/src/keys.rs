@@ -123,13 +123,19 @@ pub(crate) mod tests {
         assert_eq!(
             text,
             "\
-press key 5
+press key 2
 press key 1
-release key 5
 release key 1
-press page left
+release key 2
+press key 1
+release key 1
 press page right
+press page left
+release page right
 release page left
+press page left
+release page left
+press page right
 release page right
 "
         );
@@ -140,11 +146,11 @@ release page right
     fn keys_json_is_one_object_per_line() {
         let (text, _) = run(true);
         let lines: Vec<_> = text.lines().collect();
-        assert_eq!(lines.len(), 8);
-        assert_eq!(lines[0], r#"{"edge":"press","key":5}"#);
-        assert_eq!(lines[3], r#"{"edge":"release","key":1}"#);
-        assert_eq!(lines[4], r#"{"edge":"press","page":"left"}"#);
-        assert_eq!(lines[7], r#"{"edge":"release","page":"right"}"#);
+        assert_eq!(lines.len(), 14);
+        assert_eq!(lines[0], r#"{"edge":"press","key":2}"#);
+        assert_eq!(lines[5], r#"{"edge":"release","key":1}"#);
+        assert_eq!(lines[6], r#"{"edge":"press","page":"right"}"#);
+        assert_eq!(lines[13], r#"{"edge":"release","page":"right"}"#);
     }
 
     #[test]

@@ -1,38 +1,40 @@
 # The page-button divert of spec §5.6 in keyvo's order: getFeature(0x1B04),
 # getCount, getCidInfo for every control, then per page button
 # setCidReporting(cid, 0x03) followed by getCidReporting to verify it.
-# Options+ asks getCidReporting before the set (frames #1705, #1725); its
-# replies already carry the divert bit 0x01, so keyvo reuses them as the
-# verify replies. The writes use swid 0xe.
 #
-# 1. ROOT getFeature(0x1B04) -> index 0x0b (frames #1681, #1683; lines 96-97)
+# Source: first light, 2026-10-25, firmware U1 66.00.B0017: the divert
+# `keys --json` sent after an unplug and replug (`21-keys-json-replug.log`),
+# replies from the passive sniffer on /dev/hidraw6 (`sniff.log` of the
+# first-light logs attached to qubernetic/keyvo#40), each comment naming its
+# Unix timestamp. The sniffer reads only: the requests are keyvo's
+# (`reprog::divert_page_buttons`, swid 0xe, which every reply echoes). The
+# replies are byte for byte the ones of hcooper 03-options-plus-startup.pcap
+# (frames in brackets, docs/research/hcooper-startup-keypad-sequence.txt;
+# MIT, see README.md), where Options+ reads getCidReporting before the set.
+#
+# 1. ROOT getFeature(0x1B04) -> index 0x0b, version 6 (1792913172.674; #1683)
 > 11 ff 00 0e 1b 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 < 11 ff 00 0e 0b 00 06 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 2. getCount -> 2 controls (frames #1697, #1699; lines 104-105)
+# 2. getCount -> 2 controls (1792913172.675; #1699)
 > 11 ff 0b 0e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 < 11 ff 0b 0e 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 # 3. getCidInfo(0) -> CID 0x01A1, task 0, flags 0x20 divertable, position 0,
-#    group 1 (frames #1701, #1703; lines 106-107)
+#    group 1 (1792913172.695; #1703)
 > 11 ff 0b 1e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 < 11 ff 0b 1e 01 a1 00 00 20 00 01 00 00 00 00 00 00 00 00 00
-# 4. getCidInfo(1) -> CID 0x01A2, same flags (frames #1721, #1723; lines 116-117)
+# 4. getCidInfo(1) -> CID 0x01A2, same flags (1792913172.716; #1723)
 > 11 ff 0b 1e 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 < 11 ff 0b 1e 01 a2 00 00 20 00 01 00 00 00 00 00 00 00 00 00
-# 5. setCidReporting(0x01A1, divert + divert valid) echoed (frames #1717,
-#    #1719; lines 114-115)
+# 5. setCidReporting(0x01A1, divert + divert valid) echoed (1792913172.736;
+#    #1719)
 > 11 ff 0b 3e 01 a1 03 00 00 00 00 00 00 00 00 00 00 00 00 00
 < 11 ff 0b 3e 01 a1 03 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 6. getCidReporting(0x01A1) -> divert bit set (frames #1705, #1707; lines
-#    108-109)
+# 6. getCidReporting(0x01A1) -> divert bit set (1792913172.757; #1707)
 > 11 ff 0b 2e 01 a1 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 < 11 ff 0b 2e 01 a1 01 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 7. setCidReporting(0x01A2, 0x03) echoed (frames #1729, #1731; lines 120-121)
+# 7. setCidReporting(0x01A2, 0x03) echoed (1792913172.778; #1731)
 > 11 ff 0b 3e 01 a2 03 00 00 00 00 00 00 00 00 00 00 00 00 00
 < 11 ff 0b 3e 01 a2 03 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 8. getCidReporting(0x01A2) -> divert bit set (frames #1725, #1727; lines
-#    118-119)
+# 8. getCidReporting(0x01A2) -> divert bit set (1792913172.799; #1727)
 > 11 ff 0b 2e 01 a2 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 < 11 ff 0b 2e 01 a2 01 00 00 00 00 00 00 00 00 00 00 00 00 00
-#
-# Source: hcooper 03-options-plus-startup.pcap; line numbers refer to
-# docs/research/hcooper-startup-keypad-sequence.txt. MIT, see README.md.

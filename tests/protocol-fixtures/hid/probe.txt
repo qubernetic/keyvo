@@ -41,7 +41,9 @@
 # 10. display fn3 supported modes (frames #1655, #1657; lines 83-84)
 > 13 ff 02 3e e0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 < 13 ff 02 3e c0 a0 a1 a2 a4 a5 a6 d0 d1 d2 d3 d4 d5 d6 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 11. display fn5 current mode -> a1 (frames #1659, #1661; lines 85-86)
+# 11. display fn5 current mode -> a1, the state after a keep-alive expiry; a
+#     freshly plugged-in Keypad reports a2 (first light, 2026-10-25,
+#     docs/hardware-notes.md item 5) (frames #1659, #1661; lines 85-86)
 > 13 ff 02 5e e0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 < 13 ff 02 5e c0 a1 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 # 12. display fn1 geometry, four packets (frames #1667 to #1675; lines 89-93)

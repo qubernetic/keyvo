@@ -216,6 +216,7 @@ impl HidTransport for Pad {
                 jpeg: partial.jpeg,
             });
         }
+        // The device's ACK layout (image-acks.txt): 01 on the last fragment.
         let mut ack = vec![
             0x13,
             report[1],
@@ -223,7 +224,7 @@ impl HidTransport for Pad {
             report[3],
             0xc0 | index,
             0x00,
-            index,
+            u8::from(seq & 0x40 != 0),
         ];
         ack.resize(32, 0);
         state.acks.push_back(ack);

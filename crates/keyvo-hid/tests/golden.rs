@@ -4,6 +4,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use std::fmt::Write as _;
 use std::time::Duration;
 
 use keyvo_core::clock::FakeClock;
@@ -11,7 +12,7 @@ use keyvo_core::hid::FakeHidTransport;
 use keyvo_hid::display::{self, DisplayMode};
 use keyvo_hid::firmware::{self, FirmwareEntity, FirmwareKind};
 use keyvo_hid::hidpp::{DEVICE_DIRECT, Hidpp, HidppError, Plane, SoftwareId};
-use keyvo_hid::image::{self, ImageConfig, ImageError, Rect, Target, Written};
+use keyvo_hid::image::{self, ImageConfig, ImageError, IndexBase, Rect, Target, Written};
 use keyvo_hid::input::{Control, Input, InputEvent};
 use keyvo_hid::keep_alive::{self, KeepAlive, KeepAliveTiming, TimeoutRange};
 use keyvo_hid::reprog::{self, ControlInfo, DivertTiming};
@@ -269,6 +270,11 @@ fn hcooper_claim_takes_the_display_from_logo_to_streaming_mode() {
 /// The `KEEP_ALIVE` index in the fixtures.
 const KEEP_ALIVE_INDEX: u8 = 0x04;
 
+/// The lines of `claim-lost.txt`, in the order the device sends them: the
+/// `KEEP_ALIVE` expiry event, then the mode-change event to `a1`.
+const EXPIRY_EVENT: usize = 0;
+const MODE_EVENT: usize = 1;
+
 /// The claim, then `lost` (lines of `claim-lost.txt`) answering its last
 /// request, then the reclaim exchange `reclaims` times.
 fn claim_then_lost(lost: &[usize], reclaims: usize) -> String {
@@ -303,17 +309,20 @@ fn reclaims_after(script: &str) -> usize {
 
 #[test]
 fn the_mode_and_expiry_events_of_one_expiry_give_one_reclaim() {
-    assert_eq!(reclaims_after(&claim_then_lost(&[0, 1], 1)), 1);
+    assert_eq!(
+        reclaims_after(&claim_then_lost(&[EXPIRY_EVENT, MODE_EVENT], 1)),
+        1
+    );
 }
 
 #[test]
 fn the_mode_event_alone_gives_one_reclaim() {
-    assert_eq!(reclaims_after(&claim_then_lost(&[0], 1)), 1);
+    assert_eq!(reclaims_after(&claim_then_lost(&[MODE_EVENT], 1)), 1);
 }
 
 #[test]
 fn the_expiry_event_alone_gives_one_reclaim() {
-    assert_eq!(reclaims_after(&claim_then_lost(&[1], 1)), 1);
+    assert_eq!(reclaims_after(&claim_then_lost(&[EXPIRY_EVENT], 1)), 1);
 }
 
 #[test]
@@ -343,7 +352,7 @@ fn the_claim_watch_tells_lost_claims_from_other_reports() {
 
 #[test]
 fn a_reclaim_the_display_does_not_confirm_is_an_error() {
-    let mut script = claim_then_lost(&[0], 0);
+    let mut script = claim_then_lost(&[MODE_EVENT], 0);
     let refused =
         fixture!("display-reclaim.txt").replace("< 13 ff 02 5e c0 a0", "< 13 ff 02 5e c0 a1");
     script.push_str(&refused);
@@ -521,6 +530,58 @@ fn a_missing_ack_times_out_and_the_next_fragment_goes_out_anyway() {
     assert!(hidpp.transport_mut().is_done());
 }
 
+#[test]
+fn first_light_acks_of_both_index_bases_and_both_software_ids_count() {
+    // The ACK pairs of `image-acks.txt`, in the fixture's order.
+    let acks: Vec<_> = fixture!("image-acks.txt")
+        .lines()
+        .filter(|line| line.starts_with('<'))
+        .collect();
+    let settings = [
+        (IndexBase::Zero, 0xd),
+        (IndexBase::One, 0xd),
+        (IndexBase::Zero, 0xb),
+        (IndexBase::One, 0xb),
+    ];
+    assert_eq!(acks.len(), 2 * settings.len());
+    for ((index_base, swid), pair) in settings.into_iter().zip(acks.chunks(2)) {
+        let config = ImageConfig {
+            swid: SoftwareId::new(swid).unwrap(),
+            index_base,
+            ..ImageConfig::default()
+        };
+        let jpeg = startup_jpeg();
+        let fragments = image::fragments(DEVICE_DIRECT, 2, &config, CAPTURED_PANEL, &jpeg).unwrap();
+        assert_eq!(fragments.len(), 2);
+        // The writer resolves the display index first, then sends each
+        // fragment after the ACK of the one before.
+        let mut script = fixture!("vlp-get-feature-display.txt").to_owned();
+        for (fragment, ack) in fragments.iter().zip(pair) {
+            writeln!(script, "> {}\n{ack}", to_hex(fragment)).unwrap();
+        }
+        let mut hidpp = replay(&script);
+        let written = image::write(&mut hidpp, &config, CAPTURED_PANEL, &jpeg).unwrap();
+        assert_eq!(
+            written,
+            Written {
+                fragments: 2,
+                acked: 2
+            },
+            "{index_base:?}, swid {swid:#x}"
+        );
+        assert_eq!(hidpp.take_unmatched(), None);
+        assert!(hidpp.transport_mut().is_done());
+    }
+}
+
+fn to_hex(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Every event the fixture's reports cause, read through `Hidpp::next_frame`.
 fn events(script: &str, mut input: Input) -> Vec<InputEvent> {
     let mut hidpp = replay(script);
@@ -538,9 +599,11 @@ fn key_input_fixture_gives_the_exact_press_release_list() {
     assert_eq!(
         events(fixture!("key-input.txt"), input),
         [
-            InputEvent::press(Control::Key(5)),
+            InputEvent::press(Control::Key(2)),
             InputEvent::press(Control::Key(1)),
-            InputEvent::release(Control::Key(5)),
+            InputEvent::release(Control::Key(1)),
+            InputEvent::release(Control::Key(2)),
+            InputEvent::press(Control::Key(1)),
             InputEvent::release(Control::Key(1)),
         ]
     );
@@ -556,16 +619,20 @@ fn page_button_fixture_gives_the_exact_press_release_list() {
     assert_eq!(
         events(fixture!("page-buttons.txt"), input),
         [
-            InputEvent::press(left),
             InputEvent::press(right),
+            InputEvent::press(left),
+            InputEvent::release(right),
             InputEvent::release(left),
+            InputEvent::press(left),
+            InputEvent::release(left),
+            InputEvent::press(right),
             InputEvent::release(right),
         ]
     );
 }
 
 #[test]
-fn hcooper_divert_walks_the_controls_and_diverts_both_page_buttons() {
+fn first_light_divert_walks_the_controls_and_diverts_both_page_buttons() {
     let mut hidpp = replay(fixture!("reprog-divert.txt"));
     let mut slept = Vec::new();
     let diverted = reprog::divert_page_buttons(&mut hidpp, &DivertTiming::default(), |pause| {

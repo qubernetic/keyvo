@@ -1,27 +1,32 @@
-# LCD key input on VLP index 2 (spec §5.6), interleaved with the two image
-# fragment ACKs and the display mode-change event that share the index.
-# Expected: press 5, press 1, release 5, release 1; the ACKs and the event
-# yield nothing.
+# LCD key input on VLP index 2 (spec §5.6), with the display mode-change
+# event and an image fragment ACK that share the index.
+# Expected: press 2, press 1, release 1, release 2, press 1, release 1; the
+# event and the ACK yield nothing.
 #
-# The hcooper captures carry no key input. The key reports follow the
-# layout logilinux and Julusian decode (`13 ff 02 00 <seq> 01 <keys> 00`,
-# docs/research/logilinux-and-julusian-analysis.md §4.6, table row 22);
-# their sequence bytes are made up until the hardware check (plan §5
-# item 13). The ACKs are frames #1782 and #1785, the event frame #1770 of
-# hcooper 03-options-plus-startup.pcap (MIT, see README.md).
+# Source: first light, 2026-10-25, firmware U1 66.00.B0017, the passive
+# sniffer on /dev/hidraw6 (`sniff.log` of the first-light logs attached to
+# qubernetic/keyvo#40), in the order the Keypad sent them. Each report is
+# copied whole; the comment names its sniff.log Unix timestamp. The report
+# lists the keys held, in press order; the low nibble of byte 4 counts up
+# per report. The ACK is the one of item 13: `fill '#ffffff' --key 1` while
+# `keys` ran (`35-item13-fill-while-keys.log` line 3), and `keys` printed
+# nothing for it (`20-keys-json.log` lines 26-35).
 #
-# 1. Key 5 held.
-< 13 ff 02 00 c0 01 05 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 2. ACK of fragment 0 (#1782).
-< 13 ff 02 2e c0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 3. Keys 5 and 1 held.
-< 13 ff 02 00 c1 01 05 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 4. ACK of fragment 1 (#1785): `c1 00 01`, the "echo as key 1" of other
-#    projects.
-< 13 ff 02 2e c1 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 5. Display mode-change event, mode a0 (#1770).
-< 13 ff 02 10 c6 a0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 6. Key 1 held only.
-< 13 ff 02 00 c2 01 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 7. Nothing held.
-< 13 ff 02 00 c3 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 1. Display mode-change event, mode a0, after the claim of the first fill
+#    (1792912081.451).
+< 13 ff 02 10 c4 a0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 2. Key 2 held (1792912842.699).
+< 13 ff 02 00 c1 01 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 3. Keys 2 and 1 held (1792912842.728).
+< 13 ff 02 00 c2 01 02 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 4. Key 2 held only (1792912845.190).
+< 13 ff 02 00 c3 01 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 5. Nothing held (1792912845.224).
+< 13 ff 02 00 c4 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 6. ACK of the one fragment of a key 1 paint, swid 0xd, index 0, last
+#    (1792912909.376): `c0 00 01`, the "echo as key 1" of other projects.
+< 13 ff 02 2d c0 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 7. Key 1 held (1792913087.854).
+< 13 ff 02 00 c5 01 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 8. Nothing held (1792913088.037).
+< 13 ff 02 00 c6 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00

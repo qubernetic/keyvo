@@ -37,18 +37,33 @@ id `0xe` in these frames, so the tests use it too.
 | `keep-alive-ping.txt` | #1631, #1633, #1753 to #1801 | getFeature(0x0008) = 4, three keepAlive(3000) pings echoed |
 | `display-geometry.txt` | #1643, #1645, #1667 to #1675 | display fn1 geometry over four packets: 480x480, nine 118x118 keys |
 | `display-claim.txt` | #1559 to #1773 (selected) | the claim of spec §5.4 in keyvo's order, ending with setMode(a0) and the mode-change event |
-| `reprog-divert.txt` | #1681 to #1731 (selected) | getFeature(0x1B04) = 0x0b, getCount = 2, getCidInfo for 0x01A1 and 0x01A2, then per page button setCidReporting(cid, 0x03) and getCidReporting (keyvo's order; Options+ reads it before the set) |
-| `key-input.txt` | #1770, #1782, #1785 | LCD key held-set reports interleaved with two image ACKs and the mode-change event; the key reports are not captured (layout from logilinux and Julusian) |
-| `page-buttons.txt` | #1719 | diverted page-button CID lists around a setCidReporting reply; the notifications are not captured (layout from logilinux and Julusian) |
 | `firmware-version.txt` | #1567 to #1581, #1309 to #1315 | getFeature(0x0003) = 2, four firmware entities: `BL2 20.00.B0017`, `U1 66.00.B0017` (active), `IM 01.00.B0017`, `HW 00.00.B0000`; entities 2 and 3 retagged from swid 0xd to 0xe |
 | `probe.txt` | #1559 to #1691 (selected), #1309 to #1315 | `keyvo probe` in its request order: ping, getFeature for 0x0003, 0x0008, 0x1B04 and 0x8040, the firmware walk, the keep-alive range, the VLP protocol, getFeature(0x19A1), display modes, mode and geometry (replayed by `crates/keyvo-cli/src/probe.rs`) |
 | `image-write-panel.txt` | #1643, #1645, #1779 to #1785 | a 4362-byte panel JPEG in two `0x14` fragments, each followed by its `0x13` ACK (keyvo's order; Options+ sends both fragments first) |
+
+## First light
+
+Frames captured on the owner's Keypad on first light (2026-10-25, firmware
+`U1 66.00.B0017`, qubernetic/keyvo#40). The source is the first-light log
+archive attached to #40: `sniff.log`, a passive second reader on
+`/dev/hidraw6` that logged every input report with its Unix timestamp, and
+the numbered command logs `<NN>-<label>.log`. The sniffer reads only, so a
+fixture's `>` lines are derived from keyvo's encoder; every `<` line is
+copied whole and its comment names the `sniff.log` timestamp. The
+archive's helper scripts are not in the repository.
+
+| File | Source | Content |
+|---|---|---|
+| `key-input.txt` | `sniff.log` 1792912081.451 to 1792913088.037, `20-keys-json.log` lines 26-35, `35-item13-fill-while-keys.log` | LCD key held-set reports (key 2, keys 2 and 1, key 2, none, key 1, none), the mode-change event to `a0` and the ACK of a key 1 paint, which yield nothing |
+| `image-acks.txt` | `sniff.log` 1792912084.527 to 1792912112.783, `07-fill-panel-blue.log`, `10-fill-panel-ib1.log`, `13-fill-panel-swidb.log`, `16-fill-panel-ib1-swidb.log` | the ACKs of four two-fragment panel writes, index base 0 and 1 with swid `0xd` and `0xb`: `13 ff 02 2<swid> c<index> 00 <01 on the last fragment>`; the golden test builds the writes with keyvo's encoder |
+| `reprog-divert.txt` | `sniff.log` 1792913172.674 to 1792913172.799, `21-keys-json-replug.log` | the divert after an unplug and replug: getFeature(0x1B04) = 0x0b, getCount = 2, getCidInfo for 0x01A1 and 0x01A2, then per page button setCidReporting(cid, 0x03) and getCidReporting; the replies equal hcooper #1683 to #1731 byte for byte |
+| `page-buttons.txt` | `sniff.log` 1792912854.503 to 1792913298.613, `20-keys-json.log` lines 30-33, `21-keys-json-replug.log` lines 4-7 | diverted page-button CID lists, both buttons held (`01 a2 01 a1`), around the setCidReporting reply of the divert after a replug |
 
 Two fixtures carry the reclaim after a lost claim (spec §5.3):
 
 | File | Source | Content |
 |---|---|---|
-| `claim-lost.txt` | first-light report on #40 (2026-10-25, firmware `U1 66.00.B0017`) | the display mode-change event to `a1` and the `KEEP_ALIVE` expiry event one expiry sends in the same millisecond; the report quotes the leading bytes, the padding is zero |
+| `claim-lost.txt` | first light (see above), `sniff.log` 1792912466.383 and .386, the end of `28-item3-default.log` | the `KEEP_ALIVE` expiry event, then the display mode-change event to `a1`, 0 to 4 ms apart, as every expiry of the log sends them |
 | `display-reclaim.txt` | hcooper #1765 to #1773, steps 6 and 7 of `display-claim.txt` | setMode(a0) and the getMode that confirms it, with the mode-change event announcing `a0` |
 
 Two fixtures are not captured; `keyvo probe --feature` (spec §5.10) is
