@@ -11,9 +11,10 @@ use crate::config::Render;
 use crate::trace::Outcome;
 
 /// What a key shows because of its last action.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Look {
     /// The key's own look.
+    #[default]
     Idle,
     /// The action runs: dimmed icon and a spinner arc.
     Running,
