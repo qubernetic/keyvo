@@ -479,6 +479,13 @@ After this block: `cp contrib/profiles/*.toml ~/.config/keyvo/profiles/`.
 - [ ] #74 `just run -- keys --json --dump 2>frames.txt | jq .` while pressing key 5: `jq` prints `{"edge":"press","key":5}` and the release, no parse error; `frames.txt` has the `13 ff 02 00 ..` key reports. Delete `frames.txt` afterwards.
 - [ ] #74 `just run -- --dump fill '#ff0000' --key 1`: each image fragment prints one line `> 14 ff 02 <fn|swid> <seq> .. (4094 bytes)` followed by its `< 13 ff 02 ..` ACK.
 
+### Panel background before the keys (#79)
+
+- [ ] #79 Daemon stopped: `just run -- fill '#ffffff' --panel`, then `bin/keyvo-daemon` in T1 with Dolphin focused: the panel turns dark blue first, then the nine global keys paint on it. No white strip beside any key; around and between the keys only the dark blue profile background.
+- [ ] #79 With the daemon running, focus Konsole: the background turns dark green, then the Konsole keys; VS Code: dark orange, then its keys; Dolphin again: dark blue. No strip of the previous profile's background beside a key (section 5 steps 3 to 5).
+- [ ] #79 With the daemon painting the global profile, `kill -STOP $(pgrep -x keyvo-daemon)`, wait 5 s, `kill -CONT $(pgrep -x keyvo-daemon)`: after one `claim lost, display reclaimed` the dark blue background comes back first, then the keys; no logo strip beside a key (together with #73 item 3).
+- [ ] #79 `just run -- preview global -o /tmp/keyvo-global.png` shows the same dark blue between the keys as the pad.
+
 ### First-light records (#75)
 
 - [ ] #75 Read `docs/hardware-notes.md`, "Measurements", against the first-light report on #40 and its logs: every number and log citation matches.

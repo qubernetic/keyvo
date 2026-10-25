@@ -408,7 +408,10 @@ version `docs/hardware-notes.md` records.
 - The visible key window is not the published rectangle: after a panel
   paint, a key paint leaves a strip of the panel colour at the bottom and
   right edge of the key (first light, `docs/hardware-notes.md` item 7).
-  The measurement is #70, the fix in the daemon's paint path #72.
+  The daemon paints the panel background before the keys (§5.5, #77), so
+  the strip shows the profile's background, not an earlier paint; the
+  measurement is #70, the per-key margin that covers the measured window
+  #72.
 
 ### 5.5 Image writes and flow control
 
@@ -473,6 +476,18 @@ version `docs/hardware-notes.md` records.
   image cannot be rendered or is refused by the writer (size guard, frame
   header) is logged and not tried again until its spec changes. The actor
   reads at most `render_coalesce` at a time, so a request waits no longer.
+- Order of a paint (pre-alpha, #77): the panel background first, then the
+  keys. A request carries the active profile's accent with the key specs;
+  after every claim, every reclaim (§5.3) and whenever the profile's
+  panel color (§9) differs from the one the pad shows, the actor writes
+  the panel background to the bounding box of the keys (the panel
+  placement above), forgets what every key shows and then writes every
+  key, its rounded corners composited over the same color. So nothing of
+  an earlier panel paint (`keyvo fill --panel`, the logo) stays beside a
+  key, and a profile switch shows the new profile's background. A page
+  change, a key state or a second profile with the same accent repaints
+  only the keys that differ. A background that cannot be rendered or
+  written is logged like a key; a failing device ends the connection.
 
 ### 5.6 Input
 
@@ -1195,7 +1210,16 @@ justfile page, `gh`, `kubectl`, other agent CLIs, Kitty/WezTerm.
   device thread. A size guard rejects frames above the device limit before
   they are queued.
 - Key images are rendered at the geometry the device published (§5.4);
-  the full-panel path is used for splashes and previews.
+  the full-panel path is used for the panel background, splashes and
+  previews.
+- Panel background (pre-alpha, #77): the theme's panel color, black,
+  tinted 20 % toward the profile's accent (theme `panel_tint`; `#4e8bd6`
+  gives `#101c2b`), black for a profile without an accent. The device
+  gets it as one full-panel image before the keys (order in §5.5), and a
+  key tile's transparent corners are composited over it, so the corners
+  match the panel around them. No `[render]` key: the color follows the
+  accent, and the tint moves to the theme file with the other theme
+  values.
 - Renderer as built (`keyvo_core::render`, pre-alpha subset): a key spec
   (background color, profile accent, icon, label) renders to a tile of any
   size; every size and position is a fraction of the tile height, so other
@@ -1254,8 +1278,9 @@ justfile page, `gh`, `kubectl`, other agent CLIs, Kitty/WezTerm.
 - `keyvo preview <profile> [--page N] -o <file.png>` renders one page
   (counted from 1, default 1) onto the panel with no hardware: the
   captured MX Creative Keypad geometry (480×480, the nine key rectangles
-  of §5.4), black between the keys. `<profile>` is a profile file when it
-  names an existing file or ends in `.toml`, else a profile id from the
+  of §5.4), the profile's panel background between the keys.
+  `<profile>` is a profile file when it names an existing file or ends in
+  `.toml`, else a profile id from the
   configuration directory (§7.1). `insta` snapshot tests cover every
   renderer primitive and the demo profile
   (`crates/keyvo-core/tests/snapshots/`, PNG files next to the `.snap`
@@ -1573,6 +1598,14 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 6h (2026-10-25)**: §5.5 the order of a paint,
+  panel background first and then the keys, on every claim, reclaim and
+  change of the profile's panel color (#77, from first light #40,
+  finding 2); §9 the panel background as built (the accent tinted over
+  the theme's black panel, tile corners over it, no new `[render]` key)
+  and the preview between the keys; §5.4 the strip beside a key now
+  names #77 next to #70 and #72.
 
 - **v0.3, pre-alpha slice 6b (2026-10-25)**: the first-light measurements
   (#40, firmware `U1 66.00.B0017`) in `docs/hardware-notes.md`; §5.1 one

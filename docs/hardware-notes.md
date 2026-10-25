@@ -300,7 +300,9 @@ deferred past the pre-alpha.
   and right edge of the key. The visible key window is larger than, or
   offset from, the 118x118 rectangle at the published origin; the panel
   write (435x434 at 23, 6) covers those pixels, a key write does not.
-  Measured in #70, handled in #72.
+  Measured in #70. The daemon paints the panel background before the
+  keys (#77), so the strip shows the profile's background; the per-key
+  margin over the measured window is #72.
 - Settles: spec §5.5, both index bases and both software ids paint, so the
   defaults stay: index base 0, swid `0xd`. The ACK layout is the fixture
   `tests/protocol-fixtures/hid/image-acks.txt`.
