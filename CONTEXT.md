@@ -203,6 +203,6 @@ classic plane.
 
 **Window watcher**: The platform trait in `keyvo-core` (`WindowWatcher`) whose
 implementations in the daemon turn a focus source into `(class, title)` events
-(`WindowContext`) for the state machine. `FakeWindowWatcher` reports windows by
-hand in tests; the pre-alpha daemon binary has no focus source until the KWin
-watcher lands.
+(`WindowContext`, with the window's `pid` when the source knows it) for the
+state machine. The daemon binary uses the KWin watcher (`KWinWatcher`);
+`FakeWindowWatcher` reports windows by hand in tests.

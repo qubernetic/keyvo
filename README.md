@@ -39,6 +39,10 @@ just run -- fill '#ff8000' --key 5  # or a PNG; --all (default) or --panel
 bin/keyvo-daemon                    # paint ~/.config/keyvo/profiles/global.toml, run its keys, page buttons
 ```
 
+On KDE Plasma 6 the daemon loads its own KWin script
+([contrib/kwin/keyvo-focus.js](contrib/kwin/keyvo-focus.js)), so the profile
+follows the focused window; nothing needs installing by hand.
+
 The commands need read-write access to the Keypad's `/dev/hidraw*` node and
 Solaar stopped; [docs/hardware-notes.md](docs/hardware-notes.md) lists the
 measurements they serve.
