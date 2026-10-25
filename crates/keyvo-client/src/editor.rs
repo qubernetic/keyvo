@@ -177,6 +177,10 @@ impl Editor {
         };
         edited.snapshot = store::snapshot(&edited.path, &self.snapshots, now, SNAPSHOTS_KEPT)
             .map_err(io(&self.snapshots))?;
+        // The first edit of the built-in global profile on a fresh install,
+        // where neither the configuration directory nor `profiles/` exists.
+        let profiles = self.config_dir.join("profiles");
+        std::fs::create_dir_all(&profiles).map_err(io(&profiles))?;
         store::write(&edited.path, &doc.to_string()).map_err(io(&edited.path))?;
         Ok(edited)
     }

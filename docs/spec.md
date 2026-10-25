@@ -771,7 +771,8 @@ icon, label, color and action of one key):
   that is a symlink (into a dotfile repository) stays a symlink and its
   target is replaced.
 - A missing `profiles/global.toml` is created from the built-in global
-  profile's text (`edit::BUILTIN_GLOBAL`) on its first edit; an app profile
+  profile's text (`edit::BUILTIN_GLOBAL`) on its first edit, together with
+  `profiles/` and the configuration directory if they are missing; an app profile
   without a file is an error.
 
 ### 7.2 Profile format

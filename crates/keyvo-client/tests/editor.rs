@@ -179,6 +179,28 @@ fn a_missing_global_profile_is_created_from_the_builtin_one() {
 }
 
 #[test]
+fn the_first_global_edit_creates_the_missing_directories() {
+    let fields = KeyFields {
+        label: Some("Hi".into()),
+        ..KeyFields::default()
+    };
+    let expected = format!("{BUILTIN_GLOBAL}\n[pages.keys.1]\nlabel = \"Hi\"\n");
+    for config in ["config", "config/nested"] {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("config")).unwrap();
+        let config = root.path().join(config);
+        let editor = Editor::new(config.clone(), &root.path().join("state"));
+        let edited = editor
+            .set_key("global", 1, slot(1), &fields, at(1))
+            .unwrap();
+        assert_eq!(edited.snapshot, None);
+        let path = config.join("profiles/global.toml");
+        assert_eq!(edited.path, path);
+        assert_eq!(std::fs::read_to_string(path).unwrap(), expected);
+    }
+}
+
+#[test]
 fn a_missing_app_profile_is_an_error() {
     let dirs = Dirs::new(&[]);
     let error = dirs.editor().key("konsole", 1, slot(1)).unwrap_err();
