@@ -88,9 +88,10 @@ sent about every second) without which the Keypad emits no key events and
 reverts its LCD to the logo. A dedicated task in `keyvo-hid`, started before the
 first read.
 
-**Key spec**: What one key shows: background color, profile accent, icon and
-label, taken from a key of a profile page (`KeySpec` in `keyvo_core::render`).
-The renderer turns it into a tile.
+**Key spec**: What one key shows: background color, profile accent, icon,
+label, badge text and feedback look, taken from a key of a profile page and
+its `states` (`KeySpec` in `keyvo_core::render`). The renderer turns it into
+a tile.
 
 **Keypad**: The MX Creative Keypad (`046d:c354`): nine LCD keys in a 3×3 grid,
 numbered 1..9 row-major, plus two page buttons. keyvo's primary device.
@@ -118,7 +119,8 @@ protocol on stdin and stdout (ADR-0003).
 
 **Press kind**: How a key was pressed: `short`, `long` (held past
 `[timing].long_press`, default 1000) or `repeat` (held, re-fired). Each kind
-can bind a different action.
+can bind a different action; in the pre-alpha a key has one action and
+`short` and `long` both run it (`keyvo_core::press`).
 
 **Project layer**: The `.keyvo/` directory of a repository (`profile.toml`,
 `profiles/<app-id>.toml`, `local.toml`), found by walking up from the context
@@ -170,7 +172,9 @@ of a page on the panel and writes a PNG.
 layer resolution, condition results, resolved action with substituted
 variables, execution result, `on_fail` branch and block reason. Kept in a ring
 buffer and in `~/.local/state/keyvo/trace.ndjson`; reachable from the GUI
-drawer, `keyvo ctl trace|tail` and `subscribe`.
+drawer, `keyvo ctl trace|tail` and `subscribe`. The record type
+(`TraceRecord`) and the press resolution are in `keyvo-core`, the buffer and
+the file in the daemon.
 
 **Trust**: The user's recorded decision that a project layer may run its
 actions, bound in `~/.config/keyvo/trust.toml` to the content hash of its
