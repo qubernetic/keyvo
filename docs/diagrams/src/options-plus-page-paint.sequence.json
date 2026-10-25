@@ -1,0 +1,243 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Options+ page change and single-button update (reference)",
+    "output": "docs/diagrams/options-plus-page-paint.html",
+    "column_fit": "spread",
+    "quality_profile": "showcase",
+    "subtitle": "Facts from docs/research/options-plus-display-pipeline.md and the hcooper capture (frame 521); sizes are the owner's MX Creative Keypad"
+  },
+  "participants": [
+    {
+      "id": "draw",
+      "type": "backend",
+      "label": "Draw engine",
+      "sublabel": ".NET DeviceState70"
+    },
+    {
+      "id": "canvas",
+      "type": "backend",
+      "label": "Canvas",
+      "sublabel": "480x480 black, JPEG q100"
+    },
+    {
+      "id": "helper",
+      "type": "messagebus",
+      "label": "Native helper",
+      "sublabel": "Feature19A1 queue"
+    },
+    {
+      "id": "device",
+      "type": "external",
+      "label": "Keypad",
+      "sublabel": "0x19A1 display"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 320,
+      "label": "Page or profile change: one image"
+    },
+    {
+      "from": 330,
+      "to": 470,
+      "label": "Single-button change: one 118x118 image"
+    },
+    {
+      "from": 480,
+      "to": 560,
+      "label": "Keep-alive runs beside the images"
+    }
+  ],
+  "messages": [
+    {
+      "id": "page-dirty",
+      "from": "draw",
+      "to": "canvas",
+      "y": 162,
+      "label": "Draw(list of 9 x 116x116 at reported origins)",
+      "variant": "emphasis"
+    },
+    {
+      "id": "page-crop",
+      "from": "canvas",
+      "to": "helper",
+      "y": 192,
+      "label": "SetDisplayImage 435x434 at 23,6, Jpeg, base64",
+      "variant": "emphasis"
+    },
+    {
+      "id": "page-cmd",
+      "from": "helper",
+      "to": "device",
+      "y": 222,
+      "label": "fn2 setImage: index 1, defer 0, count 1, 2 VLP fragments",
+      "variant": "default"
+    },
+    {
+      "id": "page-ack",
+      "from": "device",
+      "to": "helper",
+      "y": 250,
+      "label": "ACK per fragment (receipt only)",
+      "variant": "return"
+    },
+    {
+      "id": "page-response",
+      "from": "device",
+      "to": "helper",
+      "y": 278,
+      "label": "fn2 response: resultCode, count (rendered once)",
+      "variant": "return"
+    },
+    {
+      "id": "page-next",
+      "from": "helper",
+      "to": "draw",
+      "y": 306,
+      "label": "next queue item, at most 2 pending",
+      "variant": "dashed"
+    },
+    {
+      "id": "button-dirty",
+      "from": "draw",
+      "to": "canvas",
+      "y": 342,
+      "label": "Draw(list of 1): icon, label or pressed shrink",
+      "variant": "emphasis"
+    },
+    {
+      "id": "button-crop",
+      "from": "canvas",
+      "to": "helper",
+      "y": 372,
+      "label": "SetDisplayImage 118x118 at the button origin",
+      "variant": "emphasis"
+    },
+    {
+      "id": "button-cmd",
+      "from": "helper",
+      "to": "device",
+      "y": 402,
+      "label": "fn2 setImage, 1 image, 1 fragment",
+      "variant": "default"
+    },
+    {
+      "id": "button-response",
+      "from": "device",
+      "to": "helper",
+      "y": 432,
+      "label": "fn2 response",
+      "variant": "return"
+    },
+    {
+      "id": "ka-ping",
+      "from": "helper",
+      "to": "device",
+      "y": 492,
+      "label": "0x0008 keep-alive ping (its own timer)",
+      "variant": "dashed"
+    },
+    {
+      "id": "ka-reply",
+      "from": "device",
+      "to": "helper",
+      "y": 522,
+      "label": "keep-alive reply",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "draw",
+      "from": 157,
+      "to": 312,
+      "type": "backend"
+    },
+    {
+      "participant": "canvas",
+      "from": 167,
+      "to": 198,
+      "type": "backend"
+    },
+    {
+      "participant": "helper",
+      "from": 187,
+      "to": 284,
+      "type": "messagebus"
+    },
+    {
+      "participant": "device",
+      "from": 217,
+      "to": 284,
+      "type": "external"
+    },
+    {
+      "participant": "draw",
+      "from": 337,
+      "to": 378,
+      "type": "backend"
+    },
+    {
+      "participant": "canvas",
+      "from": 347,
+      "to": 378,
+      "type": "backend"
+    },
+    {
+      "participant": "helper",
+      "from": 367,
+      "to": 438,
+      "type": "messagebus"
+    },
+    {
+      "participant": "device",
+      "from": 397,
+      "to": 438,
+      "type": "external"
+    },
+    {
+      "participant": "helper",
+      "from": 487,
+      "to": 528,
+      "type": "messagebus"
+    },
+    {
+      "participant": "device",
+      "from": 497,
+      "to": 528,
+      "type": "external"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Page change",
+      "items": [
+        "All nine buttons are drawn into the one canvas and sent as the union rectangle",
+        "The device renders one image: no background-then-keys wipe",
+        "Bands only when the encoded crop exceeds maxImageSize (124928 bytes)"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Single button",
+      "items": [
+        "Same path with one dirty button: the crop is its 118x118 reported area",
+        "116x116 content at the top-left, 2 px of black canvas right and bottom",
+        "Pressed state: the icon shrunk by a fixed ratio, centred on black"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "What keyvo copies",
+      "items": [
+        "One composite image per change, cropped to the dirty bounding box",
+        "Send the next image after the fn2 response, keep two pending, drop stale",
+        "No deferred update, no multi-image command, no ClearScreen"
+      ]
+    }
+  ]
+}
