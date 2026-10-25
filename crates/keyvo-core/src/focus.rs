@@ -13,16 +13,28 @@ pub struct WindowContext {
     pub class: String,
     /// The window title; `KWin`'s `caption`.
     pub title: String,
+    /// The process that owns the window, when the focus source knows it;
+    /// `KWin`'s `pid`. Kept for project binding (spec §6.2); matching does
+    /// not use it.
+    pub pid: Option<u32>,
 }
 
 impl WindowContext {
-    /// A window of `class` titled `title`.
+    /// A window of `class` titled `title`, its process unknown.
     #[must_use]
     pub fn new(class: &str, title: &str) -> Self {
         Self {
             class: class.to_owned(),
             title: title.to_owned(),
+            pid: None,
         }
+    }
+
+    /// The same window, owned by process `pid`.
+    #[must_use]
+    pub fn with_pid(mut self, pid: u32) -> Self {
+        self.pid = Some(pid);
+        self
     }
 }
 
@@ -115,6 +127,15 @@ mod tests {
         assert!(fake.focus(window.clone()));
         assert_eq!(received.try_recv().unwrap(), window);
         assert!(format!("{fake:?}").starts_with("FakeWindowWatcher"));
+    }
+
+    #[test]
+    fn a_window_carries_its_process_id_when_known() {
+        let window = WindowContext::new("konsole", "~");
+        assert_eq!(window.pid, None);
+        let window = window.with_pid(4242);
+        assert_eq!(window.pid, Some(4242));
+        assert_eq!(window.class, "konsole");
     }
 
     #[test]
