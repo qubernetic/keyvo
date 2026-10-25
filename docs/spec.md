@@ -1390,8 +1390,10 @@ the Tauri event `keyvo://update`; a newer `subscribe` stops the older one);
 written into a key, `Editor::set_key`, the fields before it back; an error
 is a `Problem` object with `message` and, when it has a place, `path`,
 `line` and `column`).
-`just app-test` runs `npm ci`, `svelte-check` and vitest; `just app-build`
-builds the frontend and the shell into `bin/keyvo-app`.
+`just app-test` runs `npm ci`, `svelte-check`, vitest, `npm audit
+--audit-level=high` and `cargo deny` on the shell's own lock
+(`app/src-tauri/deny.toml`); `just app-build` builds the frontend and the
+shell into `bin/keyvo-app`.
 
 **As built (pre-alpha Home).** The window is Home only, without the rail
 and header of `docs/design/gui-ux.md` §2. On start it asks `status`, then
@@ -1491,7 +1493,9 @@ icon and action (none, a chord's keys or an `exec` command).
   `keyvo-core`) and `keyvo-cli`.
 - Desktop app: `tauri` 2 and `tauri-build` (in `app/src-tauri`, outside
   the root workspace, so `cargo deny` of the workspace does not cover it;
-  Tauri 2 on Linux pulls the gtk-rs 0.18 crates), `base64`; the frontend
+  `app/src-tauri/deny.toml` checks its lock with the root policy plus two
+  documented exceptions; Tauri 2 on Linux pulls the gtk-rs 0.18 crates),
+  `base64`; the frontend
   `svelte` 5, `vite`, `vitest`, `jsdom`, `@testing-library/svelte`,
   `svelte-check` and `@tauri-apps/api`. Build packages in the dev image:
   `libwebkit2gtk-4.1-dev`, `build-essential`, `file`, `libxdo-dev`,

@@ -242,6 +242,14 @@ jobs:
           docker exec "$CONTAINER" npm --prefix app run check
           docker exec "$CONTAINER" npm --prefix app test
 
+      # Both app lockfiles against advisories and licences, as `just app-test`
+      # does: the root `deny` step never sees app/src-tauri/Cargo.lock, which
+      # cargo-deny checks with app/src-tauri/deny.toml next to the manifest.
+      - name: app-audit
+        run: |
+          docker exec "$CONTAINER" npm --prefix app audit --audit-level=high
+          docker exec "$CONTAINER" cargo deny --manifest-path app/src-tauri/Cargo.toml check
+
       - name: app-build
         run: |
           docker exec "$CONTAINER" npm --prefix app run build

@@ -70,7 +70,7 @@ just fmt          # rustfmt (just fmt-check only verifies)
 just deny         # cargo-deny (licenses, advisories, bans, sources)
 just cov          # cargo-llvm-cov in the nextest ci profile (coverage/lcov.info plus a summary)
 just ci           # fmt-check, lint, test (nextest ci profile), deny, cov: the sequence CI runs
-just app-test     # desktop app frontend: npm ci, svelte-check, vitest
+just app-test     # desktop app: npm ci, svelte-check, vitest, npm audit, cargo deny on the app lock
 just app-build    # desktop app: frontend build, then the Tauri shell; bin/keyvo-app
 just run -- probe # run the container-built binary on the host against real hardware
 just test-hw      # hardware checks on the host
@@ -123,13 +123,18 @@ Pull request runs only restore the image and cargo registry caches; pushes to
 the workflow never repeats a tool version.
 
 The `app` job builds the same image and runs the command lines of
-`just app-test` (`npm ci`, `svelte-check`, `vitest`) and `just app-build`
-(`vite build`, then `cargo fmt --check`, `cargo clippy -D warnings` and
-`cargo build` on `app/src-tauri/Cargo.toml`). The Tauri shell is outside the
-root workspace, with its own `Cargo.lock` and `target/`, so `just ci` never
-needs webkit2gtk; the CI job is the proof that the shell compiles. The frontend
-dependencies are exact versions in `app/package.json`, locked by the committed
-`app/package-lock.json`.
+`just app-test` (`npm ci`, `svelte-check`, `vitest`, `npm audit
+--audit-level=high` and `cargo deny` on `app/src-tauri/Cargo.toml`) and
+`just app-build` (`vite build`, then `cargo fmt --check`, `cargo clippy -D
+warnings` and `cargo build` on `app/src-tauri/Cargo.toml`). The Tauri shell is
+outside the root workspace, with its own `Cargo.lock` and `target/`, so `just
+ci` never needs webkit2gtk; the CI job is the proof that the shell compiles. The
+frontend dependencies are exact versions in `app/package.json`, locked by the
+committed `app/package-lock.json`. The root `deny.toml` never sees the app's
+lock, so `app/src-tauri/deny.toml` carries the same policy plus the exceptions
+the Tauri tree needs, each with its reason; a new exception is reviewed in its
+PR like a new MPL crate. Dependabot watches both app lockfiles (`cargo` in
+`/app/src-tauri`, `npm` in `/app`) next to the root ones.
 
 ### Sandbox-complete and hardware-bound issues
 
