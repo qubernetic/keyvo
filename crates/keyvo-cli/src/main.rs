@@ -116,13 +116,19 @@ enum DeviceCommand {
         /// Every key, one write each (the default)
         #[arg(long, group = "placement")]
         all: bool,
-        /// The whole panel in one write
+        /// The keys' area in one write: the union of the key rectangles
+        /// (435x434 at 23,6 on the Keypad)
         #[arg(long, group = "placement")]
         panel: bool,
+        /// The whole published panel in one write: its full size at 0,0
+        /// (480x480 on the Keypad)
+        #[arg(long, group = "placement")]
+        full: bool,
         /// Grow every key rectangle by this many pixels on all four sides,
         /// clamped to the panel on each side (the Keypad's published
         /// geometry caps the top at 6, left 23, right 22, bottom 40)
-        #[arg(long, value_name = "PX", default_value_t = 0, conflicts_with = "panel")]
+        #[arg(long, value_name = "PX", default_value_t = 0,
+              conflicts_with_all = ["panel", "full"])]
         margin: u16,
         /// Keep the claim (and the keep-alive) this many seconds after painting
         #[arg(long, value_name = "SECONDS", default_value_t = 0)]
@@ -161,12 +167,14 @@ fn parse_feature(text: &str) -> Result<u16, String> {
     u16::from_str_radix(hex, 16).map_err(|error| format!("`{text}`: {error}"))
 }
 
-/// The placement the `fill` flags select; every key without one.
-const fn placement(key: Option<u8>, panel: bool) -> Placement {
-    match (key, panel) {
-        (Some(key), _) => Placement::Key(key),
-        (None, true) => Placement::Panel,
-        (None, false) => Placement::All,
+/// The placement the `fill` flags select; every key without one. Clap
+/// lets at most one of them through.
+const fn placement(key: Option<u8>, panel: bool, full: bool) -> Placement {
+    match (key, panel, full) {
+        (Some(key), _, _) => Placement::Key(key),
+        (None, true, _) => Placement::Panel,
+        (None, false, true) => Placement::Full,
+        (None, false, false) => Placement::All,
     }
 }
 
@@ -409,6 +417,7 @@ fn run<T: HidTransport, C: Clock>(
             source,
             key,
             panel,
+            full,
             margin,
             hold,
             index_base,
@@ -427,7 +436,7 @@ fn run<T: HidTransport, C: Clock>(
                 ..ImageConfig::default()
             };
             let mut session = Session::open(hidpp, clock, keep_alive.timing(timing)?)?;
-            let placement = placement(key, panel);
+            let placement = placement(key, panel, full);
             fill::fill(&mut session, &source, placement, margin, &config, out)?;
             fill::hold(
                 &mut session,
@@ -895,6 +904,7 @@ mod tests {
         let Command::Device(DeviceCommand::Fill {
             key,
             panel,
+            full,
             index_base,
             swid,
             ..
@@ -902,7 +912,7 @@ mod tests {
         else {
             panic!("not fill");
         };
-        Ok((super::placement(key, panel), index_base, swid.0.get()))
+        Ok((super::placement(key, panel, full), index_base, swid.0.get()))
     }
 
     #[test]
@@ -912,11 +922,31 @@ mod tests {
         assert_eq!(fill(&["--all"]).unwrap().0, Placement::All);
         assert_eq!(fill(&["--key", "5"]).unwrap().0, Placement::Key(5));
         assert_eq!(fill(&["--panel"]).unwrap().0, Placement::Panel);
+        assert_eq!(fill(&["--full"]).unwrap().0, Placement::Full);
         assert_eq!(
             fill(&["--index-base", "1", "--swid", "0xb"]).unwrap(),
             (Placement::All, 1, 0xb)
         );
         assert_eq!(fill(&["--swid", "11"]).unwrap().2, 0xb);
+    }
+
+    #[test]
+    fn the_four_placements_are_mutually_exclusive_usage_errors() {
+        let flags: [&[&str]; 4] = [&["--full"], &["--panel"], &["--key", "1"], &["--all"]];
+        for (n, first) in flags.iter().enumerate() {
+            for second in &flags[n + 1..] {
+                let args = [*first, *second].concat();
+                let error = fill(&args).map(|_| ()).unwrap_err();
+                assert_eq!(
+                    error.kind(),
+                    clap::error::ErrorKind::ArgumentConflict,
+                    "{args:?}"
+                );
+                assert_eq!(error.exit_code(), 2, "{args:?}");
+            }
+        }
+        let error = margin(&["--full", "--margin", "4"]).unwrap_err();
+        assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
 
     #[test]
@@ -975,6 +1005,8 @@ mod tests {
             .to_string();
         assert!(help.contains("--margin <PX>"), "{help}");
         assert!(help.contains("clamped to the panel"), "{help}");
+        assert!(help.contains("--full"), "{help}");
+        assert!(help.contains("the union of the key rectangles"), "{help}");
     }
 
     #[test]

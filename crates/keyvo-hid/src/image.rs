@@ -52,7 +52,7 @@ pub struct Rect {
     pub height: u16,
 }
 
-/// Where an image goes. Both placements come from the geometry the device
+/// Where an image goes. Every placement comes from the geometry the device
 /// publishes (display fn1, spec §5.4); nothing about the grid is hard-coded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Target {
@@ -61,6 +61,9 @@ pub enum Target {
     /// The whole panel: the bounding box of all keys (435x434 at 23,6 on the
     /// Keypad, as Options+ paints it).
     Panel,
+    /// The whole published panel: its width and height at 0,0 (480x480 on
+    /// the Keypad).
+    Full,
 }
 
 impl Target {
@@ -110,6 +113,12 @@ impl Target {
                     height: bottom - y,
                 })
             }
+            Self::Full => Ok(Rect {
+                x: 0,
+                y: 0,
+                width: geometry.width,
+                height: geometry.height,
+            }),
         }
     }
 }
@@ -444,6 +453,30 @@ mod tests {
             })
         );
         assert_eq!(hidpp.take_unmatched(), Some(other_ack));
+    }
+
+    #[test]
+    fn full_is_the_published_panel_size_at_the_origin() {
+        let geometry = crate::display::captured_geometry();
+        assert_eq!(
+            Target::Full.rect(&geometry),
+            Ok(Rect {
+                x: 0,
+                y: 0,
+                width: 480,
+                height: 480
+            })
+        );
+        let other = Geometry {
+            width: 320,
+            height: 240,
+            keys: Vec::new(),
+            ..geometry
+        };
+        assert_eq!(
+            Target::Full.rect(&other).map(|r| (r.width, r.height)),
+            Ok((320, 240))
+        );
     }
 
     #[test]

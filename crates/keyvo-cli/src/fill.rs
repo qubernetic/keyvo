@@ -1,5 +1,6 @@
-//! `keyvo fill`: paints a solid color or a PNG on one key, on every key or
-//! on the whole panel, at the rectangles the device publishes (spec §5.4,
+//! `keyvo fill`: paints a solid color or a PNG on one key, on every key, on
+//! the keys' area or on the whole panel, at the rectangles the device
+//! publishes (spec §5.4,
 //! §5.5). The image is scaled to each rectangle and sent as a baseline JPEG.
 
 use std::io::Write;
@@ -91,8 +92,10 @@ pub enum Placement {
     Key(u8),
     /// Every key of the geometry, one write each.
     All,
-    /// The whole panel in one write.
+    /// The keys' bounding box in one write.
     Panel,
+    /// The whole published panel at 0,0 in one write.
+    Full,
 }
 
 /// `rect` grown by `margin` pixels on all four sides and clamped to the
@@ -119,7 +122,8 @@ pub fn grow(rect: Rect, margin: u16, geometry: &Geometry) -> Rect {
 
 /// Paints `source` at `placement` and reports each write on `out`; the
 /// keep-alive runs between the writes. Every key rectangle is first grown
-/// by `margin` ([`grow`]); the panel is painted as published.
+/// by `margin` ([`grow`]); the keys' area and the full panel are painted
+/// as published.
 ///
 /// # Errors
 ///
@@ -138,17 +142,19 @@ pub fn fill<T: HidTransport, C: Clock>(
         Placement::Key(key) => vec![Target::Key(key)],
         Placement::All => geometry.keys.iter().map(|k| Target::Key(k.index)).collect(),
         Placement::Panel => vec![Target::Panel],
+        Placement::Full => vec![Target::Full],
     };
     for target in targets {
         let rect = match target {
             Target::Key(_) => grow(target.rect(&geometry)?, margin, &geometry),
-            Target::Panel => target.rect(&geometry)?,
+            Target::Panel | Target::Full => target.rect(&geometry)?,
         };
         let jpeg = source.jpeg(rect.width, rect.height)?;
         let written = lcd::write(&mut session.hidpp, config, rect, &jpeg)?;
         let label = match target {
             Target::Key(key) => format!("key {key}"),
             Target::Panel => "panel".to_owned(),
+            Target::Full => "full".to_owned(),
         };
         let plural = if written.fragments == 1 { "" } else { "s" };
         writeln!(
@@ -421,6 +427,15 @@ pub(crate) mod tests {
     fn fill_panel_paints_the_bounding_box_of_the_keys() {
         let text = run(&Source::Color(ORANGE), Placement::Panel, &[Target::Panel]).unwrap();
         assert!(text.starts_with("panel  435x434 at 23,6  "), "{text}");
+    }
+
+    #[test]
+    fn fill_full_paints_the_whole_published_panel_and_ignores_the_margin() {
+        let geometry = geometry();
+        let full = Target::Full.rect(&geometry).unwrap();
+        let text = run_at(&Source::Color(ORANGE), Placement::Full, 4, &[full]).unwrap();
+        assert!(text.starts_with("full  480x480 at 0,0  "), "{text}");
+        assert_eq!(text.lines().count(), 1);
     }
 
     #[test]
