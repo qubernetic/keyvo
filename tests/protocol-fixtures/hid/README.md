@@ -36,6 +36,7 @@ id `0xe` in these frames, so the tests use it too.
 | `root-get-feature-reprog.txt` | #1681, #1683 | getFeature(0x1B04) = 0x0b |
 | `keep-alive-ping.txt` | #1631, #1633, #1753 to #1801 | getFeature(0x0008) = 4, three keepAlive(3000) pings echoed |
 | `display-geometry.txt` | #1643, #1645, #1667 to #1675 | display fn1 geometry over four packets: 480x480, nine 118x118 keys |
+| `display-capabilities.txt` | #1643, #1645, #1663, #1665 | display fn0 getCapabilities: 1 screen, `maxImageSize` 0x007a x 1024 = 124 928 bytes, `maxImageFPS` 30, flags 0x1b (deferrable, rgb565, jpeg, calibrated; origin 0) |
 | `display-claim.txt` | #1559 to #1773 (selected) | the claim of spec §5.4 in keyvo's order, ending with setMode(a0) and the mode-change event |
 | `firmware-version.txt` | #1567 to #1581, #1309 to #1315 | getFeature(0x0003) = 2, four firmware entities: `BL2 20.00.B0017`, `U1 66.00.B0017` (active), `IM 01.00.B0017`, `HW 00.00.B0000`; entities 2 and 3 retagged from swid 0xd to 0xe |
 | `probe.txt` | #1559 to #1691 (selected), #1309 to #1315 | `keyvo probe` in its request order: ping, getFeature for 0x0003, 0x0008, 0x1B04 and 0x8040, the firmware walk, the keep-alive range, the VLP protocol, getFeature(0x19A1), display modes, mode and geometry (replayed by `crates/keyvo-cli/src/probe.rs`) |

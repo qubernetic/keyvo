@@ -454,6 +454,7 @@ mod tests {
             width: 480,
             height: 480,
             keys: Vec::new(),
+            visible_areas: 0,
         };
         assert_eq!(Target::Panel.rect(&geometry), Err(ImageError::NoKeys));
     }
