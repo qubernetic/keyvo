@@ -123,6 +123,20 @@
         }
       },
       "type": "object"
+    },
+    "Trace": {
+      "additionalProperties": false,
+      "description": "The `[trace]` table (spec §8), pre-alpha subset: the ring buffer the\ndaemon keeps in memory; the file settings come with M1-8.",
+      "properties": {
+        "ring": {
+          "default": 1000,
+          "description": "Trace entries the daemon keeps in memory; the oldest goes first.\nDefault 1000.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -156,6 +170,13 @@
         "reply_timeout": 1000
       },
       "description": "Timing constants, all in milliseconds (spec §6.1)."
+    },
+    "trace": {
+      "$ref": "#/$defs/Trace",
+      "default": {
+        "ring": 1000
+      },
+      "description": "Trace settings (spec §8)."
     }
   },
   "title": "keyvo config",

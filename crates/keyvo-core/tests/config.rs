@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use keyvo_core::config::{Config, Render, Timing};
+use keyvo_core::config::{Config, Render, Timing, Trace};
 use keyvo_core::diagnostic::{Diagnostic, Position};
 
 fn fixture(name: &str) -> PathBuf {
@@ -58,6 +58,15 @@ fn the_profile_switch_splash_can_be_turned_on() {
     assert!(config.render.splash);
     let error = Config::from_toml("[render]\nsplash = 1\n", Path::new("config.toml")).unwrap_err();
     assert_eq!(error.position.map(|p| (p.line, p.column)), Some((2, 10)));
+}
+
+#[test]
+fn the_trace_ring_holds_1000_entries_unless_set() {
+    assert_eq!(Trace::default(), Trace { ring: 1000 });
+    let config = Config::from_toml("[trace]\nring = 50\n", Path::new("config.toml")).unwrap();
+    assert_eq!(config.trace.ring, 50);
+    let error = Config::from_toml("[trace]\nring = -1\n", Path::new("config.toml")).unwrap_err();
+    assert_eq!(error.position.map(|p| (p.line, p.column)), Some((2, 8)));
 }
 
 #[test]
