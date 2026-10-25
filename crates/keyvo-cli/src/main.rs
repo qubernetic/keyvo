@@ -2,6 +2,7 @@
 
 mod fill;
 mod keys;
+mod preview;
 mod probe;
 mod session;
 
@@ -13,6 +14,7 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use keyvo_core::clock::{Clock, SystemClock};
 use keyvo_core::hid::{HidTransport, to_hex};
+use keyvo_core::layout;
 use keyvo_hid::hidpp::{DEFAULT_REPLY_TIMEOUT, DEVICE_DIRECT, Hidpp, SoftwareId};
 use keyvo_hid::hidraw::HidrawTransport;
 use keyvo_hid::image::{ImageConfig, IndexBase};
@@ -40,6 +42,26 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    #[command(flatten)]
+    Device(DeviceCommand),
+    /// Render one page of a profile onto the Keypad's panel and write it as
+    /// a PNG, without a device
+    Preview {
+        /// A profile id from the configuration directory, or a profile file
+        profile: String,
+        /// The page, counted from 1
+        #[arg(long, value_name = "N", default_value_t = 1,
+              value_parser = clap::value_parser!(u64).range(1..))]
+        page: u64,
+        /// The PNG to write
+        #[arg(short, long, value_name = "FILE")]
+        output: PathBuf,
+    },
+}
+
+/// The commands that talk to the Keypad.
+#[derive(Subcommand)]
+enum DeviceCommand {
     /// Print what the Keypad reports about itself (read-only)
     Probe,
     /// Claim the Keypad, divert the page buttons and print every press and
@@ -137,13 +159,34 @@ impl KeepAliveArgs {
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    let command = match cli.command {
+        Command::Device(command) => command,
+        Command::Preview {
+            profile,
+            page,
+            output,
+        } => {
+            let dir = layout::config_dir(
+                std::env::var_os("XDG_CONFIG_HOME").as_deref(),
+                std::env::var_os("HOME").as_deref(),
+            );
+            return preview::preview(
+                &profile,
+                usize::try_from(page)?,
+                &output,
+                dir.as_deref(),
+                &mut std::io::stdout().lock(),
+                &mut std::io::stderr().lock(),
+            );
+        }
+    };
     let (transport, device) = open(
         cli.device.as_deref(),
         Path::new(sysfs::SYSFS_HIDRAW),
         Path::new(sysfs::DEV_DIR),
     )?;
     run(
-        cli.command,
+        command,
         hidpp(transport)?,
         &device,
         &SystemClock,
@@ -161,7 +204,7 @@ fn main() -> anyhow::Result<()> {
 ///
 /// The command's errors.
 fn run<T: HidTransport, C: Clock>(
-    command: Command,
+    command: DeviceCommand,
     mut hidpp: Hidpp<T>,
     device: &str,
     clock: &C,
@@ -170,8 +213,8 @@ fn run<T: HidTransport, C: Clock>(
     out: &mut impl Write,
 ) -> anyhow::Result<()> {
     match command {
-        Command::Probe => probe::probe(&mut hidpp, device, out),
-        Command::Keys { json, keep_alive } => {
+        DeviceCommand::Probe => probe::probe(&mut hidpp, device, out),
+        DeviceCommand::Keys { json, keep_alive } => {
             let mut session = Session::open(hidpp, clock, keep_alive.timing())?;
             eprintln!("keyvo keys on {device}; Ctrl-C to stop");
             keys::keys(
@@ -183,7 +226,7 @@ fn run<T: HidTransport, C: Clock>(
                 keep_going,
             )
         }
-        Command::Fill {
+        DeviceCommand::Fill {
             source,
             key,
             panel,
@@ -246,19 +289,59 @@ fn hidpp<T: HidTransport>(transport: T) -> anyhow::Result<Hidpp<T>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Command, KeepAliveTiming};
+    use super::{Cli, Command, DeviceCommand, KeepAliveTiming};
     use clap::Parser;
     use keyvo_core::clock::FakeClock;
     use keyvo_core::hid::FakeHidTransport;
     use keyvo_hid::hidpp::Hidpp;
     use keyvo_hid::image::{ImageConfig, Target};
     use std::path::Path;
+    use std::path::PathBuf;
     use std::time::Duration;
 
-    fn command(args: &[&str]) -> Command {
-        Cli::try_parse_from([&["keyvo"], args].concat())
+    fn command(args: &[&str]) -> DeviceCommand {
+        match Cli::try_parse_from([&["keyvo"], args].concat())
             .unwrap()
             .command
+        {
+            Command::Device(command) => command,
+            Command::Preview { .. } => panic!("not a device command"),
+        }
+    }
+
+    /// `(profile, page, output)` of a `preview` command line.
+    fn preview(args: &[&str]) -> Result<(String, u64, PathBuf), clap::Error> {
+        let cli = Cli::try_parse_from([&["keyvo", "preview"], args].concat())?;
+        let Command::Preview {
+            profile,
+            page,
+            output,
+        } = cli.command
+        else {
+            panic!("not preview");
+        };
+        Ok((profile, page, output))
+    }
+
+    #[test]
+    fn preview_takes_a_profile_a_page_and_an_output() {
+        assert_eq!(
+            preview(&["demo", "-o", "grid.png"]).unwrap(),
+            ("demo".to_owned(), 1, PathBuf::from("grid.png"))
+        );
+        assert_eq!(
+            preview(&["demo", "--page", "2", "--output", "grid.png"])
+                .unwrap()
+                .1,
+            2
+        );
+        for args in [
+            &["demo"][..],
+            &["demo", "-o", "x.png", "--page", "0"],
+            &["-o", "x.png"],
+        ] {
+            assert!(preview(args).is_err(), "{args:?}");
+        }
     }
 
     /// `run` on a replayed device, with a fake clock that the sleeps move.
@@ -352,7 +435,7 @@ mod tests {
 
     fn keep_alive(args: &[&str]) -> Option<KeepAliveTiming> {
         let cli = Cli::try_parse_from([&["keyvo", "keys"], args].concat()).unwrap();
-        let Command::Keys { keep_alive, .. } = cli.command else {
+        let Command::Device(DeviceCommand::Keys { keep_alive, .. }) = cli.command else {
             panic!("not keys");
         };
         keep_alive.timing()
@@ -379,13 +462,13 @@ mod tests {
     /// `(placement, index base, swid)` of a `fill` command line.
     fn fill(args: &[&str]) -> Result<(super::Placement, u8, u8), clap::Error> {
         let cli = Cli::try_parse_from([&["keyvo", "fill", "#ff8000"], args].concat())?;
-        let Command::Fill {
+        let Command::Device(DeviceCommand::Fill {
             key,
             panel,
             index_base,
             swid,
             ..
-        } = cli.command
+        }) = cli.command
         else {
             panic!("not fill");
         };

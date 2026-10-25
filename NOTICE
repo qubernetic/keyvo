@@ -12,3 +12,13 @@ keyvo re-derives its device protocol from public reverse-engineering work and
 from its own hardware captures. No code is copied from third-party projects
 unless stated in the file header together with the original license. See the
 "Prior art" section of README.md for the projects that made this possible.
+
+keyvo embeds these third-party assets (crates/keyvo-core/assets/):
+
+- Inter 4.1, Copyright (c) 2016 The Inter Project Authors
+  (https://github.com/rsms/inter), licensed under the SIL Open Font
+  License, Version 1.1 (assets/fonts/LICENSE.txt).
+- A subset of Lucide 1.61.0 icons, Copyright (c) 2026 Lucide Icons and
+  Contributors (https://github.com/lucide-icons/lucide), licensed under
+  the ISC License; some icons derive from Feather (MIT), as listed in
+  the same file (assets/lucide/LICENSE).

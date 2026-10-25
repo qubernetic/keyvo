@@ -88,6 +88,10 @@ sent about every second) without which the Keypad emits no key events and
 reverts its LCD to the logo. A dedicated task in `keyvo-hid`, started before the
 first read.
 
+**Key spec**: What one key shows: background color, profile accent, icon and
+label, taken from a key of a profile page (`KeySpec` in `keyvo_core::render`).
+The renderer turns it into a tile.
+
 **Keypad**: The MX Creative Keypad (`046d:c354`): nine LCD keys in a 3×3 grid,
 numbered 1..9 row-major, plus two page buttons. keyvo's primary device.
 
@@ -157,6 +161,10 @@ notifications.
 **Starter pack**: A profile bundle (Rust, web, Python, embedded, PLC,
 AI-Assisted Coding) built from recipes and copied into the user's profiles
 through the trust gate; never referenced after copying.
+
+**Tile**: The rendered image of one key at the size the device publishes for
+it, sent to the Keypad as a baseline JPEG; `keyvo preview` places the tiles
+of a page on the panel and writes a PNG.
 
 **Trace**: One record per press, real or simulated: trigger, context snapshot,
 layer resolution, condition results, resolved action with substituted

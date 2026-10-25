@@ -42,6 +42,13 @@ The commands need read-write access to the Keypad's `/dev/hidraw*` node and
 Solaar stopped; [docs/hardware-notes.md](docs/hardware-notes.md) lists the
 measurements they serve.
 
+A profile renders without a device, onto the Keypad's panel as a PNG:
+
+```bash
+just run -- preview crates/keyvo-core/tests/fixtures/profiles/valid/demo.toml -o grid.png
+just run -- preview vscode --page 2 -o grid.png   # an id from ~/.config/keyvo/profiles/
+```
+
 ## What it will do
 
 - **Context profiles**: the active application (KDE Wayland first, X11 fallback)
