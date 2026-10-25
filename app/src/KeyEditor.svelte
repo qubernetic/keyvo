@@ -316,26 +316,9 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
+    background: var(--kv-bg);
     color: var(--kv-fg-muted);
     font-size: 0.85em;
-  }
-
-  input,
-  select {
-    min-height: 32px;
-    padding: 0 8px;
-    border: 1px solid var(--kv-bg-alt);
-    border-radius: var(--kv-radius);
-    background: var(--kv-bg-alt);
-    color: var(--kv-fg);
-    font: inherit;
-    font-size: var(--kv-font-size);
-  }
-
-  input:focus-visible,
-  select:focus-visible {
-    border-color: var(--kv-accent);
-    outline: none;
   }
 
   .history {
@@ -343,12 +326,9 @@
     gap: 8px;
   }
 
-  .history button {
-    min-height: 32px;
-  }
-
   .note {
     margin: 0;
+    background: var(--kv-bg);
     color: var(--kv-fg-muted);
     overflow-wrap: anywhere;
   }
@@ -357,6 +337,7 @@
     margin: 0;
     padding: 8px 12px;
     background: var(--kv-bg-alt);
+    color: var(--kv-fg);
     border-left: 4px solid var(--kv-state-error);
     border-radius: var(--kv-radius);
     overflow-wrap: anywhere;

@@ -5,6 +5,9 @@
  * every component reads these and nothing else.
  */
 :root {
+  /* The token set is dark, so the webview draws its native popups (the
+     option list of a select) dark too. */
+  color-scheme: dark;
   --kv-bg: #1e1f22;
   --kv-bg-alt: #26282c;
   --kv-fg: #f2f3f5;

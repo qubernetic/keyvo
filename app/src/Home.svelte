@@ -323,6 +323,7 @@
     margin: 0;
     padding: 8px 12px;
     background: var(--kv-bg-alt);
+    color: var(--kv-fg);
     border-radius: var(--kv-radius);
   }
 
@@ -338,6 +339,7 @@
   }
 
   .strip dt {
+    background: var(--kv-bg);
     color: var(--kv-fg-muted);
     font-size: 0.85em;
   }
@@ -409,6 +411,7 @@
   .note,
   .result {
     margin: 0;
+    background: var(--kv-bg);
     color: var(--kv-fg-muted);
   }
 
@@ -424,6 +427,7 @@
   }
 
   .events time {
+    background: var(--kv-bg);
     color: var(--kv-fg-muted);
     margin-right: 8px;
   }
