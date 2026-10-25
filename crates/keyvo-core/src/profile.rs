@@ -363,6 +363,15 @@ impl<'de> Deserialize<'de> for KeySlot {
     }
 }
 
+/// A [`KeySlot`] written as a JSON number, as the trace and the socket
+/// protocol carry it; the [`Deserialize`] impl reads the TOML table key.
+pub(crate) fn slot_number<'de, D: Deserializer<'de>>(deserializer: D) -> Result<KeySlot, D::Error> {
+    let n = u8::deserialize(deserializer)?;
+    KeySlot::new(n).ok_or_else(|| {
+        de::Error::invalid_value(Unexpected::Unsigned(n.into()), &"a key number from 1 to 9")
+    })
+}
+
 fn key_map_schema(generator: &mut SchemaGenerator) -> Schema {
     let key = generator.subschema_for::<Key>();
     json_schema!({

@@ -21,7 +21,7 @@ use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize, Serializer};
 
 /// An evdev key code (`linux/input-event-codes.h`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct KeyCode(u16);
 
@@ -61,7 +61,7 @@ impl KeyCode {
 }
 
 /// One edge of a key: pressed (`down`) or released.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KeyEvent {
     /// The key.
     pub code: KeyCode,

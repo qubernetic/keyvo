@@ -20,7 +20,7 @@
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::config::Timing;
 use crate::focus::WindowContext;
@@ -29,7 +29,7 @@ use crate::press::{PressDetector, PressKind};
 use crate::profile::{GLOBAL_ID, Profile};
 
 /// Who chooses the profile and page.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
     /// The focused window chooses.
@@ -59,7 +59,7 @@ pub enum PageButton {
 }
 
 /// What the pad shows.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct View {
     /// The id of the profile whose page is painted.
     pub profile: String,

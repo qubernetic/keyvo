@@ -7,14 +7,14 @@
 //! The context snapshot, layer resolution and `on_fail` branch come with
 //! their issues.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::chord::KeyEvent;
 use crate::press::PressKind;
 use crate::profile::{Action, KeySlot};
 
 /// What caused the press.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Trigger {
     /// Short or long.
     pub press: PressKind,
@@ -24,7 +24,7 @@ pub struct Trigger {
 }
 
 /// One trace entry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TraceRecord {
     /// Wall-clock time of the press, milliseconds since the Unix epoch.
     pub timestamp_ms: u64,
@@ -35,6 +35,7 @@ pub struct TraceRecord {
     /// The active page, counted from 1.
     pub page: usize,
     /// The pressed key.
+    #[serde(deserialize_with = "crate::profile::slot_number")]
     pub key: KeySlot,
     /// The action the press resolved to; `None` for an unbound key.
     pub action: Option<Action>,
@@ -50,7 +51,7 @@ impl TraceRecord {
 }
 
 /// The result of a press.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum Outcome {
     /// The key has no action on this page; nothing runs.
