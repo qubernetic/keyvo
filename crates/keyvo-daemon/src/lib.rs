@@ -1,0 +1,9 @@
+//! The keyvo daemon (spec §4): a tokio controller that keeps the Keypad
+//! painted with the active profile, runs the actions of its presses and
+//! reloads the configuration when it changes. `keyvo-core` stays
+//! synchronous; the runtime, the processes and every OS binding live here.
+
+#![deny(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
+pub mod engine;
