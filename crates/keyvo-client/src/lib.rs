@@ -9,6 +9,8 @@
 
 pub mod client;
 pub mod mirror;
+pub mod tiles;
 
 pub use client::{Client, ClientError};
 pub use mirror::Mirror;
+pub use tiles::{TileError, Tiles};
