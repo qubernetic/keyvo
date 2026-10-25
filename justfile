@@ -89,6 +89,14 @@ cov: _up
     {{ exec }} cargo llvm-cov nextest --workspace --profile ci --lcov --output-path coverage/lcov.info
     {{ exec }} cargo llvm-cov report --summary-only
 
+# ---- Desktop app (app/) ----------------------------------------------------
+
+# Frontend checks: clean install from package-lock.json, svelte-check, vitest
+app-test: _up
+    {{ exec }} npm --prefix app ci --no-fund --no-audit
+    {{ exec }} npm --prefix app run check
+    {{ exec }} npm --prefix app test
+
 # The exact sequence CI runs (.github/workflows/ci.yml), tests in the nextest ci profile
 ci: fmt-check lint (test "--profile" "ci") deny cov
 
