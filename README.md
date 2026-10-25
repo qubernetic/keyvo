@@ -56,6 +56,14 @@ The commands need read-write access to the Keypad's `/dev/hidraw*` node and
 Solaar stopped; [docs/hardware-notes.md](docs/hardware-notes.md) lists the
 measurements they serve.
 
+The desktop app is a scaffold so far: a window that shows the daemon's
+status. It builds in the devcontainer and runs on the host:
+
+```bash
+just app-build
+bin/keyvo-app
+```
+
 A profile renders without a device, onto the Keypad's panel as a PNG:
 
 ```bash

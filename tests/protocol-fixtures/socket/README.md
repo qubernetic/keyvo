@@ -4,8 +4,9 @@ One message per line, exactly as it travels on the socket
 (`docs/socket-api.md`, protocol version 1). Every client checks itself
 against these files: the Rust types in `keyvo_core::socket`
 (`crates/keyvo-core/tests/socket.rs`) parse every line and write it back to
-the same JSON, and the TypeScript client (`app/`, pre-alpha slice 14) runs
-the same check.
+the same JSON, and the TypeScript client (`app/src/lib/protocol.test.ts`)
+runs the same check. `keyvo-client` (`crates/keyvo-client/tests/`) uses the
+response and event lines as the daemon's side of its exchanges.
 
 | File | Content |
 |---|---|
