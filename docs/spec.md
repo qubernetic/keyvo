@@ -138,6 +138,23 @@ production, `FakeClock` in tests, which moves only when a test advances it.
 No timing logic in `keyvo-core` or `keyvo-hid` depends on `tokio`; the
 daemon decides how to wait.
 
+`InputInjector` (`keyvo_core::inject`) takes a chord's key events in press
+and release order: `send(&[KeyEvent])`. The Linux implementation in
+`keyvo-daemon` is a uinput keyboard named `keyvo`, created with `evdev`,
+that declares every key code of the chord table and emits each edge as its
+own report. Without a usable `/dev/uinput` the daemon still paints and runs
+`exec` actions; chord presses fail with the reason in their trace record.
+`FakeInputInjector` records the events in tests.
+
+The daemon as built (pre-alpha, `keyvo-daemon`): one tokio controller task
+owns the profile state and the per-key feedback; one device actor thread
+owns the Keypad's transport (§5.1, §5.5); `exec` actions run as their own
+tasks (§8); an inotify watcher reports changes in the configuration
+directory (§7.2). Its end-to-end tests drive the controller with
+`FakeHidTransport` pads, a `FakeInputInjector` and a configuration
+directory on disk. Run it with `just build`, then `bin/keyvo-daemon
+[--config-dir DIR] [--device PATH]` on the host; logs go to stderr.
+
 Core rendering is the pure function
 
 ```
@@ -184,6 +201,15 @@ measured in M0-2 (plan §5 item 16).
   reconnect the driver re-runs the claim sequence (§5.4), re-diverts the page
   buttons (§5.6) and replays the last wanted frame set. Never sleep under a
   lock; one device actor owns the file descriptor and an mpsc queue.
+- Reconnect as built (pre-alpha, `keyvo_daemon::device`): no udev watch
+  yet. The device actor opens the node (`--device`, or the sysfs search
+  above on every attempt, so a new node number after a replug is found),
+  sends the first keep-alive ping, claims, diverts and reports the key
+  count; then it paints and reads. Any transport, claim or divert error
+  ends the connection; the actor reports it once (not on every failed
+  attempt), waits `[timing].reconnect_interval` and opens again. A new
+  connection forgets what the pad showed and repaints every key from the
+  last wanted specs.
 - Never exclusive-grab. Solaar and the kernel `hid-logitech-dj` driver may
   share the Bolt receiver; keyvo filters HID++ traffic by device index and
   matches replies on report id + device index + feature index +
@@ -340,6 +366,15 @@ version `docs/hardware-notes.md` records.
   does not wait for them.
 - Single writer task; repaints are coalesced (superseded frames dropped);
   no shared static buffers.
+- As built (pre-alpha, `keyvo-daemon`): the controller sends the device
+  actor the key specs of every key `[timing].render_coalesce` after the
+  first change, so a burst of changes is one request; a newer request
+  replaces an older one still queued. The actor keeps the spec each key
+  shows and renders and writes only the keys whose spec differs, one key
+  image each, with a keep-alive check between two writes. A key whose
+  image cannot be rendered or is refused by the writer (size guard, frame
+  header) is logged and not tried again until its spec changes. The actor
+  reads at most `render_coalesce` at a time, so a request waits no longer.
 
 ### 5.6 Input
 
@@ -684,6 +719,20 @@ mouse.dpi            = 1200
   is explicit, never alphabetical.
 - Hot-reload with inotify (mtime poll fallback), `SIGHUP` and the socket
   `reload` command; writes are atomic.
+- Hot-reload as built (pre-alpha, `keyvo_daemon::watch`): inotify watches
+  the configuration directory and `profiles/` (directories, not files, so
+  a rename over a file counts like a write; a `profiles/` created later is
+  added). After `[timing].reload_settle` without a further change the
+  daemon loads the whole directory again (§7.1). A directory that does not
+  load keeps the last good profiles and config, logs every problem with
+  file, line and column and paints nothing new. The active profile stays
+  when it still exists, else the global one is active; key states carry
+  over. When the directory does not load at start, the daemon runs with
+  its `config.toml` (when that one is valid) and the built-in global
+  profile. A missing directory turns hot-reload off with a warning. The
+  `[timing]` values of the device (§5) and `long_press` are read at start;
+  the other `[timing]` and `[render]` values apply from the next reload.
+  The mtime poll fallback, `SIGHUP` and the socket `reload` come later.
 - Desk state is applied by calling `solaar config …` (v1, optional feature,
   M3); never on Windows in plugin mode (Options+ owns the devices).
 
@@ -777,6 +826,17 @@ configurable timeout; the daemon never blocks on user scripts or network. A
 script selects a custom key state by printing `KEYVO_STATE=<name>` (§7.2).
 `keyvo exec-check <script>` runs a script with the environment a key would
 give it and prints the trace entry.
+
+As built (pre-alpha, `keyvo_daemon::exec`): the command runs as `sh -c
+<cmd>` in its own process group, with stdin and stdout on `/dev/null` and
+stderr in the daemon's log. It receives `KEYVO_KEY`, `KEYVO_PROFILE`,
+`KEYVO_PAGE`, `KEYVO_PRESS` and `KEYVO_LAYER` (`global` for the global
+profile, else `app`); the window, socket and project variables come with
+their slices, and `KEYVO_STATE` is not read yet. Its exit code is the
+trace result (`exited`, with the duration); past `[timing].exec_timeout`
+the whole process group is killed and the result is `failed` with "timed
+out after <n> ms". A chord's result is `sent` with its key events, or
+`failed` with the injector's error.
 
 **Inward (script → daemon).** Unix domain socket at
 `$XDG_RUNTIME_DIR/keyvo/keyvo.sock`, mode `0600`, owned by the session
@@ -911,6 +971,11 @@ justfile page, `gh`, `kubectl`, other agent CLIs, Kitty/WezTerm.
   look's color. A custom state's badge text draws in neutral gray. The
   success flash and the desktop notification come with the daemon's frame
   push.
+- The daemon (pre-alpha) paints the looks: `running` when an `exec`
+  starts, then `success` or `error` from its result; it repaints the key
+  at the feedback's next change (long run, end of the success hold). The
+  spinner arc is not turned yet: animating it needs its own `[timing]`
+  key and comes with the frame push.
 - `keyvo preview <profile> [--page N] -o <file.png>` renders one page
   (counted from 1, default 1) onto the panel with no hardware: the
   captured MX Creative Keypad geometry (480×480, the nine key rectangles
@@ -1149,6 +1214,15 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 10 (2026-10-25)**: §4.1 the `InputInjector`
+  signature, the uinput keyboard and the daemon as built; §5.1 the
+  reconnect of the device actor; §5.5 coalesced paint requests and
+  writes of only the changed keys; §6.1 rows for `exec_timeout`,
+  `reconnect_interval` and `reload_settle`; §7.2 hot-reload as built,
+  keeping the last good state; §8 how `exec` runs, its pre-alpha
+  environment and timeout; §9 the daemon paints the feedback looks, the
+  spinner is not animated yet.
 
 - **v0.3, pre-alpha slice 9 (2026-10-25)**: §7.2 the chord grammar as
   parsed (aliases, shifted symbols, every evdev key name, sequences),

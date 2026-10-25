@@ -44,6 +44,11 @@ profile's `[[pages]]`.
 activation (DPI, backlight, button remaps), stored under `[devices]` and applied
 through Solaar when it is installed (M3, optional).
 
+**Device actor**: The thread in `keyvo-daemon` that alone owns the Keypad's
+transport: keep-alive, claim, divert, key image writes and input. It takes
+the wanted key specs from the controller, writes only the keys that changed,
+and reconnects when the device is gone.
+
 **Dialpad**: The MX Creative Dialpad: four divertable buttons, a dial (180
 detents per revolution) and a small roller (40 per revolution), connected over the
 Bolt receiver or Bluetooth. Driven by `keyvo-hid` in M3.
@@ -81,7 +86,16 @@ reachable from auto mode with a page button; overlays never draw on it. Named
 
 **Hot-plug**: Device connect and disconnect at runtime (USB replug, suspend,
 Bolt sleep). The daemon watches udev, reopens the node, re-claims display mode,
-re-asserts brightness and re-diverts buttons, then repaints.
+re-asserts brightness and re-diverts buttons, then repaints. The pre-alpha has
+no udev watch: the device actor retries every `[timing].reconnect_interval`.
+
+**Hot-reload**: Reloading the configuration directory when a file in it
+changes (inotify), after `[timing].reload_settle` of quiet. A directory that
+does not load keeps the last good state.
+
+**Input injector**: The platform trait in `keyvo-core` (`InputInjector`) that
+sends a chord's key presses and releases to the desktop; on Linux a uinput
+keyboard named `keyvo` in the daemon.
 
 **Keep-alive**: The periodic `0x0008 KEEP_ALIVE` request (3000 ms requested,
 sent about every second) without which the Keypad emits no key events and
