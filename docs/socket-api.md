@@ -33,6 +33,10 @@ their roadmap issues. Until then they are rejected as `invalid_request`.
 - Every message carries `"v": 1`. A request without it, or with another
   version, is answered with `unsupported_version`.
 - Key order carries no meaning. Compare parsed values, not text.
+- A client ignores fields it does not know in responses and events, at any
+  depth, so it keeps working when a later daemon adds fields within
+  version 1. Requests are the other way round: the daemon rejects unknown
+  fields (below).
 
 ## Requests and responses
 

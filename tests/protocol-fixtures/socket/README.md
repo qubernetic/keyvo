@@ -15,3 +15,8 @@ the same check.
 
 The lines are written by hand from the protocol, not captured. Key order in
 an object carries no meaning; a client compares parsed values, not text.
+
+A client ignores unknown fields in responses and events at any depth, so a
+later daemon may add fields within version 1; the Rust check adds a field
+to every object of every response and event line and expects the same
+message. The daemon rejects unknown fields in requests.

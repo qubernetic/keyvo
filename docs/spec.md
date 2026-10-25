@@ -964,6 +964,8 @@ As built (pre-alpha, `keyvo_core::socket` and `keyvo_daemon::socket`):
   of the newest trace entries), `press` (`key`, `kind`, `dry_run`),
   `reload`, and `notify_context` (`class`, `title`). Any other command and
   any unknown field is rejected as `invalid_request`.
+- Clients ignore unknown fields in responses and events, so a later daemon
+  may add fields within version 1.
 - Every response echoes the request's `id` and carries `ok` with `result`
   or `error` (`code`, `message`).
 - A dry-run press returns its trace entry marked `simulated` with the
