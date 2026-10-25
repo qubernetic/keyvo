@@ -3,12 +3,16 @@
 //! the tested logic (spec §10: the GUI talks to the daemon only through the
 //! socket API).
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::SystemTime;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use keyvo_client::{Client, Tiles};
+use keyvo_client::editor::{Edited, KeyView};
+use keyvo_client::{Client, Editor, Problem, Tiles};
+use keyvo_core::edit::KeyFields;
 use keyvo_core::press::PressKind;
 use keyvo_core::profile::KeySlot;
 use keyvo_core::render::TileSize;
@@ -82,16 +86,67 @@ fn subscribe(app: AppHandle, replay: usize) {
     });
 }
 
+/// The user's configuration directory.
+fn config_dir() -> Result<PathBuf, String> {
+    keyvo_core::layout::config_dir(
+        std::env::var_os("XDG_CONFIG_HOME").as_deref(),
+        std::env::var_os("HOME").as_deref(),
+    )
+    .ok_or_else(|| "no configuration directory: neither XDG_CONFIG_HOME nor HOME is set".into())
+}
+
+/// The key editor on the user's configuration directory, its snapshots in
+/// the state directory.
+fn editor() -> Result<Editor, Problem> {
+    let state = keyvo_core::layout::state_dir(
+        std::env::var_os("XDG_STATE_HOME").as_deref(),
+        std::env::var_os("HOME").as_deref(),
+    )
+    .ok_or_else(|| {
+        Problem::message("no state directory: neither XDG_STATE_HOME nor HOME is set")
+    })?;
+    Ok(Editor::new(config_dir().map_err(Problem::message)?, &state))
+}
+
+fn slot(key: u8) -> Result<KeySlot, Problem> {
+    KeySlot::new(key).ok_or_else(|| Problem::message(format!("no key {key}; the keys are 1 to 9")))
+}
+
+/// The file and the fields of `key` on `profile`'s page `page`, for the
+/// key editor (`keyvo_client::editor::KeyView`).
+#[tauri::command]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Tauri hands command arguments over owned"
+)]
+fn key(profile: String, page: usize, key: u8) -> Result<KeyView, Problem> {
+    editor()?
+        .key(&profile, page, slot(key)?)
+        .map_err(|error| Problem::from(&error))
+}
+
+/// Writes `fields` (`keyvo_core::edit::KeyFields`) into `key` on
+/// `profile`'s page `page` after a snapshot of the file
+/// (`keyvo_client::editor::Edited`); the daemon reloads it.
+#[tauri::command]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Tauri hands command arguments over owned"
+)]
+fn edit_key(profile: String, page: usize, key: u8, fields: Value) -> Result<Edited, Problem> {
+    let fields: KeyFields = serde_json::from_value(fields)
+        .map_err(|error| Problem::message(format!("invalid key fields: {error}")))?;
+    editor()?
+        .set_key(&profile, page, slot(key)?, &fields, SystemTime::now())
+        .map_err(|error| Problem::from(&error))
+}
+
 /// The keys of `profile`'s page `page` from the user's configuration
 /// directory in key order: the tile as a PNG data URL (`image`), with the
 /// key's `label` and `action` (`keyvo_client::tiles::KeySummary`).
 #[tauri::command]
 fn tiles(profile: String, page: usize) -> Result<Vec<Value>, String> {
-    let dir = keyvo_core::layout::config_dir(
-        std::env::var_os("XDG_CONFIG_HOME").as_deref(),
-        std::env::var_os("HOME").as_deref(),
-    )
-    .ok_or("no configuration directory: neither XDG_CONFIG_HOME nor HOME is set")?;
+    let dir = config_dir()?;
     let profiles = keyvo_core::layout::load(&dir)
         .map_err(|errors| errors.to_string())?
         .profiles;
@@ -119,7 +174,9 @@ fn tiles(profile: String, page: usize) -> Result<Vec<Value>, String> {
 fn main() {
     if let Err(error) = tauri::Builder::default()
         .manage(Subscriptions::default())
-        .invoke_handler(tauri::generate_handler![status, tiles, press, subscribe])
+        .invoke_handler(tauri::generate_handler![
+            status, tiles, press, subscribe, key, edit_key
+        ])
         .run(tauri::generate_context!())
     {
         eprintln!("keyvo-app: {error}");

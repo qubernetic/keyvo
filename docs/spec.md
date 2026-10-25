@@ -103,8 +103,8 @@ keyvo/
 │   │                   #   socket protocol types, chord parser; sync, hardware-free, ≥85 % covered
 │   ├── keyvo-daemon    # tokio runtime: socket server, KWin/X11 watchers (zbus/x11rb), uinput
 │   │                   #   injector (evdev), plugin supervisor, inotify hot-reload, systemd unit
-│   ├── keyvo-client    # socket client, mirror state, tile rendering through keyvo-core for the
-│   │                   #   GUI and later clients; sync, hardware-free
+│   ├── keyvo-client    # socket client, mirror state, tile rendering through keyvo-core, key
+│   │                   #   editor file side, for the GUI and later clients; sync, hardware-free
 │   └── keyvo-cli       # `keyvo probe|keys|fill|paint-test|preview|doctor|ctl|profile …`
 ├── app/                # Tauri 2 + Svelte 5 GUI (M4a); src-tauri/ is outside the root workspace
 ├── integrations/       # claude-code/ (plugin: hooks, commands, MCP), vscode/, tmux/, nvim/ …
@@ -179,7 +179,13 @@ page with the `keyvo-core` renderer, so a tile in the GUI has the pixels the
 daemon paints on the LCD, and `tiles::keys` gives each key's label and
 action for the GUI to announce. Its tests run against the socket fixtures in
 `tests/protocol-fixtures/socket/`, the same lines the TypeScript side of
-the app checks itself against.
+the app checks itself against. `Editor` is the key editor's file side
+(§7.1, §10): `Editor::key` reads a key's file and fields, `Editor::set_key`
+writes new fields through `keyvo_core::edit` after a snapshot, atomically,
+and returns the fields before the write for undo; `Problem` is an error as
+the GUI shows it, with file, line and column when it has a place. Its tests
+replay the key editor steps in `tests/protocol-fixtures/editor/`, which the
+app's key editor tests use too.
 
 The daemon as built (pre-alpha, `keyvo-daemon`): one tokio controller task
 owns the profile state and the per-key feedback; one device actor thread
@@ -740,6 +746,35 @@ Loading (`keyvo_core::layout`, pre-alpha subset: `config.toml` with
   TOML language server (taplo, Even Better TOML) validates a file with a
   first line `#:schema <path to the schema>`.
 
+Editing (`keyvo_core::edit` and `keyvo_core::store`, pre-alpha subset: the
+icon, label, color and action of one key):
+
+- `ProfileDocument` holds a profile file as `toml_edit` reads it.
+  `set_key(page, key, fields)` touches only the values that differ: a
+  changed value keeps the whitespace and comment around it, an absent field
+  is removed, an action of the same type keeps its table (inline or a
+  `[pages.keys.N.action]` sub-table) and only its value changes, and a key
+  the page does not define is added at the end of its page. Every byte
+  outside the edited key stays as it was; the fixtures in
+  `crates/keyvo-core/tests/fixtures/edit/` prove it line by line. `states`
+  and anything else in the key's table are kept.
+- The edited text is validated as a profile before it is handed out; a key
+  that cannot be edited without rewriting the file (a `pages` array that is
+  not tables) is an error naming it, never a reformatted file.
+- `store::snapshot` copies the file to
+  `~/.local/state/keyvo/snapshots/<ms>-<file>` first (`$XDG_STATE_HOME/keyvo`
+  when that is an absolute path; `<ms>` the Unix time in milliseconds, 13
+  digits) and keeps the newest 50 per file (`store::SNAPSHOTS_KEPT`).
+- `store::write` writes a temporary file beside the profile, flushes it and
+  renames it over the old one, so the daemon's reload reads the old file or
+  the new one, never half of it. The file keeps its permissions; a profile
+  that is a symlink (into a dotfile repository) stays a symlink and its
+  target is replaced.
+- A missing `profiles/global.toml` is created from the built-in global
+  profile's text (`edit::BUILTIN_GLOBAL`) on its first edit, together with
+  `profiles/` and the configuration directory if they are missing; an app profile
+  without a file is an error.
+
 ### 7.2 Profile format
 
 ```toml
@@ -1218,12 +1253,16 @@ reduced to the tokens of
 `docs/design/gui-ux.md` §7 as CSS custom properties with fixed defaults in
 `app/src/styles/tokens.css` (the feedback states use the pad theme's
 colours); the KDE and GNOME readers come with M4a-1. `app/src-tauri`
-(identifier `org.qubernetic.keyvo`, bundling off) has four commands, all
+(identifier `org.qubernetic.keyvo`, bundling off) has six commands, all
 over `keyvo-client`: `status`; `tiles` (a page from the user's
 configuration directory, each key as a PNG data URL with its label and
 action); `press` (a dry-run press, the trace entry back); `subscribe` (a
 subscription with a trace replay on its own thread, each update emitted on
-the Tauri event `keyvo://update`; a newer `subscribe` stops the older one).
+the Tauri event `keyvo://update`; a newer `subscribe` stops the older one);
+`key` (a key's file and fields, `Editor::key`); `edit_key` (new fields
+written into a key, `Editor::set_key`, the fields before it back; an error
+is a `Problem` object with `message` and, when it has a place, `path`,
+`line` and `column`).
 `just app-test` runs `npm ci`, `svelte-check` and vitest; `just app-build`
 builds the frontend and the shell into `bin/keyvo-app`.
 
@@ -1250,6 +1289,34 @@ folds the updates the way `Mirror` does.
 - **Daemon unreachable.** When `status` fails or the subscription ends, an
   alert says why, the mirror keeps its last frame, and Retry connects
   again. The in-process simulator of §4.2 of the design comes later.
+
+**As built (pre-alpha key editor).** Beside the mirror, the key editor
+(`app/src/KeyEditor.svelte`, `app/src/lib/editor.ts`) shows the key
+selected on the grid: its profile file, and its label, color (`#rrggbb`),
+icon and action (none, a chord's keys or an `exec` command).
+
+- **Immediate apply.** A field is written the moment it changes (the
+  input's `change`, on Enter or when the focus leaves it), through the
+  shell's `edit_key`: a snapshot, then the atomic write of §7.1. There is
+  no save button. Writes run one after the other. The daemon's inotify
+  watch reloads the file and repaints the pad; the mirror fetches its tiles
+  again after the write and after the daemon's `config` event.
+- **Validation.** A color that is not `#rrggbb` or an action without its
+  keys or command is not written; an alert says why. A new action type
+  starts empty and is written when its keys or command are entered. A chord
+  the parser refuses comes back from the shell as the error.
+- **Undo.** `Ctrl+Z` and `Ctrl+Shift+Z`, or the Undo and Redo buttons, undo
+  and redo the session's writes, newest first, each by writing the fields
+  before it again through the same path; a new write drops what is left to
+  redo. Inside a form field the keys undo the typing instead. The history
+  lives as long as the window.
+- **Errors.** A profile file that does not validate (an external edit, for
+  example) shows as an alert `file:line:column: message` and the form is
+  hidden; the file is never rewritten to fix it. A failed write shows the
+  same way and leaves the history as it was.
+- **Reloads.** After the daemon's `config` event the editor reads the key
+  again; a field being edited keeps its text. The "Open in editor" button
+  and the file watch of `docs/design/gui-ux.md` §4.1 come with M4a-4.
 
 ---
 
@@ -1415,6 +1482,13 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 16 (2026-10-25)**: §4 and §4.1 `Editor` and
+  `Problem` in `keyvo-client`; §7.1 round-trip editing (`keyvo_core::edit`),
+  snapshots and the atomic write (`keyvo_core::store`), the state
+  directory; §10 the shell's `key` and `edit_key` commands and the key
+  editor as built (immediate apply, validation, undo, errors with file and
+  line).
 
 - **v0.3, pre-alpha slice 15 (2026-10-25)**: §4.1 `Client::subscribe`,
   `Client::dry_run`, `follow` and `Update`, `tiles::keys`; §10 the shell's

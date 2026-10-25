@@ -1,18 +1,22 @@
 // Home against a fake daemon fed with the shared socket fixtures
 // (tests/protocol-fixtures/socket/): the mirror, the status strip, the
 // event list, the virtual pad's dry-run presses and the unreachable state.
+// The key editor beside the mirror against a fake editor; KeyEditor.test.ts
+// tests the editor itself.
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { describe, expect, it, vi } from "vitest";
 
 import Home from "./Home.svelte";
 import type { Daemon, Tile, Update } from "./lib/daemon";
+import type { Editor, KeyFields, Target } from "./lib/editor";
 import { eventsOf, nth, responses } from "./lib/fixtures";
 import { HOME_TRACE } from "./lib/home";
 import type { PressKind, Status, TraceRecord } from "./lib/protocol";
 
 const STATUS = responses()[0] as Status;
 const DRY_RUN = (responses()[3] as { entry: TraceRecord }).entry;
+const PROFILE = "/home/u/.config/keyvo/profiles/terminal.toml";
 
 function tiles(profile: string, page: number): Tile[] {
   return Array.from({ length: 9 }, (_, index) => ({
@@ -58,8 +62,20 @@ function key(n: number): HTMLElement {
   return screen.getByRole("button", { name: new RegExp(`^Key ${n}\\b`) });
 }
 
-async function mounted(daemon = fake()) {
-  render(Home, { props: { daemon: daemon.daemon } });
+/** A key editor on blank keys whose writes succeed; KeyEditor.test.ts
+ * tests the editor itself. */
+function editor(overrides: Partial<Editor> = {}) {
+  return {
+    key: vi.fn((_target: Target) => Promise.resolve({ path: PROFILE, fields: {} })),
+    editKey: vi.fn((_target: Target, fields: KeyFields) =>
+      Promise.resolve({ path: PROFILE, before: {}, fields }),
+    ),
+    ...overrides,
+  } satisfies Editor;
+}
+
+async function mounted(daemon = fake(), keys = editor()) {
+  render(Home, { props: { daemon: daemon.daemon, editor: keys } });
   await waitFor(() => expect(key(5)).toHaveAccessibleName("Key 5: Test, exec cargo test"));
   return daemon;
 }
@@ -111,7 +127,7 @@ describe("Home mirror", () => {
     const daemon = fake({
       tiles: vi.fn(() => Promise.reject(new Error("no profile `terminal` in the configuration directory"))),
     });
-    render(Home, { props: { daemon: daemon.daemon } });
+    render(Home, { props: { daemon: daemon.daemon, editor: editor() } });
     expect(await screen.findByText(/no profile `terminal`/)).toBeInTheDocument();
     expect(key(1)).toHaveAccessibleName("Key 1: unbound");
   });
@@ -128,7 +144,7 @@ describe("Home mirror", () => {
 
   it("subscribes with the event list's replay and stops when unmounted", async () => {
     const daemon = fake();
-    const { unmount } = render(Home, { props: { daemon: daemon.daemon } });
+    const { unmount } = render(Home, { props: { daemon: daemon.daemon, editor: editor() } });
     await waitFor(() => expect(daemon.listening).toBe(true));
     expect(daemon.daemon.subscribe).toHaveBeenCalledWith(HOME_TRACE, expect.any(Function));
     unmount();
@@ -162,7 +178,7 @@ describe("Home status strip", () => {
 
   it("says when no window was reported yet", async () => {
     const daemon = fake({ status: vi.fn(() => Promise.resolve(responses()[1] as Status)) });
-    render(Home, { props: { daemon: daemon.daemon } });
+    render(Home, { props: { daemon: daemon.daemon, editor: editor() } });
     const strip = await screen.findByRole("region", { name: "Status" });
     await waitFor(() =>
       expect(within(strip).getByLabelText("Context")).toHaveTextContent("no window reported"),
@@ -278,7 +294,7 @@ describe("Home without a daemon", () => {
       .mockRejectedValueOnce(new Error("cannot reach the keyvo daemon at /run/user/1000/keyvo/keyvo.sock"))
       .mockResolvedValue(STATUS);
     const daemon = fake({ status });
-    render(Home, { props: { daemon: daemon.daemon } });
+    render(Home, { props: { daemon: daemon.daemon, editor: editor() } });
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Daemon unreachable: cannot reach the keyvo daemon at /run/user/1000/keyvo/keyvo.sock",
@@ -306,14 +322,38 @@ describe("Home without a daemon", () => {
 
   it("says the daemon is unreachable when subscribing fails", async () => {
     const daemon = fake({ subscribe: vi.fn(() => Promise.reject(new Error("no shell"))) });
-    render(Home, { props: { daemon: daemon.daemon } });
+    render(Home, { props: { daemon: daemon.daemon, editor: editor() } });
     expect(await screen.findByRole("alert")).toHaveTextContent("Daemon unreachable: no shell");
   });
 
   it("shows the empty grid while connecting", () => {
     const daemon = fake({ status: vi.fn(() => new Promise<Status>(() => {})) });
-    render(Home, { props: { daemon: daemon.daemon } });
+    render(Home, { props: { daemon: daemon.daemon, editor: editor() } });
     expect(screen.getByRole("grid", { name: "Keypad mirror" })).toBeInTheDocument();
     expect(screen.getByText("Connecting to the daemon")).toBeInTheDocument();
+  });
+});
+
+describe("Home key editor", () => {
+  it("edits the key selected on the mirror", async () => {
+    const keys = editor();
+    await mounted(fake(), keys);
+    await waitFor(() => expect(keys.key).toHaveBeenCalledWith({ profile: "terminal", page: 1, key: 1 }));
+    await fireEvent.keyDown(screen.getByRole("grid"), { key: "5" });
+    await waitFor(() => expect(keys.key).toHaveBeenLastCalledWith({ profile: "terminal", page: 1, key: 5 }));
+    expect(screen.getByRole("heading", { name: "Key 5" })).toBeInTheDocument();
+  });
+
+  it("fetches the tiles again after an edit", async () => {
+    const daemon = fake();
+    const keys = editor();
+    await mounted(daemon, keys);
+    const label = await screen.findByRole("textbox", { name: "Label" });
+    await fireEvent.input(label, { target: { value: "Shell" } });
+    await fireEvent.change(label);
+    await waitFor(() =>
+      expect(keys.editKey).toHaveBeenCalledWith({ profile: "terminal", page: 1, key: 1 }, { label: "Shell" }),
+    );
+    await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenCalledTimes(2));
   });
 });

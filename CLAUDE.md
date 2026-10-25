@@ -60,8 +60,8 @@ keyvo/
 │   │                   #   assets/: bundled Inter font and lucide icons, origin and licence in its README
 │   ├── keyvo-daemon    # tokio runtime: socket server, KWin/X11 watchers (zbus/x11rb), uinput
 │   │                   #   injector (evdev), plugin supervisor, inotify hot-reload, systemd unit
-│   ├── keyvo-client    # socket client, mirror state, tile rendering through keyvo-core for the
-│   │                   #   GUI; sync, hardware-free
+│   ├── keyvo-client    # socket client, mirror state, tile rendering through keyvo-core, key
+│   │                   #   editor file side (round-trip write, snapshot) for the GUI; sync, hardware-free
 │   └── keyvo-cli       # `keyvo probe|keys|fill|paint-test|preview|doctor|ctl|profile ...`
 ├── app/                # Tauri 2 + Svelte 5 GUI (M4a); src-tauri/ outside the root workspace
 ├── integrations/       # claude-code/ (plugin: hooks, commands, MCP), vscode/, tmux/, nvim/ ...

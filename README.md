@@ -59,7 +59,11 @@ measurements they serve.
 The desktop app shows Home so far: a live mirror of the pad's page, the
 daemon's status, the recent presses, and a virtual pad whose clicks are
 dry-run presses (right click for a long press; `1` to `9` and `Space` on
-the grid). It builds in the devcontainer and runs on the host:
+the grid). Beside the mirror, a key editor changes the selected key's
+label, color, icon and action: each change lands in the profile file at
+once (comments and formatting kept, a snapshot under
+`~/.local/state/keyvo/snapshots/` first), the daemon repaints the pad, and
+`Ctrl+Z` undoes it. It builds in the devcontainer and runs on the host:
 
 ```bash
 just app-build

@@ -1,9 +1,11 @@
 // Test helper: the shared socket fixtures in tests/protocol-fixtures/socket/
-// as parsed messages. Only the tests import it.
+// as parsed messages, and the key editor steps in
+// tests/protocol-fixtures/editor/. Only the tests import it.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { KeyFields } from "./editor";
 import { parseServerMessage, type Event, type Reply } from "./protocol";
 
 const FIXTURES = join(
@@ -37,6 +39,40 @@ export function nth<T>(list: readonly T[], index: number): T {
     throw new Error(`the fixture has no item ${index}`);
   }
   return item;
+}
+
+const EDITOR = join(dirname(fileURLToPath(import.meta.url)), "../../../tests/protocol-fixtures/editor");
+
+/** One step of tests/protocol-fixtures/editor/steps.json. */
+export interface EditorStep {
+  /** The form field the step changes. */
+  field: "label" | "action";
+  fields: KeyFields;
+  /** The file the step gives. */
+  file: string;
+}
+
+/** tests/protocol-fixtures/editor/steps.json. */
+export interface EditorSteps {
+  profile: string;
+  page: number;
+  key: number;
+  /** The file before the steps. */
+  file: string;
+  /** The file's path inside the configuration directory. */
+  path: string;
+  /** The key's fields before the steps. */
+  fields: KeyFields;
+  steps: EditorStep[];
+}
+
+export function editorSteps(): EditorSteps {
+  return JSON.parse(readFileSync(join(EDITOR, "steps.json"), "utf8")) as EditorSteps;
+}
+
+/** The text of an editor fixture file. */
+export function editorFile(name: string): string {
+  return readFileSync(join(EDITOR, name), "utf8");
 }
 
 /** The result of every ok line of responses.ndjson, in file order. */

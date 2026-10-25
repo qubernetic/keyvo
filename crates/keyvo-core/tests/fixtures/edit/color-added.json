@@ -1,0 +1,1 @@
+{ "page": 1, "key": 1, "fields": { "icon": "lucide:hammer", "label": "Build", "color": "#aa3300", "action": { "type": "exec", "cmd": "cargo build" } } }

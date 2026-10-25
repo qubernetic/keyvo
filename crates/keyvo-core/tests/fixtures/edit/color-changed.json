@@ -1,0 +1,1 @@
+{ "page": 1, "key": 2, "fields": { "icon": "lucide:git-commit", "label": "Commit", "color": "#123456", "action": { "type": "chord", "keys": "ctrl+shift+g" } } }

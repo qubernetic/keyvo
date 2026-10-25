@@ -1,0 +1,55 @@
+# A hand-written profile in every style the editor must keep: comments
+# above and beside the values, aligned `=`, an inline action, an action
+# sub-table, a blank key with a comment, and a second page that repeats
+# key numbers. The cases in this directory edit one key each.
+schema_version = 1
+
+[profile]
+id       = "edits"
+name     = "Round-trip edits"   # shown in the GUI
+accent   = "#4E8BD6"            # upper case on purpose: kept as written
+priority = 10
+
+[profile.match]
+class = ["org.kde.konsole", "kitty"]
+
+[[pages]]
+name = "context"
+
+[pages.keys.1]                # build
+icon   = "lucide:hammer"
+label  = "Build all"
+action = { type = "exec", cmd = "cargo build" }
+
+# The commit key keeps its action in a sub-table.
+[pages.keys.2]
+icon  = 'lucide:git-commit'
+label = "Commit"
+color = "#2F6F3E"
+
+[pages.keys.2.action]
+type = "chord"
+keys = "ctrl+shift+g"   # lazygit commit
+
+[pages.keys.3]
+label = "Test"
+action = {type="exec",cmd="cargo nextest run"}
+
+[pages.keys.3.states.running]
+badge = "..."
+
+# key 4 is blank on purpose
+
+[pages.keys.5]
+label = "Palette"
+action = { type = "chord", keys = "ctrl+p" }
+
+[[pages]]
+name = "general"
+
+# The second page repeats key numbers 1 and 3.
+[pages.keys.1]
+label = "Home"
+
+[pages.keys.3]
+icon = "lucide:settings"

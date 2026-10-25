@@ -3,13 +3,14 @@
   // screens of docs/design/gui-ux.md §2 come after the pre-alpha.
   import Home from "./Home.svelte";
   import type { Daemon } from "./lib/daemon";
+  import type { Editor } from "./lib/editor";
 
-  let { daemon }: { daemon: Daemon } = $props();
+  let { daemon, editor }: { daemon: Daemon; editor: Editor } = $props();
 </script>
 
 <main>
   <h1>keyvo</h1>
-  <Home {daemon} />
+  <Home {daemon} {editor} />
 </main>
 
 <style>

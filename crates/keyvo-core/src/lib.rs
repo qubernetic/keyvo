@@ -9,6 +9,7 @@ pub mod chord;
 pub mod clock;
 pub mod config;
 pub mod diagnostic;
+pub mod edit;
 pub mod feedback;
 pub mod focus;
 pub mod hid;
@@ -20,6 +21,7 @@ pub mod render;
 pub mod schema;
 pub mod socket;
 pub mod state;
+pub mod store;
 pub mod trace;
 
 /// Version of the keyvo workspace, taken from `Cargo.toml` at compile time.

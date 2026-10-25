@@ -7,8 +7,9 @@
 mod support;
 
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
+use keyvo_client::Editor;
 use keyvo_core::chord::Chord;
 use keyvo_core::feedback::Look;
 use keyvo_core::focus::{FakeWindowWatcher, WindowContext};
@@ -298,6 +299,28 @@ async fn a_profile_change_repaints_only_the_changed_key() {
     let images = pad.images();
     assert_eq!(images.len(), 10);
     assert_eq!(images[9], image_of(&edited, 2, Look::Idle));
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_key_editor_write_repaints_the_key_through_the_reload() {
+    let (mut daemon, pad, _) = started(GLOBAL).await;
+    let state = tempfile::tempdir().unwrap();
+    let editor = Editor::new(daemon.dir.path().to_path_buf(), state.path());
+    let key = KeySlot::new(2).unwrap();
+    let mut fields = editor.key("global", 1, key).unwrap().fields;
+    fields.label = Some("Paste".into());
+    let edited = editor
+        .set_key("global", 1, key, &fields, SystemTime::now())
+        .unwrap();
+    assert!(edited.snapshot.is_some());
+
+    assert_eq!(daemon.painted().await, vec![2]);
+    let written = std::fs::read_to_string(edited.path).unwrap();
+    assert_eq!(written, GLOBAL.replace("\"Copy\"", "\"Paste\""));
+    let images = pad.images();
+    assert_eq!(images.len(), 10);
+    assert_eq!(images[9], image_of(&written, 2, Look::Idle));
     daemon.stop().await;
 }
 

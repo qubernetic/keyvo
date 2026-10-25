@@ -1,12 +1,15 @@
 <script lang="ts">
   // Home (docs/design/gui-ux.md §3.1): the 3x3 mirror of the page the pad
   // shows, the status strip, the recent trace entries, and the virtual pad:
-  // a click is a short dry-run press, a right click a long one.
+  // a click is a short dry-run press, a right click a long one. Beside the
+  // mirror, the key editor for the selected key.
+  import KeyEditor from "./KeyEditor.svelte";
   import type { Daemon, Tile } from "./lib/daemon";
+  import type { Editor, Target } from "./lib/editor";
   import { apply, fromStatus, HOME_TRACE, initial, summarize, type HomeState } from "./lib/home";
   import type { PressKind, TraceRecord } from "./lib/protocol";
 
-  let { daemon }: { daemon: Daemon } = $props();
+  let { daemon, editor }: { daemon: Daemon; editor: Editor } = $props();
 
   /** The Keypad's grid until the daemon reports the device geometry. */
   const COLUMNS = 3;
@@ -70,11 +73,15 @@
     };
   });
 
-  // The tiles of the page the pad shows, again after every reload.
+  /** Writes of the key editor, so the tiles follow them without a daemon. */
+  let edits = $state(0);
+
+  // The tiles of the page the pad shows, again after every reload and edit.
   let fetched = 0;
   $effect(() => {
     const view = home.view;
     void home.reloads;
+    void edits;
     if (view === undefined) return;
     const mine = ++fetched;
     daemon.tiles(view.profile, view.page).then(
@@ -173,6 +180,11 @@
   const rows = Array.from({ length: KEYS / COLUMNS }, (_, row) =>
     Array.from({ length: COLUMNS }, (_, column) => row * COLUMNS + column + 1),
   );
+  const target: Target | undefined = $derived(
+    home.view === undefined
+      ? undefined
+      : { profile: home.view.profile, page: home.view.page, key: selected },
+  );
   const gridName = $derived(
     home.view === undefined
       ? "Keypad mirror"
@@ -219,31 +231,34 @@
     </dl>
   </section>
 
-  <div role="grid" tabindex="-1" aria-label={gridName} class="grid" onkeydown={keydown}>
-    {#each rows as row, index (index)}
-      <div role="row" class="row">
-        {#each row as key (key)}
-          <div role="gridcell" aria-selected={key === selected}>
-            <button
-              bind:this={buttons[key - 1]}
-              type="button"
-              class="key"
-              class:held={home.held.includes(key)}
-              tabindex={key === selected ? 0 : -1}
-              aria-label={name(key)}
-              onclick={() => void press(key, "short")}
-              oncontextmenu={(event) => contextmenu(event, key)}
-            >
-              {#if tiles[key - 1]}
-                <img src={tiles[key - 1]?.image} alt="" />
-              {:else}
-                <span aria-hidden="true">{key}</span>
-              {/if}
-            </button>
-          </div>
-        {/each}
-      </div>
-    {/each}
+  <div class="workspace">
+    <div role="grid" tabindex="-1" aria-label={gridName} class="grid" onkeydown={keydown}>
+      {#each rows as row, index (index)}
+        <div role="row" class="row">
+          {#each row as key (key)}
+            <div role="gridcell" aria-selected={key === selected}>
+              <button
+                bind:this={buttons[key - 1]}
+                type="button"
+                class="key"
+                class:held={home.held.includes(key)}
+                tabindex={key === selected ? 0 : -1}
+                aria-label={name(key)}
+                onclick={() => void press(key, "short")}
+                oncontextmenu={(event) => contextmenu(event, key)}
+              >
+                {#if tiles[key - 1]}
+                  <img src={tiles[key - 1]?.image} alt="" />
+                {:else}
+                  <span aria-hidden="true">{key}</span>
+                {/if}
+              </button>
+            </div>
+          {/each}
+        </div>
+      {/each}
+    </div>
+    <KeyEditor {editor} {target} revision={home.reloads} onedited={() => edits++} />
   </div>
   {#if tilesError !== undefined}
     <p class="note">Tiles not rendered: {tilesError}</p>
@@ -299,6 +314,13 @@
 
   .strip dd {
     margin: 0;
+  }
+
+  .workspace {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    align-items: flex-start;
   }
 
   .grid {
