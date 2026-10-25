@@ -1725,6 +1725,13 @@ Detailed issue lists, definitions of done and the measurement list are in
 
 0. **Bootstrap**: repository, docs foundation, workspace skeleton,
    devcontainer, CI, diagrams.
+
+The pre-alpha epic (`docs/roadmap.md`, Pre-alpha) cuts thin slices through
+M0 to M4a first, and **M4b: Flathub** follows it directly: the owner's
+atomic host has no webkit packages, so the app runs only inside the
+`org.gnome.Platform//51` runtime until the Flatpak exists. The list below
+is the order of the remaining milestone work.
+
 1. **M0: Protocol (hardware truth)**. TS quick-test with Julusian's
    library, Windows VM + USB capture toolkit, HID++ 2.0 core, keypad
    enumeration + keep-alive, VLP display plane, key and page-button input,
@@ -1740,11 +1747,13 @@ Detailed issue lists, definitions of done and the measurement list are in
    `keyvo ctl`, project layer and trust, context source (shell hooks, pid
    binding, registry fallback), plugin supervisor with two reference plugins,
    Claude Code plugin, tmux and git integrations, `.lp5` import (if not M1).
-4. **M3: Desk state and Dialpad**. Dialpad over Bolt, Bluetooth
+4. **M3: Desk state and Dialpad**. First a static-analysis pass under
+   ADR-0008 over the Dialpad features (`0x4610` getCapabilities to
+   RotationEvent), then Dialpad over Bolt, Bluetooth
    verification, MX Master 4 and MX Mechanical controls as trigger sources,
    Solaar-backed settings per profile (open), VS Code extension.
-5. **M4a: GUI** (shell, mirror, simulator, wizard, mini-wizard) and **M4b:
-   Flathub**. Sandbox-complete issues of M4a may start once the M2 socket
+5. **M4a: GUI** (shell, mirror, simulator, wizard, mini-wizard); the
+   screens land in the M4b Flatpak as they ship. Sandbox-complete issues of M4a may start once the M2 socket
    exists (`docs/roadmap.md`).
 6. **M5: Windows**. C# Actions SDK plugin, Marketplace listing; native
    mode with ownership detection.
@@ -1782,6 +1791,10 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 6m (2026-10-25)**: §15 M4b (Flathub) moves to
+  right after the pre-alpha, M3 starts with a static-analysis pass over the
+  Dialpad features (#92). Matches `docs/roadmap.md`.
 
 - **v0.3, pre-alpha slice 6l (2026-10-25)**: one composite image per
   change, as Options+ paints (#72, display pipeline report items 1, 2, 3

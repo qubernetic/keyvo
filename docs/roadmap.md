@@ -1,6 +1,7 @@
 # keyvo roadmap
 
-Milestones run in order; each gets its own planning round before its issues
+Milestones run in the order Pre-alpha, M4b, M0, M1, M2, M3, M4a, M5 (M4b
+moved up on 2026-10-25, see the M4b section); each gets its own planning round before its issues
 are opened, and every issue carries its plan in a plan file under `docs/plans/`
 or in the issue body (CONTRIBUTING.md, "Sandbox-complete and hardware-bound
 issues"). Definition
@@ -85,11 +86,15 @@ Home and the one-key editor.
 | 6b | #41 | `docs(hardware): record the first-light measurements` | S | M0-9 | #40 | merged |
 | 6c | #69 | `fix(hid): reclaim the display after a keep-alive expiry` | S | M0-4a | #40 | merged |
 | 6d | #71 | `feat(cli): dump raw hid frames and probe any feature` | S | M0-8 | #69 | merged |
-| 6e | #70 | `test(hardware): measure the visible key window` | H | M0-5b | | open, owner |
-| 6l | #72 | `feat(render,hid,daemon): paint one composite image per change` (was 6f, the per-key margin, dropped) | S | M0-5a, M1-5 | #89 | open |
+| 6e | #70 | `test(hardware): run the no-strip check after the composite paint` (was the visible key window measurement) | H | M0-5b | #72 | open, owner |
 | 6g | #76 | `docs(contrib): add example profiles and the home test guide` | S | none | | merged |
-| 6h | #77 | `fix(daemon): paint the panel background before the keys` | S | M0-5a, M1-5 | #76 | merged |
-| 6i | #80 | `feat(cli): add a margin option to keyvo fill` | S | M0-5b | #70, #72 | merged |
+| 6h | #77 | `fix(daemon): paint the panel background before the keys` (superseded by 6l) | S | M0-5a, M1-5 | #76 | merged |
+| 6i | #80 | `feat(cli): add a margin option to keyvo fill` (kept as a diagnostic) | S | M0-5b | #77 | merged |
+| research | #86 | `docs(research): options+ display update pipeline and reference diagrams` | S | none | | merged |
+| 6j | #88 | `docs(spec): apply the display pipeline report corrections` | S | M0-9 | #86 | merged |
+| 6k | #89 | `feat(cli): print the display fields in probe and add fill --full` | S | M0-8 | #88 | merged |
+| 6l | #72 | `feat(render,hid,daemon): paint one composite image per change` (was 6f, the per-key margin, dropped) | S | M0-5a, M1-5 | #89 | merged |
+| 6m | #92 | `docs(roadmap): add the m3 static pass and move m4b after the pre-alpha` | S | roadmap maintenance | #72 | in review |
 | 7 | #42 | `feat(core): profile model and toml loading` | S | M1-1 | #39 | merged |
 | 8 | #43 | `feat(core): key renderer and keyvo preview` | S | M1-3 | #42 | merged |
 | 9 | #44 | `feat(core): chord parser, press resolution and feedback states` | S | M1-4, M1-6 | #43 | merged |
@@ -102,12 +107,32 @@ Home and the one-key editor.
 | 16 | #51 | `feat(app): edit a key with immediate apply` | S | M1-2, M4a-4 | #50 | merged |
 | 17 | #52 | `test(hardware): run the pre-alpha end-to-end check` | H | M2-7, M4a-9 | #51, #41 | open, owner |
 | R1 | #81 | `fix(daemon): harden the kwin script, the socket and the app lockfiles` | S | none | #80 | merged |
-| R3 | #82 | `docs: align the docs and tests with the pre-alpha as built` | S | none | #81 | in review |
+| R3 | #82 | `docs: align the docs and tests with the pre-alpha as built` | S | none | #81 | merged |
 
 Status as of 2026-10-25: `merged` is merged into `epic/34-pre-alpha`,
 `passed` a hardware check the owner ran, `open, owner` a hardware check
-still to run. Slices 6c to 6i come from first light (#40) and the owner's
-requests; R1 and R3 from the epic pre-review.
+still to run, `in review` an open pull request into the epic branch.
+Slices 6c to 6i come from first light (#40) and the owner's requests; the
+research issue #86 and slices 6j to 6m from the owner's display pipeline
+plan change (Options+ paints one composite image per change); R1 and R3
+from the epic pre-review.
+
+## M4b: Flathub ([milestone 6](https://github.com/qubernetic/keyvo/milestone/6))
+
+**Goal.** One-click install on any Linux desktop. Flatpak manifest, portal and
+device permissions, Flathub submission; udev rule upstreamed to systemd so
+Flathub users need no manual step.
+
+**Order.** M4b runs right after the pre-alpha (owner's plan change of
+2026-10-25). The owner's Aurora host is atomic and has no webkit packages, so
+until the Flatpak exists the app runs only inside the `org.gnome.Platform//51`
+runtime. M4b-1 packages the pre-alpha app and no longer waits for M4a-8; the
+later M4a screens ship in the same manifest when they land.
+
+| Issue | Title | Layer | Proof or User test | Depends on |
+|---|---|---|---|---|
+| M4b-1 | `chore(flatpak): manifest, portal and device permissions` | S | `flatpak-builder` in the container (`just flatpak`) | Pre-alpha (`epic/34-pre-alpha` merged into `develop`) |
+| M4b-2 | `hardware: Flatpak install on the owner's host, Flathub submission` | H | owner | M4b-1 |
 
 ## M0: Protocol ([milestone 1](https://github.com/qubernetic/keyvo/milestone/1))
 
@@ -208,15 +233,21 @@ Bolt capture; MX Master 4 and MX Mechanical divertable controls as triggers
 Solaar diverts); desk state per profile (open, spec §16 question 20); VS Code
 extension.
 
+**First step.** M3-0 runs before the M3 slices are planned: a static-analysis
+pass under ADR-0008 over the Dialpad features, from `getCapabilities` to
+`RotationEvent` (deeper-pass item 3 of `docs/research/options-plus-inventory.md`),
+so the Dialpad work does not meet the surprise the Keypad display pipeline
+did (#86). Every M3 slice depends on it.
+
 | Issue | Title | Layer | Proof or User test | Depends on |
 |---|---|---|---|---|
-| M3-0 | `research: 0x4610 request and response layouts` (ADR-0008 pass) | S | report under `docs/research/` | |
+| M3-0 | `research: static pass over the Dialpad features` (ADR-0008, inventory deeper-pass item 3: `0x4610` getCapabilities, getRollerCapabilities, getMode, setMode, getRollerSettings, setRollerSettings, RotationEvent) | S (research, sandbox) | report under `docs/research/` | |
 | M3-1 | `feat(hid): Dialpad driver over Bolt` (0x1B04 buttons, 0x4610 dial and roller, device index) | S | `just test`; fixtures `own` and M3-0 | M0-3, M0-2, M3-0 |
-| M3-2 | `hardware: Dialpad over Bolt and Bluetooth verified` | H | owner | M3-1 |
-| M3-3 | `feat(hid): MX Master 4 and MX Mechanical as trigger sources` (`getCidInfo` walk, volatile diverts) | S | `just test`; fixtures from `docs/research/hidpp-features-dump.txt` | M3-1 |
-| M3-4 | `hardware: MX triggers and the Solaar divert warning verified` | H | owner | M3-3 |
-| M3-5 | `feat(daemon): desk state per profile` | S or dropped | decided with spec §16 question 20 | |
-| M3-6 | `feat(integrations): VS Code extension` (`notify_context` with `cwd`) | S | extension tests (`just test`) | M2-5 |
+| M3-2 | `hardware: Dialpad over Bolt and Bluetooth verified` | H | owner | M3-1, M3-0 |
+| M3-3 | `feat(hid): MX Master 4 and MX Mechanical as trigger sources` (`getCidInfo` walk, volatile diverts) | S | `just test`; fixtures from `docs/research/hidpp-features-dump.txt` | M3-1, M3-0 |
+| M3-4 | `hardware: MX triggers and the Solaar divert warning verified` | H | owner | M3-3, M3-0 |
+| M3-5 | `feat(daemon): desk state per profile` | S or dropped | decided with spec §16 question 20 | M3-0 |
+| M3-6 | `feat(integrations): VS Code extension` (`notify_context` with `cwd`) | S | extension tests (`just test`) | M2-5, M3-0 |
 
 ## M4a: GUI ([milestone 5](https://github.com/qubernetic/keyvo/milestone/5))
 
@@ -247,17 +278,6 @@ run in parallel with M2-3 onwards and with M3.
 | M4a-8 | `feat(app): Dialpad panel, Integrations, Devices, Settings, tray icon, keyboard map, palette` | S | `just app-test`; Playwright | M4a-5, M3-1 for the Dialpad content |
 | M4a-9 | `hardware: GUI mirror against the Keypad and the Dialpad, wizard end to end` | H | owner; step-by-step User test | M4a-8 |
 
-## M4b: Flathub ([milestone 6](https://github.com/qubernetic/keyvo/milestone/6))
-
-**Goal.** One-click install on any Linux desktop. Flatpak manifest, portal and
-device permissions, Flathub submission; udev rule upstreamed to systemd so
-Flathub users need no manual step.
-
-| Issue | Title | Layer | Proof or User test | Depends on |
-|---|---|---|---|---|
-| M4b-1 | `chore(flatpak): manifest, portal and device permissions` | S | `flatpak-builder` in the container (`just flatpak`) | M4a-8 |
-| M4b-2 | `hardware: Flatpak install on the owner's host, Flathub submission` | H | owner | M4b-1 |
-
 ## M5: Windows ([milestone 7](https://github.com/qubernetic/keyvo/milestone/7))
 
 **Goal.** The same profiles next to Logi Options+ on Windows through a C# Logi
@@ -280,7 +300,7 @@ layer via shell hook, MX buttons, desk state.
 - `.lp5` import placement: M1 or M2 (proposal: M2).
 - Claude Code plugin key layout for the owner's workflow, grilled before M2-10.
 - Desk state per profile without Solaar: spec §16 question 20, decided before M3-5.
-- Flatpak manifest details (before M4b), Windows native mode (after the M0-2 ownership test).
+- Flatpak manifest details (in M4b-1, right after the pre-alpha), Windows native mode (after the M0-2 ownership test).
 - MX Keypad (2026) PID and firmware compatibility: confirm as soon as an owner publishes `lsusb` or `solaar show`.
 - Upstream: Solaar crash on the Dialpad (`settings_templates.py` in 1.1.20); udev `uaccess` rule for `046d:c354` in systemd.
 - v2 candidates from the UI/UX grill: referenced `[[behaviors]]`, workflow insights from the trace, `keyvo pack add <git-url>`, plugin sandbox, system widgets.
