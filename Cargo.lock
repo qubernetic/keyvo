@@ -574,6 +574,8 @@ dependencies = [
  "image",
  "keyvo-core",
  "keyvo-hid",
+ "rustix",
+ "serde_json",
  "tempfile",
 ]
 

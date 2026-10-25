@@ -1,5 +1,6 @@
 //! keyvo command-line interface.
 
+mod ctl;
 mod fill;
 mod keys;
 mod preview;
@@ -56,6 +57,20 @@ enum Command {
         /// The PNG to write
         #[arg(short, long, value_name = "FILE")]
         output: PathBuf,
+    },
+    /// Send one command to the running daemon and print its response;
+    /// `subscribe` prints the events until interrupted
+    Ctl {
+        /// `status`, `subscribe`, `press`, `reload` or `notify_context`
+        /// (docs/socket-api.md)
+        command: String,
+        /// The command's fields as a JSON object, such as
+        /// `{"key":5,"dry_run":true}`
+        json: Option<String>,
+        /// The control socket; default `$KEYVO_SOCKET`, else
+        /// `$XDG_RUNTIME_DIR/keyvo/keyvo.sock`
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
     },
 }
 
@@ -177,6 +192,25 @@ fn main() -> anyhow::Result<()> {
                 dir.as_deref(),
                 &mut std::io::stdout().lock(),
                 &mut std::io::stderr().lock(),
+            );
+        }
+        Command::Ctl {
+            command,
+            json,
+            socket,
+        } => {
+            let path = ctl::socket_path(
+                socket,
+                std::env::var_os("KEYVO_SOCKET").as_deref(),
+                std::env::var_os("XDG_RUNTIME_DIR").as_deref(),
+                rustix::process::getuid().as_raw(),
+            );
+            let line = ctl::request_line(&command, json.as_deref())?;
+            return ctl::ctl(
+                ctl::connect(&path)?,
+                &line,
+                command == "subscribe",
+                &mut std::io::stdout().lock(),
             );
         }
     };
@@ -305,7 +339,7 @@ mod tests {
             .command
         {
             Command::Device(command) => command,
-            Command::Preview { .. } => panic!("not a device command"),
+            Command::Preview { .. } | Command::Ctl { .. } => panic!("not a device command"),
         }
     }
 
