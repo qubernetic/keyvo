@@ -9,8 +9,9 @@
 use keyvo_core::hid::HidTransport;
 use keyvo_core::render::{KeyPlace, Panel, TileSize};
 
-use crate::frame::ReportId;
+use crate::frame::{Frame, ReportId};
 use crate::hidpp::{Hidpp, HidppError, Plane};
+use crate::keep_alive;
 use crate::root::{VlpProtocol, feature};
 
 /// `getGeometry(screen)`.
@@ -98,16 +99,7 @@ pub fn claim<T: HidTransport>(hidpp: &mut Hidpp<T>) -> Result<Claim, ClaimError>
     let geometry = geometry(hidpp)?;
     let mut mode_event = false;
     if boot_mode != DisplayMode::STREAMING {
-        hidpp.request(
-            Plane::Vlp,
-            display_index,
-            FN_SET_MODE,
-            &[DisplayMode::STREAMING.0],
-        )?;
-        let mode = current_mode(hidpp)?;
-        if mode != DisplayMode::STREAMING {
-            return Err(ClaimError::ModeNotConfirmed { mode: mode.0 });
-        }
+        stream(hidpp, display_index)?;
         mode_event = hidpp
             .wait_for(|frame| {
                 frame.report == ReportId::VlpControl
@@ -126,6 +118,100 @@ pub fn claim<T: HidTransport>(hidpp: &mut Hidpp<T>) -> Result<Claim, ClaimError>
         geometry,
         mode_event,
     })
+}
+
+/// `setMode(a0)` confirmed with `getMode`.
+fn stream<T: HidTransport>(hidpp: &mut Hidpp<T>, display_index: u8) -> Result<(), ClaimError> {
+    hidpp.request(
+        Plane::Vlp,
+        display_index,
+        FN_SET_MODE,
+        &[DisplayMode::STREAMING.0],
+    )?;
+    let mode = current_mode(hidpp)?;
+    if mode != DisplayMode::STREAMING {
+        return Err(ClaimError::ModeNotConfirmed { mode: mode.0 });
+    }
+    Ok(())
+}
+
+/// Recognises the reports that mean the claim is lost (spec §5.3): the
+/// display's mode-change event to any mode but `a0`, and the `KEEP_ALIVE`
+/// expiry event. One expiry sends both in the same millisecond (first
+/// light, `13 ff 02 10 cb a1` and `11 ff 04 00`); [`ClaimWatch::reclaim_on`]
+/// turns them into one reclaim.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClaimWatch {
+    device: u8,
+    display: u8,
+    keep_alive: Option<u8>,
+}
+
+impl ClaimWatch {
+    /// Watches the mode-change events of the display at `display_index` on
+    /// the VLP plane of `device_index`.
+    #[must_use]
+    pub const fn new(device_index: u8, display_index: u8) -> Self {
+        Self {
+            device: device_index,
+            display: display_index,
+            keep_alive: None,
+        }
+    }
+
+    /// Also watches the expiry event of `KEEP_ALIVE` at `keep_alive_index`
+    /// on the classic plane, once the keep-alive runs.
+    #[must_use]
+    pub const fn with_keep_alive(mut self, keep_alive_index: u8) -> Self {
+        self.keep_alive = Some(keep_alive_index);
+        self
+    }
+
+    /// True when `frame` reports a lost claim.
+    #[must_use]
+    pub fn is_loss(&self, frame: &Frame) -> bool {
+        self.is_mode_event(frame) && frame.params.first() != Some(&DisplayMode::STREAMING.0)
+            || self.is_expiry(frame)
+    }
+
+    /// Re-sends `setMode(a0)`, confirmed with `getMode`, when `frame`
+    /// reports a lost claim; true when it did, so the caller repaints.
+    /// The mode-change and expiry events kept while the reclaim waited for
+    /// its replies (the twin of the event that caused it, the `a0`
+    /// announcement of its own `setMode`) are dropped: the confirmed `a0`
+    /// is newer than they are.
+    ///
+    /// # Errors
+    ///
+    /// [`ClaimError::ModeNotConfirmed`] and the request errors.
+    pub fn reclaim_on<T: HidTransport>(
+        &self,
+        hidpp: &mut Hidpp<T>,
+        frame: &Frame,
+    ) -> Result<bool, ClaimError> {
+        if !self.is_loss(frame) {
+            return Ok(false);
+        }
+        stream(hidpp, self.display)?;
+        hidpp.discard_kept(|kept| self.is_mode_event(kept) || self.is_expiry(kept));
+        Ok(true)
+    }
+
+    fn is_mode_event(self, frame: &Frame) -> bool {
+        frame.report == ReportId::VlpControl
+            && frame.device_index == self.device
+            && frame.feature_index == self.display
+            && frame.function == EVENT_MODE_CHANGED
+            && frame.swid == 0
+    }
+
+    fn is_expiry(self, frame: &Frame) -> bool {
+        frame.report == ReportId::Long
+            && frame.device_index == self.device
+            && Some(frame.feature_index) == self.keep_alive
+            && frame.function == keep_alive::EVENT_EXPIRED
+            && frame.swid == 0
+    }
 }
 
 /// The modes the display accepts (display fn3), in the device's order.

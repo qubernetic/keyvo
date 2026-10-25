@@ -14,7 +14,7 @@ use keyvo_core::clock::Clock;
 use keyvo_core::hid::HidTransport;
 use keyvo_hid::image::{self as lcd, ImageConfig, Target};
 
-use crate::session::Session;
+use crate::session::{Inbound, Session};
 
 /// JPEG quality of a fill, inside the 85 to 95 of spec §5.5.
 const JPEG_QUALITY: u8 = 90;
@@ -140,20 +140,30 @@ pub fn fill<T: HidTransport, C: Clock>(
 }
 
 /// Keeps the claim for `duration` after a fill: pings when due and sleeps
-/// in between, reading the time from `clock`.
+/// in between, reading the time from `clock`. After every ping it reads
+/// what the device sent; a lost claim is taken back and `repaint` paints
+/// the image again (spec §5.3), so the panel is back within one period.
 ///
 /// # Errors
 ///
-/// The ping's request errors.
+/// The ping's request errors, the reclaim's errors and those of `repaint`.
 pub fn hold<T: HidTransport, C: Clock>(
     session: &mut Session<T, C>,
     clock: &impl Clock,
     duration: Duration,
     mut sleep: impl FnMut(Duration),
+    mut repaint: impl FnMut(&mut Session<T, C>) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
     let start = clock.now();
     loop {
         session.tick()?;
+        let mut reclaimed = false;
+        while let Some(inbound) = session.next_frame(Duration::ZERO)? {
+            reclaimed |= inbound == Inbound::Reclaimed;
+        }
+        if reclaimed {
+            repaint(session)?;
+        }
         let elapsed = clock.now().saturating_duration_since(start);
         let Some(left) = duration.checked_sub(elapsed).filter(|left| !left.is_zero()) else {
             return Ok(());
@@ -192,8 +202,13 @@ pub(crate) mod tests {
     /// The claim, then for every target the fragments of `source`'s JPEG,
     /// each answered by its ACK (`13 ff 02 <fn|swid> c<index> 00 <index>`).
     pub(crate) fn script(source: &Source, targets: &[Target], config: &ImageConfig) -> String {
+        fixture("display-claim.txt") + &paints(source, targets, config)
+    }
+
+    /// For every target the fragments of `source`'s JPEG with their ACKs.
+    pub(crate) fn paints(source: &Source, targets: &[Target], config: &ImageConfig) -> String {
         let geometry = geometry();
-        let mut script = fixture("display-claim.txt");
+        let mut script = String::new();
         for target in targets {
             let rect = target.rect(&geometry).unwrap();
             let jpeg = source.jpeg(rect.width, rect.height).unwrap();
@@ -323,12 +338,53 @@ pub(crate) mod tests {
         let mut session =
             Session::open(replay(&script), &clock, Some(KeepAliveTiming::default())).unwrap();
         let mut sleeps = Vec::new();
-        hold(&mut session, &clock, 2 * DEFAULT_PERIOD, |wait| {
-            sleeps.push(wait);
-            clock.advance(wait);
-        })
+        hold(
+            &mut session,
+            &clock,
+            2 * DEFAULT_PERIOD,
+            |wait| {
+                sleeps.push(wait);
+                clock.advance(wait);
+            },
+            |_| panic!("nothing was lost"),
+        )
         .unwrap();
         assert_eq!(sleeps, [DEFAULT_PERIOD, DEFAULT_PERIOD]);
         assert!(session.hidpp.transport_mut().is_done());
+    }
+
+    #[test]
+    fn hold_repaints_the_image_after_a_reclaim() {
+        let config = ImageConfig::default();
+        let source = Source::Color(ORANGE);
+        let panel = paints(&source, &[Target::Panel], &config);
+        // The paint, the expiry's two events after its last ACK, the
+        // reclaim, the same paint again.
+        let script = format!(
+            "{}{panel}{}{}{panel}",
+            fixture("display-claim.txt"),
+            fixture("claim-lost.txt"),
+            fixture("display-reclaim.txt"),
+        );
+        let clock = FakeClock::new();
+        let mut session = Session::open(replay(&script), &clock, None).unwrap();
+        let mut out = Vec::new();
+        fill(&mut session, &source, Placement::Panel, &config, &mut out).unwrap();
+        let mut repaints = 0;
+        hold(
+            &mut session,
+            &clock,
+            DEFAULT_PERIOD,
+            |wait| clock.advance(wait),
+            |session| {
+                repaints += 1;
+                fill(session, &source, Placement::Panel, &config, &mut out)
+            },
+        )
+        .unwrap();
+        assert_eq!(repaints, 1);
+        assert!(session.hidpp.transport_mut().is_done());
+        let text = String::from_utf8(out).unwrap();
+        assert_eq!(text.lines().filter(|l| l.starts_with("panel")).count(), 2);
     }
 }

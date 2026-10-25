@@ -24,7 +24,6 @@ const PATIENCE: Duration = Duration::from_secs(10);
 
 fn settings() -> Settings {
     Settings::from_timing(&Timing {
-        keep_alive_period: Duration::from_secs(3600),
         divert_settle: Duration::ZERO,
         divert_spacing: Duration::ZERO,
         render_coalesce: Duration::from_millis(5),
@@ -166,6 +165,32 @@ fn a_lost_device_is_reopened_reclaimed_and_repainted() {
 }
 
 #[test]
+fn a_lost_claim_is_reclaimed_once_and_every_key_repainted() {
+    let pad = Pad::new(&(startup() + &support::fixture("display-reclaim.txt")));
+    let actor = Actor::start(Pads::new([pad.clone()]));
+    assert_eq!(actor.next(), Event::Connected { keys: 9 });
+    let specs = labelled(&["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
+    actor.commands.send(Command::Paint(specs.clone())).unwrap();
+    let all: Vec<u8> = (1..=9).collect();
+    assert_eq!(actor.next(), Event::Painted { keys: all.clone() });
+
+    pad.send(&support::reports(&support::fixture("claim-lost.txt")));
+    assert_eq!(actor.next(), Event::Reclaimed);
+    assert_eq!(actor.next(), Event::Painted { keys: all });
+    assert!(pad.script_done());
+    let images = pad.images();
+    assert_eq!(images[9..], images[..9]);
+    // The twin event gives no second reclaim.
+    assert!(
+        actor
+            .events
+            .recv_timeout(Duration::from_millis(100))
+            .is_err()
+    );
+    actor.stop();
+}
+
+#[test]
 fn a_missing_device_is_reported_once_and_paints_wait_for_it() {
     let actor = Actor::start(Pads::new([]));
     assert_eq!(
@@ -193,7 +218,7 @@ fn a_failed_claim_is_reported_and_retried() {
     // The keep-alive start only; the claim's first request is unexpected.
     let broken = Pad::new(&support::exchanges(
         &support::fixture("keep-alive-ping.txt"),
-        0..2,
+        0..1,
     ));
     let good = Pad::new(&startup());
     let actor = Actor::start(Pads::new([broken, good]));

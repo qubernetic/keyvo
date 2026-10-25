@@ -1,0 +1,13 @@
+# The reclaim after a lost claim (spec §5.3) in keyvo's order: display fn4
+# setMode(a0), echoed, then fn5 confirms a0; the unsolicited mode-change
+# event announcing a0 arrives before the reply. All requests use swid 0xe.
+#
+# The frames are steps 6 and 7 of display-claim.txt. Source: hcooper
+# 03-options-plus-startup.pcap, frames #1765, #1767, #1769, #1770, #1773
+# (docs/research/hcooper-startup-keypad-sequence.txt lines 138-142). MIT,
+# see README.md.
+> 13 ff 02 4e e0 a0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 4e c0 a0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+> 13 ff 02 5e e0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 10 c6 a0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 5e c0 a0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00

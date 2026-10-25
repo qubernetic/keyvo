@@ -1,0 +1,14 @@
+# A lost display claim (spec §5.3). When the keep-alive timeout runs out
+# before the next ping, the Keypad sends the VLP display mode-change event
+# to a1 (display index 2, function 1, swid 0, mode a1) and the classic
+# KEEP_ALIVE expiry event (index 0x04, function 0, swid 0) in the same
+# millisecond, and the panel shows the logo again. Appended after a `>`
+# line the two reports answer it; on their own they are unsolicited.
+#
+# Source: the first-light report on qubernetic/keyvo#40 (2026-10-25,
+# firmware U1 66.00.B0017, bus sniffer on the owner's Keypad), sections 3
+# and 5: mode event `13 ff 02 10 cb a1`, KEEP_ALIVE event `11 ff 04 00`.
+# The report quotes the leading bytes; the rest is the zero padding every
+# captured report of these lengths carries.
+< 13 ff 02 10 cb a1 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00

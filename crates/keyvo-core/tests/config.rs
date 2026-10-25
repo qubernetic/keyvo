@@ -122,6 +122,63 @@ fn invalid_fixtures_report_file_line_and_column() {
 }
 
 #[test]
+fn a_keep_alive_period_not_below_the_timeout_is_refused() {
+    let cases = [
+        (
+            "invalid/keep-alive-period-equal.toml",
+            4,
+            "`keep_alive_period` (3000 ms) must be shorter than `keep_alive_timeout` (3000 ms)",
+        ),
+        (
+            "invalid/keep-alive-period-above.toml",
+            2,
+            "`keep_alive_period` (3500 ms) must be shorter than `keep_alive_timeout` (3000 ms)",
+        ),
+    ];
+    for (name, line, message) in cases {
+        let diagnostic = parse(name).unwrap_err();
+        assert_eq!(diagnostic.path, fixture(name));
+        assert_eq!(
+            diagnostic.position,
+            Some(Position { line, column: 21 }),
+            "{diagnostic}"
+        );
+        assert!(diagnostic.message.starts_with(message), "{diagnostic}");
+    }
+    // A timeout lowered to the period points at the timeout.
+    let text = "[timing]\nkeep_alive_timeout = 1000\n";
+    let diagnostic = Config::from_toml(text, Path::new("config.toml")).unwrap_err();
+    assert_eq!(
+        diagnostic.position,
+        Some(Position {
+            line: 2,
+            column: 22
+        })
+    );
+    // Just below is fine.
+    let text = "[timing]\nkeep_alive_period = 2999\n";
+    assert!(Config::from_toml(text, Path::new("config.toml")).is_ok());
+}
+
+#[test]
+fn the_keep_alive_rule_names_the_keys_it_is_given() {
+    assert_eq!(
+        keyvo_core::config::keep_alive_problem(
+            ("--keep-alive-period", ms(3000)),
+            ("--keep-alive-timeout", ms(3000)),
+        )
+        .unwrap()
+        .split(';')
+        .next(),
+        Some("--keep-alive-period (3000 ms) must be shorter than --keep-alive-timeout (3000 ms)")
+    );
+    assert_eq!(
+        keyvo_core::config::keep_alive_problem(("p", ms(400)), ("t", ms(500))),
+        None
+    );
+}
+
+#[test]
 fn durations_serialize_as_milliseconds_and_read_back() {
     let config = parse("valid/partial.toml").unwrap();
     let text = toml::to_string(&config).unwrap();

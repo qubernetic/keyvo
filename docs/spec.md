@@ -322,6 +322,24 @@ version `docs/hardware-notes.md` records.
   stall longer than a period it sends one ping and restarts from then
   instead of catching up with a burst. A failed ping stays due. The device
   echoes the granted timeout.
+- A ping has to arrive while the timeout of the one before still runs, so
+  `keep_alive_period` stays below `keep_alive_timeout` (§6.1). First light
+  on firmware `U1 66.00.B0017` (#40): with period and timeout both 3000 ms
+  the timeout ran out 3.000 s after the first ping and the claim was lost,
+  although the device kept answering the pings.
+- **Lost claim and recovery.** When the timeout runs out, the Keypad sends
+  the display mode-change event to `a1` (`13 ff 02 10 cb a1`) and the
+  `KEEP_ALIVE` expiry event (`11 ff 04 00`, function 0, software id 0) in
+  the same millisecond, and the panel shows the logo; it stays there until
+  a host sends `setMode(a0)` again. `keyvo_hid::display::ClaimWatch` treats
+  either report, and a mode-change event to any other mode than `a0`, as a
+  lost claim: it re-sends `setMode(a0)`, confirms it with `getMode`, and
+  drops the mode-change and expiry events read in the meantime, so one
+  expiry gives one reclaim. The caller then repaints: the daemon's device
+  actor paints every key of the current state again (`Event::Reclaimed`,
+  then `Painted`), `keyvo fill --hold` paints its image again, `keyvo keys`
+  only reclaims. Fixtures: `claim-lost.txt` and `display-reclaim.txt` in
+  `tests/protocol-fixtures/hid/`.
 - The firmware self-dims after idle or USB suspend while still accepting
   writes; the daemon re-asserts brightness after resume, after reconnect and
   on wake events (§5.7). Exact revert and dim timings are measured in M0-1
@@ -528,12 +546,17 @@ and `[timing].reply_timeout`.
   the rectangle, per key in the geometry's order (`--all`, the default) or
   on the panel's rectangle (§5.5); one line per write with the JPEG size,
   the fragments and the ACKs. `--hold <seconds>` keeps the claim and the
-  keep-alive afterwards; `--index-base` and `--swid` set the writer
-  settings the hardware check compares.
+  keep-alive afterwards and reads what the device sends after every ping:
+  a lost claim (§5.3) is taken back, reported as `display reclaimed after
+  a lost claim; painting again`, and the image is painted again.
+  `--index-base` and `--swid` set the writer settings the hardware check
+  compares.
 - `keys` and `fill` take `--no-keep-alive`, `--keep-alive-period <ms>` and
   `--keep-alive-timeout <ms>` for the keep-alive measurements; without them
   the `[timing]` defaults apply (the configuration file is read from the
-  profile slice on).
+  profile slice on). A period that is not below the timeout is refused
+  before the device is opened (§6.1). `keys` reclaims a lost claim too and
+  says so on stderr.
 
 ---
 
@@ -584,6 +607,14 @@ Defaults, all configurable under `[timing]` in `config.toml`:
 | `exec_timeout` | 30000 ms | an `exec` action still running after this long is killed with its process group and fails, §8 |
 | `reconnect_interval` | 1000 ms | wait between two attempts to open the Keypad after it is gone or not found, §5.1 |
 | `reload_settle` | 100 ms | quiet time after the last change in the configuration directory before the daemon reloads it, §7.2 |
+
+`keep_alive_period` must be shorter than `keep_alive_timeout`: a period at
+or above the timeout lets the claim run out between two pings (§5.3). The
+configuration is refused with the file, the line of the value that was set
+(the period first) and both key names, for example
+``config.toml:4:21: `keep_alive_period` (3000 ms) must be shorter than
+`keep_alive_timeout` (3000 ms)``. `keyvo fill` and `keyvo keys` check `--keep-alive-period`
+and `--keep-alive-timeout` the same way before they open the device.
 
 ### 6.2 Window/context detection
 
@@ -1482,6 +1513,11 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 6c (2026-10-25)**: §5.3 the period-below-timeout
+  rule, the lost-claim events of a keep-alive expiry from first light (#40)
+  and the reclaim with its repaint; §6.1 the rule next to the two
+  keep-alive rows, enforced for `[timing]` and the `fill`/`keys` flags.
 
 - **v0.3, pre-alpha slice 16 (2026-10-25)**: §4 and §4.1 `Editor` and
   `Problem` in `keyvo-client`; §7.1 round-trip editing (`keyvo_core::edit`),

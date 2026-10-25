@@ -67,7 +67,7 @@
         },
         "keep_alive_period": {
           "default": 1000,
-          "description": "Time between two keep-alive pings (spec §5.3). Default 1000 ms.",
+          "description": "Time between two keep-alive pings (spec §5.3); must be shorter than\n`keep_alive_timeout`. Default 1000 ms.",
           "format": "uint64",
           "minimum": 0,
           "type": "integer"

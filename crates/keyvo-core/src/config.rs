@@ -31,8 +31,54 @@ impl Config {
     ///
     /// A [`Diagnostic`] with the position of the first problem.
     pub fn from_toml(text: &str, path: &Path) -> Result<Self, Diagnostic> {
-        toml::from_str(text).map_err(|e| Diagnostic::from_toml(path, text, &e))
+        let config: Self =
+            toml::from_str(text).map_err(|e| Diagnostic::from_toml(path, text, &e))?;
+        let timing = config.timing;
+        if let Some(message) = keep_alive_problem(
+            ("`keep_alive_period`", timing.keep_alive_period),
+            ("`keep_alive_timeout`", timing.keep_alive_timeout),
+        ) {
+            // The text parsed once already; the spans point at the key the
+            // user set, the period first.
+            let spans = toml::from_str::<Spans>(text).unwrap_or_default().timing;
+            let span = spans
+                .keep_alive_period
+                .or(spans.keep_alive_timeout)
+                .map(|value| value.span());
+            return Err(Diagnostic::at(path, text, span, message));
+        }
+        Ok(config)
     }
+}
+
+/// The rule of spec §6.1 between the two keep-alive values: every ping has
+/// to come while the timeout of the one before still runs, so the period
+/// stays below the timeout. The message names the two settings as given
+/// (config keys or command-line flags); `None` when the rule holds.
+#[must_use]
+pub fn keep_alive_problem(period: (&str, Duration), timeout: (&str, Duration)) -> Option<String> {
+    let ((period_name, period), (timeout_name, timeout)) = (period, timeout);
+    (period >= timeout).then(|| {
+        format!(
+            "{period_name} ({} ms) must be shorter than {timeout_name} ({} ms); the Keypad \
+             drops the display claim when the timeout runs out before the next ping",
+            period.as_millis(),
+            timeout.as_millis()
+        )
+    })
+}
+
+/// Where the keep-alive values stand in the text, for the diagnostic.
+#[derive(Debug, Default, Deserialize)]
+struct Spans {
+    #[serde(default)]
+    timing: TimingSpans,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct TimingSpans {
+    keep_alive_period: Option<toml::Spanned<toml::Value>>,
+    keep_alive_timeout: Option<toml::Spanned<toml::Value>>,
 }
 
 /// The `[timing]` table (spec §6.1).
@@ -56,7 +102,8 @@ pub struct Timing {
     #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub page_grace: Duration,
-    /// Time between two keep-alive pings (spec §5.3). Default 1000 ms.
+    /// Time between two keep-alive pings (spec §5.3); must be shorter than
+    /// `keep_alive_timeout`. Default 1000 ms.
     #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub keep_alive_period: Duration,

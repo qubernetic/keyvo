@@ -32,7 +32,6 @@ const PRESSES: usize = 5000;
 
 const CONFIG: &str = "\
 [timing]
-keep_alive_period = 3600000
 divert_settle = 0
 divert_spacing = 0
 render_coalesce = 5
