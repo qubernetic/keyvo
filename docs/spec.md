@@ -218,10 +218,11 @@ Core rendering is, as the target, the pure function
 ```
 
 so the whole context engine is testable without a device. As built
-(pre-alpha) it is `keyvo_core::render::page(profile, page, keys)`: the
-specs of keys 1 to `keys` of one page; the state machine picks the
-profile and page, overlays and dialpad bindings are not built yet, and
-the accent is read from the profile.
+(pre-alpha) it is `keyvo_core::render::page(stack, keys)`: the specs of
+keys 1 to `keys` of one page over the global layer
+(`keyvo_core::stack::Stack`, §6.1); the state machine picks the profile
+and page, overlays and dialpad bindings are not built yet, and the
+accent is read from the profile on top.
 
 ### 4.2 Device ownership (Windows coexistence)
 
@@ -798,7 +799,13 @@ context page. A profile's *context page* is its page named `context`,
 else its first page; the *general page* is the global profile's page
 named `general`. The daemon reports every change of profile, page or
 mode as a `Switched` event and in the log, then repaints the keys that
-differ. Key states (`running`, `success`, `error`) belong to a key of one
+differ. The stack has two layers (`keyvo_core::stack`): under every page
+of an app profile lies the global profile's context page, so a key the app
+profile does not define shows and runs the global key, with the app
+profile's accent; a key the app profile defines hides the global one, even
+without an action. The global profile has nothing under it. The trace
+entry (`layer`), `KEYVO_LAYER` and the GUI's mirror name the layer that
+supplied the key. `keyvo preview` renders one profile alone. Key states (`running`, `success`, `error`) belong to a key of one
 page of one profile: an `exec` started on one profile keeps its look
 there and never shows on another.
 
@@ -1114,7 +1121,11 @@ mouse.dpi            = 1200
   stdout. `error` stays until the next press of the key.
 - Press kinds: `short`, `long`, `repeat` (hold).
 - A global profile always exists; app profiles overlay it; matching priority
-  is explicit, never alphabetical.
+  is explicit, never alphabetical. As built (pre-alpha slice R2): the
+  overlay is per key. A key an app profile's page leaves out comes from the
+  global profile's context page (§6.1); to hide a global key on an app
+  page, define the key there (a key without an action is unbound and
+  blanks nothing but the global key).
 - Hot-reload with inotify (mtime poll fallback), `SIGHUP` and the socket
   `reload` command; writes are atomic.
 - Hot-reload as built (pre-alpha, `keyvo_daemon::watch`): inotify watches
@@ -1235,9 +1246,12 @@ give it and prints the trace entry.
 As built (pre-alpha, `keyvo_daemon::exec`): the command runs as `sh -c
 <cmd>` in its own process group, with stdin and stdout on `/dev/null` and
 stderr in the daemon's log. It receives `KEYVO_KEY`, `KEYVO_PROFILE`,
-`KEYVO_PAGE`, `KEYVO_PRESS` and `KEYVO_LAYER` (`global` for the global
-profile, else `app`); the window, socket and project variables come with
-their slices, and `KEYVO_STATE` is not read yet. Its exit code is the
+`KEYVO_PAGE`, `KEYVO_PRESS`, `KEYVO_LAYER` (the layer that supplied the
+key: `global` for a key of the global profile, also one under an app
+profile, else `app`; `KEYVO_PROFILE` stays the active profile) and
+`KEYVO_SOCKET` (the daemon's control socket, so the command can run
+`keyvo ctl`); the window and project variables come with their slices,
+and `KEYVO_STATE` is not read yet. Its exit code is the
 trace result (`exited`, with the duration); past `[timing].exec_timeout`
 the whole process group is killed and the result is `failed` with "timed
 out after <n> ms". A chord's result is `sent` with its key events, or
@@ -1245,7 +1259,9 @@ out after <n> ms". A chord's result is `sent` with its key events, or
 
 **Inward (script → daemon).** Unix domain socket at
 `$XDG_RUNTIME_DIR/keyvo/keyvo.sock`, mode `0600`, owned by the session
-user (named pipe on Windows). Newline-delimited JSON, **versioned from day
+user (named pipe on Windows). The daemon and every client resolve it the
+same way: the `--socket` flag, else `$KEYVO_SOCKET` when set and not
+empty, else the default. Newline-delimited JSON, **versioned from day
 one**: every message carries `"v": 1`. Trust model: same as `ssh-agent`:
 any process running as the user may control the pad (see `SECURITY.md`).
 No D-Bus façade in v1 (ADR-0003); the KWin script talks to a private D-Bus
@@ -1539,9 +1555,10 @@ reduced to the tokens of
 `app/src/styles/tokens.css` (the feedback states use the pad theme's
 colours); the KDE and GNOME readers come with M4a-1. `app/src-tauri`
 (identifier `org.qubernetic.keyvo`, bundling off) has six commands, all
-over `keyvo-client`: `status`; `tiles` (a page from the user's
-configuration directory, each key as a PNG data URL with its label and
-action); `press` (a dry-run press, the trace entry back); `subscribe` (a
+over `keyvo-client`: `status`; `tiles` (a page from the daemon's
+configuration directory, `config_dir` of its `status` reply, at the key
+count and tile size the frontend passes from the reported geometry; each
+key as a PNG data URL with its label, action and layer); `press` (a dry-run press, the trace entry back); `subscribe` (a
 subscription with a trace replay on its own thread, each update emitted on
 the Tauri event `keyvo://update`; a newer `subscribe` stops the older one);
 `key` (a key's file and fields, `Editor::key`); `edit_key` (new fields
@@ -1565,20 +1582,27 @@ and header of `docs/design/gui-ux.md` §2. On start it asks `status`, then
 subscribes with a replay of the newest 20 trace entries; `app/src/lib/home.ts`
 folds the updates the way `Mirror` does.
 
-- **Mirror.** A 3x3 `grid` of the tiles of the active profile and page,
-  fetched again when the view changes and after every reload. A key held
-  on the device is outlined. A page the GUI's configuration cannot render
-  shows why.
+- **Mirror.** A `grid` of the tiles of the active profile and page,
+  fetched again when the view changes and after every reload. Rows, key
+  count and tile size come from the `geometry` the daemon reports for the
+  Keypad (`status` and the `device` event, §8); the app hard-codes none of
+  them. A key starts a new row when its top edge is below the middle of
+  the row's first key. The last geometry stays when the Keypad goes; before
+  any Keypad reported one, a note replaces the grid. A key the active app
+  profile does not define shows the global key (§6.1) with a "global"
+  mark. A key held on the device is outlined. A page the daemon's
+  configuration cannot render shows why.
 - **Status strip.** Device, profile, page, mode and the focused window, and
   the reload error while the configuration does not load.
 - **Event list.** The trace entries, newest first, one line each: the key,
-  the press kind, whether it was simulated, the action and its result.
+  the press kind, whether it was simulated, the layer that supplied the
+  key (`app layer` or `global layer`), the action and its result.
 - **Virtual pad.** A click is a short dry-run press, a right click a long
   one; the one-line result shows under the grid. On the grid, `1` to `9`
-  and the arrows select a key, `Space` presses it short and `Shift+Space`
-  long.
-- **Accessibility.** Each key's `aria-label` names the key, its label and
-  its action; the grid has rows and cells, the selected cell is
+  (up to the key count) and the arrows select a key, `Space` presses it
+  short and `Shift+Space` long.
+- **Accessibility.** Each key's `aria-label` names the key, its label, its
+  action and its layer; the grid has rows and cells, the selected cell is
   `aria-selected`, and the result line is a `status` region.
 - **Daemon unreachable.** When `status` fails or the subscription ends, an
   alert says why, the mirror keeps its last frame, and Retry connects
@@ -1792,6 +1816,15 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha slice R2 (2026-10-26)**: §6.1 the global layer as
+  built: a key an app profile leaves out shows and runs the global
+  profile's context-page key (`keyvo_core::stack`), and the trace entry
+  names its `layer`; §7.2 the per-key overlay rule; §8 `KEYVO_LAYER` is the
+  supplying layer, `KEYVO_SOCKET` reaches `exec` children, and the daemon
+  resolves its socket as flag, `$KEYVO_SOCKET`, default; `status` carries
+  `config_dir` and the device `geometry` (`docs/socket-api.md`); §10 the
+  app lays the mirror out from that geometry, marks global keys and edits
+  the daemon's configuration directory.
 - **v0.3, pre-alpha slice 6m (2026-10-25)**: §15 M4b (Flathub) moves to
   right after the pre-alpha, M3 starts with a static-analysis pass over the
   Dialpad features (#92). Matches `docs/roadmap.md`.

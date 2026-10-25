@@ -510,6 +510,14 @@ no-strip expectations stay.
 - [ ] #93 `kill -STOP $(pgrep -x keyvo-daemon)`, wait 5 s, `kill -CONT $(pgrep -x keyvo-daemon)`: after one `claim lost, display reclaimed` the whole page comes back in one update, no logo strip beside a key.
 - [ ] #93 The daemon's output in T1 has no `display capabilities:` warning (the daemon read `maxImageSize` from fn0) and no `panel: not painted` line during the steps above.
 
+### Global key fallback and reported geometry (#99)
+
+- [ ] #99 With the example profiles of section 3 (`konsole.toml` has no key 3), start `bin/keyvo-daemon` and focus Konsole: key 3 on the pad shows the global "Type" key with the green Konsole accent, and pressing it types "Key" into Konsole. The daemon's `press:` log line has `layer: Some(Global)` and `profile: "konsole"`.
+- [ ] #99 `bin/keyvo-app` with Konsole focused: key 3 of the mirror shows the same tile with a "global" mark, its screen-reader name ends in "global layer", and a click on it adds an event line `Key 3, simulated, global layer: chord ...`. Keys 1 and 2 have no mark.
+- [ ] #99 The mirror's nine keys have the size and the 3x3 layout of the Keypad without any key count or size in the app; unplug the Keypad: the mirror keeps its layout.
+- [ ] #99 `bin/keyvo-daemon --config-dir /tmp/kv-other` (a copy of `~/.config/keyvo` with one label changed): `keyvo ctl status` shows `config_dir` `/tmp/kv-other`, and the app's mirror and key editor show and edit that copy, not `~/.config/keyvo`.
+- [ ] #99 `KEYVO_SOCKET=/tmp/kv.sock bin/keyvo-daemon`, then `KEYVO_SOCKET=/tmp/kv.sock keyvo ctl status` answers; a key with `cmd = "keyvo ctl status > /tmp/kv-status.json"` writes the status (the child got `KEYVO_SOCKET`).
+
 ### First-light records (#75)
 
 - [ ] #75 Read `docs/hardware-notes.md`, "Measurements", against the first-light report on #40 and its logs: every number and log citation matches.
