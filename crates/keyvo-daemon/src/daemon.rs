@@ -51,7 +51,7 @@ use keyvo_hid::reprog::{PAGE_LEFT, PAGE_RIGHT};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::time::Instant;
 
-use crate::device::{self, Command, Connector};
+use crate::device::{self, Command, Connector, Frame};
 use crate::engine::Engine;
 use crate::exec;
 
@@ -319,8 +319,11 @@ impl<I: InputInjector> Controller<'_, I> {
 
     fn flush(&mut self) {
         self.flush_at = None;
-        let specs = self.engine.specs(Instant::now().into_std());
-        let _ = self.commands.send(Command::Paint(specs));
+        let frame = Frame {
+            accent: self.engine.active().profile.accent,
+            keys: self.engine.specs(Instant::now().into_std()),
+        };
+        let _ = self.commands.send(Command::Paint(frame));
     }
 
     fn device(&mut self, event: device::Event) {

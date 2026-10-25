@@ -242,9 +242,11 @@ fn the_demo_page_renders_on_the_captured_panel() {
         }
     );
     let rgb = panel.rgb();
-    // Between the keys the panel stays black.
+    // Between the keys the panel shows the profile's panel background.
     let at = |x: usize, y: usize| &rgb[(y * 480 + x) * 3..(y * 480 + x) * 3 + 3];
-    assert_eq!(at(160, 160), &[0, 0, 0]);
+    let background = renderer.panel_color(demo().profile.accent);
+    assert_eq!(background, Color::rgb(16, 28, 43));
+    assert_eq!(at(160, 160), &[background.r, background.g, background.b]);
     // The middle of key 5 is the key's own tile.
     let key5 = renderer.tile(&specs[4], KEY).unwrap().rgb();
     assert_eq!(
