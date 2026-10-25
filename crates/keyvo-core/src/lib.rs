@@ -21,6 +21,7 @@ pub mod render;
 pub mod schema;
 pub mod socket;
 pub mod state;
+pub mod store;
 pub mod trace;
 
 /// Version of the keyvo workspace, taken from `Cargo.toml` at compile time.

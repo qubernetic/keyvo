@@ -28,14 +28,31 @@ use crate::profile::{GLOBAL_ID, Profile};
 /// `$HOME/.config/keyvo`; `None` without either.
 #[must_use]
 pub fn config_dir(xdg_config_home: Option<&OsStr>, home: Option<&OsStr>) -> Option<PathBuf> {
-    fn absolute(value: Option<&OsStr>) -> Option<&Path> {
-        value.map(Path::new).filter(|p| p.is_absolute())
-    }
     absolute(xdg_config_home)
         .map(Path::to_path_buf)
         .or_else(|| absolute(home).map(|h| h.join(".config")))
         .map(|base| base.join("keyvo"))
 }
+
+/// `value` as a path when it is an absolute one (XDG Base Directory spec:
+/// an empty or relative value is ignored).
+fn absolute(value: Option<&OsStr>) -> Option<&Path> {
+    value.map(Path::new).filter(|p| p.is_absolute())
+}
+
+/// The state directory (spec §7.1), home of the snapshots the GUI takes
+/// before every write: `$XDG_STATE_HOME/keyvo` when it is an absolute
+/// path, else `$HOME/.local/state/keyvo`; `None` without either.
+#[must_use]
+pub fn state_dir(xdg_state_home: Option<&OsStr>, home: Option<&OsStr>) -> Option<PathBuf> {
+    absolute(xdg_state_home)
+        .map(Path::to_path_buf)
+        .or_else(|| absolute(home).map(|h| h.join(".local/state")))
+        .map(|base| base.join("keyvo"))
+}
+
+/// The snapshot directory inside [`state_dir`].
+pub const SNAPSHOTS: &str = "snapshots";
 
 /// The daemon's runtime directory, home of the socket (spec §8) and the
 /// `KWin` script (spec §6.2): `$XDG_RUNTIME_DIR/keyvo` when that is an
