@@ -8,6 +8,7 @@
 //! Keypad with.
 
 pub mod client;
+pub mod follow;
 pub mod mirror;
 pub mod tiles;
 
@@ -15,6 +16,7 @@ use std::ffi::OsStr;
 use std::path::PathBuf;
 
 pub use client::{Client, ClientError};
+pub use follow::{Update, follow};
 pub use mirror::Mirror;
 pub use tiles::{TileError, Tiles};
 

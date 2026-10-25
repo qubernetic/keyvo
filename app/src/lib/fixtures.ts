@@ -1,0 +1,47 @@
+// Test helper: the shared socket fixtures in tests/protocol-fixtures/socket/
+// as parsed messages. Only the tests import it.
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { parseServerMessage, type Event, type Reply } from "./protocol";
+
+const FIXTURES = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../tests/protocol-fixtures/socket",
+);
+
+function messages(name: string) {
+  return readFileSync(join(FIXTURES, name), "utf8")
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map(parseServerMessage);
+}
+
+/** Every line of events.ndjson, in file order. */
+export function events(): Event[] {
+  return messages("events.ndjson").flatMap((message) =>
+    message.kind === "event" ? [message.event] : [],
+  );
+}
+
+/** The events of class `name` in events.ndjson, in file order. */
+export function eventsOf<E extends Event["event"]>(name: E): (Event & { event: E })[] {
+  return events().filter((event): event is Event & { event: E } => event.event === name);
+}
+
+/** `list[index]`, which the test knows is there. */
+export function nth<T>(list: readonly T[], index: number): T {
+  const item = list[index];
+  if (item === undefined) {
+    throw new Error(`the fixture has no item ${index}`);
+  }
+  return item;
+}
+
+/** The result of every ok line of responses.ndjson, in file order. */
+export function responses(): Reply[] {
+  return messages("responses.ndjson").flatMap((message) =>
+    message.kind === "response" && message.response.ok ? [message.response.result] : [],
+  );
+}

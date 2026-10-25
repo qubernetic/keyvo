@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use keyvo_client::tiles::{TileError, Tiles};
+use keyvo_client::tiles::{self, TileError, Tiles};
 use keyvo_core::layout::{self, Profiles};
 use keyvo_core::render::{self, Renderer, TileSize};
 use keyvo_core::state::{Mode, View};
@@ -44,6 +44,36 @@ fn a_page_renders_like_the_daemon_paints_it() {
             assert_eq!(tile.rgb(), painted.rgb(), "{id}");
         }
     }
+}
+
+#[test]
+fn the_keys_of_a_page_carry_label_and_action_in_key_order() {
+    let keys = tiles::keys(&profiles(), &view("global", 1), 9).unwrap();
+    assert_eq!(keys.len(), 9);
+    assert_eq!(keys[4].label.as_deref(), Some("Mute"));
+    assert_eq!(
+        serde_json::to_value(&keys[4]).unwrap(),
+        serde_json::json!({
+            "label": "Mute",
+            "action": {"type": "exec", "cmd": "wpctl set-mute @DEFAULT_SINK@ toggle"},
+        })
+    );
+    assert_eq!(
+        serde_json::to_value(&keys[0]).unwrap(),
+        serde_json::json!({})
+    );
+}
+
+#[test]
+fn the_keys_of_an_unknown_profile_or_page_are_an_error() {
+    assert!(matches!(
+        tiles::keys(&profiles(), &view("nowhere", 1), 9),
+        Err(TileError::UnknownProfile(_))
+    ));
+    assert!(matches!(
+        tiles::keys(&profiles(), &view("global", 99), 9),
+        Err(TileError::Render(_))
+    ));
 }
 
 #[test]

@@ -2,8 +2,10 @@
 //! the LCD (spec §10, device mirror).
 
 use keyvo_core::layout::Profiles;
+use keyvo_core::profile::{Action, KeySlot};
 use keyvo_core::render::{self, RenderError, Renderer, Tile, TileSize};
 use keyvo_core::state::View;
+use serde::Serialize;
 
 /// Why a page has no tiles.
 #[derive(Debug, thiserror::Error)]
@@ -14,6 +16,48 @@ pub enum TileError {
     /// The page does not render.
     #[error(transparent)]
     Render(#[from] RenderError),
+}
+
+/// What a key of the mirror says besides its pixels: its label and its
+/// action as in the profile, for the GUI to announce.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
+pub struct KeySummary {
+    /// The key's label.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// The key's action; none for an unbound key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<Action>,
+}
+
+/// The `keys` keys of the page `view` shows, in key order.
+///
+/// # Errors
+///
+/// As [`Tiles::page`].
+pub fn keys(profiles: &Profiles, view: &View, keys: u8) -> Result<Vec<KeySummary>, TileError> {
+    let profile = profiles
+        .get(&view.profile)
+        .ok_or_else(|| TileError::UnknownProfile(view.profile.clone()))?;
+    let page = view
+        .page
+        .checked_sub(1)
+        .and_then(|index| profile.pages.get(index))
+        .ok_or_else(|| RenderError::NoSuchPage {
+            profile: view.profile.clone(),
+            page: view.page,
+            pages: profile.pages.len(),
+        })?;
+    Ok((1..=keys)
+        .map(|n| {
+            KeySlot::new(n)
+                .and_then(|slot| page.keys.get(&slot))
+                .map_or_else(KeySummary::default, |key| KeySummary {
+                    label: key.label.clone(),
+                    action: key.action.clone(),
+                })
+        })
+        .collect())
 }
 
 /// Renders pages with the `keyvo-core` renderer.
