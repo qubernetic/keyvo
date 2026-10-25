@@ -10,6 +10,7 @@ pub mod clock;
 pub mod config;
 pub mod diagnostic;
 pub mod feedback;
+pub mod focus;
 pub mod hid;
 pub mod inject;
 pub mod layout;
