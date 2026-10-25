@@ -99,6 +99,13 @@ user is trusted, and nothing else is.
   have placed or changed. The script calls a private object on the session bus; any process of the
   same user can call that object too and so assert a focused window, which
   is no more than `notify_context` on the socket allows.
+- The window class, title and pid the daemon gets from the KWin script are
+  client-asserted: the daemon takes an `Activated` call from any sender on
+  the session bus, not only from KWin. Treat them as a hint for choosing a
+  profile, never as proof of which program has focus. M2 filters the calls
+  by KWin's unique bus name; until then keyvo uses these values only to
+  choose the profile and passes them on in `status` and `context` events
+  as they came.
 - The daemon never runs as root. Device access comes from a udev rule that
   grants the user (or the `input` group) access to the Keypad's `hidraw` nodes
   and to `/dev/uinput`. Running the daemon with elevated privileges is
