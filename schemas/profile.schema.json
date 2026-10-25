@@ -8,8 +8,8 @@
           "description": "Send a key combination, for example `ctrl+shift+g`.",
           "properties": {
             "keys": {
-              "description": "The chord.",
-              "type": "string"
+              "$ref": "#/$defs/Chord",
+              "description": "The chord."
             },
             "type": {
               "const": "chord",
@@ -42,6 +42,11 @@
           "type": "object"
         }
       ]
+    },
+    "Chord": {
+      "description": "Modifiers and a key joined with `+`, steps separated by `,`: `ctrl+shift+g`, `ctrl+?`, `KEY_F13`, `ctrl+k, ctrl+s`.",
+      "minLength": 1,
+      "type": "string"
     },
     "Color": {
       "description": "An RGB color, written #rrggbb (either case).",
