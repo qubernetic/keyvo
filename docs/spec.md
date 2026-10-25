@@ -1394,7 +1394,14 @@ the Tauri event `keyvo://update`; a newer `subscribe` stops the older one);
 `key` (a key's file and fields, `Editor::key`); `edit_key` (new fields
 written into a key, `Editor::set_key`, the fields before it back; an error
 is a `Problem` object with `message` and, when it has a place, `path`,
-`line` and `column`).
+`line` and `column`). `build.rs` declares the six commands in the Tauri app
+manifest, and the main window's capability
+(`app/src-tauri/capabilities/default.json`) allows exactly those and
+`core:event:allow-listen`/`allow-unlisten` for `keyvo://update`; there is
+no `core:default` and no plugin, so the page cannot reach the window,
+path, menu or other core APIs. The CSP loads only the app's own code and
+connects only to the Tauri IPC. `app/src/shell.test.ts` keeps the command
+list, the capability and the CSP as stated here.
 `just app-test` runs `npm ci`, `svelte-check`, vitest, `npm audit
 --audit-level=high` and `cargo deny` on the shell's own lock
 (`app/src-tauri/deny.toml`); `just app-build` builds the frontend and the
@@ -1623,7 +1630,9 @@ Status of the v0.1 questions after the grill and the research.
   pre-review security pass (#81). §6.2 the KWin script directory is
   checked and the script rewritten before every load; §12 the app's own
   lockfiles are checked by `cargo deny` (`app/src-tauri/deny.toml`) and
-  `npm audit` in `just app-test`.
+  `npm audit` in `just app-test`; §10 the app manifest and a capability
+  that allows the six app commands and event listening, without
+  `core:default`.
 
 - **v0.3, pre-alpha slice 6i (2026-10-25)**: §5.10 `keyvo fill
   --margin <px>`, key rectangles grown and clamped to the panel (#80);

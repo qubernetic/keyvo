@@ -92,6 +92,20 @@ user is trusted, and nothing else is.
   and to `/dev/uinput`. Running the daemon with elevated privileges is
   unsupported and reduces isolation.
 
+### The desktop app
+
+- The app (`app/`) is a client of the socket like `keyvo ctl` and has no
+  other way into the daemon. Its window may call the app's six own
+  commands and listen to their events; the capability names each of them
+  and grants no `core:default` and no plugin, so a script injected into the
+  page could not reach the filesystem, shell, window or other core APIs.
+  The content security policy loads only the app's own code and connects
+  only to the Tauri IPC (`docs/spec.md` §10).
+- Both app lockfiles are checked in CI: `app/src-tauri/Cargo.lock` by
+  `cargo deny` with `app/src-tauri/deny.toml` (the root policy plus
+  documented exceptions), `app/package-lock.json` by `npm audit
+  --audit-level=high`. Dependabot watches both.
+
 ### Actions run what the user configured
 
 - `exec` actions run arbitrary commands from the user's profile files under the
