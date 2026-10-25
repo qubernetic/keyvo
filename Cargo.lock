@@ -554,6 +554,7 @@ dependencies = [
  "anyhow",
  "clap",
  "evdev",
+ "futures-util",
  "inotify",
  "keyvo-core",
  "keyvo-hid",
