@@ -111,6 +111,11 @@ enum DeviceCommand {
         /// The whole panel in one write
         #[arg(long, group = "placement")]
         panel: bool,
+        /// Grow every key rectangle by this many pixels on all four sides,
+        /// clamped to the panel on each side (the Keypad's published
+        /// geometry caps the top at 6, left 23, right 22, bottom 40)
+        #[arg(long, value_name = "PX", default_value_t = 0, conflicts_with = "panel")]
+        margin: u16,
         /// Keep the claim (and the keep-alive) this many seconds after painting
         #[arg(long, value_name = "SECONDS", default_value_t = 0)]
         hold: u64,
@@ -359,6 +364,7 @@ fn run<T: HidTransport, C: Clock>(
             source,
             key,
             panel,
+            margin,
             hold,
             index_base,
             swid,
@@ -377,7 +383,7 @@ fn run<T: HidTransport, C: Clock>(
             };
             let mut session = Session::open(hidpp, clock, keep_alive.timing()?)?;
             let placement = placement(key, panel);
-            fill::fill(&mut session, &source, placement, &config, out)?;
+            fill::fill(&mut session, &source, placement, margin, &config, out)?;
             fill::hold(
                 &mut session,
                 clock,
@@ -385,7 +391,7 @@ fn run<T: HidTransport, C: Clock>(
                 sleep,
                 |session| {
                     writeln!(out, "display reclaimed after a lost claim; painting again")?;
-                    fill::fill(session, &source, placement, &config, out)
+                    fill::fill(session, &source, placement, margin, &config, out)
                 },
             )
         }
@@ -766,6 +772,61 @@ mod tests {
         ] {
             assert!(fill(args).is_err(), "{args:?}");
         }
+    }
+
+    /// The `--margin` of a `fill` command line.
+    fn margin(args: &[&str]) -> Result<u16, clap::Error> {
+        let cli = Cli::try_parse_from([&["keyvo", "fill", "#ff8000"], args].concat())?;
+        let Command::Device(DeviceCommand::Fill { margin, .. }) = cli.command else {
+            panic!("not fill");
+        };
+        Ok(margin)
+    }
+
+    #[test]
+    fn fill_margin_defaults_to_0_and_conflicts_with_the_panel() {
+        assert_eq!(margin(&[]).unwrap(), 0);
+        assert_eq!(margin(&["--all", "--margin", "4"]).unwrap(), 4);
+        assert_eq!(margin(&["--key", "1", "--margin", "6"]).unwrap(), 6);
+        let error = margin(&["--panel", "--margin", "4"]).unwrap_err();
+        assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+        assert!(margin(&["--margin", "-1"]).is_err());
+    }
+
+    #[test]
+    fn fill_help_documents_the_margin_and_its_clamp() {
+        use clap::CommandFactory;
+        let mut cli = Cli::command();
+        let help = cli
+            .find_subcommand_mut("fill")
+            .unwrap()
+            .render_long_help()
+            .to_string();
+        assert!(help.contains("--margin <PX>"), "{help}");
+        assert!(help.contains("clamped to the panel"), "{help}");
+    }
+
+    #[test]
+    fn run_dispatches_the_fill_margin() {
+        let source = crate::fill::Source::parse("#ff8000").unwrap();
+        let config = ImageConfig::default();
+        let geometry = crate::fill::tests::geometry();
+        let rect = crate::fill::grow(Target::Key(1).rect(&geometry).unwrap(), 4, &geometry);
+        let script = fixture("display-claim.txt")
+            + &crate::fill::tests::paints_at(&source, &[rect], &config);
+        let text = run(
+            &[
+                "fill",
+                "#ff8000",
+                "--key",
+                "1",
+                "--margin",
+                "4",
+                "--no-keep-alive",
+            ],
+            &script,
+        );
+        assert!(text.starts_with("key 1  126x126 at 20,2  "), "{text}");
     }
 
     /// A fixture of `tests/protocol-fixtures/hid/`.
