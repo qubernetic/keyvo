@@ -20,6 +20,7 @@ use serde::Deserialize;
 
 use crate::config::Config;
 use crate::diagnostic::Diagnostic;
+use crate::focus::WindowContext;
 use crate::profile::{GLOBAL_ID, Profile};
 
 /// The configuration directory for these environment values:
@@ -71,6 +72,26 @@ impl Profiles {
     #[must_use]
     pub fn get(&self, id: &str) -> Option<&Profile> {
         self.0.get(id)
+    }
+
+    /// The profile for the focused `window` (spec §6.2): of the app
+    /// profiles whose rules match, the highest `priority`; between equal
+    /// priorities one with a title rule beats one without, then the first in
+    /// id order. The global profile when none matches.
+    #[must_use]
+    pub fn select(&self, window: &WindowContext) -> &Profile {
+        let mut best: Option<&Profile> = None;
+        for profile in self.iter().filter(|p| p.profile.id != GLOBAL_ID) {
+            let rules = &profile.profile.r#match;
+            if !rules.matches(window) {
+                continue;
+            }
+            let rank = (profile.profile.priority, rules.has_title());
+            if best.is_none_or(|b| rank > (b.profile.priority, b.profile.r#match.has_title())) {
+                best = Some(profile);
+            }
+        }
+        best.unwrap_or_else(|| self.global())
     }
 
     /// All profiles in id order.

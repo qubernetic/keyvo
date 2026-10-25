@@ -1,0 +1,10 @@
+schema_version = 1
+
+[profile]
+id    = "titled"
+name  = "Any window with a pull request"
+match = { title = "pull request" }
+
+[[pages]]
+[pages.keys.1]
+label = "Review"
