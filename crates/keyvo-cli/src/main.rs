@@ -16,6 +16,7 @@ use clap::{Parser, Subcommand};
 use keyvo_core::clock::{Clock, SystemClock};
 use keyvo_core::hid::{HidTransport, to_hex};
 use keyvo_core::{config, layout};
+use keyvo_hid::dump::Dump;
 use keyvo_hid::hidpp::{DEFAULT_REPLY_TIMEOUT, DEVICE_DIRECT, Hidpp, SoftwareId};
 use keyvo_hid::hidraw::HidrawTransport;
 use keyvo_hid::image::{ImageConfig, IndexBase};
@@ -37,6 +38,10 @@ struct Cli {
     /// The hidraw node to use, instead of searching sysfs for the Keypad
     #[arg(long, global = true, value_name = "PATH")]
     device: Option<PathBuf>,
+    /// Print every report written to and read from the Keypad to stderr:
+    /// ms since start, `>` out or `<` in, the bytes in hex
+    #[arg(long, global = true)]
+    dump: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -251,15 +256,59 @@ fn main() -> anyhow::Result<()> {
         Path::new(sysfs::SYSFS_HIDRAW),
         Path::new(sysfs::DEV_DIR),
     )?;
-    run(
+    let mut stderr = std::io::stderr();
+    run_on(
         command,
-        hidpp(transport)?,
+        transport,
+        cli.dump.then_some(&mut stderr as &mut dyn Write),
         &device,
         &SystemClock,
         std::thread::sleep,
         || true,
         &mut std::io::stdout().lock(),
     )
+}
+
+/// [`run`] on `transport`, with every report it carries printed to `dump`
+/// when one is given (`--dump`).
+///
+/// # Errors
+///
+/// The command's errors.
+#[allow(clippy::too_many_arguments)]
+fn run_on<T: HidTransport, C: Clock>(
+    command: DeviceCommand,
+    transport: T,
+    dump: Option<&mut dyn Write>,
+    device: &str,
+    clock: &C,
+    sleep: impl FnMut(Duration),
+    keep_going: impl FnMut() -> bool,
+    out: &mut impl Write,
+) -> anyhow::Result<()> {
+    match dump {
+        Some(log) => {
+            let transport = Dump::new(transport, clock, log);
+            run(
+                command,
+                hidpp(transport)?,
+                device,
+                clock,
+                sleep,
+                keep_going,
+                out,
+            )
+        }
+        None => run(
+            command,
+            hidpp(transport)?,
+            device,
+            clock,
+            sleep,
+            keep_going,
+            out,
+        ),
+    }
 }
 
 /// Runs `command` on the Keypad behind `hidpp`, described as `device`.
@@ -451,6 +500,45 @@ mod tests {
         let text = run(&["keys", "--json"], &crate::keys::tests::script());
         assert_eq!(text.lines().count(), 8);
         assert_eq!(text.lines().next(), Some(r#"{"edge":"press","key":5}"#));
+    }
+
+    #[test]
+    fn keys_with_dump_logs_every_frame_apart_and_keeps_stdout_ndjson() {
+        let cli = Cli::try_parse_from(["keyvo", "keys", "--json", "--dump"]).unwrap();
+        assert!(cli.dump);
+        let Command::Device(command) = cli.command else {
+            panic!("not a device command");
+        };
+        let clock = FakeClock::new();
+        let (mut out, mut log) = (Vec::new(), Vec::new());
+        super::run_on(
+            command,
+            FakeHidTransport::from_script(&crate::keys::tests::script()).unwrap(),
+            Some(&mut log),
+            "/dev/hidraw2",
+            &clock,
+            |wait| clock.advance(wait),
+            || false,
+            &mut out,
+        )
+        .unwrap();
+        let out = String::from_utf8(out).unwrap();
+        assert_eq!(out.lines().count(), 8);
+        for line in out.lines() {
+            let value: serde_json::Value = serde_json::from_str(line).unwrap();
+            assert!(value.is_object(), "{line}");
+        }
+        let log = String::from_utf8(log).unwrap();
+        let first = log.lines().next().unwrap();
+        assert!(
+            first.ends_with(" > 11 ff 00 0e 00 08 00 00 00 00 00 00 00 00 00 00 00 00 00 00"),
+            "{first}"
+        );
+        assert!(
+            log.lines().any(|line| line.contains(" < 13 ff 02 ")),
+            "{log}"
+        );
+        assert!(!log.contains('{'), "{log}");
     }
 
     #[test]
