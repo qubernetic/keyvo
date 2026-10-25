@@ -71,13 +71,15 @@ pub fn reports(script: &str) -> Vec<Vec<u8>> {
 }
 
 /// What a connection to the Keypad starts with: the `KEEP_ALIVE` lookup,
-/// the display claim and the page-button divert. The pings themselves are
-/// answered by the pad.
+/// the display claim, the display capabilities (fn0, for `maxImageSize`;
+/// the display index is known from the claim) and the page-button divert.
+/// The pings themselves are answered by the pad.
 pub fn startup() -> String {
     format!(
-        "{}{}{}",
+        "{}{}{}{}",
         exchanges(&fixture("keep-alive-ping.txt"), 0..1),
         fixture("display-claim.txt"),
+        exchanges(&fixture("display-capabilities.txt"), 1..2),
         fixture("reprog-divert.txt"),
     )
 }

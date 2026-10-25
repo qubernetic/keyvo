@@ -326,6 +326,7 @@ impl<I: InputInjector> Controller<'_, I> {
     fn flush(&mut self) {
         self.flush_at = None;
         let frame = Frame {
+            view: Some(self.engine.view()),
             accent: self.engine.active().profile.accent,
             keys: self.engine.specs(Instant::now().into_std()),
         };

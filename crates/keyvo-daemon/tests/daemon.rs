@@ -16,7 +16,7 @@ use keyvo_core::focus::{FakeWindowWatcher, WindowContext};
 use keyvo_core::inject::FakeInputInjector;
 use keyvo_core::press::PressKind;
 use keyvo_core::profile::{KeySlot, Profile};
-use keyvo_core::render::{KeySpec, Renderer, TileSize};
+use keyvo_core::render::{Canvas, KeyPlace, KeySpec, Renderer};
 use keyvo_core::socket::{Command, Context, ContextSource, DeviceStatus, Edge, Status};
 use keyvo_core::state::{Mode, View};
 use keyvo_core::trace::{Outcome, TraceRecord};
@@ -258,42 +258,73 @@ fn image_of(text: &str, key: u8, look: Look) -> Image {
     image_on(text, 1, key, look)
 }
 
-/// The image of key `key` of page `page` (counted from 1) of `text`.
-fn image_on(text: &str, page: usize, key: u8, look: Look) -> Image {
-    let profile = profile(text);
+/// The spec of key `key` of page `page` (counted from 1) of `profile`.
+fn spec_on(profile: &Profile, page: usize, key: u8, look: Look) -> KeySpec {
     let slot = KeySlot::new(key).unwrap();
     let bound = profile.pages[page - 1].keys.get(&slot);
-    let mut spec = KeySpec::from_key(bound, profile.profile.accent);
-    if look != Look::Idle {
-        spec = spec.with_look(bound, look);
-    }
-    let rect = display::captured_geometry().keys[usize::from(key - 1)];
-    let size = TileSize {
-        width: rect.width,
-        height: rect.height,
-    };
-    let renderer = Renderer::new();
-    let under = renderer.panel_color(profile.profile.accent);
-    Image {
-        rect: (rect.x, rect.y, rect.width, rect.height),
-        jpeg: renderer.tile(&spec, size).unwrap().jpeg_on(under).unwrap(),
+    let spec = KeySpec::from_key(bound, profile.profile.accent);
+    if look == Look::Idle {
+        spec
+    } else {
+        spec.with_look(bound, look)
     }
 }
 
-/// The panel background of `text` on the captured geometry: the bounding
-/// box of the keys.
-fn backdrop_of(text: &str) -> Image {
-    let size = TileSize {
-        width: 435,
-        height: 434,
-    };
-    let backdrop = Renderer::new()
-        .backdrop(profile(text).profile.accent, size)
-        .unwrap();
+/// The image of `place` cropped from `canvas`.
+fn crop(canvas: &Canvas, place: KeyPlace) -> Image {
     Image {
-        rect: (23, 6, 435, 434),
-        jpeg: backdrop.jpeg().unwrap(),
+        rect: (place.x, place.y, place.size.width, place.size.height),
+        jpeg: canvas.crop(place).unwrap().jpeg().unwrap(),
     }
+}
+
+/// The image of key `key` of page `page` (counted from 1) of `text`: the
+/// key's rectangle cropped from the canvas, which a one-key change sends.
+fn image_on(text: &str, page: usize, key: u8, look: Look) -> Image {
+    let profile = profile(text);
+    let renderer = Renderer::new();
+    let mut canvas = renderer
+        .canvas(
+            profile.profile.accent,
+            &display::captured_geometry().panel(),
+        )
+        .unwrap();
+    let index = usize::from(key - 1);
+    renderer
+        .draw(&mut canvas, index, &spec_on(&profile, page, key, look))
+        .unwrap();
+    let place = canvas.panel().keys[index];
+    crop(&canvas, place)
+}
+
+/// The one image of page `page` of `text` with every key idle: the union
+/// of the key rectangles, which a new profile, page or mode sends.
+fn union_on(text: &str, page: usize) -> Image {
+    let profile = profile(text);
+    let renderer = Renderer::new();
+    let mut canvas = renderer
+        .canvas(
+            profile.profile.accent,
+            &display::captured_geometry().panel(),
+        )
+        .unwrap();
+    for key in 1..=9 {
+        let spec = spec_on(&profile, page, key, Look::Idle);
+        renderer
+            .draw(&mut canvas, usize::from(key - 1), &spec)
+            .unwrap();
+    }
+    let union = canvas.panel().bounds(0..9).unwrap();
+    assert_eq!(
+        (union.x, union.y, union.size.width, union.size.height),
+        (23, 6, 435, 434)
+    );
+    crop(&canvas, union)
+}
+
+/// [`union_on`] the first page.
+fn union_of(text: &str) -> Image {
+    union_on(text, 1)
 }
 
 async fn started(global: &str) -> (Daemon, Pad, FakeInputInjector) {
@@ -302,23 +333,21 @@ async fn started(global: &str) -> (Daemon, Pad, FakeInputInjector) {
     let mut daemon = Daemon::start(global, vec![pad.clone()], injector.clone());
     assert_eq!(daemon.painted().await, (1..=9).collect::<Vec<_>>());
     assert!(pad.script_done());
-    // The panel background, then the nine keys.
-    assert_eq!(pad.images().len(), 10);
+    // One image: the panel background and the nine keys.
+    assert_eq!(pad.images(), [union_of(global)]);
     (daemon, pad, injector)
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_profile_change_repaints_only_the_changed_key() {
     let (mut daemon, pad, _) = started(GLOBAL).await;
-    assert_eq!(pad.images()[0], backdrop_of(GLOBAL));
-    assert_eq!(pad.images()[2], image_of(GLOBAL, 2, Look::Idle));
 
     let edited = GLOBAL.replace("\"Copy\"", "\"Paste\"");
     daemon.edit(&edited);
     assert_eq!(daemon.painted().await, vec![2]);
     let images = pad.images();
-    assert_eq!(images.len(), 11);
-    assert_eq!(images[10], image_of(&edited, 2, Look::Idle));
+    assert_eq!(images.len(), 2);
+    assert_eq!(images[1], image_of(&edited, 2, Look::Idle));
     daemon.stop().await;
 }
 
@@ -339,8 +368,8 @@ async fn a_key_editor_write_repaints_the_key_through_the_reload() {
     let written = std::fs::read_to_string(edited.path).unwrap();
     assert_eq!(written, GLOBAL.replace("\"Copy\"", "\"Paste\""));
     let images = pad.images();
-    assert_eq!(images.len(), 11);
-    assert_eq!(images[10], image_of(&written, 2, Look::Idle));
+    assert_eq!(images.len(), 2);
+    assert_eq!(images[1], image_of(&written, 2, Look::Idle));
     daemon.stop().await;
 }
 
@@ -363,8 +392,8 @@ async fn a_broken_profile_keeps_the_last_good_state() {
         .await;
     assert_eq!(daemon.painted().await, vec![3]);
     let images = pad.images();
-    assert_eq!(images.len(), 11);
-    assert_eq!(images[10], image_of(&fixed, 3, Look::Idle));
+    assert_eq!(images.len(), 2);
+    assert_eq!(images[1], image_of(&fixed, 3, Look::Idle));
     daemon.stop().await;
 }
 
@@ -384,6 +413,11 @@ async fn an_exec_that_exits_1_paints_running_then_the_error_look() {
         assert!(daemon.painted().await.contains(&1));
     }
     assert!(pad.images().contains(&image_of(GLOBAL, 1, Look::Running)));
+    // Every feedback change writes one image: key 1's rectangle, cropped
+    // from the canvas.
+    let key1 = error.rect;
+    assert_eq!(key1, (24, 6, 118, 118));
+    assert!(pad.images()[1..].iter().all(|image| image.rect == key1));
     daemon.stop().await;
 }
 
@@ -420,7 +454,7 @@ async fn a_chord_key_sends_its_events_without_a_look() {
         }
     );
     assert_eq!(injector.sent(), events);
-    assert_eq!(pad.images().len(), 10);
+    assert_eq!(pad.images().len(), 1);
     daemon.stop().await;
 }
 
@@ -461,24 +495,15 @@ async fn a_held_key_fires_its_long_press_before_the_release() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_keep_alive_expiry_is_reclaimed_and_the_panel_and_every_key_repainted() {
+async fn a_keep_alive_expiry_is_reclaimed_and_the_union_repainted() {
     let pad = Pad::new(&(startup() + &support::fixture("display-reclaim.txt")));
     let mut daemon = Daemon::start(GLOBAL, vec![pad.clone()], FakeInputInjector::new());
     assert_eq!(daemon.painted().await, (1..=9).collect::<Vec<_>>());
     pad.send(&support::reports(&support::fixture("claim-lost.txt")));
     assert_eq!(daemon.painted().await, (1..=9).collect::<Vec<_>>());
     assert!(pad.script_done());
-    let images = pad.images();
-    assert_eq!(images.len(), 20);
-    // On the claim and on the reclaim: the panel background first.
-    assert_eq!(images[0], backdrop_of(GLOBAL));
-    assert_eq!(images[10], backdrop_of(GLOBAL));
-    for key in 1..=9 {
-        assert_eq!(
-            images[10 + usize::from(key)],
-            image_of(GLOBAL, key, Look::Idle)
-        );
-    }
+    // On the claim and on the reclaim: one image of the whole page.
+    assert_eq!(pad.images(), [union_of(GLOBAL), union_of(GLOBAL)]);
     daemon.stop().await;
 }
 
@@ -504,8 +529,7 @@ async fn a_lost_keypad_is_reclaimed_and_repainted() {
         .until(|event| matches!(event, Event::Connected { keys: 9 }).then_some(()))
         .await;
     assert_eq!(daemon.painted().await.len(), 9);
-    assert_eq!(second.images()[0], backdrop_of(GLOBAL));
-    assert_eq!(second.images()[1], image_of(GLOBAL, 1, Look::Idle));
+    assert_eq!(second.images(), [union_of(GLOBAL)]);
     daemon.stop().await;
 }
 
@@ -518,8 +542,7 @@ async fn a_broken_profile_at_start_paints_the_builtin_global_profile() {
         .await;
     assert_eq!(daemon.painted().await.len(), 9);
     let builtin = "schema_version = 1\n[profile]\nid = \"global\"\nname = \"G\"\n[[pages]]\n";
-    assert_eq!(pad.images()[0], backdrop_of(builtin));
-    assert_eq!(pad.images()[1], image_of(builtin, 1, Look::Idle));
+    assert_eq!(pad.images(), [union_of(builtin)]);
     daemon.stop().await;
 }
 
@@ -555,18 +578,14 @@ async fn the_painted_profile_follows_the_focused_window() {
         watcher.clone(),
     );
     assert_eq!(daemon.painted().await.len(), 9);
-    assert_eq!(pad.images()[0], backdrop_of(GLOBAL));
-    assert_eq!(pad.images()[1], image_of(GLOBAL, 1, Look::Idle));
+    assert_eq!(pad.images(), [union_of(GLOBAL)]);
 
     assert!(watcher.focus(WindowContext::new("org.kde.konsole", "~ : bash")));
     assert_eq!(daemon.switched().await, view("terminal", 1, Mode::Auto));
-    // The switch paints the terminal's panel background before its keys,
-    // then every key on it.
+    // The switch writes exactly one image: the union of the keys, with the
+    // terminal's panel background and every key on it.
     assert_eq!(daemon.painted().await, (1..=9).collect::<Vec<_>>());
-    let images = pad.images();
-    assert_eq!(images.len(), 20);
-    assert_eq!(images[10], backdrop_of(TERMINAL));
-    assert_eq!(images[11], image_of(TERMINAL, 1, Look::Idle));
+    assert_eq!(pad.images(), [union_of(GLOBAL), union_of(TERMINAL)]);
     // A key press resolves on the terminal profile now.
     pad.hold(&[2]);
     pad.hold(&[]);
@@ -577,7 +596,7 @@ async fn the_painted_profile_follows_the_focused_window() {
     // Another class without a profile of its own shows the global one.
     assert!(watcher.focus(WindowContext::new("org.kde.dolphin", "Home")));
     assert_eq!(daemon.switched().await, view("global", 1, Mode::Auto));
-    daemon.shows(&pad, &image_of(GLOBAL, 1, Look::Idle)).await;
+    daemon.shows(&pad, &union_of(GLOBAL)).await;
     daemon.stop().await;
 }
 
@@ -588,15 +607,11 @@ async fn a_page_button_toggles_the_general_page() {
     pad.buttons(&[0x01a1]);
     pad.buttons(&[]);
     assert_eq!(daemon.switched().await, view("global", 2, Mode::Auto));
-    daemon
-        .shows(&pad, &image_on(&global, 2, 1, Look::Idle))
-        .await;
+    daemon.shows(&pad, &union_on(&global, 2)).await;
     pad.buttons(&[0x01a2]);
     pad.buttons(&[]);
     assert_eq!(daemon.switched().await, view("global", 1, Mode::Auto));
-    daemon
-        .shows(&pad, &image_on(&global, 1, 1, Look::Idle))
-        .await;
+    daemon.shows(&pad, &union_on(&global, 1)).await;
     daemon.stop().await;
 }
 
@@ -634,7 +649,7 @@ async fn a_reload_selects_the_profile_for_the_focused_window_again() {
     // No profile matches yet: nothing switches. A new profile file does.
     std::fs::write(daemon.dir.path().join("profiles/terminal.toml"), TERMINAL).unwrap();
     assert_eq!(daemon.switched().await, view("terminal", 1, Mode::Auto));
-    daemon.shows(&pad, &image_of(TERMINAL, 1, Look::Idle)).await;
+    daemon.shows(&pad, &union_of(TERMINAL)).await;
     daemon.stop().await;
 }
 
@@ -739,7 +754,7 @@ async fn a_dry_run_leaves_the_marker_absent_and_the_pad_unpainted() {
     // Longer than the exec and a coalesced paint would take.
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert!(!marker.exists());
-    assert_eq!(pad.images().len(), 10);
+    assert_eq!(pad.images().len(), 1);
     daemon.stop().await;
 }
 
