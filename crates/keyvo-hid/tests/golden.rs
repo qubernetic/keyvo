@@ -538,9 +538,11 @@ fn key_input_fixture_gives_the_exact_press_release_list() {
     assert_eq!(
         events(fixture!("key-input.txt"), input),
         [
-            InputEvent::press(Control::Key(5)),
+            InputEvent::press(Control::Key(2)),
             InputEvent::press(Control::Key(1)),
-            InputEvent::release(Control::Key(5)),
+            InputEvent::release(Control::Key(1)),
+            InputEvent::release(Control::Key(2)),
+            InputEvent::press(Control::Key(1)),
             InputEvent::release(Control::Key(1)),
         ]
     );
@@ -556,9 +558,13 @@ fn page_button_fixture_gives_the_exact_press_release_list() {
     assert_eq!(
         events(fixture!("page-buttons.txt"), input),
         [
-            InputEvent::press(left),
             InputEvent::press(right),
+            InputEvent::press(left),
+            InputEvent::release(right),
             InputEvent::release(left),
+            InputEvent::press(left),
+            InputEvent::release(left),
+            InputEvent::press(right),
             InputEvent::release(right),
         ]
     );

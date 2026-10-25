@@ -1,22 +1,32 @@
 # Diverted page-button notifications of 0x1B04 at classic index 0x0b
-# (spec §5.6): a u16 CID list, 0x01A1 left, 0x01A2 right.
-# Expected: press left, press right, release left, release right; the
-# setCidReporting reply in between yields nothing.
+# (spec §5.6): the u16 CIDs held, in press order, 0x01A1 left, 0x01A2 right.
+# Expected: press right, press left, release right, release left, press
+# left, release left, press right, release right; the setCidReporting reply
+# in between yields nothing.
 #
-# The hcooper captures carry no page-button events. The notifications
-# follow logilinux's `11 ff 0b 00 01 a1` and Julusian's CID list
-# (docs/research/logilinux-and-julusian-analysis.md §4.6); both buttons
-# held at once is their list form, not yet seen on hardware (plan §5
-# item 13). The reply is frame #1719 of hcooper 03-options-plus-startup.pcap
-# (MIT, see README.md).
+# Source: first light, 2026-10-25, firmware U1 66.00.B0017, the passive
+# sniffer on /dev/hidraw6 (`sniff.log` of the first-light logs attached to
+# qubernetic/keyvo#40), in the order the Keypad sent them; the comment
+# names the sniff.log Unix timestamp. Steps 1 to 4 are both buttons held
+# during `keys --json` (`20-keys-json.log` lines 30-33), step 5 is the
+# divert after an unplug and replug, steps 6 to 9 the presses of
+# `21-keys-json-replug.log` lines 4-7.
 #
-# 1. Left held.
-< 11 ff 0b 00 01 a1 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 2. Left and right held.
-< 11 ff 0b 00 01 a1 01 a2 00 00 00 00 00 00 00 00 00 00 00 00
-# 3. setCidReporting(0x01A1, 0x03) reply (#1719).
-< 11 ff 0b 3e 01 a1 03 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 4. Right held only.
+# 1. Right held (1792912854.503).
 < 11 ff 0b 00 01 a2 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 5. Nothing held.
+# 2. Right and left held (1792912854.506).
+< 11 ff 0b 00 01 a2 01 a1 00 00 00 00 00 00 00 00 00 00 00 00
+# 3. Left held only (1792912859.040).
+< 11 ff 0b 00 01 a1 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 4. Nothing held (1792912859.051).
+< 11 ff 0b 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 5. setCidReporting(0x01A1, 0x03) reply (1792913172.736).
+< 11 ff 0b 3e 01 a1 03 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 6. Left held (1792913296.845).
+< 11 ff 0b 00 01 a1 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 7. Nothing held (1792913297.074).
+< 11 ff 0b 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 8. Right held (1792913298.361).
+< 11 ff 0b 00 01 a2 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 9. Nothing held (1792913298.613).
 < 11 ff 0b 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00

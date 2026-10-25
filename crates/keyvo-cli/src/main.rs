@@ -543,8 +543,8 @@ mod tests {
     #[test]
     fn run_dispatches_keys() {
         let text = run(&["keys", "--json"], &crate::keys::tests::script());
-        assert_eq!(text.lines().count(), 8);
-        assert_eq!(text.lines().next(), Some(r#"{"edge":"press","key":5}"#));
+        assert_eq!(text.lines().count(), 14);
+        assert_eq!(text.lines().next(), Some(r#"{"edge":"press","key":2}"#));
     }
 
     #[test]
@@ -568,7 +568,7 @@ mod tests {
         )
         .unwrap();
         let out = String::from_utf8(out).unwrap();
-        assert_eq!(out.lines().count(), 8);
+        assert_eq!(out.lines().count(), 14);
         for line in out.lines() {
             let value: serde_json::Value = serde_json::from_str(line).unwrap();
             assert!(value.is_object(), "{line}");
