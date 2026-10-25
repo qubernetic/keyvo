@@ -33,7 +33,9 @@ impl DisplayMode {
     /// `a0`: host-controlled display (Options+ `Streaming`); what the claim
     /// sets.
     pub const STREAMING: Self = Self(0xa0);
-    /// `a1`: the device/logo mode (Options+ `Standby`), current at boot.
+    /// `a1`: the device/logo mode (Options+ `Standby`), the state after a
+    /// keep-alive expiry; a freshly plugged-in Keypad reports `a2`
+    /// (measured, `docs/hardware-notes.md` item 5).
     pub const STANDBY: Self = Self(0xa1);
 }
 
