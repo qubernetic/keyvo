@@ -68,6 +68,14 @@ user is trusted, and nothing else is.
   triggering actions. This is the intended scripting surface.
 - There is no authentication layer on the socket beyond file permissions, and
   none is planned for v1.
+- On KDE the daemon loads its own focus script into KWin
+  (`contrib/kwin/keyvo-focus.js`, `docs/spec.md` §6.2). The script is
+  written to `$XDG_RUNTIME_DIR/keyvo/` (or `keyvo-<uid>` in the temporary
+  directory), and the daemon refuses a directory that is not its user's
+  with mode `0700`, because the file runs inside the compositor. The
+  script calls a private object on the session bus; any process of the
+  same user can call that object too and so assert a focused window, which
+  is no more than `notify_context` on the socket allows.
 - The daemon never runs as root. Device access comes from a udev rule that
   grants the user (or the `input` group) access to the Keypad's `hidraw` nodes
   and to `/dev/uinput`. Running the daemon with elevated privileges is

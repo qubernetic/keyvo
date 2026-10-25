@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use evdev::uinput::VirtualDevice;
 use evdev::{AttributeSet, EventType};
 use keyvo_core::chord::{KeyCode, KeyEvent};
-use keyvo_core::focus::{FocusSink, WatchError, WindowWatcher};
+use keyvo_core::focus::WindowWatcher;
 use keyvo_core::hid::TransportError;
 use keyvo_core::inject::{InjectError, InputInjector};
 use keyvo_hid::hidraw::HidrawTransport;
@@ -24,8 +24,9 @@ const UINPUT_NAME: &str = "keyvo";
 const EVENT_BACKLOG: usize = 256;
 
 /// Runs the daemon on this machine until `shutdown`: the Keypad at
-/// `device` or found under sysfs, chords on uinput, the configuration in
-/// `config_dir`. Every trace record is logged.
+/// `device` or found under sysfs, chords on uinput, the focused window from
+/// `watcher` (the binary passes [`crate::kwin::KWinWatcher`]), the
+/// configuration in `config_dir`. Every trace record is logged.
 ///
 /// # Errors
 ///
@@ -33,6 +34,7 @@ const EVENT_BACKLOG: usize = 256;
 pub async fn serve(
     config_dir: &Path,
     device: Option<PathBuf>,
+    watcher: impl WindowWatcher,
     shutdown: impl Future<Output = ()>,
 ) -> io::Result<()> {
     let (events, mut log) = broadcast::channel(EVENT_BACKLOG);
@@ -47,23 +49,11 @@ pub async fn serve(
         config_dir,
         HidrawConnector::new(device),
         Injector::open(),
-        NoFocusSource,
+        watcher,
         events,
         shutdown,
     )
     .await
-}
-
-/// The focus source until the `KWin` watcher lands (spec §6.2): it never
-/// starts, so the daemon logs that focus switching is off and the page
-/// buttons still work.
-#[derive(Debug, Clone, Copy)]
-pub struct NoFocusSource;
-
-impl WindowWatcher for NoFocusSource {
-    fn start(&mut self, _sink: FocusSink) -> Result<(), WatchError> {
-        Err(WatchError("no focus source in this build".into()))
-    }
 }
 
 /// Opens the given hidraw node, or searches the Keypad's node under sysfs
@@ -175,16 +165,9 @@ impl InputInjector for Injector {
 #[cfg(test)]
 mod tests {
     use keyvo_core::chord::Chord;
+    use keyvo_core::focus::{FakeWindowWatcher, WindowContext};
 
     use super::*;
-
-    #[test]
-    fn there_is_no_focus_source_yet() {
-        assert_eq!(
-            NoFocusSource.start(Box::new(|_| {})),
-            Err(WatchError("no focus source in this build".into()))
-        );
-    }
 
     #[test]
     fn the_connector_finds_the_keypad_node_or_opens_the_given_one() {
@@ -226,13 +209,16 @@ mod tests {
     async fn serve_runs_until_shutdown_without_a_keypad() {
         let dir = tempfile::tempdir().unwrap();
         let absent = dir.path().join("hidraw-absent");
+        let watcher = FakeWindowWatcher::new();
         serve(
             dir.path(),
             Some(absent),
+            watcher.clone(),
             tokio::time::sleep(std::time::Duration::from_millis(50)),
         )
         .await
         .unwrap();
+        assert!(watcher.focus(WindowContext::new("org.kde.konsole", "~")));
     }
 
     #[test]

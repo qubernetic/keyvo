@@ -147,13 +147,14 @@ own report. Without a usable `/dev/uinput` the daemon still paints and runs
 `FakeInputInjector` records the events in tests.
 
 `WindowWatcher` (`keyvo_core::focus`) reports the focused window as a
-`WindowContext` (`class`, `title`): `start(sink)` hands it a callback that
+`WindowContext` (`class`, `title`, and `pid` when the source knows it):
+`start(sink)` hands it a callback that
 it calls from any thread on every focus change until the watcher is
 dropped; a watcher that knows the focused window reports it at once. A
 watcher that cannot start returns the reason, and the daemon logs
-"focus switching off" and runs on with the page buttons. The pre-alpha
-daemon binary has no focus source yet (the KWin watcher is the next
-slice); `FakeWindowWatcher` lets a test report a window by hand.
+"focus switching off" and runs on with the page buttons. The daemon
+binary uses the KWin watcher (`keyvo_daemon::kwin::KWinWatcher`, §6.2);
+`FakeWindowWatcher` lets a test report a window by hand.
 
 The daemon as built (pre-alpha, `keyvo-daemon`): one tokio controller task
 owns the profile state and the per-key feedback; one device actor thread
@@ -558,6 +559,41 @@ Defaults, all configurable under `[timing]` in `config.toml`:
   `caption` on `windowActivated` back to the daemon. Event-driven, never
   polling (OpenDeck #425). The daemon watches `NameOwnerChanged` for
   `org.kde.KWin` and reloads the script after a KWin restart.
+- **KWin watcher as built (pre-alpha, `keyvo_daemon::kwin`, KWin 6):**
+  - The script is `contrib/kwin/keyvo-focus.js`, compiled into the daemon.
+    On the session bus the daemon serves the private object
+    `/org/qubernetic/keyvo/Focus` (interface `org.qubernetic.keyvo.Focus`,
+    method `Activated(s class, s caption, s pid)`), fills its own unique
+    bus name and that object into the script's placeholders, and writes
+    it to `$XDG_RUNTIME_DIR/keyvo/keyvo-focus.js` (without
+    `XDG_RUNTIME_DIR`: `keyvo-<uid>` in the temporary directory). The
+    directory is created `0700`; one other users can write is refused,
+    as the script runs inside KWin.
+  - Loading: `isScriptLoaded("keyvo-focus")`, and `unloadScript` for a
+    stale copy left by an earlier daemon; `loadScript(path,
+    "keyvo-focus")`; `run` on `/Scripting/Script<id>`
+    (`org.kde.kwin.Script`). A negative id or a failed call is logged as
+    a warning and focus switching stays off until the next load.
+  - The script reports `workspace.activeWindow` once when it runs, then
+    `resourceClass`, `caption` and `pid` on every `windowActivated` and
+    on `captionChanged` of the active window, so title rules follow a
+    terminal or editor title. The pid travels as a decimal string,
+    because `callDBus` would send a JavaScript number as a double; an
+    empty or non-positive pid is "unknown". A `null` activation
+    (nothing focused) is not reported.
+  - KWin missing at start is logged ("KWin is not running; focus
+    switching waits for it") and is not fatal; `NameOwnerChanged` with a
+    new owner loads the script, and one with no owner logs that KWin is
+    gone. A missing session bus logs "focus switching off" once; the
+    daemon runs on with the page buttons.
+  - The script stays loaded when the daemon stops; its calls then go
+    nowhere, and the next daemon replaces it.
+  - Tests run without KWin: a peer-to-peer zbus connection to a fake
+    that plays `NameHasOwner`, `NameOwnerChanged` and the scripting
+    interface, and calls `Activated` as the script does
+    (`crates/keyvo-daemon/tests/kwin.rs`). The script file itself is
+    checked for its header comment and placeholders; its behaviour inside
+    KWin is the owner's User test.
 - **X11 (v1):** `_NET_ACTIVE_WINDOW` via `x11rb`.
 - **GNOME, Hyprland, Sway (community):** no cross-compositor Wayland focus
   protocol exists (KWin 6.7 and Mutter 51 implement neither
@@ -1148,7 +1184,9 @@ the rest of the system must provide.
 - Toolchain: pinned stable Rust (`rust-toolchain.toml`, edition 2024),
   clippy `-D warnings`, `cargo-deny`, `cargo-llvm-cov`, CodeQL, `cargo-dist`,
   mdBook, dependabot.
-- Crates (v1): `tokio` (daemon only; `keyvo-core` is sync), `zbus`,
+- Crates (v1): `tokio` (daemon only; `keyvo-core` is sync), `zbus` (6.x;
+  5.x pulls the `zvariant` and `zbus_names` crates that RUSTSEC-2026-0370
+  and its siblings mark unmaintained after their merge into `zbus` 6),
   `hidapi` (non-Linux) with a direct hidraw path on Linux, `evdev`
   (uinput), `x11rb`, `toml_edit`, `serde`, `schemars`, `tiny-skia`,
   `resvg`, `image` (JPEG and PNG encoding), `insta` (tests), `clap`,
@@ -1266,6 +1304,12 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 12 (2026-10-25)**: §4.1 `WindowContext`
+  carries the window's `pid` when known, the daemon binary uses the KWin
+  watcher; §6.2 the KWin watcher as built (script, private object,
+  script directory, load sequence, `captionChanged`, a missing KWin or
+  session bus, tests without KWin); §12 `zbus` is 6.x.
 
 - **v0.3, pre-alpha slice 11 (2026-10-25)**: §4.1 the `WindowWatcher`
   signature and `FakeWindowWatcher`; §6.1 the state machine as built,

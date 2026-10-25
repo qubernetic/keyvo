@@ -38,7 +38,9 @@ async fn main() -> anyhow::Result<()> {
         config_dir.display()
     );
 
-    keyvo_daemon::linux::serve(&config_dir, cli.device, shutdown()).await?;
+    let script_dir = keyvo_daemon::kwin::script_dir(std::env::var_os("XDG_RUNTIME_DIR").as_deref());
+    let watcher = keyvo_daemon::kwin::KWinWatcher::session(&script_dir);
+    keyvo_daemon::linux::serve(&config_dir, cli.device, watcher, shutdown()).await?;
     Ok(())
 }
 
