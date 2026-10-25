@@ -173,6 +173,8 @@ notifications.
 **Socket API**: The newline-delimited JSON protocol, every message tagged
 `"v": 1`, served on `$XDG_RUNTIME_DIR/keyvo/keyvo.sock` (mode 0600) and spoken by
 `keyvo ctl`, plugins and integrations. The only inward control surface in v1.
+The message types are `keyvo_core::socket`; the wire contract is
+`docs/socket-api.md`.
 
 **Starter pack**: A profile bundle (Rust, web, Python, embedded, PLC,
 AI-Assisted Coding) built from recipes and copied into the user's profiles

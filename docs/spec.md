@@ -160,10 +160,12 @@ The daemon as built (pre-alpha, `keyvo-daemon`): one tokio controller task
 owns the profile state and the per-key feedback; one device actor thread
 owns the Keypad's transport (§5.1, §5.5); `exec` actions run as their own
 tasks (§8); an inotify watcher reports changes in the configuration
-directory (§7.2). Its end-to-end tests drive the controller with
-`FakeHidTransport` pads, a `FakeInputInjector`, a `FakeWindowWatcher` and
-a configuration directory on disk. Run it with `just build`, then `bin/keyvo-daemon
-[--config-dir DIR] [--device PATH]` on the host; logs go to stderr.
+directory (§7.2); the control socket serves each client in its own task
+and hands the commands to the controller (§8). Its end-to-end tests drive
+the controller with `FakeHidTransport` pads, a `FakeInputInjector`, a
+`FakeWindowWatcher`, socket clients and a configuration directory on
+disk. Run it with `just build`, then `bin/keyvo-daemon [--config-dir DIR]
+[--device PATH] [--socket PATH]` on the host; logs go to stderr.
 
 Core rendering is the pure function
 
@@ -601,7 +603,10 @@ Defaults, all configurable under `[timing]` in `config.toml`:
   ships the `notify_context` socket command as the contract: any external
   source (GNOME extension, Hyprland socket2 reader, `swaymsg subscribe`) can
   assert the active class and title. Backends for those compositors are
-  contributions behind the `WindowWatcher` trait.
+  contributions behind the `WindowWatcher` trait. As built (pre-alpha), a
+  `notify_context` report takes the watcher's path, with the focus
+  hysteresis, and the last report from either source wins. Its
+  precedence over the watcher, `cwd` and the pid come with M2-5.
 - **Windows:** `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` (native mode only).
 - Matching rules: by class (reverse-DNS `org.kde.konsole` and short
   `konsole` both accepted, glob/regex), regex on title (VS Code file →
@@ -688,7 +693,7 @@ JSON Schema generated with `schemars` ships with every release and backs
 editor validation. Validation errors carry file, line and column.
 
 Loading (`keyvo_core::layout`, pre-alpha subset: `config.toml` with
-`[timing]` and `[render]`, and `profiles/`):
+`[timing]`, `[render]` and `[trace]`, and `profiles/`):
 
 - The directory is `$XDG_CONFIG_HOME/keyvo` when that variable is an
   absolute path, else `$HOME/.config/keyvo`. A missing directory,
@@ -818,9 +823,11 @@ mouse.dpi            = 1200
   valid) and the built-in global profile. A missing directory turns
   hot-reload off with a warning. The `[timing]` values of the device
   (§5), `long_press`, `focus_hysteresis` and `page_grace` are read at
-  start; the other `[timing]` and `[render]` values apply from the next
-  reload.
-  The mtime poll fallback, `SIGHUP` and the socket `reload` come later.
+  start; the other `[timing]` and `[render]` values and `[trace].ring`
+  apply from the next reload.
+  The socket `reload` (§8) loads the directory at once, with the same
+  rules, and answers whether it loaded. The mtime poll fallback and
+  `SIGHUP` come later.
 - Desk state is applied by calling `solaar config …` (v1, optional feature,
   M3); never on Windows in plugin mode (Options+ owns the devices).
 
@@ -950,6 +957,28 @@ entries and `keyvo ctl tail` follows them. Wire details live in
 `docs/socket-api.md`; fixtures in `tests/protocol-fixtures/` are shared by
 the Rust, TypeScript and C# clients.
 
+As built (pre-alpha, `keyvo_core::socket` and `keyvo_daemon::socket`):
+
+- The commands are `status`, `subscribe` (classes `key`, `profile`, `page`,
+  `mode`, `device`, `context`, `trace`, `config`, with an optional replay
+  of the newest trace entries), `press` (`key`, `kind`, `dry_run`),
+  `reload`, and `notify_context` (`class`, `title`). Any other command and
+  any unknown field is rejected as `invalid_request`.
+- Every response echoes the request's `id` and carries `ok` with `result`
+  or `error` (`code`, `message`).
+- A dry-run press returns its trace entry marked `simulated` with the
+  result `dry_run`. It sends no chord, runs no `exec`, and leaves the
+  key's look alone.
+- The daemon refuses to start when the socket's directory is not private
+  or another daemon answers on the socket. It replaces a stale socket
+  file and removes the socket when it stops.
+- `keyvo ctl <command> [json]` prints the response line and exits 1 on an
+  error. `keyvo ctl subscribe` prints every later line. The socket is
+  `--socket`, else `$KEYVO_SOCKET`, else the default.
+- The wire format, the error codes and the ordering guarantees are in
+  `docs/socket-api.md`. The fixtures are in
+  `tests/protocol-fixtures/socket/`.
+
 **Trace.** Every press, real or simulated, produces one trace entry:
 timestamp; trigger (device, key or control, press kind, real or simulated);
 context snapshot (window class and title, project root and name, git branch,
@@ -971,7 +1000,12 @@ subset of a record: timestamp, trigger (press kind, simulated), profile id,
 page, key, the resolved action, and the result: `unbound`, `dry_run`,
 `pending`, `sent` with the chord's key events, `exited` with exit code and
 duration, or `failed` with the reason; one serialized record per line is in
-`crates/keyvo-core/tests/fixtures/trace/records.ndjson`.
+`crates/keyvo-core/tests/fixtures/trace/records.ndjson`. The daemon keeps
+the newest `[trace].ring` entries (default 1000, the only `[trace]` key so
+far) in memory: device and client presses, dry runs, and each `exec`
+result as a second entry once it ends. `status` reports their number, and
+`subscribe` with `replay` sends the newest of them. They are lost when the
+daemon stops; the file, `max_size`, `keep` and `debug` come with M1-8.
 
 **Plugins.** `~/.config/keyvo/plugins/<name>/plugin.toml` declares an
 executable, its arguments, restart policy and the profiles it serves. The
@@ -1304,6 +1338,13 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 13 (2026-10-25)**: §4.1 the daemon serves the
+  control socket, `--socket`; §6.2 `notify_context` as built; §7.1
+  `[trace]` in `config.toml`; §7.2 the socket `reload`; §8 the socket API
+  subset as built (`status`, `subscribe`, `press` with `dry_run`,
+  `reload`, `notify_context`), `keyvo ctl`, the in-memory trace ring
+  buffer with `[trace].ring`; `docs/socket-api.md` is the wire contract.
 
 - **v0.3, pre-alpha slice 12 (2026-10-25)**: §4.1 `WindowContext`
   carries the window's `pid` when known, the daemon binary uses the KWin

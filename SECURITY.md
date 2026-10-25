@@ -66,6 +66,15 @@ user is trusted, and nothing else is.
   `0600` in a directory owned by the user. Any process running as that user
   can send any command, including switching profiles, painting keys, and
   triggering actions. This is the intended scripting surface.
+- The daemon creates the socket's directory with mode `0700` and refuses to
+  start when the directory is not the user's own with that mode, or when
+  another daemon already answers on the socket. A socket file left behind
+  by a stopped daemon is replaced. Anything else in its place is not
+  touched.
+- A socket request with an unknown command or field is rejected before
+  anything runs, so a mistyped `dry_run` never executes a key's action.
+  Requests are parsed as untrusted input; a malformed line gets an error
+  response and never ends the daemon.
 - There is no authentication layer on the socket beyond file permissions, and
   none is planned for v1.
 - On KDE the daemon loads its own focus script into KWin
