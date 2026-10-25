@@ -161,6 +161,98 @@ jobs:
         if: always()
         run: docker rm --force "$CONTAINER"
 
+  # The desktop app (pre-alpha decision 2): the frontend checks of
+  # `just app-test` and the Tauri shell build of `just app-build`, in the same
+  # dev image, with the same command lines as the recipes. The shell is
+  # outside the root workspace, so it has its own Cargo.lock and target/.
+  app:
+    name: app
+    runs-on: ubuntu-24.04
+    # A cold Tauri build (image, npm install, clippy and a debug build of
+    # about 450 crates) is several times the `ci` job; 45 minutes leaves room
+    # for a slow runner while still stopping a hung step.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      IMAGE: keyvo-dev:ci
+      CONTAINER: keyvo-app-ci
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read runner UID and GID
+        id: ids
+        run: |
+          echo "uid=$(id -u)" >> "$GITHUB_OUTPUT"
+          echo "gid=$(id -g)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build the dev image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: ${{ env.IMAGE }}
+          build-args: |
+            UID=${{ steps.ids.outputs.uid }}
+            GID=${{ steps.ids.outputs.gid }}
+          # Same rule as the `ci` job: pull requests only read the cache.
+          cache-from: type=gha
+          cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max' || '' }}
+
+      - name: Restore the cargo registry
+        if: ${{ github.event_name != 'push' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo-ci/registry
+            ~/.cargo-ci/git
+          key: cargo-registry-app-${{ runner.os }}-${{ hashFiles('app/src-tauri/Cargo.lock') }}
+          restore-keys: cargo-registry-app-${{ runner.os }}-
+
+      - name: Cache the cargo registry
+        if: ${{ github.event_name == 'push' }}
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo-ci/registry
+            ~/.cargo-ci/git
+          key: cargo-registry-app-${{ runner.os }}-${{ hashFiles('app/src-tauri/Cargo.lock') }}
+          restore-keys: cargo-registry-app-${{ runner.os }}-
+
+      - name: Start the dev container
+        run: |
+          mkdir -p "$HOME/.cargo-ci/registry" "$HOME/.cargo-ci/git"
+          docker run --detach --init --name "$CONTAINER" \
+            --env CARGO_TERM_COLOR=always \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --volume "$HOME/.cargo-ci/registry:/usr/local/cargo/registry" \
+            --volume "$HOME/.cargo-ci/git:/usr/local/cargo/git" \
+            "$IMAGE" sleep infinity
+
+      - name: app-test
+        run: |
+          docker exec "$CONTAINER" npm --prefix app ci --no-fund --no-audit
+          docker exec "$CONTAINER" npm --prefix app run check
+          docker exec "$CONTAINER" npm --prefix app test
+
+      - name: app-build
+        run: |
+          docker exec "$CONTAINER" npm --prefix app run build
+          docker exec "$CONTAINER" cargo fmt --manifest-path app/src-tauri/Cargo.toml -- --check
+          docker exec "$CONTAINER" cargo clippy --manifest-path app/src-tauri/Cargo.toml --locked --all-targets -- -D warnings
+          docker exec "$CONTAINER" cargo build --manifest-path app/src-tauri/Cargo.toml --locked --profile dev --features tauri/custom-protocol
+
+      - name: Stop the dev container
+        if: always()
+        run: docker rm --force "$CONTAINER"
+
   # The only job with an OIDC token. It never builds or runs repository code:
   # it checks out the commit for the Codecov metadata, takes the reports from
   # the `ci` job and uploads them. Without an OIDC token (Dependabot, forks)
