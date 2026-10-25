@@ -184,17 +184,9 @@ impl std::error::Error for LoadErrors {}
 pub fn load(dir: &Path) -> Result<Loaded, LoadErrors> {
     let mut errors = Vec::new();
 
-    let config_path = dir.join("config.toml");
-    let config = match read_optional(&config_path) {
-        Ok(Some(text)) => Config::from_toml(&text, &config_path)
-            .map_err(|d| errors.push(d.into()))
-            .unwrap_or_default(),
-        Ok(None) => Config::default(),
-        Err(e) => {
-            errors.push(e);
-            Config::default()
-        }
-    };
+    let config = load_config(dir)
+        .map_err(|e| errors.push(e))
+        .unwrap_or_default();
 
     let mut by_id = BTreeMap::new();
     match profile_paths(&dir.join("profiles")) {
@@ -218,6 +210,20 @@ pub fn load(dir: &Path) -> Result<Loaded, LoadErrors> {
         })
     } else {
         Err(LoadErrors(errors))
+    }
+}
+
+/// Loads only `config.toml` from `dir`, the defaults when it is missing;
+/// for the commands that need the settings but no profile.
+///
+/// # Errors
+///
+/// When the file exists but cannot be read or is not valid.
+pub fn load_config(dir: &Path) -> Result<Config, LoadError> {
+    let path = dir.join("config.toml");
+    match read_optional(&path)? {
+        Some(text) => Ok(Config::from_toml(&text, &path)?),
+        None => Ok(Config::default()),
     }
 }
 

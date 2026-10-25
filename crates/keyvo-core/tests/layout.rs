@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use keyvo_core::config::Config;
 use keyvo_core::diagnostic::Position;
-use keyvo_core::layout::{LoadError, config_dir, load, runtime_dir, state_dir};
+use keyvo_core::layout::{LoadError, config_dir, load, load_config, runtime_dir, state_dir};
 use keyvo_core::profile::{GLOBAL_ID, Profile};
 
 fn dir(name: &str) -> PathBuf {
@@ -89,6 +89,20 @@ fn a_full_directory_loads_config_and_every_toml_profile() {
     assert_eq!(loaded.profiles.global().profile.name, "Everywhere");
     assert_eq!(loaded.profiles.get("konsole").unwrap().profile.priority, 5);
     assert_eq!(loaded.profiles.get("README"), None);
+}
+
+#[test]
+fn load_config_reads_only_config_toml() {
+    let tmp = tempfile::tempdir().unwrap();
+    assert_eq!(
+        load_config(&tmp.path().join("keyvo")).unwrap(),
+        Config::default()
+    );
+    let config = load_config(&dir("full")).unwrap();
+    assert_eq!(config.timing.long_press, Duration::from_millis(700));
+    // Broken profiles do not matter; a broken config.toml does.
+    let error = load_config(&dir("broken")).unwrap_err();
+    assert!(error.to_string().contains("config.toml"), "{error}");
 }
 
 #[test]
