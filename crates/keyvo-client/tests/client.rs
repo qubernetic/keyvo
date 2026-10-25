@@ -242,6 +242,30 @@ fn a_hang_up_before_the_answer_is_closed() {
 }
 
 #[test]
+fn a_line_over_the_limit_is_refused_without_holding_it() {
+    let limit = keyvo_client::client::LINE_LIMIT;
+    let long = format!(r#"{{"v":1,"event":"key","pad":"{}"}}"#, "x".repeat(limit));
+    let mut client = Client::new(Script::new(&[&long]));
+    let error = client.request(Command::Status {}).unwrap_err();
+    assert!(
+        matches!(error, ClientError::TooLong(n) if n == limit),
+        "{error:?}"
+    );
+    assert!(
+        error
+            .to_string()
+            .contains(&format!("longer than {limit} bytes")),
+        "{error}"
+    );
+
+    // A line of exactly the limit is read.
+    let answer = answering(lines(fixture!("responses.ndjson"))[5], 1);
+    let padded = format!("{answer}{}", " ".repeat(limit - answer.len()));
+    let mut client = Client::new(Script::new(&[&padded]));
+    assert_eq!(client.request(Command::Reload {}).unwrap(), Reply::Done {});
+}
+
+#[test]
 fn a_line_that_is_not_v1_is_a_protocol_error() {
     let mut client = Client::new(Script::new(&[r#"{"v":2,"ok":true,"result":{}}"#]));
     let error = client.request(Command::Status {}).unwrap_err();

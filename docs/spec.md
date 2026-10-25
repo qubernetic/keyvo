@@ -693,6 +693,7 @@ Defaults, all configurable under `[timing]` in `config.toml`:
 | `exec_timeout` | 30000 ms | an `exec` action still running after this long is killed with its process group and fails, §8 |
 | `reconnect_interval` | 1000 ms | wait between two attempts to open the Keypad after it is gone or not found, §5.1 |
 | `reload_settle` | 100 ms | quiet time after the last change in the configuration directory before the daemon reloads it, §7.2 |
+| `accept_backoff` | 100 ms | wait after a failed `accept` on the control socket before the next one, so a full file table does not spin the daemon, §8 |
 
 `keep_alive_period` must be shorter than `keep_alive_timeout`: a period at
 or above the timeout lets the claim run out between two pings (§5.3). The
@@ -1156,6 +1157,16 @@ As built (pre-alpha, `keyvo_core::socket` and `keyvo_daemon::socket`):
 - The daemon refuses to start when the socket's directory is not private
   or another daemon answers on the socket. It replaces a stale socket
   file and removes the socket when it stops.
+- Limits, under `[daemon]` in `config.toml`, read when the daemon starts
+  (a reload does not change them):
+
+  | Key | Default | Meaning |
+  |---|---|---|
+  | `socket_line_bytes` | 65536 | longest request line in bytes, without its newline; a longer one gets an `invalid_request` error and the connection is closed. At least 1 |
+  | `socket_connections` | 32 | connections served at once; one more gets an `unavailable` error and is closed. At least 1 |
+
+  A failed `accept` waits `[timing].accept_backoff` (§6.1). The client
+  side reads daemon lines up to 1 MiB (`keyvo_client::client::LINE_LIMIT`).
 - The clients (`keyvo_client::open`, shared by `keyvo ctl` and the app)
   send nothing before two checks pass: the socket's directory is private
   to the user (a `0755` directory is refused) and the listening process
@@ -1637,7 +1648,9 @@ Status of the v0.1 questions after the grill and the research.
   `npm audit` in `just app-test`; §10 the app manifest and a capability
   that allows the six app commands and event listening, without
   `core:default`; §8 the clients check the socket directory and the
-  daemon's uid before they send.
+  daemon's uid before they send; §8 and §6.1 the socket limits
+  `[daemon].socket_line_bytes`, `[daemon].socket_connections` and
+  `[timing].accept_backoff`, and the client's line limit.
 
 - **v0.3, pre-alpha slice 6i (2026-10-25)**: §5.10 `keyvo fill
   --margin <px>`, key rectangles grown and clamped to the panel (#80);

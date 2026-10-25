@@ -236,15 +236,21 @@ where
 /// one is valid, so the timing survives a broken profile, and the built-in
 /// global profile.
 fn fallback(config_dir: &Path) -> Loaded {
-    let path = config_dir.join("config.toml");
-    let config = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|text| Config::from_toml(&text, &path).ok())
-        .unwrap_or_default();
     Loaded {
-        config,
+        config: config(config_dir),
         profiles: Profiles::new(std::collections::BTreeMap::new()),
     }
+}
+
+/// The `config.toml` in `config_dir` when it is there and valid, else the
+/// defaults; [`run`] reports why it did not load.
+#[must_use]
+pub fn config(config_dir: &Path) -> Config {
+    let path = config_dir.join("config.toml");
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|text| Config::from_toml(&text, &path).ok())
+        .unwrap_or_default()
 }
 
 #[cfg(target_os = "linux")]

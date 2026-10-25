@@ -14,6 +14,12 @@ use keyvo_core::state::View;
 use keyvo_core::trace::TraceRecord;
 use serde_json::Value;
 
+/// Longest line the client reads from the daemon, in bytes without the
+/// newline (`docs/socket-api.md`, Framing). The daemon's own answers and
+/// events are far shorter; a longer line ends the read with
+/// [`ClientError::TooLong`] instead of growing without bound.
+pub const LINE_LIMIT: usize = 1024 * 1024;
+
 /// What went wrong on the connection.
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
@@ -40,6 +46,9 @@ pub enum ClientError {
     /// The daemon answered the named command with another command's reply.
     #[error("the daemon answered `{0}` with another reply")]
     Unexpected(&'static str),
+    /// The daemon sent a line longer than [`LINE_LIMIT`] bytes.
+    #[error("the daemon sent a line longer than {0} bytes")]
+    TooLong(usize),
     /// The socket is not this user's daemon's: its directory is open to
     /// other users, or another user listens on it.
     #[error("refusing the keyvo socket at {}: {reason}", path.display())]
@@ -228,16 +237,26 @@ impl<S: Read + Write> Client<S> {
         Ok(None)
     }
 
-    /// The next line from the daemon; `None` when it hung up.
+    /// The next line from the daemon, at most [`LINE_LIMIT`] bytes of it
+    /// held; `None` when it hung up.
     fn read(&mut self) -> Result<Option<ServerMessage>, ClientError> {
-        let mut line = String::new();
+        let mut bytes = Vec::new();
         loop {
-            line.clear();
-            if self.stream.read_line(&mut line)? == 0 {
+            bytes.clear();
+            let cap = u64::try_from(LINE_LIMIT)
+                .unwrap_or(u64::MAX)
+                .saturating_add(1);
+            if (&mut self.stream).take(cap).read_until(b'\n', &mut bytes)? == 0 {
                 return Ok(None);
             }
+            if bytes.last() != Some(&b'\n') && bytes.len() > LINE_LIMIT {
+                return Err(ClientError::TooLong(LINE_LIMIT));
+            }
+            let line = std::str::from_utf8(&bytes).map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "a line is not UTF-8")
+            })?;
             if !line.trim().is_empty() {
-                return Ok(Some(ServerMessage::parse(&line)?));
+                return Ok(Some(ServerMessage::parse(line)?));
             }
         }
     }

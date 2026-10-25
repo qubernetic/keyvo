@@ -80,6 +80,13 @@ user is trusted, and nothing else is.
   anything runs, so a mistyped `dry_run` never executes a key's action.
   Requests are parsed as untrusted input; a malformed line gets an error
   response and never ends the daemon.
+- What a client can make the daemon hold is bounded: a request line over
+  `[daemon].socket_line_bytes` (64 KiB) gets an error and the connection
+  is closed, connections over `[daemon].socket_connections` (32) are
+  refused, and a failing `accept` (for example a full file table) backs off
+  `[timing].accept_backoff` instead of spinning. These limit accidents and
+  runaway scripts of the same user; they are not a boundary against that
+  user, who may also simply stop the daemon.
 - There is no authentication layer on the socket beyond file permissions, and
   none is planned for v1.
 - On KDE the daemon loads its own focus script into KWin

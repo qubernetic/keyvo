@@ -16,7 +16,7 @@ use keyvo_core::inject::FakeInputInjector;
 use keyvo_core::profile::KeySlot;
 use keyvo_core::socket::{DeviceStatus, Edge, Event, Reply, Response, ServerMessage};
 use keyvo_daemon::daemon;
-use keyvo_daemon::socket::Server;
+use keyvo_daemon::socket::{Limits, Server};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
 use tokio::net::UnixStream;
@@ -80,6 +80,10 @@ struct Running {
 
 impl Running {
     async fn start() -> Self {
+        Self::start_with(Limits::default()).await
+    }
+
+    async fn start_with(limits: Limits) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let config_dir = dir.path().join("config");
         std::fs::create_dir_all(config_dir.join("profiles")).unwrap();
@@ -90,7 +94,7 @@ impl Running {
         let socket = dir.path().join("run/keyvo.sock");
         let server = Server::bind(&socket).unwrap();
         let (requests, inbox) = mpsc::unbounded_channel();
-        let server = tokio::spawn(async move { server.serve(requests).await });
+        let server = tokio::spawn(async move { server.serve(requests, limits).await });
         let injector = FakeInputInjector::new();
         let (events, mut painted) = broadcast::channel(256);
         let (stop, stopped) = oneshot::channel::<()>();
@@ -168,6 +172,14 @@ impl Client {
             .expect("a line in time")
             .unwrap()
             .expect("an open connection")
+    }
+
+    /// The daemon closes the connection within [`PATIENCE`].
+    async fn closed(&mut self) {
+        let line = tokio::time::timeout(PATIENCE, self.lines.next_line())
+            .await
+            .expect("the daemon closes in time");
+        assert!(matches!(line, Ok(None) | Err(_)), "{line:?}");
     }
 
     async fn ask(&mut self, line: &str) -> Value {
@@ -339,6 +351,90 @@ async fn bad_lines_get_error_responses_and_the_connection_stays() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn an_over_long_line_gets_an_error_and_the_next_client_is_served() {
+    let running = Running::start_with(Limits {
+        line_bytes: 64,
+        ..Limits::default()
+    })
+    .await;
+    let long = format!(r#"{{"v":1,"cmd":"status","pad":"{}"}}"#, "x".repeat(64));
+
+    // With its newline, and without one: the daemon does not wait for the
+    // end of a line that is already too long.
+    for newline in [true, false] {
+        let mut client = running.client().await;
+        assert_eq!(
+            client.ask(r#"{"v":1,"id":1,"cmd":"status"}"#).await["ok"],
+            true
+        );
+        let bytes = if newline {
+            format!("{long}\n")
+        } else {
+            long.clone()
+        };
+        client.write.write_all(bytes.as_bytes()).await.unwrap();
+        let response: Value = serde_json::from_str(&client.recv().await).unwrap();
+        assert_eq!(response["ok"], false);
+        assert_eq!(response["error"]["code"], "invalid_request");
+        let message = response["error"]["message"].as_str().unwrap();
+        assert!(message.contains("longer than 64 bytes"), "{message}");
+        client.closed().await;
+    }
+
+    let mut next = running.client().await;
+    assert_eq!(
+        next.ask(r#"{"v":1,"id":2,"cmd":"status"}"#).await["ok"],
+        true
+    );
+    running.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_connection_over_the_cap_is_refused() {
+    let running = Running::start_with(Limits {
+        connections: 2,
+        ..Limits::default()
+    })
+    .await;
+    let mut first = running.client().await;
+    let mut second = running.client().await;
+    for client in [&mut first, &mut second] {
+        assert_eq!(client.ask(r#"{"v":1,"cmd":"status"}"#).await["ok"], true);
+    }
+
+    let mut third = running.client().await;
+    let response: Value = serde_json::from_str(&third.recv().await).unwrap();
+    assert_eq!(response["error"]["code"], "unavailable");
+    let message = response["error"]["message"].as_str().unwrap();
+    assert!(message.contains("2 connections"), "{message}");
+    third.closed().await;
+
+    // A slot that frees up serves the next client. Until then a client is
+    // refused; one that wrote first may see a reset instead of the error.
+    drop(first);
+    let served = tokio::time::timeout(PATIENCE, async {
+        loop {
+            let mut client = running.client().await;
+            let _ = client
+                .write
+                .write_all(b"{\"v\":1,\"cmd\":\"status\"}\n")
+                .await;
+            if let Ok(Some(line)) = client.lines.next_line().await {
+                let response: Value = serde_json::from_str(&line).unwrap();
+                if response["ok"] == true {
+                    break;
+                }
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await;
+    assert!(served.is_ok(), "no slot came free");
+    assert_eq!(second.ask(r#"{"v":1,"cmd":"status"}"#).await["ok"], true);
+    running.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_subscriber_gets_the_events_of_its_classes() {
     let running = Running::start().await;
     let mut watcher = running.client().await;
@@ -412,7 +508,7 @@ async fn a_daemon_that_is_gone_answers_unavailable() {
     let server = Server::bind(&path).unwrap();
     let (requests, inbox) = mpsc::unbounded_channel();
     drop(inbox);
-    let server = tokio::spawn(async move { server.serve(requests).await });
+    let server = tokio::spawn(async move { server.serve(requests, Limits::default()).await });
     let (read, write) = UnixStream::connect(&path).await.unwrap().into_split();
     let mut client = Client {
         lines: BufReader::new(read).lines(),

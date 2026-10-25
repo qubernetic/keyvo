@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use keyvo_core::config::{Config, Render, Timing, Trace};
+use keyvo_core::config::{Config, Daemon, Render, Timing, Trace};
 use keyvo_core::diagnostic::{Diagnostic, Position};
 
 fn fixture(name: &str) -> PathBuf {
@@ -40,6 +40,7 @@ fn defaults_match_spec_6_1_and_9() {
             exec_timeout: ms(30_000),
             reconnect_interval: ms(1000),
             reload_settle: ms(100),
+            accept_backoff: ms(100),
         }
     );
     assert_eq!(
@@ -67,6 +68,32 @@ fn the_trace_ring_holds_1000_entries_unless_set() {
     assert_eq!(config.trace.ring, 50);
     let error = Config::from_toml("[trace]\nring = -1\n", Path::new("config.toml")).unwrap_err();
     assert_eq!(error.position.map(|p| (p.line, p.column)), Some((2, 8)));
+}
+
+#[test]
+fn the_socket_limits_default_to_64_kib_lines_and_32_connections() {
+    let daemon = Daemon::default();
+    assert_eq!(daemon.socket_line_bytes.get(), 65_536);
+    assert_eq!(daemon.socket_connections.get(), 32);
+    let config = Config::from_toml(
+        "[daemon]\nsocket_line_bytes = 1024\nsocket_connections = 4\n[timing]\naccept_backoff = 500\n",
+        Path::new("config.toml"),
+    )
+    .unwrap();
+    assert_eq!(config.daemon.socket_line_bytes.get(), 1024);
+    assert_eq!(config.daemon.socket_connections.get(), 4);
+    assert_eq!(config.timing.accept_backoff, ms(500));
+    for (text, column) in [
+        ("[daemon]\nsocket_line_bytes = 0\n", 21),
+        ("[daemon]\nsocket_connections = 0\n", 22),
+    ] {
+        let error = Config::from_toml(text, Path::new("config.toml")).unwrap_err();
+        assert_eq!(
+            error.position.map(|p| (p.line, p.column)),
+            Some((2, column)),
+            "{text}"
+        );
+    }
 }
 
 #[test]
