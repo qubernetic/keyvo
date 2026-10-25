@@ -718,7 +718,12 @@ and `--keep-alive-timeout` the same way before they open the device.
     it to `$XDG_RUNTIME_DIR/keyvo/keyvo-focus.js` (without
     `XDG_RUNTIME_DIR`: `keyvo-<uid>` in the temporary directory). The
     directory is created `0700`; one other users can write is refused,
-    as the script runs inside KWin.
+    as the script runs inside KWin. The check and the write are repeated
+    before every load, so a KWin restart never loads a script from a
+    directory that was aged away and recreated by another account in the
+    temporary-directory fallback, or a file changed since the last load.
+    A directory refused at start ends the watch; one refused at a later
+    load is logged and that load is skipped.
   - Loading: `isScriptLoaded("keyvo-focus")`, and `unloadScript` for a
     stale copy left by an earlier daemon; `loadScript(path,
     "keyvo-focus")`; `run` on `/Scripting/Script<id>`
@@ -1613,6 +1618,12 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice R1 (2026-10-25)**: hardening from the epic
+  pre-review security pass (#81). §6.2 the KWin script directory is
+  checked and the script rewritten before every load; §12 the app's own
+  lockfiles are checked by `cargo deny` (`app/src-tauri/deny.toml`) and
+  `npm audit` in `just app-test`.
 
 - **v0.3, pre-alpha slice 6i (2026-10-25)**: §5.10 `keyvo fill
   --margin <px>`, key rectangles grown and clamped to the panel (#80);

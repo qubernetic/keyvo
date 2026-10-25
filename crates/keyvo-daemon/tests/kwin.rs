@@ -334,6 +334,51 @@ async fn the_script_is_reloaded_after_a_kwin_restart() {
 }
 
 #[tokio::test]
+async fn a_script_directory_opened_to_others_gets_no_load_after_a_restart() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (mut fake, daemon) = pair(true).await;
+    let dir = private_dir();
+    let (sink, _windows) = sink();
+    let watch = spawn_watch(daemon, dir.path(), sink);
+    assert_eq!(fake.next().await, Call::HasOwner);
+    fake.load().await;
+
+    // Another account could now swap the script before KWin reads it.
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o777)).unwrap();
+    fake.owner_changed(":1.9", "").await;
+    fake.owner_changed("", ":1.12").await;
+    fake.quiet().await;
+    assert!(!watch.is_finished(), "a refused directory ended the watch");
+
+    // Private again: the next KWin gets the script.
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    fake.owner_changed("", ":1.14").await;
+    assert_eq!(fake.next().await, Call::IsLoaded);
+    assert_eq!(fake.next().await, Call::Unload);
+    assert!(matches!(fake.next().await, Call::Load { .. }));
+}
+
+#[tokio::test]
+async fn an_overwritten_script_is_rewritten_before_the_next_load() {
+    let (mut fake, daemon) = pair(true).await;
+    let dir = private_dir();
+    let (sink, _windows) = sink();
+    let _watch = spawn_watch(daemon, dir.path(), sink);
+    assert_eq!(fake.next().await, Call::HasOwner);
+    let first = fake.load().await;
+
+    std::fs::write(dir.path().join(kwin::SCRIPT_FILE), "print('not keyvo');").unwrap();
+    fake.owner_changed("", ":1.12").await;
+    assert_eq!(fake.next().await, Call::IsLoaded);
+    assert_eq!(fake.next().await, Call::Unload);
+    let Call::Load { script, .. } = fake.next().await else {
+        panic!("no loadScript");
+    };
+    assert_eq!(script, first);
+}
+
+#[tokio::test]
 async fn a_refused_script_is_logged_and_the_watch_goes_on() {
     let (mut fake, daemon) = pair(true).await;
     fake.next_id.store(-1, Ordering::SeqCst);

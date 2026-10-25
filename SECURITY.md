@@ -82,7 +82,9 @@ user is trusted, and nothing else is.
   written to `$XDG_RUNTIME_DIR/keyvo/` (or `keyvo-<uid>` in the temporary
   directory), and the daemon refuses a directory that is not its user's
   with mode `0700`, because the file runs inside the compositor. The
-  script calls a private object on the session bus; any process of the
+  directory is checked and the script rewritten before every load, also
+  after a KWin restart, so KWin never reads a file another account could
+  have placed or changed. The script calls a private object on the session bus; any process of the
   same user can call that object too and so assert a focused window, which
   is no more than `notify_context` on the socket allows.
 - The daemon never runs as root. Device access comes from a udev rule that
