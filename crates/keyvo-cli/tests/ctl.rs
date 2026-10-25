@@ -5,6 +5,7 @@
 #![cfg(unix)]
 
 use std::io::{BufRead, BufReader, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::thread::JoinHandle;
@@ -32,10 +33,17 @@ fn daemon(path: &Path, lines: &[&str]) -> JoinHandle<Value> {
     })
 }
 
-fn socket() -> (tempfile::TempDir, PathBuf) {
+/// A socket path in a temporary directory with `mode`.
+fn socket_in(mode: u32) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(mode)).unwrap();
     let path = dir.path().join("keyvo.sock");
     (dir, path)
+}
+
+/// A socket path in a private directory, as the daemon creates it.
+fn socket() -> (tempfile::TempDir, PathBuf) {
+    socket_in(0o700)
 }
 
 fn ctl(path: &Path) -> Command {
@@ -150,6 +158,27 @@ fn without_a_daemon_ctl_says_so() {
 }
 
 #[test]
+fn a_socket_directory_others_can_enter_is_refused() {
+    let (_dir, path) = socket_in(0o755);
+    let listener = UnixListener::bind(&path).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let output = ctl(&path)
+        .arg("status")
+        .assert()
+        .failure()
+        .get_output()
+        .clone();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("refusing the keyvo socket"), "{stderr}");
+    assert!(stderr.contains("not private to this user"), "{stderr}");
+    // Nothing was sent: the connection the refused ctl made is silent.
+    let (mut stream, _) = listener.accept().unwrap();
+    let mut sent = Vec::new();
+    std::io::Read::read_to_end(&mut stream, &mut sent).unwrap();
+    assert!(sent.is_empty(), "{}", String::from_utf8_lossy(&sent));
+}
+
+#[test]
 fn a_daemon_that_hangs_up_without_answering_fails() {
     let (_dir, path) = socket();
     let daemon = daemon(&path, &[]);
@@ -177,6 +206,7 @@ fn the_socket_comes_from_keyvo_socket_then_the_runtime_directory() {
 
     let runtime = dir.path().join("keyvo");
     std::fs::create_dir(&runtime).unwrap();
+    std::fs::set_permissions(&runtime, std::fs::Permissions::from_mode(0o700)).unwrap();
     let daemon_at = daemon(&runtime.join("keyvo.sock"), &[STATUS]);
     Command::new(env!("CARGO_BIN_EXE_keyvo"))
         .args(["ctl", "status"])

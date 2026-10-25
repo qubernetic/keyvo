@@ -16,7 +16,7 @@ pub mod tiles;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 
-pub use client::{Client, ClientError};
+pub use client::{Client, ClientError, open};
 pub use editor::{Editor, EditorError, Problem};
 pub use follow::{Update, follow};
 pub use mirror::Mirror;

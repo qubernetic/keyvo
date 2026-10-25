@@ -25,6 +25,12 @@ their roadmap issues. Until then they are rejected as `invalid_request`.
   socket when it stops.
 - Trust model as in `ssh-agent`: any process of the same user may send any
   command (`SECURITY.md`).
+- The clients check the other side before they send anything
+  (`keyvo_client::open`, used by `keyvo ctl` and the app): the socket's
+  directory must be a directory of the user that nobody else may enter
+  (a `0755` directory is refused), and the process listening on the
+  socket must run as the user (`SO_PEERCRED`). A failed check is an error
+  that names the socket and the reason.
 
 ## Framing
 

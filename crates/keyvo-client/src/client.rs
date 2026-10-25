@@ -40,21 +40,82 @@ pub enum ClientError {
     /// The daemon answered the named command with another command's reply.
     #[error("the daemon answered `{0}` with another reply")]
     Unexpected(&'static str),
+    /// The socket is not this user's daemon's: its directory is open to
+    /// other users, or another user listens on it.
+    #[error("refusing the keyvo socket at {}: {reason}", path.display())]
+    Untrusted {
+        /// The socket.
+        path: PathBuf,
+        /// Why.
+        reason: String,
+    },
+}
+
+/// Opens the daemon's socket at `path` for this user. Nothing is sent
+/// before two checks pass: the socket's directory is private to this user,
+/// as the daemon creates it, and the process listening on it runs as this
+/// user (`SO_PEERCRED`). `keyvo ctl` and the app open the socket here.
+///
+/// # Errors
+///
+/// [`ClientError::Connect`] when nobody listens there,
+/// [`ClientError::Untrusted`] when a check fails, [`ClientError::Io`] when
+/// a check cannot be made.
+pub fn open(path: &Path) -> Result<UnixStream, ClientError> {
+    let stream = UnixStream::connect(path).map_err(|source| ClientError::Connect {
+        path: path.to_owned(),
+        source,
+    })?;
+    let untrusted = |reason| ClientError::Untrusted {
+        path: path.to_owned(),
+        reason,
+    };
+    let uid = rustix::process::getuid().as_raw();
+    let dir = match path.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir,
+        _ => Path::new("."),
+    };
+    check_dir(dir, &std::fs::symlink_metadata(dir)?, uid).map_err(untrusted)?;
+    let peer = rustix::net::sockopt::socket_peercred(&stream).map_err(std::io::Error::from)?;
+    check_peer(peer.uid.as_raw(), uid).map_err(untrusted)?;
+    Ok(stream)
+}
+
+/// `Err` with the reason unless `dir` (its `meta` not following a symlink)
+/// is a directory owned by `uid` that nobody else may enter.
+fn check_dir(dir: &Path, meta: &std::fs::Metadata, uid: u32) -> Result<(), String> {
+    use std::os::unix::fs::MetadataExt;
+
+    if !meta.is_dir() || meta.uid() != uid || meta.mode() & 0o077 != 0 {
+        return Err(format!(
+            "its directory {} is not private to this user (owner {}, mode {:o})",
+            dir.display(),
+            meta.uid(),
+            meta.mode() & 0o7777
+        ));
+    }
+    Ok(())
+}
+
+/// `Err` with the reason unless the daemon's uid `peer` is `uid`.
+fn check_peer(peer: u32, uid: u32) -> Result<(), String> {
+    if peer == uid {
+        Ok(())
+    } else {
+        Err(format!(
+            "the process listening on it runs as uid {peer}, not as this user ({uid})"
+        ))
+    }
 }
 
 impl Client<UnixStream> {
-    /// A client on the daemon's socket at `path`.
+    /// A client on the daemon's socket at `path`, opened with [`open`].
     ///
     /// # Errors
     ///
-    /// When nobody listens there.
+    /// As [`open`].
     pub fn connect(path: &Path) -> Result<Self, ClientError> {
-        UnixStream::connect(path)
-            .map(Self::new)
-            .map_err(|source| ClientError::Connect {
-                path: path.to_owned(),
-                source,
-            })
+        open(path).map(Self::new)
     }
 }
 
@@ -179,5 +240,49 @@ impl<S: Read + Write> Client<S> {
                 return Ok(Some(ServerMessage::parse(&line)?));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    use super::*;
+
+    #[test]
+    fn the_peer_must_be_this_user() {
+        assert_eq!(check_peer(1000, 1000), Ok(()));
+        for peer in [0, 1001, u32::MAX] {
+            let reason = check_peer(peer, 1000).unwrap_err();
+            assert!(reason.contains(&format!("uid {peer}")), "{reason}");
+            assert!(reason.contains("not as this user (1000)"), "{reason}");
+        }
+    }
+
+    #[test]
+    fn the_directory_must_be_this_users_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path();
+        let meta = |mode| {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+            std::fs::symlink_metadata(path).unwrap()
+        };
+        let owner = meta(0o700).uid();
+        assert_eq!(check_dir(path, &meta(0o700), owner), Ok(()));
+        assert_eq!(check_dir(path, &meta(0o500), owner), Ok(()));
+        for mode in [0o755, 0o750, 0o705, 0o701, 0o710, 0o777] {
+            let reason = check_dir(path, &meta(mode), owner).unwrap_err();
+            assert!(reason.contains(&format!("mode {mode:o}")), "{reason}");
+        }
+        let reason = check_dir(path, &meta(0o700), owner + 1).unwrap_err();
+        assert!(reason.contains(&format!("owner {owner}")), "{reason}");
+
+        let file = path.join("file");
+        std::fs::write(&file, "").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let meta = std::fs::symlink_metadata(&file).unwrap();
+        assert!(check_dir(&file, &meta, owner).is_err());
     }
 }

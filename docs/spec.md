@@ -1156,6 +1156,10 @@ As built (pre-alpha, `keyvo_core::socket` and `keyvo_daemon::socket`):
 - The daemon refuses to start when the socket's directory is not private
   or another daemon answers on the socket. It replaces a stale socket
   file and removes the socket when it stops.
+- The clients (`keyvo_client::open`, shared by `keyvo ctl` and the app)
+  send nothing before two checks pass: the socket's directory is private
+  to the user (a `0755` directory is refused) and the listening process
+  runs as the user (`SO_PEERCRED`).
 - `keyvo ctl <command> [json]` prints the response line and exits 1 on an
   error. `keyvo ctl subscribe` prints every later line. The socket is
   `--socket`, else `$KEYVO_SOCKET`, else the default.
@@ -1632,7 +1636,8 @@ Status of the v0.1 questions after the grill and the research.
   lockfiles are checked by `cargo deny` (`app/src-tauri/deny.toml`) and
   `npm audit` in `just app-test`; §10 the app manifest and a capability
   that allows the six app commands and event listening, without
-  `core:default`.
+  `core:default`; §8 the clients check the socket directory and the
+  daemon's uid before they send.
 
 - **v0.3, pre-alpha slice 6i (2026-10-25)**: §5.10 `keyvo fill
   --margin <px>`, key rectangles grown and clamped to the panel (#80);

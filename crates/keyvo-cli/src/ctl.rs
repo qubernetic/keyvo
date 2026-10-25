@@ -8,6 +8,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
+use keyvo_client::ClientError;
 use keyvo_core::socket::{self, ServerMessage};
 use serde_json::{Map, Value};
 
@@ -45,18 +46,18 @@ pub fn request_line(command: &str, json: Option<&str>) -> anyhow::Result<String>
     Ok(Value::Object(fields).to_string())
 }
 
-/// Opens the socket at `path`.
+/// Opens the socket at `path` with the checks of [`keyvo_client::open`]:
+/// a private socket directory and a daemon of this user.
 ///
 /// # Errors
 ///
-/// When nobody listens there.
+/// When nobody listens there, or a check fails.
 pub fn connect(path: &Path) -> anyhow::Result<std::os::unix::net::UnixStream> {
-    std::os::unix::net::UnixStream::connect(path).with_context(|| {
-        format!(
-            "cannot reach the keyvo daemon at {}; is keyvo-daemon running?",
-            path.display()
-        )
-    })
+    match keyvo_client::open(path) {
+        Ok(stream) => Ok(stream),
+        Err(error @ ClientError::Connect { .. }) => bail!("{error}; is keyvo-daemon running?"),
+        Err(error) => Err(error.into()),
+    }
 }
 
 /// Sends `line` on `stream` and prints the response to `out`; with
