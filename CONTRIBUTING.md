@@ -54,7 +54,7 @@ keyvo separates *where code is built* from *where it touches hardware*
 
 | Layer | Where | What runs there |
 |---|---|---|
-| Build, test, lint, coverage, docs, CI parity | devcontainer (docker compose, Rust + Node image) | `just setup dev test build lint fmt deny cov diagrams docs` |
+| Build, test, lint, coverage, docs, CI parity | devcontainer (docker compose, Rust + Node image) | `just setup dev down clean rebuild shell build test lint fmt fmt-check deny cov ci app-test app-build diagrams docs` |
 | Hardware execution | host | the binary built in the container, via `just run` and `just test-hw` |
 
 ```bash
@@ -63,19 +63,22 @@ cd keyvo
 
 just setup        # build the dev image, start the container, fetch dependencies
 just dev          # start the dev container (detached)
+just down         # stop the container (keeps volumes and target/)
+just rebuild      # rebuild the image without cache (after Dockerfile changes)
 just test         # cargo nextest inside the container
 just build        # cargo build inside the container; host-runnable binaries in bin/
 just lint         # clippy on all targets with -D warnings
-just fmt          # rustfmt (just fmt-check only verifies)
+just fmt          # rustfmt
+just fmt-check    # rustfmt, verifies only
 just deny         # cargo-deny (licenses, advisories, bans, sources)
 just cov          # cargo-llvm-cov in the nextest ci profile (coverage/lcov.info plus a summary)
 just ci           # fmt-check, lint, test (nextest ci profile), deny, cov: the sequence CI runs
 just app-test     # desktop app: npm ci, svelte-check, vitest, npm audit, cargo deny on the app lock
 just app-build    # desktop app: frontend build, then the Tauri shell; bin/keyvo-app
 just run -- probe # run the container-built binary on the host against real hardware
-just test-hw      # hardware checks on the host
-just diagrams     # regenerate docs/diagrams from the archify IR (lands with Issue #4)
-just docs         # build the mdBook (lands with Issue #3)
+just test-hw      # host checks: hidraw nodes, /dev/uinput, groups (keyvo doctor is planned)
+just diagrams     # placeholder: regenerating docs/diagrams from the archify IR lands with Issue #4
+just docs         # placeholder: the mdBook lands with Issue #3
 just shell        # interactive shell in the container
 just clean        # stop the container, drop the cargo volumes, delete target/ and bin/
 ```
