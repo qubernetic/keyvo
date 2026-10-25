@@ -112,8 +112,8 @@ enum DeviceCommand {
         #[arg(long, group = "placement")]
         panel: bool,
         /// Grow every key rectangle by this many pixels on all four sides,
-        /// clamped to the panel on each side (the published Keypad
-        /// geometry caps the top at 6, left 23, right 22, bottom 41)
+        /// clamped to the panel on each side (the Keypad's published
+        /// geometry caps the top at 6, left 23, right 22, bottom 40)
         #[arg(long, value_name = "PX", default_value_t = 0, conflicts_with = "panel")]
         margin: u16,
         /// Keep the claim (and the keep-alive) this many seconds after painting
