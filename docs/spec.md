@@ -103,8 +103,10 @@ keyvo/
 │   │                   #   socket protocol types, chord parser; sync, hardware-free, ≥85 % covered
 │   ├── keyvo-daemon    # tokio runtime: socket server, KWin/X11 watchers (zbus/x11rb), uinput
 │   │                   #   injector (evdev), plugin supervisor, inotify hot-reload, systemd unit
+│   ├── keyvo-client    # socket client, mirror state, tile rendering through keyvo-core for the
+│   │                   #   GUI and later clients; sync, hardware-free
 │   └── keyvo-cli       # `keyvo probe|keys|fill|paint-test|preview|doctor|ctl|profile …`
-├── app/                # Tauri 2 + Svelte 5 GUI (M4a)
+├── app/                # Tauri 2 + Svelte 5 GUI (M4a); src-tauri/ is outside the root workspace
 ├── integrations/       # claude-code/ (plugin: hooks, commands, MCP), vscode/, tmux/, nvim/ …
 ├── plugins/logi/       # C# Logi Actions SDK plugin (M5), built in the Windows VM
 ├── contrib/            # udev rule, KWin script, systemd unit, Flatpak manifest
@@ -114,8 +116,12 @@ keyvo/
 └── docs/               # spec.md, roadmap.md, adr/, diagrams/, research/, plans/, hardware-notes.md, mdBook
 ```
 
-`keyvo-core` is synchronous and hardware-free; `keyvo-daemon` owns the
-tokio runtime and every OS binding.
+The root workspace has five crates. `keyvo-core` and `keyvo-client` are
+synchronous and hardware-free; `keyvo-daemon` owns the tokio runtime and
+every OS binding. `keyvo-client` keeps socket I/O out of `keyvo-core`: the
+desktop app's Rust side (`app/src-tauri`, a crate outside the root
+workspace because it needs webkit2gtk, compiled by the CI `app` job) is thin
+glue over it, so the GUI's logic is tested without a display.
 
 ### 4.1 Platform abstraction (traits in `keyvo-core`, implemented per OS)
 
@@ -155,6 +161,19 @@ watcher that cannot start returns the reason, and the daemon logs
 "focus switching off" and runs on with the page buttons. The daemon
 binary uses the KWin watcher (`keyvo_daemon::kwin::KWinWatcher`, §6.2);
 `FakeWindowWatcher` lets a test report a window by hand.
+
+Clients implement none of the three traits: they reach the device only
+through the daemon's socket. `keyvo-client` is that client side, used by the
+desktop app: `Client` sends one request at a time over any `Read + Write`
+stream (`Client::connect` for the Unix socket at `socket_path`:
+`$KEYVO_SOCKET`, else the runtime directory) and keeps events that arrive
+before an answer for `next_event`; `Mirror` folds the `status`, `subscribe`
+and `press` replies and the events into the view, device, focus context,
+held keys, recent trace entries and the last reload error; `Tiles` renders a
+page with the `keyvo-core` renderer, so a tile in the GUI has the pixels the
+daemon paints on the LCD. Its tests run against the socket fixtures in
+`tests/protocol-fixtures/socket/`, the same lines the TypeScript side of
+the app checks itself against.
 
 The daemon as built (pre-alpha, `keyvo-daemon`): one tokio controller task
 owns the profile state and the per-key feedback; one device actor thread
@@ -1185,6 +1204,20 @@ the rest of the system must provide.
   only in the theme bridge and `doctor`; no project layer via shell hook, no
   MX triggers, no desk state in v1.
 
+**As built (pre-alpha scaffold).** `app/` is a Vite project with Svelte 5,
+TypeScript, vitest and jsdom, managed with `npm` (exact versions, committed
+`package-lock.json`). `app/src/lib/protocol.ts` holds the protocol v1 types
+and parsers and passes the shared socket fixtures; the window shows the
+daemon's `status` (Keypad, profile, page, mode) or why it cannot reach the
+daemon. The theme bridge is reduced to the tokens of
+`docs/design/gui-ux.md` §7 as CSS custom properties with fixed defaults in
+`app/src/styles/tokens.css` (the feedback states use the pad theme's
+colours); the KDE and GNOME readers come with M4a-1. `app/src-tauri`
+(identifier `org.qubernetic.keyvo`, bundling off) has two commands,
+`status` and `tiles` (a page as PNG data URLs), both over `keyvo-client`.
+`just app-test` runs `npm ci`, `svelte-check` and vitest; `just app-build`
+builds the frontend and the shell into `bin/keyvo-app`.
+
 ---
 
 ## 11. Windows plugin (`plugins/logi/`, M5)
@@ -1226,7 +1259,16 @@ the rest of the system must provide.
   `hidapi` (non-Linux) with a direct hidraw path on Linux, `evdev`
   (uinput), `x11rb`, `toml_edit`, `serde`, `schemars`, `tiny-skia`,
   `resvg`, `image` (JPEG and PNG encoding), `insta` (tests), `clap`,
-  `tracing`.
+  `tracing`. Workspace crates: `keyvo-hid`, `keyvo-core`, `keyvo-daemon`,
+  `keyvo-client` (socket client, mirror, tiles; sync and hardware-free like
+  `keyvo-core`) and `keyvo-cli`.
+- Desktop app: `tauri` 2 and `tauri-build` (in `app/src-tauri`, outside
+  the root workspace, so `cargo deny` of the workspace does not cover it;
+  Tauri 2 on Linux pulls the gtk-rs 0.18 crates), `base64`; the frontend
+  `svelte` 5, `vite`, `vitest`, `jsdom`, `@testing-library/svelte`,
+  `svelte-check` and `@tauri-apps/api`. Build packages in the dev image:
+  `libwebkit2gtk-4.1-dev`, `build-essential`, `file`, `libxdo-dev`,
+  `libayatana-appindicator3-dev`, `librsvg2-dev`.
 
 ---
 
@@ -1340,6 +1382,14 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 14 (2026-10-25)**: §4 the fifth workspace crate
+  `keyvo-client` in the tree, `app/src-tauri` outside the root workspace;
+  §4.1 the client side (`Client`, `Mirror`, `Tiles`, `socket_path`) next to
+  the platform traits; §10 the app scaffold as built (frontend, tokens with
+  fixed defaults, the shell's commands, `just app-test` and
+  `just app-build`); §12 the five crates, the desktop app dependencies and
+  the Tauri build packages of the dev image.
 
 - **v0.3, pre-alpha slice 13 (2026-10-25)**: §4.1 the daemon serves the
   control socket, `--socket`; §6.2 `notify_context` as built; §7.1

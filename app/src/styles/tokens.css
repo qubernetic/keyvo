@@ -1,0 +1,45 @@
+/*
+ * Theme tokens (docs/design/gui-ux.md §7). Fixed defaults for the
+ * pre-alpha: a dark look close to the pad's own background. The theme
+ * bridge (M4a-1) will set the same properties from the KDE or GNOME theme;
+ * every component reads these and nothing else.
+ */
+:root {
+  --kv-bg: #1e1f22;
+  --kv-bg-alt: #26282c;
+  --kv-fg: #f2f3f5;
+  --kv-fg-muted: #a8adb5;
+  --kv-accent: #4c9aff;
+  --kv-sandbox: #b48ef0;
+  --kv-project: #3cbfae;
+  /* The same colours as keyvo_core::render::Theme, so the mirror agrees
+     with the pad. */
+  --kv-state-running: #f08c00;
+  --kv-state-success: #2f9e44;
+  --kv-state-error: #e03131;
+  --kv-font: system-ui, sans-serif;
+  --kv-font-size: 14px;
+  --kv-radius: 6px;
+  --kv-contrast: normal;
+  --kv-motion: full;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --kv-motion: reduced;
+  }
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--kv-bg);
+  color: var(--kv-fg);
+  font-family: var(--kv-font);
+  font-size: var(--kv-font-size);
+}
+
+:focus-visible {
+  outline: 2px solid var(--kv-accent);
+  outline-offset: 2px;
+}

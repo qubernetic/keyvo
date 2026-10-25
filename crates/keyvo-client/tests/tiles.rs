@@ -1,0 +1,64 @@
+//! The GUI's tiles are the daemon's tiles: the same `keyvo-core` renderer
+//! on the same profile gives the same pixels.
+
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
+use std::path::Path;
+
+use keyvo_client::tiles::{TileError, Tiles};
+use keyvo_core::layout::{self, Profiles};
+use keyvo_core::render::{self, Renderer, TileSize};
+use keyvo_core::state::{Mode, View};
+
+const SIZE: TileSize = TileSize {
+    width: 118,
+    height: 118,
+};
+
+fn profiles() -> Profiles {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../keyvo-core/tests/fixtures/dirs/full");
+    layout::load(&dir).unwrap().profiles
+}
+
+fn view(profile: &str, page: usize) -> View {
+    View {
+        profile: profile.into(),
+        page,
+        mode: Mode::Auto,
+    }
+}
+
+#[test]
+fn a_page_renders_like_the_daemon_paints_it() {
+    let profiles = profiles();
+    let paged: Vec<_> = profiles.iter().filter(|p| !p.pages.is_empty()).collect();
+    assert!(!paged.is_empty());
+    for profile in paged {
+        let id = &profile.profile.id;
+        let tiles = Tiles::new().page(&profiles, &view(id, 1), 9, SIZE).unwrap();
+        let specs = render::page(profile, 1, 9).unwrap();
+        assert_eq!(tiles.len(), 9, "{id}");
+        for (tile, spec) in tiles.iter().zip(&specs) {
+            let painted = Renderer::new().tile(spec, SIZE).unwrap();
+            assert_eq!(tile.size(), SIZE);
+            assert_eq!(tile.rgb(), painted.rgb(), "{id}");
+        }
+    }
+}
+
+#[test]
+fn a_profile_the_gui_does_not_have_is_named() {
+    let error = Tiles::new()
+        .page(&profiles(), &view("nowhere", 1), 9, SIZE)
+        .unwrap_err();
+    assert!(matches!(error, TileError::UnknownProfile(ref id) if id == "nowhere"));
+    assert!(error.to_string().contains("nowhere"), "{error}");
+}
+
+#[test]
+fn a_page_the_profile_does_not_have_is_a_render_error() {
+    let error = Tiles::new()
+        .page(&profiles(), &view("global", 99), 9, SIZE)
+        .unwrap_err();
+    assert!(matches!(error, TileError::Render(_)), "{error:?}");
+}

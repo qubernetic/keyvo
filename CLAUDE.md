@@ -36,13 +36,15 @@ just fmt          # cargo fmt --all (fmt-check only verifies)
 just deny         # cargo-deny check
 just cov          # cargo-llvm-cov in the nextest ci profile; CI uploads it to Codecov
 just ci           # fmt-check + lint + test --profile ci + deny + cov, the sequence CI runs
+just app-test     # desktop app frontend: npm ci, svelte-check, vitest (works in native mode)
+just app-build    # frontend build plus the Tauri shell (needs the dev image's webkit2gtk), bin/keyvo-app
 just run -- probe # run the built binary (bin/keyvo) on the host against real hardware
 just test-hw      # hardware checks on the host
 just diagrams     # regenerate docs/diagrams with archify (Issue #4)
 just docs         # build the mdBook (Issue #3)
 ```
 
-**Claude Code runs on the host**, never inside the devcontainer. The container cannot see `/dev/hidraw*` or `/dev/uinput`; anything touching a device runs on the host. CI (`.github/workflows/ci.yml`) builds the same image from the `Dockerfile` and runs the five `just ci` commands in it in the same order (`fmt-check`, `lint`, `test --profile ci`, `deny`, `cov`); the nextest `ci` profile (`.config/nextest.toml`: no fail-fast, JUnit report in `target/nextest/ci/junit.xml`) is what `just ci` and CI share. The `ci` job is read-only and passes the coverage and JUnit reports as an artifact to the `codecov` job, the only job with `id-token: write`, which uploads them without running repository code; pull request runs only restore the caches. Never call `cargo` on the host; use the `just` recipes, or `docker compose exec rust cargo ...` for anything the justfile does not cover. Inside a shell that already is the container (the agent sandbox, `just shell`), `AGENT_HORDE=1` makes the check and build recipes run the toolchain directly (native mode, CONTRIBUTING.md "Two-layer development model"). The container runs as user `dev` with the host UID/GID passed from the justfile (`KEYVO_UID`/`KEYVO_GID`); `target/` is on the bind mount, the cargo registry and git caches are named volumes. Pin bumps: `rust-toolchain.toml` and the Dockerfile base tag move together, and the tag carries its `@sha256:` digest; Node and cargo-binstall versions are build args with a committed sha256 per architecture that moves with the version; cargo tool versions are Dockerfile build args (see CONTRIBUTING.md, "Bumping a pinned version").
+**Claude Code runs on the host**, never inside the devcontainer. The container cannot see `/dev/hidraw*` or `/dev/uinput`; anything touching a device runs on the host. CI (`.github/workflows/ci.yml`) builds the same image from the `Dockerfile` and runs the five `just ci` commands in it in the same order (`fmt-check`, `lint`, `test --profile ci`, `deny`, `cov`); the nextest `ci` profile (`.config/nextest.toml`: no fail-fast, JUnit report in `target/nextest/ci/junit.xml`) is what `just ci` and CI share. The `ci` job is read-only and passes the coverage and JUnit reports as an artifact to the `codecov` job, the only job with `id-token: write`, which uploads them without running repository code; pull request runs only restore the caches. A second read-only job, `app`, builds the same image and runs the command lines of `just app-test` and `just app-build`; it is the only place the Tauri shell compiles (the agent sandbox has no webkit2gtk). Never call `cargo` on the host; use the `just` recipes, or `docker compose exec rust cargo ...` for anything the justfile does not cover. Inside a shell that already is the container (the agent sandbox, `just shell`), `AGENT_HORDE=1` makes the check and build recipes run the toolchain directly (native mode, CONTRIBUTING.md "Two-layer development model"). The container runs as user `dev` with the host UID/GID passed from the justfile (`KEYVO_UID`/`KEYVO_GID`); `target/` is on the bind mount, the cargo registry and git caches are named volumes. Pin bumps: `rust-toolchain.toml` and the Dockerfile base tag move together, and the tag carries its `@sha256:` digest; Node and cargo-binstall versions are build args with a committed sha256 per architecture that moves with the version; cargo tool versions are Dockerfile build args (see CONTRIBUTING.md, "Bumping a pinned version").
 
 ## Repository Layout
 
@@ -58,8 +60,10 @@ keyvo/
 │   │                   #   assets/: bundled Inter font and lucide icons, origin and licence in its README
 │   ├── keyvo-daemon    # tokio runtime: socket server, KWin/X11 watchers (zbus/x11rb), uinput
 │   │                   #   injector (evdev), plugin supervisor, inotify hot-reload, systemd unit
+│   ├── keyvo-client    # socket client, mirror state, tile rendering through keyvo-core for the
+│   │                   #   GUI; sync, hardware-free
 │   └── keyvo-cli       # `keyvo probe|keys|fill|paint-test|preview|doctor|ctl|profile ...`
-├── app/                # Tauri 2 + Svelte 5 GUI (M4a)
+├── app/                # Tauri 2 + Svelte 5 GUI (M4a); src-tauri/ outside the root workspace
 ├── integrations/       # claude-code/ (plugin: hooks, commands, MCP), vscode/, tmux/, nvim/ ...
 ├── plugins/logi/       # C# Logi Actions SDK plugin (M5), built in the Windows VM
 ├── contrib/            # udev rule, KWin script, systemd unit, Flatpak manifest
@@ -71,7 +75,7 @@ keyvo/
 └── docs/               # spec.md, roadmap.md, adr/, diagrams/, research/, plans/, hardware-notes.md
 ```
 
-Platform traits in `keyvo-core`: `HidTransport`, `InputInjector`, `WindowWatcher`. Core rendering is the pure function `(profile, page, mode, overlay_stack, window_ctx) -> 9 KeySpecs + accent + dialpad bindings`.
+Platform traits in `keyvo-core`: `HidTransport`, `InputInjector`, `WindowWatcher`. Clients implement none of them; `keyvo-client` is the client side of the socket, and `app/src-tauri` (its own `Cargo.lock`, compiled only by `just app-build` and the CI `app` job) is thin glue over it. Core rendering is the pure function `(profile, page, mode, overlay_stack, window_ctx) -> 9 KeySpecs + accent + dialpad bindings`.
 
 ## Workflow Loop
 
@@ -107,7 +111,7 @@ Follow the `git-workflow` skill strictly. In short:
 - Rust edition 2024, stable toolchain pinned in `rust-toolchain.toml`.
 - `cargo clippy --all-targets -- -D warnings` and `cargo fmt` clean.
 - No `unwrap()` or `expect()` in library code. Crates define error types with `thiserror`; `anyhow` is used only in binaries (`keyvo-daemon`, `keyvo-cli`).
-- `keyvo-core` is synchronous and hardware-free; `tokio` lives in the daemon.
+- `keyvo-core` and `keyvo-client` are synchronous and hardware-free; `tokio` lives in the daemon.
 - HID++ feature indices differ per device (`0x1B04` is index `0x0b` on the Keypad and `0x0a` on the Dialpad). **Always resolve through `ROOT.getFeature` at runtime; never hard-code an index.**
 - Key geometry comes from the device (VLP display feature fn1); do not hard-code the layout.
 - Timing constants (focus hysteresis, render coalescing, long-press, keep-alive interval, return-to-context timeout) live under `[timing]` in the configuration with a documented default. No bare timing literals in code.

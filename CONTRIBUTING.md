@@ -70,6 +70,8 @@ just fmt          # rustfmt (just fmt-check only verifies)
 just deny         # cargo-deny (licenses, advisories, bans, sources)
 just cov          # cargo-llvm-cov in the nextest ci profile (coverage/lcov.info plus a summary)
 just ci           # fmt-check, lint, test (nextest ci profile), deny, cov: the sequence CI runs
+just app-test     # desktop app frontend: npm ci, svelte-check, vitest
+just app-build    # desktop app: frontend build, then the Tauri shell; bin/keyvo-app
 just run -- probe # run the container-built binary on the host against real hardware
 just test-hw      # hardware checks on the host
 just diagrams     # regenerate docs/diagrams from the archify IR (lands with Issue #4)
@@ -79,7 +81,8 @@ just clean        # stop the container, drop the cargo volumes, delete target/ a
 ```
 
 **Native mode.** With `AGENT_HORDE=1` in the environment the check and build
-recipes (`test`, `lint`, `fmt`, `fmt-check`, `deny`, `cov`, `ci`, `build`) run
+recipes (`test`, `lint`, `fmt`, `fmt-check`, `deny`, `cov`, `ci`, `build`,
+`app-test`, `app-build`) run
 the toolchain directly instead of through `docker compose exec`. It is for a
 shell that already is the container: the project's agent sandbox sets the
 variable for every agent, and it works the same inside `just shell`. The
@@ -88,7 +91,9 @@ hardware recipes (`run`, `test-hw`) refuse to run in native mode. The host
 never uses it: the host has no toolchain, and the hardware stays on the host.
 
 The container image is `rust:<version>-slim-trixie` plus Node LTS, `just`,
-`cargo-deny`, `cargo-llvm-cov`, `cargo-nextest` and `cargo-insta`; the Rust
+`cargo-deny`, `cargo-llvm-cov`, `cargo-nextest` and `cargo-insta`, and the
+Tauri 2 build packages (`libwebkit2gtk-4.1-dev` and its companions, unpinned
+from the base image's Debian repository) for the desktop app; the Rust
 version is pinned in `rust-toolchain.toml` and bumped together with the
 `Dockerfile`. The container runs as a non-root user with the host's UID and GID
 (passed by the `justfile`), so files under the bind-mounted `target/` stay owned
@@ -116,6 +121,15 @@ OIDC means no long-lived token is stored. A pull request without an OIDC token
 Pull request runs only restore the image and cargo registry caches; pushes to
 `develop` and `main` save them. A command that passes in `just ci` passes in CI;
 the workflow never repeats a tool version.
+
+The `app` job builds the same image and runs the command lines of
+`just app-test` (`npm ci`, `svelte-check`, `vitest`) and `just app-build`
+(`vite build`, then `cargo fmt --check`, `cargo clippy -D warnings` and
+`cargo build` on `app/src-tauri/Cargo.toml`). The Tauri shell is outside the
+root workspace, with its own `Cargo.lock` and `target/`, so `just ci` never
+needs webkit2gtk; the CI job is the proof that the shell compiles. The frontend
+dependencies are exact versions in `app/package.json`, locked by the committed
+`app/package-lock.json`.
 
 ### Sandbox-complete and hardware-bound issues
 
@@ -307,6 +321,9 @@ Where the tests live:
 | `keyvo-hid` | Golden-buffer tests against captured frames; integration tests with `FakeHidTransport` | none |
 | `keyvo-daemon` | Integration tests with a fake D-Bus / X11 and the fake transport | none |
 | `keyvo-cli` | Snapshot tests of output; `--json` output is schema-checked | none |
+| `keyvo-client` | The client against the socket fixtures in `tests/protocol-fixtures/socket/`; tiles compared with the daemon's renderer output | none |
+| `app/` frontend | vitest with jsdom (`just app-test`): the TypeScript protocol module against the same fixtures, component tests with a fake daemon | none |
+| `app/src-tauri` | No tests of its own: thin glue over `keyvo-client`, proven by the CI `app` build | none |
 | Renderer | [insta](https://insta.rs/) snapshot tests of rendered key images | none |
 | `just test-hw` | Hardware suite on the host: probe, paint, keep-alive, brightness, input | Keypad / Dialpad |
 

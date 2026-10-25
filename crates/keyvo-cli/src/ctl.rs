@@ -19,16 +19,7 @@ pub fn socket_path(
     xdg_runtime_dir: Option<&OsStr>,
     uid: u32,
 ) -> PathBuf {
-    given
-        .or_else(|| {
-            keyvo_socket
-                .filter(|path| !path.is_empty())
-                .map(PathBuf::from)
-        })
-        .unwrap_or_else(|| {
-            keyvo_core::layout::runtime_dir(xdg_runtime_dir, &std::env::temp_dir(), uid)
-                .join(socket::SOCKET_FILE)
-        })
+    given.unwrap_or_else(|| keyvo_client::socket_path(keyvo_socket, xdg_runtime_dir, uid))
 }
 
 /// The request line for `command` with the fields of `json`.
@@ -109,7 +100,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_socket_is_given_then_keyvo_socket_then_the_runtime_directory() {
+    fn the_socket_is_given_then_the_client_default() {
         let os = |s: &'static str| Some(OsStr::new(s));
         let run = os("/run/user/1000");
         assert_eq!(
@@ -119,14 +110,6 @@ mod tests {
         assert_eq!(
             socket_path(None, os("/b.sock"), run, 1000),
             PathBuf::from("/b.sock")
-        );
-        assert_eq!(
-            socket_path(None, os(""), run, 1000),
-            PathBuf::from("/run/user/1000/keyvo/keyvo.sock")
-        );
-        assert_eq!(
-            socket_path(None, None, None, 1000),
-            std::env::temp_dir().join("keyvo-1000/keyvo.sock")
         );
     }
 
