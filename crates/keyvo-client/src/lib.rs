@@ -8,5 +8,7 @@
 //! Keypad with.
 
 pub mod client;
+pub mod mirror;
 
 pub use client::{Client, ClientError};
+pub use mirror::Mirror;
