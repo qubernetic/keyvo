@@ -11,9 +11,10 @@ use std::fmt;
 use std::path::Path;
 
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
-use serde::Deserialize;
 use serde::de::{self, Deserializer, Unexpected, Visitor};
+use serde::{Deserialize, Serialize};
 
+use crate::chord::Chord;
 use crate::diagnostic::Diagnostic;
 
 /// The id of the profile that always exists and that app profiles overlay.
@@ -143,19 +144,88 @@ pub struct KeyState {
 }
 
 /// What a key press does (pre-alpha: `chord` and `exec`).
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
 pub enum Action {
     /// Send a key combination, for example `ctrl+shift+g`.
     Chord {
         /// The chord.
-        keys: String,
+        keys: Chord,
     },
     /// Run a command without blocking, with `KEYVO_*` in its environment.
     Exec {
         /// The command line.
         cmd: String,
     },
+}
+
+impl Action {
+    /// Whether the key shows the automatic `running`, `success` and
+    /// `error` states while and after the action runs (spec §7.2): `exec`
+    /// does, a chord is instant and does not.
+    #[must_use]
+    pub fn has_feedback(&self) -> bool {
+        matches!(self, Self::Exec { .. })
+    }
+}
+
+impl<'de> Deserialize<'de> for Action {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // A tagged enum buffers its fields and the values lose their
+        // position; visiting the map keeps it, so a bad chord points at
+        // `keys` itself. Keys may come in any order: a bad value is
+        // reported where it is, an unknown key after the whole table.
+        #[derive(Deserialize)]
+        #[serde(rename_all = "lowercase")]
+        enum Type {
+            Chord,
+            Exec,
+        }
+
+        struct ActionVisitor;
+
+        impl<'de> Visitor<'de> for ActionVisitor {
+            type Value = Action;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("an action table")
+            }
+
+            fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<Action, A::Error> {
+                const FIELDS: &[&str] = &["type", "keys", "cmd"];
+                let (mut kind, mut keys, mut cmd, mut unknown) = (None, None, None, None);
+                while let Some(name) = map.next_key::<String>()? {
+                    match name.as_str() {
+                        "type" => kind = Some(map.next_value::<Type>()?),
+                        "keys" => keys = Some(map.next_value::<Chord>()?),
+                        "cmd" => cmd = Some(map.next_value::<String>()?),
+                        _ => {
+                            map.next_value::<de::IgnoredAny>()?;
+                            unknown.get_or_insert(name);
+                        }
+                    }
+                }
+                if let Some(name) = unknown {
+                    return Err(de::Error::unknown_field(&name, FIELDS));
+                }
+                match (kind, keys, cmd) {
+                    (None, _, _) => Err(de::Error::missing_field("type")),
+                    (Some(Type::Chord), Some(keys), None) => Ok(Action::Chord { keys }),
+                    (Some(Type::Exec), None, Some(cmd)) => Ok(Action::Exec { cmd }),
+                    (Some(Type::Chord), _, Some(_)) => {
+                        Err(de::Error::unknown_field("cmd", &["type", "keys"]))
+                    }
+                    (Some(Type::Exec), Some(_), _) => {
+                        Err(de::Error::unknown_field("keys", &["type", "cmd"]))
+                    }
+                    (Some(Type::Chord), None, None) => Err(de::Error::missing_field("keys")),
+                    (Some(Type::Exec), None, None) => Err(de::Error::missing_field("cmd")),
+                }
+            }
+        }
+
+        deserializer.deserialize_map(ActionVisitor)
+    }
 }
 
 /// The schema version marker; only [`SCHEMA_VERSION`] deserializes.
@@ -208,7 +278,8 @@ fn profile_id<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::E
 }
 
 /// The number of a key, 1 to 9, row-major, top-left is 1.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(transparent)]
 pub struct KeySlot(u8);
 
 impl KeySlot {

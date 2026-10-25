@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+use keyvo_core::chord::Chord;
 use keyvo_core::diagnostic::{Diagnostic, Position};
 use keyvo_core::profile::{Action, Color, KeySlot, Profile};
 
@@ -62,7 +63,7 @@ fn full_profile_parses_every_field() {
     assert_eq!(
         commit.action,
         Some(Action::Chord {
-            keys: "ctrl+shift+g".into()
+            keys: Chord::parse("ctrl+shift+g").unwrap()
         })
     );
     let dirty = &commit.states["dirty"];
@@ -77,6 +78,7 @@ fn full_profile_parses_every_field() {
 
 /// Every invalid fixture with the position and the message of its diagnostic.
 const INVALID: &[(&str, usize, usize, &str)] = &[
+    ("bad-chord.toml", 9, 35, "invalid chord: unknown key `nope`"),
     (
         "bad-color.toml",
         9,
@@ -167,4 +169,45 @@ fn every_invalid_fixture_is_in_the_table() {
     files.sort();
     let table: Vec<&str> = INVALID.iter().map(|row| row.0).collect();
     assert_eq!(files, table);
+}
+
+#[test]
+fn an_action_table_needs_the_fields_of_its_type() {
+    let table = [
+        (r#"{ keys = "a" }"#, "missing field `type`"),
+        (r#"{ type = "chord" }"#, "missing field `keys`"),
+        (r#"{ type = "exec" }"#, "missing field `cmd`"),
+        (
+            r#"{ type = "chord", keys = "a", cmd = "true" }"#,
+            "unknown field `cmd`",
+        ),
+        (
+            r#"{ type = "exec", cmd = "true", keys = "a" }"#,
+            "unknown field `keys`",
+        ),
+        (
+            r#"{ type = "exec", cmd = "true", when = 1 }"#,
+            "unknown field `when`",
+        ),
+        (
+            r#""ctrl+s""#,
+            "invalid type: string \"ctrl+s\", expected an action table",
+        ),
+    ];
+    for (action, message) in table {
+        let text = format!(
+            "schema_version = 1\n[profile]\nid = \"t\"\nname = \"T\"\n[[pages]]\n[pages.keys.1]\naction = {action}\n"
+        );
+        let diagnostic = Profile::from_toml(&text, Path::new("t.toml")).unwrap_err();
+        assert!(
+            diagnostic.message.starts_with(message),
+            "{action}: {diagnostic}"
+        );
+    }
+    let text = "schema_version = 1\n[profile]\nid = \"t\"\nname = \"T\"\n[[pages]]\n[pages.keys.1]\naction = { cmd = \"make\", type = \"exec\" }\n";
+    let profile = Profile::from_toml(text, Path::new("t.toml")).unwrap();
+    assert_eq!(
+        profile.pages[0].keys[&KeySlot::new(1).unwrap()].action,
+        Some(Action::Exec { cmd: "make".into() })
+    );
 }

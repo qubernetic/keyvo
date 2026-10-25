@@ -12,10 +12,14 @@ pub mod icon;
 
 use std::sync::Arc;
 
-use resvg::tiny_skia::{self, FillRule, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Transform};
+use resvg::tiny_skia::{
+    self, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke,
+    Transform,
+};
 use resvg::usvg::{self, fontdb};
 
-use crate::profile::{Color, Key, KeySlot, Profile};
+use crate::feedback::Look;
+use crate::profile::{Color, Key, KeySlot, KeyState, Profile};
 
 /// Width and height of a tile in pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +43,14 @@ pub struct KeySpec {
     pub icon: Option<String>,
     /// Text below the icon, or centered without one.
     pub label: Option<String>,
+    /// Text of the corner badge. A [`Look`] with a badge shows its own
+    /// symbol when this is `None`.
+    pub badge: Option<String>,
+    /// The automatic state's look (spec §9).
+    pub look: Look,
+    /// Where the [`Look::Running`] arc starts, in degrees clockwise from
+    /// the top; the daemon turns it to animate the spinner.
+    pub spinner: u16,
 }
 
 impl KeySpec {
@@ -51,6 +63,38 @@ impl KeySpec {
             accent,
             icon: key.and_then(|key| key.icon.clone()),
             label: key.and_then(|key| key.label.clone()),
+            ..Self::default()
+        }
+    }
+
+    /// This spec in the automatic state `look`, with the key's own
+    /// `states.running`, `states.success` or `states.error` applied over
+    /// the built-in look.
+    #[must_use]
+    pub fn with_look(mut self, key: Option<&Key>, look: Look) -> Self {
+        self.look = look;
+        if let Some(state) = look
+            .state()
+            .and_then(|name| key.and_then(|key| key.states.get(name)))
+        {
+            self.apply(state);
+        }
+        self
+    }
+
+    /// Replaces what `state` sets: icon, label, background and badge.
+    pub fn apply(&mut self, state: &KeyState) {
+        if let Some(icon) = &state.icon {
+            self.icon = Some(icon.clone());
+        }
+        if let Some(label) = &state.label {
+            self.label = Some(label.clone());
+        }
+        if let Some(color) = state.color {
+            self.background = Some(color);
+        }
+        if let Some(badge) = &state.badge {
+            self.badge = Some(badge.clone());
         }
     }
 }
@@ -135,6 +179,28 @@ pub struct Theme {
     pub label_margin: f32,
     /// Label baseline of a key with an icon.
     pub label_baseline: f32,
+    /// How far a running key's icon fades toward the background, 0 to 1.
+    pub dim: f32,
+    /// Gap between the icon and the spinner arc.
+    pub spinner_gap: f32,
+    /// Stroke width of the spinner arc.
+    pub spinner_width: f32,
+    /// Length of the spinner arc, in degrees.
+    pub spinner_sweep: f32,
+    /// Spinner color on a key of a profile without an accent.
+    pub spinner: Color,
+    /// Diameter of the corner badge.
+    pub badge_size: f32,
+    /// Gap between the badge and the top and right edges.
+    pub badge_margin: f32,
+    /// Badge of a custom state.
+    pub badge: Color,
+    /// Badge of [`Look::RunningLong`].
+    pub running: Color,
+    /// Badge of [`Look::Success`].
+    pub success: Color,
+    /// Badge of [`Look::Error`].
+    pub error: Color,
 }
 
 impl Default for Theme {
@@ -155,6 +221,17 @@ impl Default for Theme {
             min_label_size: 0.12,
             label_margin: 0.06,
             label_baseline: 0.8,
+            dim: 0.6,
+            spinner_gap: 0.06,
+            spinner_width: 0.045,
+            spinner_sweep: 90.0,
+            spinner: Color::rgb(0xff, 0xff, 0xff),
+            badge_size: 0.3,
+            badge_margin: 0.05,
+            badge: Color::rgb(0x5c, 0x63, 0x6e),
+            running: Color::rgb(0xf0, 0x8c, 0x00),
+            success: Color::rgb(0x2f, 0x9e, 0x44),
+            error: Color::rgb(0xe0, 0x31, 0x31),
         }
     }
 }
@@ -326,21 +403,36 @@ impl Renderer {
             .label
             .as_deref()
             .and_then(|text| self.fit_label(text, size));
+        let (extent, center) = if label.is_some() {
+            (self.theme.labeled_icon_size, self.theme.labeled_icon_center)
+        } else {
+            (self.theme.icon_size, self.theme.icon_center)
+        };
+        let (extent, center) = (extent * height, center * height);
         if let Some(reference) = &spec.icon {
-            let (extent, center) = if label.is_some() {
-                (self.theme.labeled_icon_size, self.theme.labeled_icon_center)
+            let ink = if matches!(spec.look, Look::Running | Look::RunningLong) {
+                mix(foreground, background, self.theme.dim)
             } else {
-                (self.theme.icon_size, self.theme.icon_center)
+                foreground
             };
-            let (extent, center) = (extent * height, center * height);
             draw_icon(
                 &mut pixmap,
                 reference,
-                foreground,
+                ink,
                 (width - extent) / 2.0,
                 center - extent / 2.0,
                 extent,
             );
+        }
+        if spec.look == Look::Running {
+            let arc = SpinnerArc {
+                center: (width / 2.0, center),
+                radius: extent / 2.0 + self.theme.spinner_gap * height,
+                start: f32::from(spec.spinner),
+                sweep: self.theme.spinner_sweep,
+                width: self.theme.spinner_width * height,
+            };
+            draw_arc(&mut pixmap, &arc, spec.accent.unwrap_or(self.theme.spinner));
         }
         if let Some(label) = label {
             let baseline = if spec.icon.is_some() {
@@ -350,11 +442,61 @@ impl Renderer {
                 // below it.
                 self.theme.icon_center * height + CAP_HEIGHT / 2.0 * label.font_size
             };
-            if let Some(tree) = self.label_tree(&label, foreground, size, baseline) {
+            if let Some(tree) = self.text_tree(
+                &label.text,
+                label.font_size,
+                foreground,
+                size,
+                (width / 2.0, baseline),
+            ) {
                 resvg::render(&tree, Transform::identity(), &mut pixmap.as_mut());
             }
         }
+        self.draw_badge(&mut pixmap, spec, size);
         Ok(Tile { pixmap })
+    }
+
+    /// The corner badge: the look's color and symbol, the spec's text in
+    /// place of the symbol; a custom state's text in the neutral color.
+    fn draw_badge(&self, pixmap: &mut Pixmap, spec: &KeySpec, size: TileSize) {
+        let (color, symbol) = match spec.look {
+            Look::RunningLong => (self.theme.running, "lucide:refresh-cw"),
+            Look::Success => (self.theme.success, "lucide:check"),
+            Look::Error => (self.theme.error, "lucide:x"),
+            Look::Idle | Look::Running if spec.badge.is_some() => (self.theme.badge, ""),
+            Look::Idle | Look::Running => return,
+        };
+        let (width, height) = (f32::from(size.width), f32::from(size.height));
+        let diameter = self.theme.badge_size * height;
+        let margin = self.theme.badge_margin * height;
+        let (cx, cy) = (width - margin - diameter / 2.0, margin + diameter / 2.0);
+        if let Some(circle) = PathBuilder::from_circle(cx, cy, diameter / 2.0) {
+            pixmap.fill_path(
+                &circle,
+                &paint(color),
+                FillRule::Winding,
+                Transform::identity(),
+                None,
+            );
+        }
+        let ink = self.theme.foreground(color);
+        if let Some(text) = spec.badge.as_deref().map(str::trim) {
+            let font_size = (BADGE_TEXT * diameter).round();
+            let baseline = cy + CAP_HEIGHT / 2.0 * font_size;
+            if let Some(tree) = self.text_tree(text, font_size, ink, size, (cx, baseline)) {
+                resvg::render(&tree, Transform::identity(), &mut pixmap.as_mut());
+            }
+        } else {
+            let extent = BADGE_ICON * diameter;
+            draw_icon(
+                pixmap,
+                symbol,
+                ink,
+                cx - extent / 2.0,
+                cy - extent / 2.0,
+                extent,
+            );
+        }
     }
 
     /// The whole panel: black, with the tile of `specs[i]` at `panel.keys[i]`
@@ -400,8 +542,15 @@ impl Renderer {
         let largest = (self.theme.label_size * height).round();
         let smallest = (self.theme.min_label_size * height).round();
         let fits = |label: &FittedLabel| {
-            self.label_tree(label, self.theme.light_foreground, size, height / 2.0)
-                .is_some_and(|tree| tree.root().abs_bounding_box().width() <= room)
+            let center = (f32::from(size.width) / 2.0, height / 2.0);
+            self.text_tree(
+                &label.text,
+                label.font_size,
+                self.theme.light_foreground,
+                size,
+                center,
+            )
+            .is_some_and(|tree| tree.root().abs_bounding_box().width() <= room)
         };
         let mut font_size = largest;
         while font_size >= smallest {
@@ -431,13 +580,15 @@ impl Renderer {
             }))
     }
 
-    /// The SVG tree of `label` centered on the tile at `baseline`.
-    fn label_tree(
+    /// The SVG tree of `text` at `font_size` on a tile of `size`, centered
+    /// on `x` with its baseline at `baseline`.
+    fn text_tree(
         &self,
-        label: &FittedLabel,
+        text: &str,
+        font_size: f32,
         color: Color,
         size: TileSize,
-        baseline: f32,
+        (x, baseline): (f32, f32),
     ) -> Option<usvg::Tree> {
         let svg = format!(
             concat!(
@@ -447,13 +598,13 @@ impl Renderer {
             ),
             w = size.width,
             h = size.height,
-            x = f32::from(size.width) / 2.0,
+            x = x,
             y = baseline,
             family = FONT_FAMILY,
             weight = FONT_WEIGHT,
-            size = label.font_size,
+            size = font_size,
             color = color,
-            text = escape(&label.text),
+            text = escape(text),
         );
         let options = usvg::Options {
             fontdb: Arc::clone(&self.fonts),
@@ -484,6 +635,59 @@ const FONT_FAMILY: &str = "Inter";
 const FONT_WEIGHT: u16 = 600;
 /// Inter's cap height as a fraction of the font size (2048 of 2816 units).
 const CAP_HEIGHT: f32 = 0.727;
+
+/// Badge text size as a fraction of the badge diameter.
+const BADGE_TEXT: f32 = 0.62;
+/// Badge symbol size as a fraction of the badge diameter.
+const BADGE_ICON: f32 = 0.62;
+
+/// `a` moved toward `b` by `t` (0 is `a`, 1 is `b`).
+fn mix(a: Color, b: Color, t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    let channel = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t) / 255.0;
+    tiny_skia::Color::from_rgba(channel(a.r, b.r), channel(a.g, b.g), channel(a.b, b.b), 1.0)
+        .map_or(a, |mixed| {
+            let mixed = mixed.to_color_u8();
+            Color::rgb(mixed.red(), mixed.green(), mixed.blue())
+        })
+}
+
+/// A stroked circular arc; angles in degrees clockwise from the top.
+struct SpinnerArc {
+    center: (f32, f32),
+    radius: f32,
+    start: f32,
+    sweep: f32,
+    width: f32,
+}
+
+/// Strokes `arc` in `color` with round caps.
+fn draw_arc(pixmap: &mut Pixmap, arc: &SpinnerArc, color: Color) {
+    const SEGMENTS: u16 = 24;
+    let point = |degrees: f32| {
+        let radians = degrees.to_radians();
+        (
+            arc.center.0 + arc.radius * radians.sin(),
+            arc.center.1 - arc.radius * radians.cos(),
+        )
+    };
+    let mut path = PathBuilder::new();
+    let (x, y) = point(arc.start);
+    path.move_to(x, y);
+    for step in 1..=SEGMENTS {
+        let (x, y) = point(arc.start + arc.sweep * f32::from(step) / f32::from(SEGMENTS));
+        path.line_to(x, y);
+    }
+    if let Some(path) = path.finish() {
+        let stroke = Stroke {
+            width: arc.width,
+            line_cap: LineCap::Round,
+            line_join: LineJoin::Round,
+            ..Stroke::default()
+        };
+        pixmap.stroke_path(&path, &paint(color), &stroke, Transform::identity(), None);
+    }
+}
 
 /// `text` with the XML special characters escaped.
 fn escape(text: &str) -> String {

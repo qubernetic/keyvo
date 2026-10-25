@@ -642,6 +642,25 @@ mouse.dpi            = 1200
   keys of the example above (`general_hint`, `on_fail`, the `recipe` action,
   `[dialpad]`, `[desk_state]`) are rejected as unknown until their issues
   add them.
+- Chords as `keyvo_core::chord` parses them (checked when the profile
+  loads; a bad chord is reported at its `keys` value): steps separated by
+  `,`, each step modifiers joined with `+` and one key last
+  (`ctrl+k, ctrl+s`). Names are case-insensitive, spaces around them are
+  ignored. Modifiers: `ctrl` (`control`), `shift`, `alt`, `altgr` (right
+  alt), `super` (`meta`); they are pressed in that order and released in
+  reverse, and a modifier alone is pressed as its own key. A key is a
+  symbol, an alias (`escape`, `return`, `del`, `ins`, `pgup`, `pgdn`,
+  `period`, `quote`, `backtick`) or any `KEY_*` name of
+  `linux/input-event-codes.h`, with or without the prefix (`f13`,
+  `KEY_PLAYPAUSE`). Shifted symbols add `shift` and press the key that
+  carries them on the US layout (`ctrl+?` is ctrl, shift and slash). Where
+  a key is expected, `+` and `,` are keys (`ctrl++`, `ctrl+,`); a sequence
+  step after `ctrl+,` needs its own comma (`ctrl+,, a`). Per-step delays
+  and hold/release come later.
+- Press kinds as built (`keyvo_core::press`): `short` and `long`; the long
+  press fires once `[timing].long_press` is reached, without waiting for
+  the release. A profile has one action per key, and both kinds run it;
+  per-kind bindings and `repeat` come with M1-9.
 - Action types (v1): `chord` (key combo, sequences with `,`, per-step
   delays, hold/release), `exec` (non-blocking subprocess with `KEYVO_*`
   env, §8), `http` (GET/POST), `text` (type a string), `page` / `profile` /
@@ -793,7 +812,15 @@ disabled key, dry run). Entries live in a ring buffer (`[trace].ring`,
 default 1000) and in `~/.local/state/keyvo/trace.ndjson` (rotated at
 `[trace].max_size`, default 8 MiB, `[trace].keep`, default 3). Debug mode
 (`[trace].debug`) adds HID-level events to a separate device log, never to the
-entries. The trace core lands in M1, the context fields in M2.
+entries. The trace core lands in M1, the context fields in M2. The record
+type (`keyvo_core::trace::TraceRecord`) and the press resolution that fills
+it (`keyvo_core::press::resolve`) are defined in `keyvo-core`; the ring
+buffer, the file and `keyvo ctl trace|tail` live in the daemon. Pre-alpha
+subset of a record: timestamp, trigger (press kind, simulated), profile id,
+page, key, the resolved action, and the result: `unbound`, `dry_run`,
+`pending`, `sent` with the chord's key events, `exited` with exit code and
+duration, or `failed` with the reason; one serialized record per line is in
+`crates/keyvo-core/tests/fixtures/trace/records.ndjson`.
 
 **Plugins.** `~/.config/keyvo/plugins/<name>/plugin.toml` declares an
 executable, its arguments, restart policy and the profiles it serves. The
@@ -848,8 +875,9 @@ justfile page, `gh`, `kubectl`, other agent CLIs, Kitty/WezTerm.
   `phosphor:`, `simple-icons:` and `file:` reference until their issues,
   draws `lucide:circle-question-mark` and `keyvo preview` names it. Only
   the embedded font is loaded, never a system font, so a spec renders to
-  the same pixels everywhere. The theme file, badges, gradients, caching
-  and the size guard come with later issues.
+  the same pixels everywhere. Badges and the feedback looks are described
+  below. The theme file, gradients, caching and the size guard come with
+  later issues.
 - Animation = frame push; renderer supports spinner/progress/blink
   primitives. Sustainable frame rate is measured in M0-1 (plan §5 item 9)
   and documented; there is no native animated format.
@@ -863,6 +891,23 @@ justfile page, `gh`, `kubectl`, other agent CLIs, Kitty/WezTerm.
   desktop notification is optional, default only on `error`. The GUI shows the
   same looks in its mirror and respects the system's reduced-motion setting
   for the flash (the pad does not).
+- Feedback as built (`keyvo_core::feedback`, pre-alpha subset): one
+  `Feedback` per key moves through the states with a `Clock`'s instants
+  and names the time of its next change on its own (long run, end of the
+  success hold), so the daemon repaints then. Only `exec` actions have
+  automatic states; a chord is instant. A press ends `success` and
+  `error`, not `running`; a result that is neither (a dry run) returns the
+  key to its own look. The renderer draws the looks from the theme
+  defaults: `running` fades the icon 60 % toward the background and
+  strokes a 90° arc around it in the profile accent (white without one),
+  starting at the key spec's `spinner` angle, which the daemon turns to
+  animate; the long run, `success` and `error` draw a corner badge (30 %
+  of the tile height) in orange with `refresh-cw`, green with `check`, red
+  with `x`. A key's `states.running`, `states.success` or `states.error`
+  replaces icon, label, background and badge text; the badge keeps the
+  look's color. A custom state's badge text draws in neutral gray. The
+  success flash and the desktop notification come with the daemon's frame
+  push.
 - `keyvo preview <profile> [--page N] -o <file.png>` renders one page
   (counted from 1, default 1) onto the panel with no hardware: the
   captured MX Creative Keypad geometry (480×480, the nine key rectangles
@@ -1101,6 +1146,14 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 9 (2026-10-25)**: §7.2 the chord grammar as
+  parsed (aliases, shifted symbols, every evdev key name, sequences),
+  chords checked when a profile loads, press kinds `short` and `long` as
+  built and both running the key's one action; §8 the trace record type
+  and the press resolution are defined in `keyvo-core`, the pre-alpha
+  record fields and results; §9 the feedback states and their looks as
+  built (dimmed icon and spinner arc, badges, per-key state overrides).
 
 - **v0.3, pre-alpha slice 8 (2026-10-25)**: §9 the JPEG encoder is the
   `image` crate's (4:4:4) instead of the IJG-licensed `jpeg-encoder`, the

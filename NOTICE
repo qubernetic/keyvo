@@ -22,3 +22,9 @@ keyvo embeds these third-party assets (crates/keyvo-core/assets/):
   Contributors (https://github.com/lucide-icons/lucide), licensed under
   the ISC License; some icons derive from Feather (MIT), as listed in
   the same file (assets/lucide/LICENSE).
+
+The evdev key code table (crates/keyvo-core/src/chord/keycodes.rs) is
+generated from the KEY_* defines of the Linux uapi header
+linux/input-event-codes.h (GPL-2.0-only WITH Linux-syscall-note); the
+syscall note places programs that use the kernel interface, such as these
+code numbers, outside the GPL.
