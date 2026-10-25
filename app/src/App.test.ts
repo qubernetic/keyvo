@@ -6,14 +6,10 @@ import { describe, expect, it } from "vitest";
 import App from "./App.svelte";
 import type { Daemon } from "./lib/daemon";
 import type { Editor } from "./lib/editor";
+import { responses } from "./lib/fixtures";
 import type { Status } from "./lib/protocol";
 
-const STATUS: Status = {
-  version: "0.0.0",
-  device: { connected: true, keys: 9 },
-  view: { profile: "terminal", page: 1, mode: "auto" },
-  trace: 0,
-};
+const STATUS = responses()[0] as Status;
 
 const EDITOR: Editor = {
   key: () => Promise.resolve({ path: "/c/profiles/terminal.toml", fields: {} }),

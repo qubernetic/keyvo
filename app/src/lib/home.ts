@@ -2,7 +2,7 @@
 // of a subscription, the way keyvo_client::Mirror folds them on the Rust
 // side; and the one-line summary of a trace entry.
 import type { Update } from "./daemon";
-import type { Context, DeviceStatus, Status, TraceRecord, View } from "./protocol";
+import type { Context, DeviceStatus, Geometry, Status, TraceRecord, View } from "./protocol";
 
 /** The trace entries Home keeps and asks the daemon to replay. */
 export const HOME_TRACE = 20;
@@ -10,6 +10,9 @@ export const HOME_TRACE = 20;
 export interface HomeState {
   view?: View;
   device?: DeviceStatus;
+  /** The last geometry a Keypad reported; it stays when the Keypad goes,
+   * as the daemon keeps painting for it. */
+  geometry?: Geometry;
   context?: Context;
   /** The keys held down on the device, in key order. */
   held: number[];
@@ -32,8 +35,28 @@ export function fromStatus(status: Status): HomeState {
     ...initial(),
     view: status.view,
     device: status.device,
+    geometry: status.device.geometry,
     context: status.context,
   };
+}
+
+/** The key numbers of `geometry` in rows, top to bottom, each row left to
+ * right. A key starts a new row when its top edge is below the middle of
+ * the row's first key, so a pixel of offset does not split a row. */
+export function grid(geometry: Geometry): number[][] {
+  const keys = geometry.rects
+    .map((rect, index) => ({ rect, key: index + 1 }))
+    .sort((a, b) => a.rect.y - b.rect.y);
+  const rows: { middle: number; keys: typeof keys }[] = [];
+  for (const entry of keys) {
+    const row = rows.at(-1);
+    if (row !== undefined && entry.rect.y < row.middle) {
+      row.keys.push(entry);
+    } else {
+      rows.push({ middle: entry.rect.y + entry.rect.height / 2, keys: [entry] });
+    }
+  }
+  return rows.map((row) => row.keys.sort((a, b) => a.rect.x - b.rect.x).map((entry) => entry.key));
 }
 
 /** `state` after `update`; `state` itself stays as it was. */
@@ -62,7 +85,7 @@ export function apply(state: HomeState, update: Update): HomeState {
       return { ...state, view: { profile: event.profile, page: event.page, mode: event.mode } };
     case "device": {
       const { event: _, ...device } = event;
-      return { ...state, device };
+      return { ...state, device, geometry: device.geometry ?? state.geometry };
     }
     case "context": {
       const { event: _, ...context } = event;

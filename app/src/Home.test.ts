@@ -12,16 +12,17 @@ import type { Daemon, Tile, Update } from "./lib/daemon";
 import type { Editor, KeyFields, Target } from "./lib/editor";
 import { eventsOf, nth, responses } from "./lib/fixtures";
 import { HOME_TRACE } from "./lib/home";
-import type { PressKind, Status, TraceRecord } from "./lib/protocol";
+import type { PressKind, Size, Status, TraceRecord } from "./lib/protocol";
 
 const STATUS = responses()[0] as Status;
+const TILE = { width: 118, height: 118 };
 const DRY_RUN = (responses()[3] as { entry: TraceRecord }).entry;
 const PROFILE = "/home/u/.config/keyvo/profiles/terminal.toml";
 
 /** Key 4 is the profile's own, key 3 a global key under it, key 5 has no
  * layer (as the tiles of a GUI before the layer was reported). */
-function tiles(profile: string, page: number): Tile[] {
-  return Array.from({ length: 9 }, (_, index) => ({
+function tiles(profile: string, page: number, keys = 9): Tile[] {
+  return Array.from({ length: keys }, (_, index) => ({
     image: `data:image/png;base64,${profile}-${page}-${index + 1}`,
     ...(index === 4 ? { label: "Test", action: { type: "exec" as const, cmd: "cargo test" } } : {}),
     ...(index === 3
@@ -42,7 +43,9 @@ function fake(overrides: Partial<Daemon> = {}) {
   let listener: ((update: Update) => void) | undefined;
   const daemon = {
     status: vi.fn(() => Promise.resolve(STATUS)),
-    tiles: vi.fn((profile: string, page: number) => Promise.resolve(tiles(profile, page))),
+    tiles: vi.fn((profile: string, page: number, keys: number, _tile: Size) =>
+      Promise.resolve(tiles(profile, page, keys)),
+    ),
     press: vi.fn((key: number, kind: PressKind) =>
       Promise.resolve({ ...DRY_RUN, key, trigger: { press: kind, simulated: true } }),
     ),
@@ -100,7 +103,9 @@ describe("Home mirror", () => {
     for (const row of rows) {
       expect(within(row).getAllByRole("gridcell")).toHaveLength(3);
     }
-    expect(daemon.daemon.tiles).toHaveBeenCalledWith("terminal", 1);
+    // Key count and tile size are the geometry of the status reply.
+    expect(daemon.daemon.tiles).toHaveBeenCalledWith("terminal", 1, 9, TILE);
+    expect(key(1)).toHaveStyle({ width: "118px", height: "118px" });
     // The image is decorative (alt=""): the key's name says what it shows.
     expect(key(1).querySelector("img")).toHaveAttribute(
       "src",
@@ -127,7 +132,9 @@ describe("Home mirror", () => {
   it("follows the view events and fetches the new page", async () => {
     const daemon = await mounted();
     await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
-    await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenLastCalledWith("global", 2));
+    await waitFor(() =>
+      expect(daemon.daemon.tiles).toHaveBeenLastCalledWith("global", 2, 9, TILE),
+    );
     expect(
       screen.getByRole("grid", { name: "Keypad mirror: profile global, page 2" }),
     ).toBeInTheDocument();
@@ -145,6 +152,44 @@ describe("Home mirror", () => {
     await daemon.send({ kind: "event", event: good });
     await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenCalledTimes(3));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("lays out the keys and sizes the tiles the daemon's geometry reports", async () => {
+    const rect = (x: number, y: number) => ({ x, y, width: 90, height: 80 });
+    const geometry = {
+      panel: { width: 200, height: 200 },
+      tile: { width: 90, height: 80 },
+      rects: [rect(0, 0), rect(100, 0), rect(0, 100), rect(100, 100)],
+    };
+    const status: Status = { ...STATUS, device: { connected: true, keys: 4, geometry } };
+    const daemon = fake({ status: vi.fn(() => Promise.resolve(status)) });
+    render(Home, { props: { daemon: daemon.daemon, editor: editor() } });
+    await waitFor(() => expect(key(4)).toHaveAccessibleName("Key 4: Palette, chord ctrl+p, app layer"));
+    expect(daemon.daemon.tiles).toHaveBeenCalledWith("terminal", 1, 4, { width: 90, height: 80 });
+    const rows = within(screen.getByRole("grid")).getAllByRole("row");
+    expect(rows.map((row) => within(row).getAllByRole("gridcell").length)).toEqual([2, 2]);
+    expect(key(1)).toHaveStyle({ width: "90px", height: "80px" });
+    expect(screen.queryByRole("button", { name: /^Key 5\b/ })).not.toBeInTheDocument();
+    // Arrows move inside the reported 2x2 grid; digits past the last key do nothing.
+    await fireEvent.keyDown(screen.getByRole("grid"), { key: "ArrowRight" });
+    await fireEvent.keyDown(screen.getByRole("grid"), { key: "ArrowRight" });
+    expect(key(2)).toHaveFocus();
+    await fireEvent.keyDown(screen.getByRole("grid"), { key: "ArrowDown" });
+    expect(key(4)).toHaveFocus();
+    await fireEvent.keyDown(screen.getByRole("grid"), { key: "7" });
+    expect(key(4)).toHaveFocus();
+  });
+
+  it("shows no mirror until a Keypad has reported its geometry", async () => {
+    const daemon = fake({ status: vi.fn(() => Promise.resolve(responses()[1] as Status)) });
+    render(Home, { props: { daemon: daemon.daemon, editor: editor() } });
+    expect(await screen.findByText(/once a Keypad has reported its geometry/)).toBeInTheDocument();
+    expect(screen.queryByRole("grid")).not.toBeInTheDocument();
+    expect(daemon.daemon.tiles).not.toHaveBeenCalled();
+    // A connected Keypad brings it.
+    await daemon.send({ kind: "event", event: nth(eventsOf("device"), 0) });
+    await waitFor(() => expect(key(9)).toBeInTheDocument());
+    expect(daemon.daemon.tiles).toHaveBeenCalledWith("global", 1, 9, TILE);
   });
 
   it("says why a page has no tiles", async () => {
@@ -354,10 +399,11 @@ describe("Home without a daemon", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Daemon unreachable: no shell");
   });
 
-  it("shows the empty grid while connecting", () => {
+  it("shows no keys while connecting, as the geometry comes with the status", () => {
     const daemon = fake({ status: vi.fn(() => new Promise<Status>(() => {})) });
     render(Home, { props: { daemon: daemon.daemon, editor: editor() } });
-    expect(screen.getByRole("grid", { name: "Keypad mirror" })).toBeInTheDocument();
+    expect(screen.queryByRole("grid")).not.toBeInTheDocument();
+    expect(screen.queryByText(/reported its geometry/)).not.toBeInTheDocument();
     expect(screen.getByText("Connecting to the daemon")).toBeInTheDocument();
   });
 });

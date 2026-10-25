@@ -16,21 +16,10 @@ use keyvo_core::edit::KeyFields;
 use keyvo_core::press::PressKind;
 use keyvo_core::profile::KeySlot;
 use keyvo_core::render::TileSize;
-use keyvo_core::socket::{Command, Reply};
+use keyvo_core::socket::{Command, Reply, Status};
 use keyvo_core::state::View;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter as _, Manager as _};
-
-/// The tile size of the mirror: the Keypad's key side as captured from
-/// Options+ (`keyvo_hid::display::captured_geometry`), until the daemon
-/// reports the device geometry.
-const TILE: TileSize = TileSize {
-    width: 118,
-    height: 118,
-};
-
-/// The Keypad's key count, for the same reason.
-const KEYS: u8 = 9;
 
 /// The daemon's socket, as `keyvo ctl` finds it.
 fn socket() -> std::path::PathBuf {
@@ -57,7 +46,7 @@ fn status() -> Result<Value, String> {
 /// A dry-run press of `key`: the daemon's trace entry.
 #[tauri::command]
 fn press(key: u8, kind: PressKind) -> Result<Value, String> {
-    let key = KeySlot::new(key).ok_or_else(|| format!("no key {key}; the keys are 1 to 9"))?;
+    let key = KeySlot::new(key).ok_or_else(|| format!("no key {key}; keys count from 1"))?;
     let entry = Client::connect(&socket())
         .and_then(|mut client| client.dry_run(key, kind))
         .map_err(|error| error.to_string())?;
@@ -86,13 +75,14 @@ fn subscribe(app: AppHandle, replay: usize) {
     });
 }
 
-/// The user's configuration directory.
+/// The configuration directory the daemon loads (`config_dir` of its
+/// `status` reply), so the GUI edits the tree the pad shows, also under
+/// `keyvo-daemon --config-dir`.
 fn config_dir() -> Result<PathBuf, String> {
-    keyvo_core::layout::config_dir(
-        std::env::var_os("XDG_CONFIG_HOME").as_deref(),
-        std::env::var_os("HOME").as_deref(),
-    )
-    .ok_or_else(|| "no configuration directory: neither XDG_CONFIG_HOME nor HOME is set".into())
+    match request(Command::Status {})? {
+        Reply::Status(Status { config_dir, .. }) => Ok(PathBuf::from(config_dir)),
+        other => Err(format!("unexpected answer to status: {other:?}")),
+    }
 }
 
 /// The key editor on the user's configuration directory, its snapshots in
@@ -109,7 +99,7 @@ fn editor() -> Result<Editor, Problem> {
 }
 
 fn slot(key: u8) -> Result<KeySlot, Problem> {
-    KeySlot::new(key).ok_or_else(|| Problem::message(format!("no key {key}; the keys are 1 to 9")))
+    KeySlot::new(key).ok_or_else(|| Problem::message(format!("no key {key}; keys count from 1")))
 }
 
 /// The file and the fields of `key` on `profile`'s page `page`, for the
@@ -141,11 +131,13 @@ fn edit_key(profile: String, page: usize, key: u8, fields: Value) -> Result<Edit
         .map_err(|error| Problem::from(&error))
 }
 
-/// The keys of `profile`'s page `page` from the user's configuration
-/// directory in key order: the tile as a PNG data URL (`image`), with the
-/// key's `label` and `action` (`keyvo_client::tiles::KeySummary`).
+/// The `keys` keys of `profile`'s page `page` from the daemon's
+/// configuration directory in key order, rendered at `tile`; key count and
+/// tile size come from the geometry of the daemon's `status` reply. Each
+/// is the tile as a PNG data URL (`image`), with the key's `label`,
+/// `action` and `layer` (`keyvo_client::tiles::KeySummary`).
 #[tauri::command]
-fn tiles(profile: String, page: usize) -> Result<Vec<Value>, String> {
+fn tiles(profile: String, page: usize, keys: u8, tile: TileSize) -> Result<Vec<Value>, String> {
     let dir = config_dir()?;
     let profiles = keyvo_core::layout::load(&dir)
         .map_err(|errors| errors.to_string())?
@@ -155,15 +147,15 @@ fn tiles(profile: String, page: usize) -> Result<Vec<Value>, String> {
         page,
         mode: keyvo_core::state::Mode::Auto,
     };
-    let keys =
-        keyvo_client::tiles::keys(&profiles, &view, KEYS).map_err(|error| error.to_string())?;
+    let summaries =
+        keyvo_client::tiles::keys(&profiles, &view, keys).map_err(|error| error.to_string())?;
     Tiles::new()
-        .page(&profiles, &view, KEYS, TILE)
+        .page(&profiles, &view, keys, tile)
         .map_err(|error| error.to_string())?
         .iter()
-        .zip(keys)
-        .map(|(tile, key)| {
-            let png = tile.png().map_err(|error| error.to_string())?;
+        .zip(summaries)
+        .map(|(rendered, key)| {
+            let png = rendered.png().map_err(|error| error.to_string())?;
             let mut value = serde_json::to_value(key).map_err(|error| error.to_string())?;
             value["image"] = format!("data:image/png;base64,{}", STANDARD.encode(png)).into();
             Ok(value)
