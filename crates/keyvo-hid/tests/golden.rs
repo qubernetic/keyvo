@@ -211,6 +211,7 @@ fn hcooper_geometry_is_a_480_panel_with_nine_118_pixel_keys() {
     let mut hidpp = replay(fixture!("display-geometry.txt"));
     let geometry = display::geometry(&mut hidpp).unwrap();
     assert_eq!((geometry.width, geometry.height), (480, 480));
+    assert_eq!((geometry.keys.len(), geometry.visible_areas), (9, 0));
     let origins: Vec<_> = geometry.keys.iter().map(|k| (k.index, k.x, k.y)).collect();
     assert_eq!(
         origins,
@@ -231,6 +232,26 @@ fn hcooper_geometry_is_a_480_panel_with_nine_118_pixel_keys() {
             .keys
             .iter()
             .all(|k| (k.width, k.height) == (118, 118))
+    );
+    assert!(hidpp.transport_mut().is_done());
+}
+
+#[test]
+fn hcooper_capabilities_decode_every_field() {
+    let mut hidpp = replay(fixture!("display-capabilities.txt"));
+    assert_eq!(
+        display::capabilities(&mut hidpp).unwrap(),
+        display::Capabilities {
+            screen_count: 1,
+            max_image_size: 124_928,
+            max_image_fps: 30,
+            deferrable_display_update: true,
+            rgb565: true,
+            rgb888: false,
+            jpeg: true,
+            calibrated: true,
+            origin: 0,
+        }
     );
     assert!(hidpp.transport_mut().is_done());
 }

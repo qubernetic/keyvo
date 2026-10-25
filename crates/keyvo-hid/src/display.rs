@@ -14,7 +14,9 @@ use crate::hidpp::{Hidpp, HidppError, Plane};
 use crate::keep_alive;
 use crate::root::{VlpProtocol, feature};
 
-/// `getGeometry(screen)`.
+/// `getCapabilities`.
+const FN_GET_CAPABILITIES: u8 = 0;
+/// `getGeometry(screen)` (Options+ `getDisplayInfo`).
 const FN_GET_GEOMETRY: u8 = 1;
 /// `getSupportedDeviceStates`: the modes the display accepts.
 const FN_GET_MODES: u8 = 3;
@@ -249,11 +251,79 @@ pub fn current_mode<T: HidTransport>(hidpp: &mut Hidpp<T>) -> Result<DisplayMode
         .ok_or_else(|| HidppError::Malformed("empty getMode reply".into()))
 }
 
+/// Bytes of the fn0 reply Options+ reads: screen count, maximum image size
+/// (u16), maximum frame rate, three unread bytes, the flag byte.
+const CAPABILITIES_LEN: usize = 8;
+/// `maxImageSize` counts units of this many bytes.
+const IMAGE_SIZE_UNIT: u32 = 1024;
+
+/// What the display can take, from display fn0 (spec §5.5; field names as
+/// Options+ logs them, `docs/research/options-plus-display-pipeline.md`
+/// section 0).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "five independent flag bits of the device, one field each"
+)]
+pub struct Capabilities {
+    /// `deviceScreenCount`.
+    pub screen_count: u8,
+    /// `maxImageSize` in bytes: the largest image one `setImage` may carry.
+    pub max_image_size: u32,
+    /// `maxImageFPS`.
+    pub max_image_fps: u8,
+    /// Flag bit 0, `deferrableDisplayUpdate`.
+    pub deferrable_display_update: bool,
+    /// Flag bit 1, `rgb565`.
+    pub rgb565: bool,
+    /// Flag bit 2, `rgb888`.
+    pub rgb888: bool,
+    /// Flag bit 3, `jpeg`.
+    pub jpeg: bool,
+    /// Flag bit 4, `calibrated`.
+    pub calibrated: bool,
+    /// Flag bits 5 and 6, `origin`.
+    pub origin: u8,
+}
+
+/// Asks the display for its capabilities, resolving the display index
+/// first.
+///
+/// # Errors
+///
+/// [`HidppError::Malformed`] for a reply shorter than the eight bytes
+/// Options+ reads, plus the request errors.
+pub fn capabilities<T: HidTransport>(hidpp: &mut Hidpp<T>) -> Result<Capabilities, HidppError> {
+    let index = hidpp.feature_index(Plane::Vlp, feature::VLP_DISPLAY)?;
+    let reply = hidpp.request(Plane::Vlp, index, FN_GET_CAPABILITIES, &[])?;
+    decode_capabilities(&reply.params)
+}
+
+fn decode_capabilities(params: &[u8]) -> Result<Capabilities, HidppError> {
+    let Some(&[screen_count, s0, s1, max_image_fps, _, _, _, flags]) =
+        params.first_chunk::<CAPABILITIES_LEN>()
+    else {
+        return Err(HidppError::Malformed("short capabilities reply".into()));
+    };
+    let bit = |n: u8| flags & (1 << n) != 0;
+    Ok(Capabilities {
+        screen_count,
+        max_image_size: u32::from(u16::from_be_bytes([s0, s1])) * IMAGE_SIZE_UNIT,
+        max_image_fps,
+        deferrable_display_update: bit(0),
+        rgb565: bit(1),
+        rgb888: bit(2),
+        jpeg: bit(3),
+        calibrated: bit(4),
+        origin: (flags >> 5) & 0b11,
+    })
+}
+
 /// The screen keyvo asks about; the Keypad has one (captured request `01`).
 const SCREEN: u8 = 1;
 /// Bytes before the first key record: shape, dimension (u16), width (u16),
-/// height (u16), key count, and a second count (0 in the capture, meaning
-/// unconfirmed).
+/// height (u16), the button (key) count and the visible-area count (0 in
+/// the capture).
 const GEOMETRY_HEADER_LEN: usize = 9;
 /// Bytes of one key record: shape, x, y, w, h (u16 each).
 const KEY_RECORD_LEN: usize = 9;
@@ -286,8 +356,11 @@ pub struct Geometry {
     pub width: u16,
     /// Panel height in pixels.
     pub height: u16,
-    /// The keys in table order.
+    /// The keys (Options+ buttons) in table order; byte 7 counts them.
     pub keys: Vec<KeyRect>,
+    /// Byte 8, the visible-area count. Their records follow the keys';
+    /// keyvo does not read them (none on the Keypad).
+    pub visible_areas: u8,
 }
 
 impl Geometry {
@@ -353,6 +426,7 @@ pub fn captured_geometry() -> Geometry {
                 height: CAPTURED_KEY_SIDE,
             })
             .collect(),
+        visible_areas: 0,
     }
 }
 
@@ -373,7 +447,7 @@ fn decode_geometry(params: &[u8]) -> Result<Geometry, HidppError> {
     let Some((header, records)) = params.split_first_chunk::<GEOMETRY_HEADER_LEN>() else {
         return Err(HidppError::Malformed("short geometry header".into()));
     };
-    let [shape, d0, d1, w0, w1, h0, h1, count, _] = *header;
+    let [shape, d0, d1, w0, w1, h0, h1, count, visible_areas] = *header;
     let width = u16::from_be_bytes([w0, w1]);
     let height = u16::from_be_bytes([h0, h1]);
     let needed = usize::from(count) * KEY_RECORD_LEN;
@@ -393,6 +467,7 @@ fn decode_geometry(params: &[u8]) -> Result<Geometry, HidppError> {
         width,
         height,
         keys,
+        visible_areas,
     })
 }
 
@@ -568,6 +643,23 @@ mod tests {
         );
     }
 
+    #[test]
+    fn origin_is_the_two_bits_above_calibrated() {
+        let caps = decode_capabilities(&[0x01, 0x00, 0x01, 0x0a, 0, 0, 0, 0xe4]).unwrap();
+        assert_eq!(caps.max_image_size, 1024);
+        assert_eq!(caps.origin, 3);
+        assert!(caps.rgb888 && !caps.calibrated && !caps.jpeg && !caps.rgb565);
+        assert!(!caps.deferrable_display_update);
+    }
+
+    #[test]
+    fn a_short_capabilities_reply_is_malformed() {
+        assert!(matches!(
+            decode_capabilities(&[0x01, 0x00, 0x7a, 0x1e, 0, 0, 0]),
+            Err(HidppError::Malformed(_))
+        ));
+    }
+
     fn table(count: u8, records: &[[u8; KEY_RECORD_LEN]]) -> Vec<u8> {
         let mut bytes = vec![0x01, 0x00, 0x60, 0x01, 0xe0, 0x01, 0xe0, count, 0x00];
         bytes.extend(records.iter().flatten());
@@ -583,6 +675,14 @@ mod tests {
         let geometry = decode_geometry(&params).unwrap();
         assert_eq!(geometry.keys.len(), 1);
         assert_eq!((geometry.shape, geometry.dimension), (1, 0x60));
+    }
+
+    #[test]
+    fn byte_8_is_the_visible_area_count() {
+        let mut params = table(1, &[KEY_1]);
+        params[8] = 2;
+        let geometry = decode_geometry(&params).unwrap();
+        assert_eq!((geometry.keys.len(), geometry.visible_areas), (1, 2));
     }
 
     #[test]

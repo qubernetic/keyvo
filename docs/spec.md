@@ -672,9 +672,20 @@ and `[timing].reply_timeout`.
   version (ROOT ping), the index and version of every classic feature keyvo
   uses (`0x0003`, `0x0008`, `0x1B04`, `0x8040`), the firmware entities,
   the keep-alive range, the VLP protocol and the `0x19A1` index, the
-  display mode with the supported modes, and the geometry. A step the
-  device refuses is reported in its line and the probe goes on; a
-  transport error ends it.
+  display mode with the supported modes, the display capabilities and the
+  geometry. A step the device refuses is reported in its line and the
+  probe goes on; a transport error ends it. The display fields carry the
+  names of §5.4 and §5.5; `keyvo_hid::display` decodes them, so the
+  daemon reads `maxImageSize` the same way:
+
+  | Line | Source | Captured Keypad |
+  |---|---|---|
+  | `deviceScreenCount N` | fn0 byte 0 | `1` |
+  | `maxImageSize N bytes` | fn0 bytes 1..2, u16 BE × 1024 | `124928 bytes` |
+  | `maxImageFPS N` | fn0 byte 3 | `30` |
+  | `deferrableDisplayUpdate 0/1  rgb565 0/1  rgb888 0/1  jpeg 0/1  calibrated 0/1  origin N` | fn0 byte 7, bits 0..4 and bits 5..6 | `1  1  0  1  1  0` |
+  | `geometry WxH, N buttons, N visible areas` | fn1 bytes 3..6, byte 7, byte 8 | `480x480, 9 buttons, 0 visible areas` |
+  | `key N  WxH at X,Y` | fn1 button records | nine lines, §5.4 |
 - `keyvo probe --feature <id>`: the feature id (hex, `0x` optional) asked
   of the classic ROOT and of the VLP root, one line per plane with the
   index and version, `absent` (index 0), or the error reply (the classic
@@ -694,17 +705,21 @@ and `[timing].reply_timeout`.
   per event, `{"edge":"press","key":5}`, `{"edge":"release","page":"left"}`
   (another diverted control: `"cid":<n>`). The keep-alive runs between
   reads.
-- `keyvo fill <#rrggbb|png> [--key N|--all|--panel] [--margin PX]`: first
+- `keyvo fill <#rrggbb|png> [--key N|--all|--panel|--full] [--margin PX]`: first
   ping and claim, then a baseline JPEG (quality 90) of the color, or of the PNG scaled to
-  the rectangle, per key in the geometry's order (`--all`, the default) or
-  on the panel's rectangle (§5.5); one line per write with the JPEG size,
+  the rectangle, per key in the geometry's order (`--all`, the default),
+  on the keys' area (`--panel`, the union of the key rectangles, 435×434
+  at 23,6 on the Keypad, §5.5) or on the whole published panel
+  (`--full`, the geometry's width and height at 0,0, 480×480 on the
+  Keypad); the four flags are mutually exclusive, and two of them are a
+  usage error (exit 2); one line per write with the JPEG size,
   the fragments and the ACKs. `--hold <seconds>` keeps the claim and the
   keep-alive afterwards and reads what the device sends after every ping:
   a lost claim (§5.3) is taken back, reported as `display reclaimed after
   a lost claim; painting again`, and the image is painted again.
   `--index-base` and `--swid` set the writer settings the hardware check
   compares. `--margin <px>` (default 0, with `--key` and `--all`; refused
-  with `--panel`, which already is the bounding box) grows every key
+  with `--panel`, which already is the bounding box, and with `--full`) grows every key
   rectangle by that many pixels on all four sides and clamps it to the
   panel (`0..width`, `0..height` of the geometry) on each side; the
   source is scaled to the grown rectangle and the report line shows it,
@@ -1724,6 +1739,11 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 6k (2026-10-25)**: §5.10 `keyvo probe` prints
+  the display fn0 capabilities and the fn1 button and visible-area counts
+  by name (#89), decoded in `keyvo_hid::display`; `keyvo fill --full`
+  paints the whole published panel at 0,0.
 
 - **v0.3, pre-alpha slice 6j (2026-10-25)**: corrections from the display
   pipeline report (#86, #88). §5.4 the display state names (`a3` Splash

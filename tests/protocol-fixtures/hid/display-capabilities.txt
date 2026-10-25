@@ -1,0 +1,14 @@
+# VLP ROOT getFeature(0x19A1 display) -> VLP index 0x02, then display fn0
+# getCapabilities. Parameters: deviceScreenCount 01, maxImageSize 0x007a
+# (u16 BE in units of 1024 bytes: 124 928 bytes), maxImageFPS 0x1e (30),
+# three bytes the host does not read, the flag byte 0x1b (bit 0
+# deferrableDisplayUpdate 1, bit 1 rgb565 1, bit 2 rgb888 0, bit 3 jpeg 1,
+# bit 4 calibrated 1, bits 5..6 origin 0), and a ninth byte 01 beyond the
+# layout (docs/research/options-plus-display-pipeline.md section 0).
+# Source: hcooper 03-options-plus-startup.pcap, frames #1643, #1645, #1663
+# and #1665 (docs/research/hcooper-startup-keypad-sequence.txt lines 77-78
+# and 87-88). MIT, see README.md.
+> 13 ff 00 0e e0 19 a1 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 00 0e c0 19 a1 02 00 00 00 01 e8 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+> 13 ff 02 0e e0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 0e c0 01 00 7a 1e 00 00 00 1b 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
