@@ -16,11 +16,12 @@ use keyvo_core::inject::FakeInputInjector;
 use keyvo_core::press::PressKind;
 use keyvo_core::profile::{KeySlot, Profile};
 use keyvo_core::render::{KeySpec, Renderer, TileSize};
+use keyvo_core::socket::{Command, Context, ContextSource, DeviceStatus, Edge, Status};
 use keyvo_core::state::{Mode, View};
 use keyvo_core::trace::{Outcome, TraceRecord};
-use keyvo_daemon::daemon::{self, Event};
+use keyvo_daemon::daemon::{self, Answer, Event, Request};
 use keyvo_hid::display;
-use tokio::sync::{broadcast, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinHandle;
 
 use support::{Image, Pad, Pads, startup};
@@ -84,6 +85,7 @@ action = { type = "exec", cmd = "sleep 5" }
 struct Daemon {
     dir: tempfile::TempDir,
     events: broadcast::Receiver<Event>,
+    requests: mpsc::UnboundedSender<Request>,
     stop: oneshot::Sender<()>,
     task: JoinHandle<std::io::Result<()>>,
 }
@@ -106,13 +108,25 @@ impl Daemon {
         injector: FakeInputInjector,
         watcher: FakeWindowWatcher,
     ) -> Self {
+        Self::start_on(CONFIG, profiles, pads, injector, watcher)
+    }
+
+    /// A daemon on `config` and the profiles `(id, text)`.
+    fn start_on(
+        config: &str,
+        profiles: &[(&str, &str)],
+        pads: Vec<Pad>,
+        injector: FakeInputInjector,
+        watcher: FakeWindowWatcher,
+    ) -> Self {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("config.toml"), CONFIG).unwrap();
+        std::fs::write(dir.path().join("config.toml"), config).unwrap();
         std::fs::create_dir(dir.path().join("profiles")).unwrap();
         for (id, text) in profiles {
             std::fs::write(dir.path().join(format!("profiles/{id}.toml")), text).unwrap();
         }
         let (sender, events) = broadcast::channel(256);
+        let (requests, inbox) = mpsc::unbounded_channel();
         let (stop, stopped) = oneshot::channel::<()>();
         let config_dir = dir.path().to_path_buf();
         let task = tokio::spawn(async move {
@@ -122,6 +136,7 @@ impl Daemon {
                 injector,
                 watcher,
                 sender,
+                inbox,
                 async {
                     let _ = stopped.await;
                 },
@@ -131,8 +146,39 @@ impl Daemon {
         Self {
             dir,
             events,
+            requests,
             stop,
             task,
+        }
+    }
+
+    /// What the controller answers to `command`.
+    async fn ask(&self, command: Command) -> Answer {
+        let (reply, answer) = oneshot::channel();
+        self.requests.send(Request { command, reply }).unwrap();
+        tokio::time::timeout(PATIENCE, answer)
+            .await
+            .expect("an answer")
+            .expect("a running controller")
+    }
+
+    async fn status(&self) -> Status {
+        match self.ask(Command::Status {}).await {
+            Answer::Status(status) => status,
+            other => panic!("not a status: {other:?}"),
+        }
+    }
+
+    /// The trace entry a client `press` returns.
+    async fn press(&self, key: u8, dry_run: bool) -> TraceRecord {
+        let command = Command::Press {
+            key: KeySlot::new(key).unwrap(),
+            kind: PressKind::Short,
+            dry_run,
+        };
+        match self.ask(command).await {
+            Answer::Pressed(record) => record,
+            other => panic!("not a press: {other:?}"),
         }
     }
 
@@ -519,5 +565,267 @@ async fn a_reload_selects_the_profile_for_the_focused_window_again() {
     std::fs::write(daemon.dir.path().join("profiles/terminal.toml"), TERMINAL).unwrap();
     assert_eq!(daemon.switched().await, view("terminal", 1, Mode::Auto));
     daemon.shows(&pad, &image_of(TERMINAL, 1, Look::Idle)).await;
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn status_reports_the_device_the_view_and_the_trace_size() {
+    let pad = Pad::new(&startup());
+    let mut daemon = Daemon::start(GLOBAL, vec![pad.clone()], FakeInputInjector::new());
+    daemon.painted().await;
+    let status = daemon.status().await;
+    assert_eq!(status.version, keyvo_core::VERSION);
+    assert_eq!(
+        status.device,
+        DeviceStatus {
+            connected: true,
+            keys: Some(9),
+            error: None
+        }
+    );
+    assert_eq!(status.view, view("global", 1, Mode::Auto));
+    assert_eq!(status.context, None);
+    assert_eq!(status.trace, 0);
+
+    pad.unplug();
+    daemon
+        .until(|event| matches!(event, Event::Disconnected { .. }).then_some(()))
+        .await;
+    assert_eq!(
+        daemon.status().await.device,
+        DeviceStatus {
+            connected: false,
+            keys: None,
+            error: Some("device disconnected".into())
+        }
+    );
+    daemon.stop().await;
+}
+
+/// A global profile whose key 1 touches `marker` and key 2 sends a chord.
+fn marking(marker: &Path) -> String {
+    format!(
+        "schema_version = 1
+[profile]
+id = \"global\"
+name = \"Global\"
+
+[[pages]]
+[pages.keys.1]
+label = \"Mark\"
+action = {{ type = \"exec\", cmd = \"touch '{}'\" }}
+
+[pages.keys.2]
+label = \"Copy\"
+action = {{ type = \"chord\", keys = \"ctrl+c\" }}
+",
+        marker.display()
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dry_run_press_is_traced_as_simulated_and_executes_nothing() {
+    let marks = tempfile::tempdir().unwrap();
+    let marker = marks.path().join("ran");
+    let (mut daemon, pad, injector) = started(&marking(&marker)).await;
+
+    let record = daemon.press(1, true).await;
+    assert!(record.trigger.simulated);
+    assert_eq!(record.result, Outcome::DryRun);
+    assert_eq!(record.key, KeySlot::new(1).unwrap());
+    assert!(record.action.is_some());
+    // The same entry goes to the subscribers and the ring buffer.
+    assert_eq!(daemon.trace().await, record);
+    let record = daemon.press(2, true).await;
+    assert_eq!(record.result, Outcome::DryRun);
+    assert_eq!(daemon.trace().await, record);
+    assert_eq!(daemon.status().await.trace, 2);
+
+    // A real press of the same key runs, so the dry run would have shown.
+    let real = daemon.press(1, false).await;
+    assert!(!real.trigger.simulated);
+    assert_eq!(real.result, Outcome::Pending);
+    let done = daemon.trace().await;
+    assert!(
+        matches!(done.result, Outcome::Exited { code: Some(0), .. }),
+        "{done:?}"
+    );
+    assert!(marker.exists());
+    // The real press paints its success look; the dry runs sent no chord.
+    assert!(injector.sent().is_empty());
+    daemon
+        .shows(&pad, &image_of(&marking(&marker), 1, Look::Success))
+        .await;
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dry_run_leaves_the_marker_absent_and_the_pad_unpainted() {
+    let marks = tempfile::tempdir().unwrap();
+    let marker = marks.path().join("ran");
+    let (mut daemon, pad, _) = started(&marking(&marker)).await;
+    daemon.press(1, true).await;
+    daemon.trace().await;
+    // Longer than the exec and a coalesced paint would take.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(!marker.exists());
+    assert_eq!(pad.images().len(), 9);
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_client_press_runs_a_chord_like_the_device() {
+    let (mut daemon, _, injector) = started(GLOBAL).await;
+    let record = daemon.press(2, false).await;
+    let events = Chord::parse("ctrl+c").unwrap().events();
+    assert_eq!(
+        record.result,
+        Outcome::Sent {
+            events: events.clone()
+        }
+    );
+    assert_eq!(daemon.trace().await, record);
+    assert_eq!(injector.sent(), events);
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reload_answers_whether_the_directory_loaded() {
+    let (mut daemon, _, _) = started(GLOBAL).await;
+    let broken = daemon.dir.path().join("profiles/broken.toml");
+    std::fs::write(&broken, "not toml").unwrap();
+    match daemon.ask(Command::Reload {}).await {
+        Answer::Reloaded(Err(error)) => assert!(error.contains("broken.toml"), "{error}"),
+        other => panic!("{other:?}"),
+    }
+    std::fs::remove_file(&broken).unwrap();
+    assert!(matches!(
+        daemon.ask(Command::Reload {}).await,
+        Answer::Reloaded(Ok(()))
+    ));
+    daemon
+        .until(|event| matches!(event, Event::Reloaded).then_some(()))
+        .await;
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn notify_context_switches_like_the_watcher_and_is_reported() {
+    let pad = Pad::new(&startup());
+    let watcher = FakeWindowWatcher::new();
+    let mut daemon = Daemon::start_with(
+        &[("global", GLOBAL), ("terminal", TERMINAL)],
+        vec![pad.clone()],
+        FakeInputInjector::new(),
+        watcher.clone(),
+    );
+    daemon.painted().await;
+    let command = Command::NotifyContext {
+        class: "org.kde.konsole".into(),
+        title: "~ : bash".into(),
+    };
+    assert!(matches!(daemon.ask(command).await, Answer::Noted));
+    let notified = Context {
+        class: "org.kde.konsole".into(),
+        title: "~ : bash".into(),
+        pid: None,
+        source: ContextSource::NotifyContext,
+    };
+    let reported = daemon
+        .until(|event| match event {
+            Event::Context(context) => Some(context.clone()),
+            _ => None,
+        })
+        .await;
+    assert_eq!(reported, notified);
+    assert_eq!(daemon.switched().await, view("terminal", 1, Mode::Auto));
+    assert_eq!(daemon.status().await.context, Some(notified));
+
+    // The watcher's reports are context events too.
+    assert!(watcher.focus(WindowContext::new("org.kde.dolphin", "Home").with_pid(7)));
+    let reported = daemon
+        .until(|event| match event {
+            Event::Context(context) => Some(context.clone()),
+            _ => None,
+        })
+        .await;
+    assert_eq!(reported.source, ContextSource::Watcher);
+    assert_eq!(reported.pid, Some(7));
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn device_keys_are_reported_as_key_events() {
+    let (mut daemon, pad, _) = started(GLOBAL).await;
+    pad.hold(&[5]);
+    pad.hold(&[]);
+    let mut edges = Vec::new();
+    while edges.len() < 2 {
+        let event = daemon
+            .until(|event| match event {
+                Event::Key { key, edge } => Some((key.get(), *edge)),
+                _ => None,
+            })
+            .await;
+        edges.push(event);
+    }
+    assert_eq!(edges, [(5, Edge::Press), (5, Edge::Release)]);
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn subscribe_replays_the_newest_ring_entries_then_streams() {
+    let config = format!("{CONFIG}[trace]\nring = 2\n");
+    let pad = Pad::new(&startup());
+    let mut daemon = Daemon::start_on(
+        &config,
+        &[("global", GLOBAL)],
+        vec![pad.clone()],
+        FakeInputInjector::new(),
+        FakeWindowWatcher::failing("no focus source"),
+    );
+    daemon.painted().await;
+    let mut pressed = Vec::new();
+    for key in [4, 5, 6] {
+        pressed.push(daemon.press(key, true).await);
+    }
+    // The ring keeps the newest two.
+    assert_eq!(daemon.status().await.trace, 2);
+    let command = Command::Subscribe {
+        events: Vec::new(),
+        replay: 5,
+    };
+    let Answer::Subscribed {
+        view: now,
+        backlog,
+        mut events,
+    } = daemon.ask(command).await
+    else {
+        panic!("not subscribed");
+    };
+    assert_eq!(now, view("global", 1, Mode::Auto));
+    assert_eq!(backlog, pressed[1..]);
+    let later = daemon.press(7, true).await;
+    let streamed = tokio::time::timeout(PATIENCE, async {
+        loop {
+            if let Event::Trace(record) = events.recv().await.unwrap() {
+                return record;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(streamed, later);
+
+    let Answer::Subscribed { backlog, .. } = daemon
+        .ask(Command::Subscribe {
+            events: Vec::new(),
+            replay: 1,
+        })
+        .await
+    else {
+        panic!("not subscribed");
+    };
+    assert_eq!(backlog, [later]);
     daemon.stop().await;
 }

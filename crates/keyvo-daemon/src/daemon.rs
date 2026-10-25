@@ -1,6 +1,6 @@
 //! The controller: one tokio task that owns the [`Engine`] and ties the
-//! device actor, the presses, the `exec` processes and the hot-reload
-//! together.
+//! device actor, the presses, the `exec` processes, the hot-reload and the
+//! socket clients together.
 //!
 //! - State changes mark the pad dirty; the specs go to the actor
 //!   `[timing].render_coalesce` after the first change, so a burst becomes
@@ -18,11 +18,17 @@
 //! - A change in the configuration directory reloads it after
 //!   `[timing].reload_settle` of quiet. A directory that does not load
 //!   keeps the last good state.
+//! - Socket clients send [`Request`]s (`keyvo_core::socket`): `status`,
+//!   `subscribe`, `press` (a dry run resolves and traces, executes nothing
+//!   and leaves the key's look alone), `reload` and `notify_context` (a
+//!   focus report like the watcher's). Every trace entry goes into an
+//!   in-memory ring buffer of `[trace].ring` entries.
 //!
 //! The `[timing]` values of the device actor, `long_press`,
-//! `focus_hysteresis` and `page_grace` are read at start; the others apply
-//! from the next reload.
+//! `focus_hysteresis` and `page_grace` are read at start; the others and
+//! `[trace].ring` apply from the next reload.
 
+use std::collections::VecDeque;
 use std::future::Future;
 use std::io;
 use std::path::Path;
@@ -35,19 +41,21 @@ use keyvo_core::inject::InputInjector;
 use keyvo_core::layout::{self, Loaded, Profiles};
 use keyvo_core::press::{PressDetector, PressKind};
 use keyvo_core::profile::{Action, KeySlot};
+use keyvo_core::socket::{
+    Command as Wire, Context, ContextSource, DeviceStatus, Edge as KeyEdge, Status,
+};
 use keyvo_core::state::{PageButton, View};
 use keyvo_core::trace::{Outcome, TraceRecord, Trigger};
 use keyvo_hid::input::{Control, Edge};
 use keyvo_hid::reprog::{PAGE_LEFT, PAGE_RIGHT};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::time::Instant;
 
 use crate::device::{self, Command, Connector};
 use crate::engine::Engine;
 use crate::exec;
 
-/// What the daemon reports, for logs, tests and later the socket's
-/// `subscribe` (slice 13).
+/// What the daemon reports, for logs, tests and the socket's `subscribe`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     /// A Keypad is claimed.
@@ -65,6 +73,15 @@ pub enum Event {
         /// The keys.
         keys: Vec<u8>,
     },
+    /// A key on the device went down or up.
+    Key {
+        /// The key.
+        key: KeySlot,
+        /// Which way.
+        edge: KeyEdge,
+    },
+    /// A focus source reported a window.
+    Context(Context),
     /// A press was resolved and, for an action, executed.
     Trace(TraceRecord),
     /// The pad shows another profile, page or mode.
@@ -78,9 +95,42 @@ pub enum Event {
     },
 }
 
+/// A socket client's command, answered on `reply`.
+#[derive(Debug)]
+pub struct Request {
+    /// The command.
+    pub command: Wire,
+    /// Where the answer goes.
+    pub reply: oneshot::Sender<Answer>,
+}
+
+/// The controller's answer to a [`Request`].
+#[derive(Debug)]
+pub enum Answer {
+    /// `status`.
+    Status(Status),
+    /// `subscribe`: what the pad shows now, the newest `replay` trace
+    /// entries, oldest first, and every event from here on.
+    Subscribed {
+        /// What the pad shows now.
+        view: View,
+        /// The trace entries to send first.
+        backlog: Vec<TraceRecord>,
+        /// Every later event.
+        events: broadcast::Receiver<Event>,
+    },
+    /// `press`: the entry as resolved; an `exec` is still pending.
+    Pressed(TraceRecord),
+    /// `reload`: whether the directory loaded, else every problem.
+    Reloaded(Result<(), String>),
+    /// `notify_context`: taken.
+    Noted,
+}
+
 /// Runs the daemon on the configuration in `config_dir` until `shutdown`
 /// completes. `watcher` reports the focused window; one that does not
-/// start is logged and the daemon runs without focus switching.
+/// start is logged and the daemon runs without focus switching. Socket
+/// clients' commands arrive on `requests`.
 ///
 /// # Errors
 ///
@@ -91,6 +141,7 @@ pub async fn run<C, I, W>(
     injector: I,
     mut watcher: W,
     events: broadcast::Sender<Event>,
+    mut requests: mpsc::UnboundedReceiver<Request>,
     shutdown: impl Future<Output = ()>,
 ) -> io::Result<()>
 where
@@ -138,6 +189,13 @@ where
         flush_at: None,
         reload_at: None,
         done,
+        device: DeviceStatus {
+            connected: false,
+            keys: None,
+            error: None,
+        },
+        context: None,
+        ring: VecDeque::new(),
     };
 
     tokio::pin!(shutdown);
@@ -152,12 +210,13 @@ where
         tokio::select! {
             () = &mut shutdown => break,
             Some(event) = device_events.recv() => controller.device(event),
-            Some(window) = focus.recv() => controller.focus(window),
+            Some(window) = focus.recv() => controller.focus(window, ContextSource::Watcher),
+            Some(request) = requests.recv() => controller.request(request),
             Some(()) = changed(&mut changes) => {
                 controller.reload_at = Some(now + controller.engine.config().timing.reload_settle);
             }
             Some(record) = finished.recv() => controller.finished(record),
-            () = sleep(controller.reload_at) => controller.reload(),
+            () = sleep(controller.reload_at) => { let _ = controller.reload(); }
             () = sleep(controller.flush_at) => controller.flush(),
             () = sleep(look_at) => controller.dirty(),
             () = sleep(long_at) => controller.long_presses(),
@@ -231,10 +290,22 @@ struct Controller<'a, I> {
     flush_at: Option<Instant>,
     reload_at: Option<Instant>,
     done: mpsc::UnboundedSender<TraceRecord>,
+    device: DeviceStatus,
+    /// The last focus report.
+    context: Option<Context>,
+    /// The newest `[trace].ring` trace entries, oldest first.
+    ring: VecDeque<TraceRecord>,
 }
 
 impl<I: InputInjector> Controller<'_, I> {
-    fn emit(&self, event: Event) {
+    fn emit(&mut self, event: Event) {
+        if let Event::Trace(record) = &event {
+            let ring = self.engine.config().trace.ring;
+            self.ring.push_back(record.clone());
+            while self.ring.len() > ring {
+                self.ring.pop_front();
+            }
+        }
         // Nobody listening is fine.
         let _ = self.events.send(event);
     }
@@ -256,18 +327,41 @@ impl<I: InputInjector> Controller<'_, I> {
         match event {
             device::Event::Connected { keys } => {
                 self.engine.set_key_count(keys);
+                self.device = DeviceStatus {
+                    connected: true,
+                    keys: Some(keys),
+                    error: None,
+                };
                 self.dirty();
                 self.emit(Event::Connected { keys });
             }
-            device::Event::Disconnected { error } => self.emit(Event::Disconnected { error }),
+            device::Event::Disconnected { error } => {
+                self.device = DeviceStatus {
+                    connected: false,
+                    keys: None,
+                    error: Some(error.clone()),
+                };
+                self.emit(Event::Disconnected { error });
+            }
             device::Event::Painted { keys } => self.emit(Event::Painted { keys }),
             device::Event::Input(input) => {
                 let now = Instant::now().into_std();
                 match (input.control, input.edge) {
-                    (Control::Key(key), Edge::Press) => self.presses.press(key, now),
-                    (Control::Key(key), Edge::Release) => {
-                        if let Some(kind) = self.presses.release(key, now) {
-                            self.pressed(key, kind);
+                    (Control::Key(key), edge) => {
+                        if let Some(slot) = KeySlot::new(key) {
+                            let edge = match edge {
+                                Edge::Press => KeyEdge::Press,
+                                Edge::Release => KeyEdge::Release,
+                            };
+                            self.emit(Event::Key { key: slot, edge });
+                        }
+                        match edge {
+                            Edge::Press => self.presses.press(key, now),
+                            Edge::Release => {
+                                if let Some(kind) = self.presses.release(key, now) {
+                                    self.pressed(key, kind);
+                                }
+                            }
                         }
                     }
                     (Control::Page(cid), edge) => {
@@ -291,8 +385,17 @@ impl<I: InputInjector> Controller<'_, I> {
         }
     }
 
-    fn focus(&mut self, window: WindowContext) {
-        tracing::debug!("focus: {window:?}");
+    /// `source` reports the focused `window`.
+    fn focus(&mut self, window: WindowContext, source: ContextSource) {
+        tracing::debug!("focus from {source:?}: {window:?}");
+        let context = Context {
+            class: window.class.clone(),
+            title: window.title.clone(),
+            pid: window.pid,
+            source,
+        };
+        self.context = Some(context.clone());
+        self.emit(Event::Context(context));
         let before = self.engine.view();
         self.engine.focus(window, Instant::now().into_std());
         self.switched(&before);
@@ -327,20 +430,32 @@ impl<I: InputInjector> Controller<'_, I> {
         }
     }
 
-    /// Resolves and runs a press of `key`.
+    /// Resolves and runs a device press of `key`.
     fn pressed(&mut self, key: u8, press: PressKind) {
-        let Some(slot) = KeySlot::new(key) else {
-            return;
-        };
-        let trigger = Trigger {
-            press,
-            simulated: false,
-        };
+        if let Some(slot) = KeySlot::new(key) {
+            self.press(
+                slot,
+                Trigger {
+                    press,
+                    simulated: false,
+                },
+            );
+        }
+    }
+
+    /// Resolves a press of `slot` and, unless it is simulated, runs its
+    /// action. The entry as resolved: a chord's result is in, an `exec`'s
+    /// follows as a trace event.
+    fn press(&mut self, slot: KeySlot, trigger: Trigger) -> TraceRecord {
         let mut record = self.engine.press(slot, trigger, SystemTime::now());
+        if trigger.simulated {
+            self.emit(Event::Trace(record.clone()));
+            return record;
+        }
         // A press ends the key's error or success look.
         self.dirty();
         match record.action.clone() {
-            None => self.emit(Event::Trace(record)),
+            None => self.emit(Event::Trace(record.clone())),
             Some(Action::Chord { keys }) => {
                 let events = keys.events();
                 let outcome = match self.injector.send(&events) {
@@ -350,19 +465,21 @@ impl<I: InputInjector> Controller<'_, I> {
                     },
                 };
                 record.finish(outcome);
-                self.emit(Event::Trace(record));
+                self.emit(Event::Trace(record.clone()));
             }
             Some(Action::Exec { cmd }) => {
                 self.engine.started(&record, Instant::now().into_std());
                 let env = exec::env(&record);
                 let timeout = self.engine.config().timing.exec_timeout;
                 let done = self.done.clone();
+                let mut running = record.clone();
                 tokio::spawn(async move {
-                    record.finish(exec::run(&cmd, &env, timeout).await);
-                    let _ = done.send(record);
+                    running.finish(exec::run(&cmd, &env, timeout).await);
+                    let _ = done.send(running);
                 });
             }
         }
+        record
     }
 
     fn finished(&mut self, record: TraceRecord) {
@@ -371,7 +488,9 @@ impl<I: InputInjector> Controller<'_, I> {
         self.emit(Event::Trace(record));
     }
 
-    fn reload(&mut self) {
+    /// Loads the configuration directory again; on failure the last good
+    /// state stays and the problems come back.
+    fn reload(&mut self) -> Result<(), String> {
         self.reload_at = None;
         match layout::load(self.config_dir) {
             Ok(loaded) => {
@@ -381,13 +500,55 @@ impl<I: InputInjector> Controller<'_, I> {
                 self.dirty();
                 self.emit(Event::Reloaded);
                 self.switched(&before);
+                Ok(())
             }
             Err(errors) => {
-                tracing::warn!("configuration not reloaded, keeping the last good one:\n{errors}");
+                let error = errors.to_string();
+                tracing::warn!("configuration not reloaded, keeping the last good one:\n{error}");
                 self.emit(Event::ReloadFailed {
-                    error: errors.to_string(),
+                    error: error.clone(),
                 });
+                Err(error)
             }
         }
+    }
+
+    fn request(&mut self, request: Request) {
+        let answer = match request.command {
+            Wire::Status {} => Answer::Status(Status {
+                version: keyvo_core::VERSION.to_owned(),
+                device: self.device.clone(),
+                view: self.engine.view(),
+                context: self.context.clone(),
+                trace: self.ring.len(),
+            }),
+            Wire::Subscribe { replay, .. } => Answer::Subscribed {
+                view: self.engine.view(),
+                backlog: self
+                    .ring
+                    .iter()
+                    .skip(self.ring.len().saturating_sub(replay))
+                    .cloned()
+                    .collect(),
+                events: self.events.subscribe(),
+            },
+            Wire::Press { key, kind, dry_run } => Answer::Pressed(self.press(
+                key,
+                Trigger {
+                    press: kind,
+                    simulated: dry_run,
+                },
+            )),
+            Wire::Reload {} => Answer::Reloaded(self.reload()),
+            Wire::NotifyContext { class, title } => {
+                self.focus(
+                    WindowContext::new(&class, &title),
+                    ContextSource::NotifyContext,
+                );
+                Answer::Noted
+            }
+        };
+        // A client that went away does not need its answer.
+        let _ = request.reply.send(answer);
     }
 }

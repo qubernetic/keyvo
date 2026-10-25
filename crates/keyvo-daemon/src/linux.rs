@@ -51,6 +51,7 @@ pub async fn serve(
         Injector::open(),
         watcher,
         events,
+        tokio::sync::mpsc::unbounded_channel().1,
         shutdown,
     )
     .await
