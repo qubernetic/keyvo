@@ -1,11 +1,13 @@
 //! LCD image writes on the VLP bulk report `0x14` (spec §5.5): a JPEG is cut
 //! into 4095-byte fragments addressed to the display feature `0x19A1`.
 //!
-//! The first fragment carries a 20-byte header: the VLP header, `01 00 01 00`
-//! (display 1, no deferred update, one image, format JPEG in the Julusian
-//! reading), the rectangle and the 24-bit JPEG length. Continuation fragments
-//! carry the 5-byte VLP header only. Every fragment is zero-padded.
+//! The first fragment carries a 20-byte header: the VLP header, then the
+//! [`ImageHeader`] (display index, deferred-update flag, image count, and
+//! per image the format, the rectangle and the 24-bit JPEG length).
+//! Continuation fragments carry the 5-byte VLP header only. Every fragment
+//! is zero-padded.
 
+use std::collections::VecDeque;
 use std::time::Duration;
 
 use crate::display::Geometry;
@@ -23,12 +25,20 @@ const SEQ_FIRST: u8 = 0x80;
 const SEQ_ALWAYS: u8 = 0x20;
 /// The fragment index bits of the sequence byte.
 const SEQ_INDEX: u8 = 0x0f;
-/// Display 1, no deferred update, one image, format JPEG (Julusian's reading
-/// of the constant `01 00 01 00`, unconfirmed).
-const IMAGE_PREFIX: [u8; 4] = [0x01, 0x00, 0x01, 0x00];
-/// Header bytes of the first fragment: the VLP header, [`IMAGE_PREFIX`],
-/// x, y, w, h (u16 each) and the 24-bit length.
-const FIRST_HEADER_LEN: usize = 20;
+/// The display a `setImage` addresses: display 1, the one
+/// `getDisplayInfo(1)` describes. Options+ always sends 1
+/// (`docs/research/options-plus-display-pipeline.md` section 0).
+pub const DISPLAY_INDEX: u8 = 1;
+/// The wire value of the JPEG image format (captured).
+pub const FORMAT_JPEG: u8 = 0;
+/// Bit 0 of byte 1: `deferDisplayUpdate`.
+const DEFER_DISPLAY_UPDATE: u8 = 0x01;
+/// Bytes of an [`ImageHeader`]: display index, flags, count, format, x, y,
+/// w, h (u16 each) and the 24-bit length.
+const IMAGE_HEADER_LEN: usize = 15;
+/// Header bytes of the first fragment: the VLP header and the
+/// [`ImageHeader`].
+const FIRST_HEADER_LEN: usize = 5 + IMAGE_HEADER_LEN;
 /// JPEG bytes in the first fragment.
 const FIRST_PAYLOAD: usize = ReportId::VlpBulk.size() - FIRST_HEADER_LEN;
 /// JPEG bytes in a continuation fragment.
@@ -50,6 +60,229 @@ pub struct Rect {
     pub width: u16,
     /// Height.
     pub height: u16,
+}
+
+impl Rect {
+    /// True when `other` lies inside this rectangle.
+    #[must_use]
+    pub fn covers(&self, other: &Self) -> bool {
+        self.x <= other.x
+            && self.y <= other.y
+            && u32::from(self.x) + u32::from(self.width)
+                >= u32::from(other.x) + u32::from(other.width)
+            && u32::from(self.y) + u32::from(self.height)
+                >= u32::from(other.y) + u32::from(other.height)
+    }
+
+    /// The bounding box of both rectangles.
+    #[must_use]
+    pub fn union(&self, other: &Self) -> Self {
+        let x = self.x.min(other.x);
+        let y = self.y.min(other.y);
+        let right = self
+            .x
+            .saturating_add(self.width)
+            .max(other.x.saturating_add(other.width));
+        let bottom = self
+            .y
+            .saturating_add(self.height)
+            .max(other.y.saturating_add(other.height));
+        Self {
+            x,
+            y,
+            width: right - x,
+            height: bottom - y,
+        }
+    }
+}
+
+/// How many images wait for the device at most; Options+ keeps two
+/// (`docs/research/options-plus-display-pipeline.md` section 1).
+pub const QUEUE_DEPTH: usize = 2;
+
+/// An area of the panel waiting to be sent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pending {
+    /// The area.
+    pub rect: Rect,
+    /// The keys (1-based) whose change it carries, ascending.
+    pub keys: Vec<u8>,
+}
+
+/// What [`Queue::send_next`] sent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sent {
+    /// The area.
+    pub rect: Rect,
+    /// The keys whose change it carried.
+    pub keys: Vec<u8>,
+    /// The `setImage` commands it took: one, or one per band.
+    pub images: usize,
+}
+
+/// The areas waiting to be painted (spec §5.5). The queue holds areas, not
+/// images: an area is encoded from the caller's canvas when it is sent, so
+/// what goes out is always the newest content. At most [`QUEUE_DEPTH`]
+/// areas wait. A new area that a pending one covers only adds its keys to
+/// it; pending areas the new one covers are dropped as stale; a third area
+/// joins the newest pending one in their bounding box, so no change is lost
+/// (Options+ drops the oldest image instead).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Queue {
+    pending: VecDeque<Pending>,
+}
+
+impl Queue {
+    /// An empty queue.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Queues `rect`, which carries the change of `keys`.
+    pub fn push(&mut self, rect: Rect, keys: &[u8]) {
+        if let Some(cover) = self.pending.iter_mut().find(|p| p.rect.covers(&rect)) {
+            merge(&mut cover.keys, keys);
+            return;
+        }
+        let mut new = Pending {
+            rect,
+            keys: Vec::new(),
+        };
+        merge(&mut new.keys, keys);
+        self.pending.retain(|pending| {
+            let stale = rect.covers(&pending.rect);
+            if stale {
+                merge(&mut new.keys, &pending.keys);
+            }
+            !stale
+        });
+        let full = self.pending.len() >= QUEUE_DEPTH;
+        match self.pending.back_mut() {
+            Some(newest) if full => {
+                newest.rect = newest.rect.union(&new.rect);
+                merge(&mut newest.keys, &new.keys);
+            }
+            _ => self.pending.push_back(new),
+        }
+    }
+
+    /// The waiting areas, oldest first.
+    pub fn pending(&self) -> impl Iterator<Item = &Pending> {
+        self.pending.iter()
+    }
+
+    /// The number of waiting areas.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.pending.len()
+    }
+
+    /// True when nothing waits.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.pending.is_empty()
+    }
+
+    /// Forgets every waiting area.
+    pub fn clear(&mut self) {
+        self.pending.clear();
+    }
+
+    /// Sends the oldest area: `encode` gives the JPEG of a rectangle, the
+    /// area goes as one `setImage`, or as [`bands`] when it is above
+    /// [`ImageConfig::max_image_len`]. Each image goes after the device's
+    /// response to the one before ([`write`]); there is no timer.
+    ///
+    /// # Errors
+    ///
+    /// The errors of `encode`, [`bands`] and [`write`]. The area is dropped
+    /// either way.
+    pub fn send_next<T: HidTransport, E: From<ImageError>>(
+        &mut self,
+        hidpp: &mut Hidpp<T>,
+        config: &ImageConfig,
+        encode: impl FnMut(Rect) -> Result<Vec<u8>, E>,
+    ) -> Result<Option<Sent>, E> {
+        let Some(Pending { rect, keys }) = self.pending.pop_front() else {
+            return Ok(None);
+        };
+        let bands = bands(rect, config.max_image_len(), encode)?;
+        for band in &bands {
+            write(hidpp, config, band.rect, &band.jpeg)?;
+        }
+        Ok(Some(Sent {
+            rect,
+            keys,
+            images: bands.len(),
+        }))
+    }
+}
+
+/// Adds `more` to the ascending `keys`.
+fn merge(keys: &mut Vec<u8>, more: &[u8]) {
+    keys.extend_from_slice(more);
+    keys.sort_unstable();
+    keys.dedup();
+}
+
+/// The parameters a `setImage` command starts with, for a command of one
+/// image (spec §5.5). The protocol allows up to 255 images per command and a
+/// deferred update; Options+ uses neither, so keyvo sends one image with the
+/// flag clear.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImageHeader {
+    /// Byte 0, `displayIndex`; [`DISPLAY_INDEX`].
+    pub display_index: u8,
+    /// Byte 1 bit 0, `deferDisplayUpdate`; the device shows the image only
+    /// with a later write that has it clear.
+    pub defer_display_update: bool,
+    /// Byte 2, the number of images in the command.
+    pub count: u8,
+    /// The image's format; [`FORMAT_JPEG`].
+    pub format: u8,
+    /// Where the image goes.
+    pub rect: Rect,
+    /// The image's length in bytes, sent as 24 bits.
+    pub length: u32,
+}
+
+impl ImageHeader {
+    /// The header of one JPEG of `length` bytes at `rect`, shown at once.
+    #[must_use]
+    pub const fn jpeg(rect: Rect, length: u32) -> Self {
+        Self {
+            display_index: DISPLAY_INDEX,
+            defer_display_update: false,
+            count: 1,
+            format: FORMAT_JPEG,
+            rect,
+            length,
+        }
+    }
+
+    /// The header bytes; the length keeps its low 24 bits.
+    #[must_use]
+    pub fn encode(&self) -> [u8; IMAGE_HEADER_LEN] {
+        let mut bytes = [0; IMAGE_HEADER_LEN];
+        bytes[0] = self.display_index;
+        bytes[1] = if self.defer_display_update {
+            DEFER_DISPLAY_UPDATE
+        } else {
+            0
+        };
+        bytes[2] = self.count;
+        bytes[3] = self.format;
+        let rect = self.rect;
+        for (at, value) in [rect.x, rect.y, rect.width, rect.height]
+            .into_iter()
+            .enumerate()
+        {
+            bytes[4 + 2 * at..6 + 2 * at].copy_from_slice(&value.to_be_bytes());
+        }
+        bytes[12..].copy_from_slice(&self.length.to_be_bytes()[1..]);
+        bytes
+    }
 }
 
 /// Where an image goes. Every placement comes from the geometry the device
@@ -156,16 +389,24 @@ pub struct ImageConfig {
     /// `[timing].ack_timeout`: how long a fragment waits for its ACK before
     /// the next one goes out anyway.
     pub ack_timeout: Duration,
+    /// `maxImageSize` from display fn0 ([`crate::display::Capabilities`]),
+    /// once read: the largest image the device takes.
+    pub max_image_size: Option<usize>,
 }
 
 impl ImageConfig {
-    /// The largest JPEG one write carries: as many fragments as the 4-bit
-    /// fragment index counts from the index base without wrapping. What the
-    /// device does past that is not measured yet (plan §5 item 10).
+    /// The largest JPEG one write carries: the device's `maxImageSize`, and
+    /// at most as many fragments as the 4-bit fragment index counts from the
+    /// index base without wrapping. What the device does past that is not
+    /// measured yet (plan §5 item 10).
     #[must_use]
     pub const fn max_image_len(&self) -> usize {
         let fragments = (SEQ_INDEX - self.index_base.first()) as usize + 1;
-        FIRST_PAYLOAD + (fragments - 1) * NEXT_PAYLOAD
+        let numbered = FIRST_PAYLOAD + (fragments - 1) * NEXT_PAYLOAD;
+        match self.max_image_size {
+            Some(size) if size < numbered => size,
+            _ => numbered,
+        }
     }
 }
 
@@ -175,8 +416,79 @@ impl Default for ImageConfig {
             swid: DEFAULT_SWID,
             index_base: IndexBase::default(),
             ack_timeout: DEFAULT_ACK_TIMEOUT,
+            max_image_size: None,
         }
     }
+}
+
+/// One encoded part of a crop.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Band {
+    /// Where it goes.
+    pub rect: Rect,
+    /// The JPEG of `rect`.
+    pub jpeg: Vec<u8>,
+}
+
+/// The images that paint `rect`, each at most `limit` bytes
+/// ([`ImageConfig::max_image_len`]): `encode` gives the JPEG of a
+/// rectangle. A crop above the limit is cut into horizontal bands of the
+/// full width, top to bottom, as Options+ does (spec §5.5); when a band is
+/// still too large the crop is cut into more bands.
+///
+/// # Errors
+///
+/// The errors of `encode`, and [`ImageError::TooLarge`] when a single row
+/// is above the limit.
+pub fn bands<E: From<ImageError>>(
+    rect: Rect,
+    limit: usize,
+    mut encode: impl FnMut(Rect) -> Result<Vec<u8>, E>,
+) -> Result<Vec<Band>, E> {
+    let whole = encode(rect)?;
+    if whole.len() <= limit {
+        return Ok(vec![Band { rect, jpeg: whole }]);
+    }
+    let rows = usize::from(rect.height);
+    let mut parts = whole.len().div_ceil(limit.max(1)).min(rows);
+    loop {
+        let mut out = Vec::with_capacity(parts);
+        let mut too_large = None;
+        for band in split(rect, parts) {
+            let jpeg = encode(band)?;
+            if jpeg.len() > limit {
+                too_large = Some(jpeg.len());
+                break;
+            }
+            out.push(Band { rect: band, jpeg });
+        }
+        let Some(len) = too_large else {
+            return Ok(out);
+        };
+        if parts >= rows {
+            return Err(ImageError::TooLarge { len, max: limit }.into());
+        }
+        // A band of 1/parts of the crop was `len` bytes: about
+        // parts * len / limit bands fit.
+        parts = (parts + 1)
+            .max((parts * len).div_ceil(limit.max(1)))
+            .min(rows);
+    }
+}
+
+/// `rect` cut into `parts` horizontal bands of the full width, top to
+/// bottom; every band has the same height but the last, which may be lower.
+fn split(rect: Rect, parts: usize) -> Vec<Rect> {
+    let height = u16::try_from(usize::from(rect.height).div_ceil(parts.max(1))).unwrap_or(1);
+    let bottom = rect.y + rect.height;
+    (rect.y..bottom)
+        .step_by(usize::from(height.max(1)))
+        .map(|y| Rect {
+            y,
+            height: height.min(bottom - y),
+            ..rect
+        })
+        .collect()
 }
 
 /// Errors of an image write.
@@ -314,9 +626,8 @@ pub fn fragments(
     let mut payloads = vec![head];
     payloads.extend(tail.chunks(NEXT_PAYLOAD));
     let count = payloads.len();
-    // The low three bytes; the limit keeps the length far below 2^24.
-    let length = jpeg.len().to_be_bytes();
-    let length = &length[length.len() - 3..];
+    // The limit keeps the length far below 2^24.
+    let header = ImageHeader::jpeg(rect, u32::try_from(jpeg.len()).unwrap_or(u32::MAX)).encode();
 
     (config.index_base.first()..)
         .zip(payloads)
@@ -326,11 +637,7 @@ pub fn fragments(
             let mut params = Vec::with_capacity(report.size());
             if position == 0 {
                 seq |= SEQ_FIRST;
-                params.extend(IMAGE_PREFIX);
-                for value in [rect.x, rect.y, rect.width, rect.height] {
-                    params.extend(value.to_be_bytes());
-                }
-                params.extend(length);
+                params.extend(header);
             }
             if position + 1 == count {
                 seq |= VLP_SEQ_LAST;
@@ -612,6 +919,345 @@ mod tests {
             ..base_zero
         };
         assert_eq!(base_one.max_image_len(), max - 4090);
+    }
+
+    const UNION: Rect = Rect {
+        x: 23,
+        y: 6,
+        width: 435,
+        height: 434,
+    };
+
+    /// A fake encoder: a JPEG of the rectangle's size, 10 bytes per row.
+    fn by_rows(calls: &mut Vec<Rect>) -> impl FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_ {
+        |rect| {
+            calls.push(rect);
+            Ok(jpeg(rect.width, rect.height, 10 * usize::from(rect.height)))
+        }
+    }
+
+    #[test]
+    fn max_image_size_caps_one_image() {
+        let config = ImageConfig {
+            max_image_size: Some(1000),
+            ..ImageConfig::default()
+        };
+        assert_eq!(config.max_image_len(), 1000);
+        assert_eq!(
+            fragments(0xff, 2, &config, KEY, &jpeg(118, 118, 1001)),
+            Err(ImageError::TooLarge {
+                len: 1001,
+                max: 1000
+            })
+        );
+        // The fragment index space still caps a larger device limit.
+        let roomy = ImageConfig {
+            max_image_size: Some(124_928),
+            ..ImageConfig::default()
+        };
+        assert_eq!(roomy.max_image_len(), 4075 + 15 * 4090);
+    }
+
+    #[test]
+    fn a_crop_within_the_limit_is_one_band() {
+        let mut calls = Vec::new();
+        let bands = bands(UNION, 4340, by_rows(&mut calls)).unwrap();
+        assert_eq!(bands.len(), 1);
+        assert_eq!(bands[0].rect, UNION);
+        assert_eq!(calls, [UNION]);
+    }
+
+    #[test]
+    fn a_crop_above_the_limit_is_split_into_full_width_bands_top_to_bottom() {
+        let mut calls = Vec::new();
+        // 4340 bytes against a 2000-byte limit: three bands of 145, 145 and
+        // 144 rows.
+        let bands = bands(UNION, 2000, by_rows(&mut calls)).unwrap();
+        let rects: Vec<_> = bands.iter().map(|band| band.rect).collect();
+        let band = |y, height| Rect {
+            x: 23,
+            y,
+            width: 435,
+            height,
+        };
+        assert_eq!(rects, [band(6, 145), band(151, 145), band(296, 144)]);
+        assert!(bands.iter().all(|band| band.jpeg.len() <= 2000));
+        assert_eq!(calls[0], UNION);
+        assert_eq!(calls[1..], rects);
+    }
+
+    #[test]
+    fn bands_grow_in_number_until_each_fits() {
+        // Rows near the top encode larger: 30 bytes each above y=100.
+        let mut encode = |rect: Rect| -> Result<Vec<u8>, ImageError> {
+            let len: usize = (rect.y..rect.y + rect.height)
+                .map(|y| if y < 100 { 30 } else { 1 })
+                .sum();
+            Ok(jpeg(rect.width, rect.height, len.max(30)))
+        };
+        let limit = 1500;
+        let bands = bands(UNION, limit, &mut encode).unwrap();
+        assert!(bands.len() > 2);
+        assert!(bands.iter().all(|band| band.jpeg.len() <= limit));
+        assert_eq!(
+            bands.iter().map(|band| band.rect.height).sum::<u16>(),
+            UNION.height
+        );
+    }
+
+    #[test]
+    fn a_row_above_the_limit_cannot_be_split() {
+        let mut encode =
+            |rect: Rect| -> Result<Vec<u8>, ImageError> { Ok(jpeg(rect.width, rect.height, 5000)) };
+        assert_eq!(
+            bands(KEY, 4000, &mut encode).map(|bands| bands.len()),
+            Err(ImageError::TooLarge {
+                len: 5000,
+                max: 4000
+            })
+        );
+    }
+
+    #[test]
+    fn the_bands_of_a_crop_are_written_in_order() {
+        let config = ImageConfig {
+            max_image_size: Some(2000),
+            ..ImageConfig::default()
+        };
+        let mut calls = Vec::new();
+        let bands = bands(UNION, config.max_image_len(), by_rows(&mut calls)).unwrap();
+        let mut transport = FakeHidTransport::new().expect(
+            &[&[0x13, 0xff, 0x00, 0x0d, 0xe0, 0x19, 0xa1][..], &[0; 25]].concat(),
+            &[&[
+                &[0x13, 0xff, 0x00, 0x0d, 0xc0, 0x19, 0xa1, 0x02][..],
+                &[0; 24],
+            ]
+            .concat()],
+        );
+        for band in &bands {
+            let fragment = fragments(0xff, 2, &config, band.rect, &band.jpeg)
+                .unwrap()
+                .remove(0);
+            let mut response = vec![0x13, 0xff, 0x02, 0x2d, 0xc0, 0x00, 0x01];
+            response.resize(32, 0);
+            transport = transport.expect(&fragment, &[&response]);
+        }
+        let mut hidpp = Hidpp::new(transport, 0xff, config.swid, Duration::from_secs(1));
+        for band in &bands {
+            write(&mut hidpp, &config, band.rect, &band.jpeg).unwrap();
+        }
+        let tops: Vec<_> = hidpp
+            .transport_mut()
+            .written()
+            .iter()
+            .skip(1)
+            .map(|fragment| u16::from_be_bytes([fragment[11], fragment[12]]))
+            .collect();
+        assert_eq!(tops, [6, 151, 296]);
+        assert!(hidpp.transport_mut().is_done());
+    }
+
+    const fn rect(x: u16, y: u16, width: u16, height: u16) -> Rect {
+        Rect {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    fn queued(queue: &Queue) -> Vec<(Rect, Vec<u8>)> {
+        queue
+            .pending()
+            .map(|pending| (pending.rect, pending.keys.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn rects_cover_and_unite() {
+        let a = rect(10, 10, 20, 20);
+        assert!(a.covers(&rect(15, 15, 5, 5)));
+        assert!(a.covers(&a));
+        assert!(!a.covers(&rect(25, 10, 10, 10)));
+        assert_eq!(a.union(&rect(40, 0, 10, 5)), rect(10, 0, 40, 30));
+    }
+
+    #[test]
+    fn at_most_two_images_wait_and_a_third_joins_the_newest() {
+        let mut queue = Queue::new();
+        queue.push(rect(0, 0, 10, 10), &[1]);
+        queue.push(rect(20, 0, 10, 10), &[2]);
+        queue.push(rect(40, 0, 10, 10), &[3]);
+        assert_eq!(queue.len(), QUEUE_DEPTH);
+        assert_eq!(
+            queued(&queue),
+            [
+                (rect(0, 0, 10, 10), vec![1]),
+                (rect(20, 0, 30, 10), vec![2, 3])
+            ]
+        );
+    }
+
+    #[test]
+    fn a_pending_image_the_new_one_covers_is_dropped_as_stale() {
+        let mut queue = Queue::new();
+        queue.push(rect(20, 0, 10, 10), &[2]);
+        queue.push(rect(0, 0, 10, 10), &[1]);
+        queue.push(rect(0, 0, 50, 50), &[1, 2, 3]);
+        assert_eq!(queued(&queue), [(rect(0, 0, 50, 50), vec![1, 2, 3])]);
+    }
+
+    #[test]
+    fn an_area_a_pending_image_covers_adds_only_its_keys() {
+        let mut queue = Queue::new();
+        queue.push(rect(0, 0, 50, 50), &[1, 2]);
+        queue.push(rect(20, 20, 10, 10), &[5]);
+        queue.push(rect(0, 0, 10, 10), &[1]);
+        assert_eq!(queued(&queue), [(rect(0, 0, 50, 50), vec![1, 2, 5])]);
+        queue.clear();
+        assert!(queue.is_empty());
+    }
+
+    /// Records the order of writes and of the reports reads return.
+    struct Log {
+        inner: FakeHidTransport,
+        events: Vec<String>,
+    }
+
+    impl HidTransport for Log {
+        fn write(&mut self, report: &[u8]) -> Result<(), keyvo_core::hid::TransportError> {
+            self.events
+                .push(format!("> {:02x} {:02x}", report[0], report[4]));
+            self.inner.write(report)
+        }
+
+        fn read(
+            &mut self,
+            timeout: Duration,
+        ) -> Result<Option<Vec<u8>>, keyvo_core::hid::TransportError> {
+            let report = self.inner.read(timeout)?;
+            if let Some(report) = &report {
+                self.events.push(format!(
+                    "< {:02x} {:02x} {:02x}",
+                    report[4], report[5], report[6]
+                ));
+            }
+            Ok(report)
+        }
+    }
+
+    #[test]
+    fn the_next_image_goes_only_after_the_set_image_response() {
+        let config = ImageConfig::default();
+        let first = rect(23, 6, 118, 118);
+        let second = rect(181, 7, 118, 118);
+        let mut transport = FakeHidTransport::new().expect(
+            &[&[0x13, 0xff, 0x00, 0x0d, 0xe0, 0x19, 0xa1][..], &[0; 25]].concat(),
+            &[&[
+                &[0x13, 0xff, 0x00, 0x0d, 0xc0, 0x19, 0xa1, 0x02][..],
+                &[0; 24],
+            ]
+            .concat()],
+        );
+        // The fn2 response of a one-fragment image: resultCode 0, count 1.
+        let mut response = vec![0x13, 0xff, 0x02, 0x2d, 0xc0, 0x00, 0x01];
+        response.resize(32, 0);
+        for at in [first, second] {
+            let fragment = fragments(0xff, 2, &config, at, &jpeg(118, 118, 300))
+                .unwrap()
+                .remove(0);
+            transport = transport.expect(&fragment, &[&response]);
+        }
+        let log = Log {
+            inner: transport,
+            events: Vec::new(),
+        };
+        let mut hidpp = Hidpp::new(log, 0xff, config.swid, Duration::from_secs(1));
+        let mut queue = Queue::new();
+        queue.push(first, &[1]);
+        queue.push(second, &[2]);
+        let encode =
+            |at: Rect| -> Result<Vec<u8>, ImageError> { Ok(jpeg(at.width, at.height, 300)) };
+        let sent = queue.send_next(&mut hidpp, &config, encode).unwrap();
+        assert_eq!(
+            sent,
+            Some(Sent {
+                rect: first,
+                keys: vec![1],
+                images: 1
+            })
+        );
+        let sent = queue.send_next(&mut hidpp, &config, encode).unwrap();
+        assert_eq!(sent.map(|sent| sent.keys), Some(vec![2]));
+        assert_eq!(queue.send_next(&mut hidpp, &config, encode), Ok(None));
+        assert_eq!(
+            hidpp.transport_mut().events,
+            [
+                "> 13 e0",
+                "< c0 19 a1", // getFeature(0x19A1)
+                "> 14 e0",
+                "< c0 00 01", // image 1, then its response
+                "> 14 e0",
+                "< c0 00 01", // image 2, then its response
+            ]
+        );
+        assert!(hidpp.transport_mut().inner.is_done());
+    }
+
+    #[test]
+    fn a_crop_above_the_limit_goes_as_bands_from_the_queue() {
+        let config = ImageConfig {
+            max_image_size: Some(2000),
+            ..ImageConfig::default()
+        };
+        let mut transport = FakeHidTransport::new().expect(
+            &[&[0x13, 0xff, 0x00, 0x0d, 0xe0, 0x19, 0xa1][..], &[0; 25]].concat(),
+            &[&[
+                &[0x13, 0xff, 0x00, 0x0d, 0xc0, 0x19, 0xa1, 0x02][..],
+                &[0; 24],
+            ]
+            .concat()],
+        );
+        let mut response = vec![0x13, 0xff, 0x02, 0x2d, 0xc0, 0x00, 0x01];
+        response.resize(32, 0);
+        for (y, height) in [(6, 145), (151, 145), (296, 144)] {
+            let at = rect(23, y, 435, height);
+            let fragment = fragments(
+                0xff,
+                2,
+                &config,
+                at,
+                &jpeg(435, height, 10 * usize::from(height)),
+            )
+            .unwrap()
+            .remove(0);
+            transport = transport.expect(&fragment, &[&response]);
+        }
+        let mut hidpp = Hidpp::new(transport, 0xff, config.swid, Duration::from_secs(1));
+        let mut queue = Queue::new();
+        queue.push(UNION, &[1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        let mut calls = Vec::new();
+        let sent = queue
+            .send_next(&mut hidpp, &config, by_rows(&mut calls))
+            .unwrap();
+        assert_eq!(sent.map(|sent| sent.images), Some(3));
+        assert!(hidpp.transport_mut().is_done());
+    }
+
+    #[test]
+    fn the_deferred_update_flag_is_bit_0_of_byte_1() {
+        let header = ImageHeader {
+            defer_display_update: true,
+            count: 2,
+            ..ImageHeader::jpeg(KEY, 0x0012_3456)
+        };
+        assert_eq!(
+            header.encode(),
+            [
+                0x01, 0x01, 0x02, 0x00, 0x00, 0xb5, 0x00, 0xa3, 0x00, 0x76, 0x00, 0x76, 0x12, 0x34,
+                0x56
+            ]
+        );
     }
 
     #[test]

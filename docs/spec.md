@@ -484,8 +484,14 @@ version `docs/hardware-notes.md` records.
   0). keyvo writes JPEG only, so neither raw format is tested. Per-key
   images are 118×118 at the key's published rectangle; a full-panel paint is
   435×434 at (23, 6) on the 480×480 canvas (Options+, captured; logilinux uses
-  434×434). Quality 85–95; the header dimensions must equal the JPEG SOF
-  dimensions exactly (mismatch = nothing drawn, write succeeds; reported).
+  434×434). Encoder: baseline, quality 100 (both quantisation tables all
+  ones, as Options+ sends). Options+ subsamples 4:2:0; keyvo's encoder (the
+  `image` crate, MIT/Apache-2.0) writes 4:4:4 only, which the device draws
+  (first light), and the IJG-licensed `jpeg-encoder` that could write 4:2:0
+  is refused by `cargo deny`; a 4:4:4 frame is larger, and the band split
+  below catches one above the limit. The header dimensions must equal the
+  JPEG SOF dimensions exactly (mismatch = nothing drawn, write succeeds;
+  reported).
 - Fragment layout (`0x14`, display fn2): first fragment carries a 20-byte header
   `14 ff 02 <fn|swid> <seq> 01 00 01 00 <x:u16> <y:u16> <w:u16> <h:u16> <len:u24>`
   then JPEG bytes; continuation fragments carry a 5-byte header; every
@@ -500,7 +506,8 @@ version `docs/hardware-notes.md` records.
   each) and `length` (u24 BE), followed by `length` bytes of image data.
   So `01 00 01 00` is display 1, no deferred update, one image, format
   JPEG. Options+ always sends one image without the defer bit; keyvo does
-  the same, and both fields stay hardware experiments.
+  the same (`keyvo_hid::image::ImageHeader`, golden test against frame
+  #521), and both fields stay hardware experiments.
   Sequence byte: bit `0x80` first, bit `0x40` last, bit `0x20` always set,
   the low four bits the fragment index: `e0` = first+last, `a0` = first of
   several, `21` a middle one, `61`-style = last with index. Options+ uses
@@ -523,8 +530,14 @@ version `docs/hardware-notes.md` records.
   many fragments as the four index bits count from the index base without
   wrapping (16 with base 0, 65 425 bytes; 15 with base 1, 61 335 bytes).
   The device's own per-image limit is fn0 `maxImageSize` (124 928 bytes
-  on this unit, above); Options+ splits a larger image into horizontal
-  bands.
+  on this unit, above). The daemon reads fn0 after the claim and caps
+  every image at the smaller of the two limits; a display that refuses
+  fn0 is logged and capped by the fragment index alone. A crop above the
+  cap is cut into horizontal bands of the full crop width, top to bottom,
+  one `setImage` each, as Options+ does: n = ceil(length / cap) bands of
+  equal height (the last may be lower), and more bands while one is still
+  above the cap (`keyvo_hid::image::bands`). A single row above the cap is
+  refused.
 - **The device ACKs every fragment on `0x13`** (`13 ff 02 <fn|swid> c0 …`
   for fragment 0, `c1 00 01 …` for fragment 1, …). The "own writes echo back
   as key 1" trap in other projects is this ACK. keyvo uses **ACK-driven flow
@@ -545,27 +558,48 @@ version `docs/hardware-notes.md` records.
   does not wait for them.
 - Single writer task; repaints are coalesced (superseded frames dropped);
   no shared static buffers.
-- As built (pre-alpha, `keyvo-daemon`): the controller sends the device
-  actor the key specs of every key `[timing].render_coalesce` after the
-  first change, so a burst of changes is one request; a newer request
-  replaces an older one still queued. The actor keeps the spec each key
-  shows and renders and writes only the keys whose spec differs, one key
-  image each, with a keep-alive check between two writes. A key whose
-  image cannot be rendered or is refused by the writer (size guard, frame
-  header) is logged and not tried again until its spec changes. The actor
-  reads at most `render_coalesce` at a time, so a request waits no longer.
-- Order of a paint (pre-alpha, #77): the panel background first, then the
-  keys. A request carries the active profile's accent with the key specs;
-  after every claim, every reclaim (§5.3) and whenever the profile's
-  panel color (§9) differs from the one the pad shows, the actor writes
-  the panel background to the bounding box of the keys (the panel
-  placement above), forgets what every key shows and then writes every
-  key, its rounded corners composited over the same color. So nothing of
-  an earlier panel paint (`keyvo fill --panel`, the logo) stays beside a
-  key, and a profile switch shows the new profile's background. A page
-  change, a key state or a second profile with the same accent repaints
-  only the keys that differ. A background that cannot be rendered or
-  written is logged like a key; a failing device ends the connection.
+- One composite image per change (pre-alpha, #72; replaces the
+  background-then-keys order of #77). The device renders image commands
+  one after another, about 35 ms each (owner's 240 fps video, #52), so a
+  background and nine key writes are a visible cascade, and a key written
+  over an older panel image leaves a strip beside it. Options+ never writes
+  a key over a background; keyvo copies its pipeline (display pipeline
+  report, sections 1, 3 and 4):
+  - The controller sends the device actor the view (profile, page, mode),
+    the active profile's accent and the specs of every key
+    `[timing].render_coalesce` after the first change, so a burst of
+    changes is one request; a newer request replaces an older one still
+    queued.
+  - The actor keeps one canvas of the panel size from the fn1 geometry
+    (480×480 on this unit, never hard-coded; §9): the panel background with
+    every key's tile at its rectangle. After every claim, every reclaim
+    (§5.3), on a new view and on a new panel color (§9) the canvas is drawn
+    anew and the area to send is the union of the key rectangles (435×434
+    at (23, 6) on this unit, computed from fn1). Otherwise only the keys
+    whose spec differs are drawn again (key states and feedback included)
+    and the area is their bounding box: one key's reported rectangle for a
+    one-key change.
+  - Areas wait in a queue of at most two. An area a pending one covers only
+    adds its keys to it; pending areas a new one covers are dropped as
+    stale; a third area joins the newest pending one in their bounding box,
+    so no change is lost (Options+ drops the oldest image). An area is
+    cropped from the canvas and encoded when it is sent, so what goes out
+    is always the newest content.
+  - One area goes out per loop, as one `setImage` or as bands (above); each
+    image after the device's response to the one before (the ACK of its
+    last fragment, `c<n> 00 01`, which is the fn2 response with result 0
+    and count 1). There is no frame timer; `[timing].ack_timeout` only
+    bounds the wait for a missing ACK. Between two areas the actor reads
+    what the device sent and takes new requests.
+  - A key that cannot be drawn is logged and not tried again until its
+    spec changes; an area that cannot be cropped, encoded or written
+    (size guard, frame header) is logged and dropped; a failing device
+    ends the connection. The actor reads at most `render_coalesce` at a
+    time while nothing waits, so a request waits no longer.
+  So a key and the background beside it always come from one image:
+  nothing of an earlier panel paint (`keyvo fill --panel`, the logo) stays
+  beside a key, a profile switch shows the new background with its keys at
+  once, and a page does not appear key by key.
 
 ### 5.6 Input
 
@@ -1327,23 +1361,32 @@ justfile page, `gh`, `kubectl`, other agent CLIs, Kitty/WezTerm.
 - Icon sources: `lucide:`, `phosphor:`, `simple-icons:` (bundled, MIT/CC0),
   `file:` (user PNG/SVG).
 - Pipeline: `tiny-skia` raster + `resvg` for SVG + embedded Inter (OFL)
-  text → baseline JPEG via the `image` crate's encoder (quality 90, inside
-  85–95; it writes 4:4:4, no chroma subsampling). `jpeg-encoder`, named
-  here before, carries the IJG licence, which `cargo-deny` refuses.
-  Rendered tiles are content-hashed and cached; rendering runs off the
-  device thread. A size guard rejects frames above the device limit before
-  they are queued.
-- Key images are rendered at the geometry the device published (§5.4);
-  the full-panel path is used for the panel background, splashes and
-  previews.
+  text → baseline JPEG via the `image` crate's encoder (quality 100, as
+  Options+ sends, #72; it writes 4:4:4, no chroma subsampling, §5.5).
+  `jpeg-encoder`, named here before, carries the IJG licence, which
+  `cargo-deny` refuses. Rendered tiles are content-hashed and cached;
+  rendering runs off the device thread. The writer splits a crop above
+  the device limit into bands (§5.5).
+- Key tiles are rendered at the geometry the device published (§5.4) and
+  composited into one canvas of the panel size (#72): the panel
+  background with every key's tile at its rectangle
+  (`keyvo_core::render::Canvas`; `Renderer::canvas` draws the background,
+  `Renderer::draw` one key, `Canvas::crop` cuts an area for the device,
+  `Panel::bounds` gives the bounding box of the dirty keys). Drawing a key
+  resets its rectangle to the panel background first, so nothing of its
+  earlier tile stays in the rounded corners. The device gets crops of this
+  canvas, never a key tile over an older image (sequence in §5.5); the same
+  canvas is the full-panel path for previews (`Renderer::panel`), and
+  splashes will use it.
 - Panel background (pre-alpha, #77): the theme's panel color, black,
   tinted 20 % toward the profile's accent (theme `panel_tint`; `#4e8bd6`
-  gives `#101c2b`), black for a profile without an accent. The device
-  gets it as one full-panel image before the keys (order in §5.5), and a
-  key tile's transparent corners are composited over it, so the corners
-  match the panel around them. No `[render]` key: the color follows the
-  accent, and the tint moves to the theme file with the other theme
-  values.
+  gives `#101c2b`), black for a profile without an accent. It is the
+  canvas background between the keys and under a key tile's transparent
+  corners, so the corners match the panel around them. No `[render]` key:
+  the color follows the accent, and the tint moves to the theme file with
+  the other theme values. #72 adds no `[render]` or `[timing]` key either:
+  the queue depth (two, as Options+) is a constant and images are paced by
+  the device's response, not by a timer.
 - Renderer as built (`keyvo_core::render`, pre-alpha subset): a key spec
   (background color, profile accent, icon, label) renders to a tile of any
   size; every size and position is a fraction of the tile height, so other
@@ -1739,6 +1782,17 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 6l (2026-10-25)**: one composite image per
+  change, as Options+ paints (#72, display pipeline report items 1, 2, 3
+  and 5). §5.5 the daemon keeps a canvas of the panel and sends the union
+  of the key rectangles on a claim, reclaim, new view or new panel color,
+  else a crop of the changed keys; at most two pending areas, the next
+  image after the fn2 response; the setImage header fields named in
+  `ImageHeader`; `maxImageSize` from fn0 caps each image and a larger crop
+  goes as horizontal bands; encoder quality 100. Replaces the
+  background-then-keys order of #77 (slice 6h). §9 the canvas API. No new
+  `[render]` or `[timing]` key.
 
 - **v0.3, pre-alpha slice 6k (2026-10-25)**: §5.10 `keyvo probe` prints
   the display fn0 capabilities and the fn1 button and visible-area counts

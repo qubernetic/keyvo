@@ -12,7 +12,9 @@ use keyvo_core::hid::FakeHidTransport;
 use keyvo_hid::display::{self, DisplayMode};
 use keyvo_hid::firmware::{self, FirmwareEntity, FirmwareKind};
 use keyvo_hid::hidpp::{DEVICE_DIRECT, Hidpp, HidppError, Plane, SoftwareId};
-use keyvo_hid::image::{self, ImageConfig, ImageError, IndexBase, Rect, Target, Written};
+use keyvo_hid::image::{
+    self, ImageConfig, ImageError, ImageHeader, IndexBase, Rect, Target, Written,
+};
 use keyvo_hid::input::{Control, Input, InputEvent};
 use keyvo_hid::keep_alive::{self, KeepAlive, KeepAliveTiming, TimeoutRange};
 use keyvo_hid::reprog::{self, ControlInfo, DivertTiming};
@@ -468,6 +470,20 @@ fn hcooper_single_fragment_panel_write_is_reproduced() {
     )
     .unwrap();
     assert_eq!(fragments, captured);
+}
+
+#[test]
+fn the_set_image_header_of_a_union_paint_is_hcooper_frame_521() {
+    // The union of the captured key rectangles, with the header fields
+    // Options+ sends: display 1, no deferred update, one JPEG image.
+    let union = Target::Panel.rect(&display::captured_geometry()).unwrap();
+    let header = ImageHeader::jpeg(union, 1460);
+    assert_eq!(header.display_index, image::DISPLAY_INDEX);
+    assert!(!header.defer_display_update);
+    assert_eq!(header.count, 1);
+    assert_eq!(header.format, image::FORMAT_JPEG);
+    // Frame 521 after the VLP header (14 ff 02 2d e0): bytes 5 to 19.
+    assert_eq!(header.encode()[..], binding_paint("521")[5..20]);
 }
 
 #[test]

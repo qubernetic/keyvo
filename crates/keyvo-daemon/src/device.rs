@@ -1,19 +1,29 @@
 //! The device actor (spec §5.1, §5.5): one thread owns the Keypad's
 //! transport. It starts the keep-alive, claims the display, diverts the
 //! page buttons, then paints the [`Frame`] it is sent and reports input.
-//! Only keys whose spec differs from what the pad shows are rendered and
-//! written, so a paint request that changes one key writes one key.
 //!
-//! The panel background goes first: after a claim, and whenever the
-//! active profile's panel color changes, the actor writes the whole panel
-//! in that color and then every key on it, so nothing of an earlier panel
-//! paint (`keyvo fill --panel`, the logo) stays beside a key.
+//! The pad gets one composite image per change (spec §5.5), as Options+
+//! paints it: the actor keeps a [`Canvas`] of the whole display, the panel
+//! background with every key drawn on it. After a claim, on a new view
+//! (profile, page or mode) and on a new panel color the canvas is drawn
+//! anew and the device gets one image of the union of the key rectangles;
+//! otherwise only keys whose spec differs from what the pad shows are drawn
+//! and the device gets the bounding box of those keys, cropped from the
+//! same canvas. A key and the background beside it therefore always come
+//! from one image: nothing of an earlier panel paint (`keyvo fill
+//! --panel`, the logo) stays beside a key, and a page does not appear key
+//! by key.
+//!
+//! Areas wait in a [`Queue`] of at most two and are encoded when they are
+//! sent, from the canvas as it is then; the next image goes after the
+//! device's response to the one before, and a crop above the device's
+//! `maxImageSize` goes as horizontal bands.
 //!
 //! When the device is gone, or the claim fails, the actor waits
 //! `[timing].reconnect_interval` and opens it again: a new connection
-//! claims, diverts and repaints the panel and every key. A claim lost on a
-//! live connection (keep-alive expiry, spec §5.3) is taken back with
-//! `setMode(a0)` and the panel and every key are repainted.
+//! claims, diverts and repaints the union. A claim lost on a live
+//! connection (keep-alive expiry, spec §5.3) is taken back with
+//! `setMode(a0)` and the union is repainted.
 //!
 //! HID I/O is synchronous (`HidTransport::read` blocks up to its timeout),
 //! so the actor is a plain thread and talks to the tokio controller through
@@ -27,10 +37,11 @@ use keyvo_core::clock::SystemClock;
 use keyvo_core::config::Timing;
 use keyvo_core::hid::{HidTransport, TransportError};
 use keyvo_core::profile::Color;
-use keyvo_core::render::{KeySpec, RenderError, Renderer, TileSize};
-use keyvo_hid::display::{self, ClaimError, ClaimWatch, Geometry};
+use keyvo_core::render::{Canvas, KeyPlace, KeySpec, Panel, RenderError, Renderer};
+use keyvo_core::state::View;
+use keyvo_hid::display::{self, ClaimError, ClaimWatch};
 use keyvo_hid::hidpp::{DEVICE_DIRECT, Hidpp, HidppError, Plane, SoftwareId};
-use keyvo_hid::image::{self, ImageConfig, ImageError, Rect, Target};
+use keyvo_hid::image::{ImageConfig, ImageError, Queue, Rect};
 use keyvo_hid::input::{Input, InputEvent};
 use keyvo_hid::keep_alive::{KeepAlive, KeepAliveTiming};
 use keyvo_hid::reprog::{self, DivertError, DivertTiming};
@@ -97,9 +108,12 @@ impl Settings {
     }
 }
 
-/// What the pad shows: the panel background and the keys.
+/// What the pad shows: the view, the panel background and the keys.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Frame {
+    /// The profile, page and mode the keys belong to; a new view repaints
+    /// the union of the keys.
+    pub view: Option<View>,
     /// The active profile's accent; the panel background is drawn from it
     /// ([`Renderer::panel_color`]).
     pub accent: Option<Color>,
@@ -130,7 +144,7 @@ pub enum Event {
         /// Why.
         error: String,
     },
-    /// These keys (1-based) were written.
+    /// An image carrying the change of these keys (1-based) was written.
     Painted {
         /// The keys, in geometry order.
         keys: Vec<u8>,
@@ -138,7 +152,7 @@ pub enum Event {
     /// A key or page-button press or release.
     Input(InputEvent),
     /// The claim was lost (keep-alive expiry, spec §5.3) and is taken
-    /// back; every key is painted again.
+    /// back; the union of the keys is painted again.
     Reclaimed,
 }
 
@@ -244,76 +258,49 @@ fn serve<T: HidTransport>(
     let mut keep_alive = KeepAlive::new(SystemClock, settings.keep_alive);
     keep_alive.poll(&mut hidpp)?;
     let claim = display::claim(&mut hidpp)?;
+    let image = image_config(&mut hidpp, settings.image)?;
     let diverted = reprog::divert_page_buttons(&mut hidpp, &settings.divert, std::thread::sleep)?;
-    let geometry = claim.geometry;
-    let count = geometry.keys.len();
+    let panel = claim.geometry.panel();
+    let count = panel.keys.len();
     let keys = u8::try_from(count).map_err(|_| DeviceError::TooManyKeys(count))?;
     let mut input = Input::new(hidpp.device_index(), claim.display_index, keys)
         .with_page_buttons(diverted.reprog_index);
     let watch = ClaimWatch::new(hidpp.device_index(), claim.display_index)
         .with_keep_alive(hidpp.feature_index(Plane::Classic, feature::KEEP_ALIVE)?);
-    // The panel color and the key specs the pad shows.
-    let mut panel: Option<Color> = None;
-    let mut painted: Vec<Option<KeySpec>> = vec![None; count];
+    let mut shown = Shown::new(count);
+    let mut queue = Queue::new();
     emit(Event::Connected { keys });
     loop {
         if !drain(wanted, commands) {
             return Ok(());
         }
-        let mut written = Vec::new();
         if let Some(frame) = wanted.as_ref() {
-            let under = renderer.panel_color(frame.accent);
-            if panel != Some(under) {
-                // The whole panel first, so nothing of an earlier panel
-                // paint stays beside a key; then every key on it.
-                paint_panel(&mut hidpp, settings, renderer, &geometry, frame.accent)?;
-                panel = Some(under);
-                painted.fill(None);
-                keep_alive.poll(&mut hidpp)?;
-            }
-            for (key, shown) in geometry.keys.iter().zip(&mut painted) {
-                let Some(spec) = frame.keys.get(usize::from(key.index).wrapping_sub(1)) else {
-                    continue;
-                };
-                if shown.as_ref() == Some(spec) {
-                    continue;
-                }
-                let rect = Rect {
-                    x: key.x,
-                    y: key.y,
-                    width: key.width,
-                    height: key.height,
-                };
-                let size = TileSize {
-                    width: rect.width,
-                    height: rect.height,
-                };
-                match renderer
-                    .tile(spec, size)
-                    .and_then(|tile| tile.jpeg_on(under))
-                {
-                    Ok(jpeg) => match image::write(&mut hidpp, &settings.image, rect, &jpeg) {
-                        Ok(_) => written.push(key.index),
-                        Err(ImageError::Hidpp(error)) => return Err(error.into()),
-                        Err(error) => tracing::warn!("key {}: not painted: {error}", key.index),
-                    },
-                    Err(error) => warn_render(key.index, &error),
-                }
-                // A key that cannot be painted is not tried again until its
-                // spec changes.
-                *shown = Some(spec.clone());
-                keep_alive.poll(&mut hidpp)?;
-            }
+            shown.update(renderer, &panel, frame, &mut queue);
         }
-        if !written.is_empty() {
-            emit(Event::Painted { keys: written });
+        if let Some(canvas) = &shown.canvas {
+            let encode = |rect: Rect| -> Result<Vec<u8>, PaintError> {
+                Ok(canvas.crop(place(rect))?.jpeg()?)
+            };
+            match queue.send_next(&mut hidpp, &image, encode) {
+                Ok(Some(sent)) if !sent.keys.is_empty() => {
+                    emit(Event::Painted { keys: sent.keys });
+                }
+                Ok(_) => {}
+                Err(PaintError::Image(ImageError::Hidpp(error))) => return Err(error.into()),
+                Err(error) => tracing::warn!("panel: not painted: {error}"),
+            }
         }
         keep_alive.poll(&mut hidpp)?;
-        let wait = keep_alive.until_due().min(settings.poll);
+        // With areas waiting, only look at what the device sent.
+        let wait = if queue.is_empty() {
+            keep_alive.until_due().min(settings.poll)
+        } else {
+            Duration::ZERO
+        };
         if let Some(frame) = hidpp.next_frame(wait)? {
             if watch.reclaim_on(&mut hidpp, &frame)? {
-                panel = None;
-                painted.fill(None);
+                shown = Shown::new(count);
+                queue.clear();
                 emit(Event::Reclaimed);
                 continue;
             }
@@ -324,38 +311,132 @@ fn serve<T: HidTransport>(
     }
 }
 
-/// Writes the panel background of a profile with `accent` to the bounding
-/// box of the keys. A background that cannot be painted is logged; only a
-/// failing device ends the connection.
-fn paint_panel<T: HidTransport>(
+/// The image settings with the display's `maxImageSize` (fn0). A display
+/// that refuses fn0 is painted within the fragment index limit alone; only
+/// a failing transport ends the connection.
+fn image_config<T: HidTransport>(
     hidpp: &mut Hidpp<T>,
-    settings: &Settings,
-    renderer: &Renderer,
-    geometry: &Geometry,
-    accent: Option<Color>,
-) -> Result<(), DeviceError> {
-    let rect = match Target::Panel.rect(geometry) {
-        Ok(rect) => rect,
+    config: ImageConfig,
+) -> Result<ImageConfig, DeviceError> {
+    match display::capabilities(hidpp) {
+        Ok(capabilities) => Ok(ImageConfig {
+            max_image_size: usize::try_from(capabilities.max_image_size).ok(),
+            ..config
+        }),
+        Err(HidppError::Transport(error)) => Err(HidppError::Transport(error).into()),
         Err(error) => {
-            tracing::warn!("panel: not painted: {error}");
-            return Ok(());
+            tracing::warn!("display capabilities: {error}; no maxImageSize limit");
+            Ok(config)
         }
-    };
-    let size = TileSize {
-        width: rect.width,
-        height: rect.height,
-    };
-    match renderer.backdrop(accent, size).and_then(|tile| tile.jpeg()) {
-        Ok(jpeg) => match image::write(hidpp, &settings.image, rect, &jpeg) {
-            Ok(_) => {}
-            Err(ImageError::Hidpp(error)) => return Err(error.into()),
-            Err(error) => tracing::warn!("panel: not painted: {error}"),
-        },
-        Err(error) => tracing::warn!("panel: not rendered: {error}"),
     }
-    Ok(())
 }
 
-fn warn_render(key: u8, error: &RenderError) {
+/// What the pad shows: the canvas the images are cropped from, the view
+/// and the key specs drawn on it. `None` until drawn, so a new connection
+/// and a reclaim paint the union.
+struct Shown {
+    canvas: Option<Canvas>,
+    view: Option<View>,
+    keys: Vec<Option<KeySpec>>,
+}
+
+impl Shown {
+    fn new(count: usize) -> Self {
+        Self {
+            canvas: None,
+            view: None,
+            keys: vec![None; count],
+        }
+    }
+
+    /// Draws what `frame` changes and queues the area to send: the union of
+    /// the keys when the canvas is new (claim, view, panel color), else the
+    /// bounding box of the changed keys.
+    fn update(&mut self, renderer: &Renderer, panel: &Panel, frame: &Frame, queue: &mut Queue) {
+        let background = renderer.panel_color(frame.accent);
+        let new = self.view != frame.view
+            || self
+                .canvas
+                .as_ref()
+                .is_none_or(|canvas| canvas.background() != background);
+        if new {
+            match renderer.canvas(frame.accent, panel) {
+                Ok(canvas) => self.canvas = Some(canvas),
+                Err(error) => {
+                    tracing::warn!("panel: not rendered: {error}");
+                    return;
+                }
+            }
+            self.view.clone_from(&frame.view);
+            self.keys.fill(None);
+        }
+        let Some(canvas) = self.canvas.as_mut() else {
+            return;
+        };
+        let mut changed = Vec::new();
+        for (index, shown) in self.keys.iter_mut().enumerate() {
+            let Some(spec) = frame.keys.get(index) else {
+                continue;
+            };
+            if shown.as_ref() == Some(spec) {
+                continue;
+            }
+            match renderer.draw(canvas, index, spec) {
+                Ok(()) => changed.push(index),
+                Err(error) => warn_render(index + 1, &error),
+            }
+            // A key that cannot be drawn is not tried again until its spec
+            // changes.
+            *shown = Some(spec.clone());
+        }
+        let area = if new {
+            panel.bounds(0..panel.keys.len())
+        } else {
+            panel.bounds(changed.iter().copied())
+        };
+        if let Some(area) = area {
+            let keys: Vec<u8> = changed
+                .iter()
+                .filter_map(|&index| u8::try_from(index + 1).ok())
+                .collect();
+            queue.push(rect(area), &keys);
+        }
+    }
+}
+
+/// Why an area could not be painted.
+#[derive(Debug, thiserror::Error)]
+enum PaintError {
+    /// The crop or its encoding failed.
+    #[error(transparent)]
+    Render(#[from] RenderError),
+    /// The image write failed.
+    #[error(transparent)]
+    Image(#[from] ImageError),
+}
+
+/// The image rectangle of a canvas area.
+const fn rect(area: KeyPlace) -> Rect {
+    Rect {
+        x: area.x,
+        y: area.y,
+        width: area.size.width,
+        height: area.size.height,
+    }
+}
+
+/// The canvas area of an image rectangle.
+const fn place(rect: Rect) -> KeyPlace {
+    KeyPlace {
+        x: rect.x,
+        y: rect.y,
+        size: keyvo_core::render::TileSize {
+            width: rect.width,
+            height: rect.height,
+        },
+    }
+}
+
+fn warn_render(key: usize, error: &RenderError) {
     tracing::warn!("key {key}: not rendered: {error}");
 }

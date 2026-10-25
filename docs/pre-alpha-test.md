@@ -128,10 +128,9 @@ every key. The same files serve as test images in section 6.
 
 ## 4. No strip beside the keys (#70, after #72)
 
-Run this section only once slice 6l (composite paint, #72) is merged into
-`epic/34-pre-alpha`. Until then the daemon paints the panel background
-and then the nine keys as separate images, and the strip this section
-looks for is expected.
+Run this section on a build with slice 6l (composite paint, #72). Before
+it the daemon painted the panel background and then the nine keys as
+separate images, and the strip this section looks for was expected.
 
 On first light a key painted over a panel paint left a strip of the
 panel colour at its bottom and right edge (`docs/hardware-notes.md` item
@@ -488,6 +487,10 @@ After this block: `cp contrib/profiles/*.toml ~/.config/keyvo/profiles/`.
 
 ### Panel background before the keys (#79)
 
+Since #72 (#93) the background and the keys come as one image, so where
+an item below says "first, then the keys", expect both at once; the
+no-strip expectations stay.
+
 - [ ] #79 Daemon stopped: `just run -- fill '#ffffff' --panel`, then `bin/keyvo-daemon` in T1 with Dolphin focused: the panel turns dark blue first, then the nine global keys paint on it. No white strip beside any key; around and between the keys only the dark blue profile background.
 - [ ] #79 With the daemon running, focus Konsole: the background turns dark green, then the Konsole keys; VS Code: dark orange, then its keys; Dolphin again: dark blue. No strip of the previous profile's background beside a key (section 5 steps 3 to 5).
 - [ ] #79 With the daemon painting the global profile, `kill -STOP $(pgrep -x keyvo-daemon)`, wait 5 s, `kill -CONT $(pgrep -x keyvo-daemon)`: after one `claim lost, display reclaimed` the dark blue background comes back first, then the keys; no logo strip beside a key (together with #73 item 3).
@@ -498,6 +501,14 @@ After this block: `cp contrib/profiles/*.toml ~/.config/keyvo/profiles/`.
 - [ ] #91 `just run -- probe`: under `display`, after the mode line, read `deviceScreenCount 1`, `maxImageSize 124928 bytes`, `maxImageFPS 30` and `deferrableDisplayUpdate 1  rgb565 1  rgb888 0  jpeg 1  calibrated 1  origin 0` (the captured values, spec §5.10); the `geometry` line reads `480x480, 9 buttons, 0 visible areas`. Post any value that differs on #89.
 - [ ] #91 Daemon stopped: `just run -- fill '#ff00ff' --full` prints one line `full  480x480 at 0,0  ... acked` and the whole panel turns magenta, the border outside the keys included; `just run -- fill '#ff00ff' --panel` for comparison prints `panel  435x434 at 23,6`.
 - [ ] #91 `just run -- fill '#ff00ff' --full --panel` (and `--full --key 1`, `--full --all`) refuses with `cannot be used with` and exit code 2, before it touches the device.
+
+### Composite paint (#93)
+
+- [ ] #93 The #52 video method (240 fps, section 5): start `bin/keyvo-daemon` with Dolphin focused, then focus Konsole and Dolphin again. Each profile switch is one wipe of the whole key area; no key appears after another and no background shows before its keys.
+- [ ] #93 Section 4 steps 1 to 3 with the magenta panel and green keys: after step 2 and after every key press and profile switch of step 3, no magenta, green or earlier background strip beside any key, from any angle.
+- [ ] #93 With the daemon painting the global profile, press key 2 (exits 1): its running, then error look changes only key 2, and the keys around it do not flicker.
+- [ ] #93 `kill -STOP $(pgrep -x keyvo-daemon)`, wait 5 s, `kill -CONT $(pgrep -x keyvo-daemon)`: after one `claim lost, display reclaimed` the whole page comes back in one update, no logo strip beside a key.
+- [ ] #93 The daemon's output in T1 has no `display capabilities:` warning (the daemon read `maxImageSize` from fn0) and no `panel: not painted` line during the steps above.
 
 ### First-light records (#75)
 

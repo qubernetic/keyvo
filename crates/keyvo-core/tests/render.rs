@@ -5,7 +5,7 @@ use std::path::Path;
 
 use image::{ImageFormat, Rgb, RgbImage};
 use keyvo_core::profile::{Color, Profile};
-use keyvo_core::render::{self, KeyPlace, KeySpec, Panel, Renderer, TileSize};
+use keyvo_core::render::{self, Canvas, KeyPlace, KeySpec, Panel, Renderer, TileSize};
 
 /// The key size the Keypad publishes (spec §5.4).
 const KEY: TileSize = TileSize {
@@ -254,6 +254,160 @@ fn the_demo_page_renders_on_the_captured_panel() {
         &key5[(59 * 118 + 10) * 3..(59 * 118 + 10) * 3 + 3]
     );
     insta::assert_binary_snapshot!("demo-page-1.png", panel.png().unwrap());
+}
+
+/// The union of the captured key rectangles: 435x434 at 23,6.
+const UNION: KeyPlace = KeyPlace {
+    x: 23,
+    y: 6,
+    size: TileSize {
+        width: 435,
+        height: 434,
+    },
+};
+
+/// The RGB pixel at `x`, `y` of an RGB buffer `width` pixels wide.
+fn pixel(rgb: &[u8], width: usize, x: usize, y: usize) -> [u8; 3] {
+    let at = (y * width + x) * 3;
+    [rgb[at], rgb[at + 1], rgb[at + 2]]
+}
+
+/// A canvas of the demo page with every key drawn.
+fn demo_canvas(renderer: &Renderer) -> Canvas {
+    let specs = render::page(&demo(), 1, 9).unwrap();
+    let mut canvas = renderer
+        .canvas(demo().profile.accent, &captured_panel())
+        .unwrap();
+    for (key, spec) in specs.iter().enumerate() {
+        renderer.draw(&mut canvas, key, spec).unwrap();
+    }
+    canvas
+}
+
+#[test]
+fn the_bounds_of_dirty_keys_cover_exactly_their_rectangles() {
+    let panel = captured_panel();
+    assert_eq!(panel.bounds(0..9), Some(UNION));
+    assert_eq!(panel.bounds([4]), Some(panel.keys[4]));
+    assert_eq!(
+        panel.bounds([0, 4]),
+        Some(KeyPlace {
+            x: 24,
+            y: 6,
+            size: TileSize {
+                width: 275,
+                height: 275
+            }
+        })
+    );
+    // Keys the panel does not have are ignored.
+    assert_eq!(panel.bounds([4, 20]), Some(panel.keys[4]));
+    assert_eq!(panel.bounds([]), None);
+}
+
+#[test]
+fn the_canvas_composites_the_page_and_crops_the_union() {
+    let renderer = Renderer::new();
+    let canvas = demo_canvas(&renderer);
+    let union = canvas.crop(UNION).unwrap();
+    assert_eq!(union.size(), UNION.size);
+    assert_eq!(sof0(&union.jpeg().unwrap()), Some((435, 434)));
+    // The crop is the composite panel the preview shows, cut to the union.
+    let specs = render::page(&demo(), 1, 9).unwrap();
+    let whole = renderer.panel(&specs, &captured_panel()).unwrap().rgb();
+    let crop = union.rgb();
+    for (x, y) in [(0, 0), (1, 0), (137, 150), (200, 200), (434, 433)] {
+        assert_eq!(
+            pixel(&crop, 435, x, y),
+            pixel(&whole, 480, x + 23, y + 6),
+            "{x},{y}"
+        );
+    }
+    // Key 1 starts at 24,6: the crop's first column is the panel background.
+    let background = renderer.panel_color(demo().profile.accent);
+    assert_eq!(
+        pixel(&crop, 435, 0, 59),
+        [background.r, background.g, background.b]
+    );
+    insta::assert_binary_snapshot!("canvas-union.png", union.png().unwrap());
+}
+
+#[test]
+fn a_redrawn_key_replaces_its_old_tile_on_the_canvas() {
+    let renderer = Renderer::new();
+    let mut canvas = demo_canvas(&renderer);
+    let pressed = KeySpec {
+        background: Some(ORANGE),
+        label: Some("Run".to_owned()),
+        ..KeySpec::default()
+    };
+    renderer.draw(&mut canvas, 4, &pressed).unwrap();
+    let key5 = captured_panel().keys[4];
+    let crop = canvas.crop(key5).unwrap();
+    // The same key drawn on a fresh canvas: nothing of the old tile stays,
+    // not even in the rounded corners.
+    let mut fresh = renderer
+        .canvas(demo().profile.accent, &captured_panel())
+        .unwrap();
+    renderer.draw(&mut fresh, 4, &pressed).unwrap();
+    assert_eq!(crop.rgb(), fresh.crop(key5).unwrap().rgb());
+    // The other keys stay as they were.
+    let other = demo_canvas(&renderer);
+    let key1 = captured_panel().keys[0];
+    assert_eq!(
+        canvas.crop(key1).unwrap().rgb(),
+        other.crop(key1).unwrap().rgb()
+    );
+    insta::assert_binary_snapshot!("canvas-key-5.png", crop.png().unwrap());
+}
+
+#[test]
+fn a_crop_or_key_outside_the_canvas_is_an_error() {
+    let renderer = Renderer::new();
+    let mut canvas = renderer.canvas(None, &captured_panel()).unwrap();
+    let outside = KeyPlace {
+        x: 400,
+        y: 400,
+        size: KEY,
+    };
+    assert_eq!(
+        canvas.crop(outside).unwrap_err().to_string(),
+        "118x118 at 400,400 is outside the 480x480 canvas"
+    );
+    assert_eq!(
+        renderer
+            .draw(&mut canvas, 9, &KeySpec::default())
+            .unwrap_err()
+            .to_string(),
+        "no key 10 on a panel of 9 keys"
+    );
+}
+
+#[test]
+fn tiles_are_encoded_at_quality_100() {
+    let jpeg = Renderer::new()
+        .tile(&KeySpec::default(), KEY)
+        .unwrap()
+        .jpeg()
+        .unwrap();
+    // Every DQT segment holds 8-bit tables of ones.
+    let mut at = 2;
+    let mut tables = 0;
+    while let [0xff, marker, len0, len1, ..] = jpeg[at..] {
+        let len = usize::from(u16::from_be_bytes([len0, len1]));
+        if marker == 0xdb {
+            for table in jpeg[at + 4..at + 2 + len].chunks(65) {
+                assert_eq!(table[0] >> 4, 0, "8-bit precision");
+                assert!(table[1..].iter().all(|&q| q == 1));
+                tables += 1;
+            }
+        }
+        if marker == 0xda {
+            break;
+        }
+        at += 2 + len;
+    }
+    assert_eq!(tables, 2);
 }
 
 #[test]

@@ -86,7 +86,7 @@ Home and the one-key editor.
 | 6c | #69 | `fix(hid): reclaim the display after a keep-alive expiry` | S | M0-4a | #40 | merged |
 | 6d | #71 | `feat(cli): dump raw hid frames and probe any feature` | S | M0-8 | #69 | merged |
 | 6e | #70 | `test(hardware): measure the visible key window` | H | M0-5b | | open, owner |
-| 6f | #72 | `fix(daemon): cover the visible key window when painting keys` | S | M0-5a, M1-5 | #70, #77 | open |
+| 6l | #72 | `feat(render,hid,daemon): paint one composite image per change` (was 6f, the per-key margin, dropped) | S | M0-5a, M1-5 | #89 | open |
 | 6g | #76 | `docs(contrib): add example profiles and the home test guide` | S | none | | merged |
 | 6h | #77 | `fix(daemon): paint the panel background before the keys` | S | M0-5a, M1-5 | #76 | merged |
 | 6i | #80 | `feat(cli): add a margin option to keyvo fill` | S | M0-5b | #70, #72 | merged |
