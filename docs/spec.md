@@ -288,7 +288,9 @@ both planes, and never hard-code them. The root sits at index 0 of each plane,
 the one index the protocol fixes. Classic `getFeature(id)` answers `<index>
 <type flags> <version>`, index 0 meaning absent; VLP root `getFeature(id)`
 (captured) echoes the id first: `<id:u16> <index> <hidden> <version>
-<maxMemory:u32>`, e.g. `19 a1 02 00 00 00 01 e8 03`. Resolved indices are
+<maxMemory:u32>`, e.g. `19 a1 02 00 00 00 01 e8 03`; keyvo takes a VLP
+index 0 as absent too (not captured; `keyvo probe --feature`, §5.10, is
+the check). Resolved indices are
 cached per connection, including those a direct `getFeature` call
 returned. Host requests on `0x13` that fit one packet carry the
 sequence byte `e0`. Bit `0x40` of the sequence byte marks the last packet of
@@ -535,6 +537,19 @@ and `[timing].reply_timeout`.
   display mode with the supported modes, and the geometry. A step the
   device refuses is reported in its line and the probe goes on; a
   transport error ends it.
+- `keyvo probe --feature <id>`: the feature id (hex, `0x` optional) asked
+  of the classic ROOT and of the VLP root, one line per plane with the
+  index and version, `absent` (index 0), or the error reply (the classic
+  error code, the whole VLP error report in hex); a refused plane does
+  not stop the other.
+- `--dump` (global): every report written to and read from the Keypad is
+  printed to stderr, one line each: the milliseconds since the start, `>`
+  for out or `<` for in, and the bytes in hex. A `0x14` report (a VLP
+  bulk fragment, 4094 bytes) prints its 5-byte header, `..` and its
+  length instead of the whole fragment. Timeouts print nothing. stdout is
+  unchanged, so `keys --json --dump` stays valid NDJSON. It is a
+  `HidTransport` wrapper (`keyvo_hid::dump::Dump`), so `probe`, `keys`
+  and `fill` all have it.
 - `keyvo keys [--json]`: first keep-alive ping, claim (§5.4), page-button
   divert (§5.6), then one line per press and release until interrupted:
   `press key 5`, `release page left`, or with `--json` one NDJSON object
@@ -1513,6 +1528,10 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 6d (2026-10-25)**: §5.10 the global `--dump`
+  flag and `keyvo probe --feature <id>` from first light (#40, finding 6);
+  §5.2 a VLP `getFeature` index 0 is taken as absent.
 
 - **v0.3, pre-alpha slice 6c (2026-10-25)**: §5.3 the period-below-timeout
   rule, the lost-claim events of a keep-alive expiry from first light (#40)
