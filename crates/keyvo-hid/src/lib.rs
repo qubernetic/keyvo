@@ -6,6 +6,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod display;
+pub mod dump;
 pub mod firmware;
 pub mod frame;
 pub mod hidpp;
