@@ -56,8 +56,10 @@ The commands need read-write access to the Keypad's `/dev/hidraw*` node and
 Solaar stopped; [docs/hardware-notes.md](docs/hardware-notes.md) lists the
 measurements they serve.
 
-The desktop app is a scaffold so far: a window that shows the daemon's
-status. It builds in the devcontainer and runs on the host:
+The desktop app shows Home so far: a live mirror of the pad's page, the
+daemon's status, the recent presses, and a virtual pad whose clicks are
+dry-run presses (right click for a long press; `1` to `9` and `Space` on
+the grid). It builds in the devcontainer and runs on the host:
 
 ```bash
 just app-build

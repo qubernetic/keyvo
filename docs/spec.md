@@ -167,11 +167,17 @@ through the daemon's socket. `keyvo-client` is that client side, used by the
 desktop app: `Client` sends one request at a time over any `Read + Write`
 stream (`Client::connect` for the Unix socket at `socket_path`:
 `$KEYVO_SOCKET`, else the runtime directory) and keeps events that arrive
-before an answer for `next_event`; `Mirror` folds the `status`, `subscribe`
+before an answer for `next_event`; `Client::subscribe` subscribes to every
+event class with a trace replay and `Client::dry_run` sends a simulated
+press and returns its trace entry; `follow` keeps a subscription to its end
+and hands on `Update`s (the subscribed view, every event, then why it
+ended, also when the daemon cannot be reached), which the app's shell emits
+to the frontend as they are; `Mirror` folds the `status`, `subscribe`
 and `press` replies and the events into the view, device, focus context,
 held keys, recent trace entries and the last reload error; `Tiles` renders a
 page with the `keyvo-core` renderer, so a tile in the GUI has the pixels the
-daemon paints on the LCD. Its tests run against the socket fixtures in
+daemon paints on the LCD, and `tiles::keys` gives each key's label and
+action for the GUI to announce. Its tests run against the socket fixtures in
 `tests/protocol-fixtures/socket/`, the same lines the TypeScript side of
 the app checks itself against.
 
@@ -1207,16 +1213,43 @@ the rest of the system must provide.
 **As built (pre-alpha scaffold).** `app/` is a Vite project with Svelte 5,
 TypeScript, vitest and jsdom, managed with `npm` (exact versions, committed
 `package-lock.json`). `app/src/lib/protocol.ts` holds the protocol v1 types
-and parsers and passes the shared socket fixtures; the window shows the
-daemon's `status` (Keypad, profile, page, mode) or why it cannot reach the
-daemon. The theme bridge is reduced to the tokens of
+and parsers and passes the shared socket fixtures. The theme bridge is
+reduced to the tokens of
 `docs/design/gui-ux.md` §7 as CSS custom properties with fixed defaults in
 `app/src/styles/tokens.css` (the feedback states use the pad theme's
 colours); the KDE and GNOME readers come with M4a-1. `app/src-tauri`
-(identifier `org.qubernetic.keyvo`, bundling off) has two commands,
-`status` and `tiles` (a page as PNG data URLs), both over `keyvo-client`.
+(identifier `org.qubernetic.keyvo`, bundling off) has four commands, all
+over `keyvo-client`: `status`; `tiles` (a page from the user's
+configuration directory, each key as a PNG data URL with its label and
+action); `press` (a dry-run press, the trace entry back); `subscribe` (a
+subscription with a trace replay on its own thread, each update emitted on
+the Tauri event `keyvo://update`; a newer `subscribe` stops the older one).
 `just app-test` runs `npm ci`, `svelte-check` and vitest; `just app-build`
 builds the frontend and the shell into `bin/keyvo-app`.
+
+**As built (pre-alpha Home).** The window is Home only, without the rail
+and header of `docs/design/gui-ux.md` §2. On start it asks `status`, then
+subscribes with a replay of the newest 20 trace entries; `app/src/lib/home.ts`
+folds the updates the way `Mirror` does.
+
+- **Mirror.** A 3x3 `grid` of the tiles of the active profile and page,
+  fetched again when the view changes and after every reload. A key held
+  on the device is outlined. A page the GUI's configuration cannot render
+  shows why.
+- **Status strip.** Device, profile, page, mode and the focused window, and
+  the reload error while the configuration does not load.
+- **Event list.** The trace entries, newest first, one line each: the key,
+  the press kind, whether it was simulated, the action and its result.
+- **Virtual pad.** A click is a short dry-run press, a right click a long
+  one; the one-line result shows under the grid. On the grid, `1` to `9`
+  and the arrows select a key, `Space` presses it short and `Shift+Space`
+  long.
+- **Accessibility.** Each key's `aria-label` names the key, its label and
+  its action; the grid has rows and cells, the selected cell is
+  `aria-selected`, and the result line is a `status` region.
+- **Daemon unreachable.** When `status` fails or the subscription ends, an
+  alert says why, the mirror keeps its last frame, and Retry connects
+  again. The in-process simulator of §4.2 of the design comes later.
 
 ---
 
@@ -1382,6 +1415,12 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 15 (2026-10-25)**: §4.1 `Client::subscribe`,
+  `Client::dry_run`, `follow` and `Update`, `tiles::keys`; §10 the shell's
+  `press` and `subscribe` commands, `tiles` with labels and actions, and
+  Home as built (mirror, status strip, event list, virtual pad, keyboard
+  and aria labels, the unreachable state).
 
 - **v0.3, pre-alpha slice 14 (2026-10-25)**: §4 the fifth workspace crate
   `keyvo-client` in the tree, `app/src-tauri` outside the root workspace;
