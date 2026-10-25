@@ -11,6 +11,7 @@ pub mod config;
 pub mod diagnostic;
 pub mod hid;
 pub mod layout;
+pub mod press;
 pub mod profile;
 pub mod render;
 pub mod schema;
