@@ -15,7 +15,7 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use keyvo_core::clock::{Clock, SystemClock};
 use keyvo_core::hid::{HidTransport, to_hex};
-use keyvo_core::layout;
+use keyvo_core::{config, layout};
 use keyvo_hid::hidpp::{DEFAULT_REPLY_TIMEOUT, DEVICE_DIRECT, Hidpp, SoftwareId};
 use keyvo_hid::hidraw::HidrawTransport;
 use keyvo_hid::image::{ImageConfig, IndexBase};
@@ -159,16 +159,47 @@ struct KeepAliveArgs {
 
 impl KeepAliveArgs {
     /// `None` without keep-alive, else the timing with the defaults filled in.
-    fn timing(&self) -> Option<KeepAliveTiming> {
+    ///
+    /// # Errors
+    ///
+    /// A period that is not below the timeout (spec §6.1), naming both flags.
+    fn timing(&self) -> anyhow::Result<Option<KeepAliveTiming>> {
+        if self.no_keep_alive {
+            return Ok(None);
+        }
         let defaults = KeepAliveTiming::default();
-        (!self.no_keep_alive).then(|| KeepAliveTiming {
+        let timing = KeepAliveTiming {
             period: self
                 .keep_alive_period
                 .map_or(defaults.period, Duration::from_millis),
             timeout: self
                 .keep_alive_timeout
                 .map_or(defaults.timeout, Duration::from_millis),
-        })
+        };
+        if let Some(problem) = config::keep_alive_problem(
+            ("--keep-alive-period", timing.period),
+            ("--keep-alive-timeout", timing.timeout),
+        ) {
+            anyhow::bail!(problem);
+        }
+        Ok(Some(timing))
+    }
+}
+
+impl DeviceCommand {
+    /// Checks the flags that need no device, so a bad command line is
+    /// refused before the Keypad is opened.
+    ///
+    /// # Errors
+    ///
+    /// The keep-alive flag errors.
+    fn check(&self) -> anyhow::Result<()> {
+        match self {
+            Self::Probe => Ok(()),
+            Self::Keys { keep_alive, .. } | Self::Fill { keep_alive, .. } => {
+                keep_alive.timing().map(drop)
+            }
+        }
     }
 }
 
@@ -214,6 +245,7 @@ fn main() -> anyhow::Result<()> {
             );
         }
     };
+    command.check()?;
     let (transport, device) = open(
         cli.device.as_deref(),
         Path::new(sysfs::SYSFS_HIDRAW),
@@ -249,7 +281,7 @@ fn run<T: HidTransport, C: Clock>(
     match command {
         DeviceCommand::Probe => probe::probe(&mut hidpp, device, out),
         DeviceCommand::Keys { json, keep_alive } => {
-            let mut session = Session::open(hidpp, clock, keep_alive.timing())?;
+            let mut session = Session::open(hidpp, clock, keep_alive.timing()?)?;
             eprintln!("keyvo keys on {device}; Ctrl-C to stop");
             keys::keys(
                 &mut session,
@@ -280,7 +312,7 @@ fn run<T: HidTransport, C: Clock>(
                 },
                 ..ImageConfig::default()
             };
-            let mut session = Session::open(hidpp, clock, keep_alive.timing())?;
+            let mut session = Session::open(hidpp, clock, keep_alive.timing()?)?;
             let placement = placement(key, panel);
             fill::fill(&mut session, &source, placement, &config, out)?;
             fill::hold(
@@ -496,7 +528,50 @@ mod tests {
         let Command::Device(DeviceCommand::Keys { keep_alive, .. }) = cli.command else {
             panic!("not keys");
         };
-        keep_alive.timing()
+        keep_alive.timing().unwrap()
+    }
+
+    #[test]
+    fn a_keep_alive_period_not_below_the_timeout_is_refused_before_the_device() {
+        let first = "--keep-alive-period (3000 ms) must be shorter than \
+                     --keep-alive-timeout (3000 ms)";
+        let fill = [
+            "fill",
+            "#00ff00",
+            "--panel",
+            "--hold",
+            "20",
+            "--keep-alive-period",
+            "3000",
+            "--keep-alive-timeout",
+            "3000",
+        ];
+        let error = command(&fill).check().unwrap_err().to_string();
+        assert!(error.starts_with(first), "{error}");
+        // The default timeout counts too, and `keys` is checked the same way.
+        let keys = ["keys", "--keep-alive-period", "3500"];
+        let error = command(&keys).check().unwrap_err().to_string();
+        assert!(
+            error.starts_with("--keep-alive-period (3500 ms)"),
+            "{error}"
+        );
+        // `run` refuses it as well, before its first write (an empty script
+        // fails any write with another error).
+        let clock = FakeClock::new();
+        let result = super::run(
+            command(&fill),
+            replay(""),
+            "/dev/hidraw2",
+            &clock,
+            |_| {},
+            || false,
+            &mut Vec::new(),
+        );
+        assert!(result.unwrap_err().to_string().starts_with(first));
+        // Without pings there is nothing to check.
+        let silent = ["keys", "--no-keep-alive", "--keep-alive-period", "3500"];
+        assert!(command(&silent).check().is_ok());
+        assert!(command(&["probe"]).check().is_ok());
     }
 
     #[test]
