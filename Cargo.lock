@@ -580,6 +580,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "keyvo-client"
+version = "0.0.0"
+dependencies = [
+ "keyvo-core",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "keyvo-core"
 version = "0.0.0"
 dependencies = [
