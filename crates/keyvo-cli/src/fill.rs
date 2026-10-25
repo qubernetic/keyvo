@@ -200,7 +200,9 @@ pub(crate) mod tests {
     }
 
     /// The claim, then for every target the fragments of `source`'s JPEG,
-    /// each answered by its ACK (`13 ff 02 <fn|swid> c<index> 00 <index>`).
+    /// each answered by its ACK in the device's layout
+    /// (`13 ff 02 <fn|swid> c<index> 00 <01 on the last fragment, else 00>`,
+    /// `image-acks.txt`).
     pub(crate) fn script(source: &Source, targets: &[Target], config: &ImageConfig) -> String {
         fixture("display-claim.txt") + &paints(source, targets, config)
     }
@@ -214,7 +216,8 @@ pub(crate) mod tests {
             let jpeg = source.jpeg(rect.width, rect.height).unwrap();
             for fragment in lcd::fragments(DEVICE_DIRECT, DISPLAY, config, rect, &jpeg).unwrap() {
                 let index = fragment[4] & 0x0f;
-                let mut ack = vec![0x13, 0xff, DISPLAY, fragment[3], 0xc0 | index, 0x00, index];
+                let last = u8::from(fragment[4] & 0x40 != 0);
+                let mut ack = vec![0x13, 0xff, DISPLAY, fragment[3], 0xc0 | index, 0x00, last];
                 ack.resize(32, 0);
                 writeln!(script, "> {}\n< {}", to_hex(&fragment), to_hex(&ack)).unwrap();
             }
