@@ -66,7 +66,8 @@ keyvo/
 ├── app/                # Tauri 2 + Svelte 5 GUI (M4a); src-tauri/ outside the root workspace
 ├── integrations/       # claude-code/ (plugin: hooks, commands, MCP), vscode/, tmux/, nvim/ ...
 ├── plugins/logi/       # C# Logi Actions SDK plugin (M5), built in the Windows VM
-├── contrib/            # udev rule, KWin script, systemd unit, Flatpak manifest
+├── contrib/            # udev rule, KWin script, systemd unit, Flatpak manifest; profiles/ are
+│                       #   the example profiles of docs/pre-alpha-test.md (test: keyvo-core contrib.rs)
 ├── captures/           # README + derived fixtures; raw pcapng external (release assets)
 ├── tools/windows-vm/   # libvirt VM scripts
 ├── tools/keycodes/     # generator of the evdev key code table in keyvo-core's chord parser
@@ -147,5 +148,6 @@ Known traps:
 - `docs/plans/`: per-issue implementation plans; `2026-09-09-project-plan.md` is the master plan
 - `docs/research/`: protocol findings, captures decoded, prior-art analyses
 - `docs/hardware-notes.md`: measured device behaviour (date, firmware version, method) and the first-light checklist
+- `docs/pre-alpha-test.md`: the owner's pre-alpha home session (#70, #52) and the collected User test checklists of the epic's slice PRs; a slice PR merged into `epic/34-pre-alpha` adds its User test items there
 - `CONTRIBUTING.md`: process, TDD, hardware test policy, DCO
 - `SECURITY.md`: threat model (socket trusts the same user, like ssh-agent)
