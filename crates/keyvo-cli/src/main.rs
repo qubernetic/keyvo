@@ -84,6 +84,13 @@ enum Command {
 #[derive(Subcommand)]
 enum DeviceCommand {
     /// Print what the Keypad reports about itself (read-only)
+    ///
+    /// The HID++ version, the classic and VLP features keyvo uses, the
+    /// firmware, the keep-alive range, the display mode, the display
+    /// capabilities (fn0: deviceScreenCount, maxImageSize in bytes,
+    /// maxImageFPS, and the flags deferrableDisplayUpdate, rgb565, rgb888,
+    /// jpeg, calibrated, origin) and the geometry (fn1: panel size, button
+    /// count, visible-area count, every button's rectangle).
     Probe {
         /// Only ask both ROOT planes for this feature id, in hex (`0x1b04`
         /// or `1b04`): index and version, `absent`, or the error reply
@@ -942,6 +949,19 @@ mod tests {
         let error = margin(&["--panel", "--margin", "4"]).unwrap_err();
         assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
         assert!(margin(&["--margin", "-1"]).is_err());
+    }
+
+    #[test]
+    fn probe_help_names_the_display_fields() {
+        use clap::CommandFactory;
+        let mut cli = Cli::command();
+        let help = cli
+            .find_subcommand_mut("probe")
+            .unwrap()
+            .render_long_help()
+            .to_string();
+        assert!(help.contains("maxImageSize"), "{help}");
+        assert!(help.contains("visible-area count"), "{help}");
     }
 
     #[test]

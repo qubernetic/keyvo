@@ -98,9 +98,8 @@ pub fn probe<T: HidTransport>(
 
     let modes = step(display::supported_modes(hidpp))?;
     let mode = step(display::current_mode(hidpp))?;
-    report.line(
-        "display",
-        mode.map(|mode| {
+    let mut lines = vec![match mode {
+        Ok(mode) => {
             let supported = modes.as_ref().map_or_else(
                 |error| format!("supported modes: {error}"),
                 |modes| {
@@ -109,16 +108,23 @@ pub fn probe<T: HidTransport>(
                 },
             );
             format!("mode {:02x} ({supported})", mode.0)
-        }),
-    )?;
+        }
+        Err(error) => format!("error: {error}"),
+    }];
+    match step(display::capabilities(hidpp))? {
+        Ok(caps) => lines.extend(capability_lines(&caps)),
+        Err(error) => lines.push(format!("capabilities: error: {error}")),
+    }
+    report.lines("display", &lines)?;
 
     match step(display::geometry(hidpp))? {
         Ok(geometry) => {
             let mut lines = vec![format!(
-                "{}x{}, {} keys",
+                "{}x{}, {} buttons, {} visible areas",
                 geometry.width,
                 geometry.height,
-                geometry.keys.len()
+                geometry.keys.len(),
+                geometry.visible_areas
             )];
             lines.extend(geometry.keys.iter().map(|key| {
                 format!(
@@ -131,6 +137,25 @@ pub fn probe<T: HidTransport>(
         Err(error) => report.line("geometry", Err::<String, _>(error))?,
     }
     Ok(())
+}
+
+/// The display fn0 fields under the names Options+ logs them by.
+fn capability_lines(caps: &display::Capabilities) -> [String; 4] {
+    let flag = |set: bool| u8::from(set);
+    [
+        format!("deviceScreenCount {}", caps.screen_count),
+        format!("maxImageSize {} bytes", caps.max_image_size),
+        format!("maxImageFPS {}", caps.max_image_fps),
+        format!(
+            "deferrableDisplayUpdate {}  rgb565 {}  rgb888 {}  jpeg {}  calibrated {}  origin {}",
+            flag(caps.deferrable_display_update),
+            flag(caps.rgb565),
+            flag(caps.rgb888),
+            flag(caps.jpeg),
+            flag(caps.calibrated),
+            caps.origin
+        ),
+    ]
 }
 
 /// The outcome of one probe step: a transport error ends the probe, any
@@ -238,7 +263,11 @@ keep-alive  500..10000 ms
 vlp         protocol 1.0, available memory 124960 bytes
             0x19a1 VLP_DISPLAY         index 0x02  version 0
 display     mode a1 (supported a0 a1 a2 a4 a5 a6 d0 d1 d2 d3 d4 d5 d6)
-geometry    480x480, 9 keys
+            deviceScreenCount 1
+            maxImageSize 124928 bytes
+            maxImageFPS 30
+            deferrableDisplayUpdate 1  rgb565 1  rgb888 0  jpeg 1  calibrated 1  origin 0
+geometry    480x480, 9 buttons, 0 visible areas
             key 1  118x118 at 24,6
             key 2  118x118 at 182,7
             key 3  118x118 at 340,6
@@ -269,8 +298,18 @@ geometry    480x480, 9 keys
             // getFeature(0x8040) answers index 0: absent.
             .replace("< 11 ff 00 0e 0f 00 01", "< 11 ff 00 0e 00 00 00")
             // getTimeoutRange answers an invalid-argument error.
-            .replace("< 11 ff 04 0e 01 f4 27 10", "< 11 ff ff 04 0e 02 00 00");
+            .replace("< 11 ff 04 0e 01 f4 27 10", "< 11 ff ff 04 0e 02 00 00")
+            // getCapabilities answers a VLP error.
+            .replace(
+                "< 13 ff 02 0e c0 01 00 7a 1e 00",
+                "< 13 ff ff 02 0e 02 00 00 00 00",
+            );
         let text = run(&script).unwrap();
+        assert!(
+            text.contains("\n            capabilities: error: vlp error reply: 13 ff ff 02 0e 02"),
+            "{text}"
+        );
+        assert!(!text.contains("maxImageSize"), "{text}");
         assert!(
             text.contains("0x8040 BRIGHTNESS_CONTROL  absent\n"),
             "{text}"
