@@ -444,9 +444,15 @@ async fn a_connection_over_the_cap_is_refused() {
 
     let mut third = running.client().await;
     let response: Value = serde_json::from_str(&third.recv().await).unwrap();
-    assert_eq!(response["error"]["code"], "unavailable");
-    let message = response["error"]["message"].as_str().unwrap();
-    assert!(message.contains("2 connections"), "{message}");
+    // The fixture line, written for the default cap of 32.
+    let fixture = include_str!("../../../tests/protocol-fixtures/socket/responses.ndjson")
+        .lines()
+        .find(|line| line.contains("\"unavailable\""))
+        .expect("an unavailable line in responses.ndjson");
+    let expected: Value =
+        serde_json::from_str(&fixture.replace("at most 32 connections", "at most 2 connections"))
+            .unwrap();
+    assert_eq!(response, expected);
     third.closed().await;
 
     // A slot that frees up serves the next client. Until then a client is

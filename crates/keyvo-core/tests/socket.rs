@@ -72,6 +72,7 @@ fn every_response_round_trips_its_fixture() {
             "done",
             "error",
             "error",
+            "error",
             "error"
         ]
     );
