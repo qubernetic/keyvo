@@ -9,3 +9,4 @@
 {"v":1,"ok":false,"error":{"code":"invalid_json","message":"expected value at line 1 column 1"}}
 {"v":1,"id":7,"ok":false,"error":{"code":"unsupported_version","message":"protocol version 2 is not supported; this daemon speaks 1"}}
 {"v":1,"id":8,"ok":false,"error":{"code":"invalid_request","message":"unknown field `dryrun`, expected one of `key`, `kind`, `dry_run`"}}
+{"v":1,"ok":false,"error":{"code":"unavailable","message":"the daemon serves at most 32 connections; try again later"}}

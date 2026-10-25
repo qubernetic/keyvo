@@ -101,20 +101,27 @@ keyvo/
 │   ├── keyvo-core      # profiles (TOML, toml_edit round-trip, JSON Schema), state machine
 │   │                   #   (mode/page/overlay), renderer (tiny-skia/resvg/Inter → JPEG), actions,
 │   │                   #   socket protocol types, chord parser; sync, hardware-free, ≥85 % covered
-│   ├── keyvo-daemon    # tokio runtime: socket server, KWin/X11 watchers (zbus/x11rb), uinput
-│   │                   #   injector (evdev), plugin supervisor, inotify hot-reload, systemd unit
+│   ├── keyvo-daemon    # tokio runtime: socket server, KWin watcher (zbus), uinput injector
+│   │                   #   (evdev), inotify hot-reload; planned: X11 watcher (x11rb), plugin
+│   │                   #   supervisor, systemd unit
 │   ├── keyvo-client    # socket client, mirror state, tile rendering through keyvo-core, key
 │   │                   #   editor file side, for the GUI and later clients; sync, hardware-free
-│   └── keyvo-cli       # `keyvo probe|keys|fill|paint-test|preview|doctor|ctl|profile …`
+│   └── keyvo-cli       # `keyvo probe|keys|fill|preview|ctl`; planned: `paint-test|doctor|profile`
 ├── app/                # Tauri 2 + Svelte 5 GUI (M4a); src-tauri/ is outside the root workspace
-├── integrations/       # claude-code/ (plugin: hooks, commands, MCP), vscode/, tmux/, nvim/ …
-├── plugins/logi/       # C# Logi Actions SDK plugin (M5), built in the Windows VM
-├── contrib/            # udev rule, KWin script, systemd unit, Flatpak manifest
+├── integrations/       # planned: claude-code/ (plugin: hooks, commands, MCP), vscode/, tmux/, nvim/ …
+├── plugins/logi/       # planned: C# Logi Actions SDK plugin (M5), built in the Windows VM
+├── contrib/            # KWin script, example profiles; planned: udev rule, systemd unit, Flatpak manifest
 ├── captures/           # README + derived fixtures; raw pcapng external (release assets)
-├── tools/windows-vm/   # libvirt VM scripts (from TwinCat-MCP)
-├── tests/protocol-fixtures/  # shared NDJSON fixtures for Rust/TS/C# clients; hid/ golden HID++ scripts
-└── docs/               # spec.md, roadmap.md, adr/, diagrams/, research/, plans/, hardware-notes.md, mdBook
+├── tools/keycodes/     # generator of the evdev key code table of the chord parser
+├── tools/windows-vm/   # planned: libvirt VM scripts (from TwinCat-MCP)
+├── schemas/            # generated JSON Schemas of profiles and config.toml
+├── tests/protocol-fixtures/  # shared fixtures for Rust/TS clients: socket/ NDJSON, editor/, hid/ golden HID++ scripts
+└── docs/               # spec.md, roadmap.md, socket-api.md, adr/, design/, research/, plans/,
+                        #   hardware-notes.md, pre-alpha-test.md; planned: diagrams/, mdBook
 ```
+
+"Planned" marks what the pre-alpha has not built yet; the milestone that
+builds it is in §15 and `docs/roadmap.md`.
 
 The root workspace has five crates. `keyvo-core` and `keyvo-client` are
 synchronous and hardware-free; `keyvo-daemon` owns the tokio runtime and
@@ -137,6 +144,12 @@ timeout. It knows nothing about HID++; framing, reply matching and feature
 resolution live in `keyvo-hid`. `FakeHidTransport` replays a script of
 request/response pairs in the fixture notation of §5.9 and fails on any
 write the script does not expect.
+
+The test doubles (`FakeHidTransport`, `FakeClock`, `FakeInputInjector`,
+`FakeWindowWatcher`) are public items of `keyvo-core`, not behind a
+feature: the tests of `keyvo-hid`, `keyvo-daemon` and `keyvo-cli` use
+them, and they hold no device or system resource, so shipping them costs
+nothing. They are for tests; no production path constructs one.
 
 Timing logic (keep-alive cadence, later long press and hysteresis) reads
 time through the `Clock` trait (`keyvo_core::clock`): `SystemClock` in
@@ -198,13 +211,17 @@ the controller with `FakeHidTransport` pads, a `FakeInputInjector`, a
 disk. Run it with `just build`, then `bin/keyvo-daemon [--config-dir DIR]
 [--device PATH] [--socket PATH]` on the host; logs go to stderr.
 
-Core rendering is the pure function
+Core rendering is, as the target, the pure function
 
 ```
 (profile, page, mode, overlay_stack, window_ctx) → 9 KeySpecs + accent + dialpad bindings
 ```
 
-so the whole context engine is testable without a device.
+so the whole context engine is testable without a device. As built
+(pre-alpha) it is `keyvo_core::render::page(profile, page, keys)`: the
+specs of keys 1 to `keys` of one page; the state machine picks the
+profile and page, overlays and dialpad bindings are not built yet, and
+the accent is read from the profile.
 
 ### 4.2 Device ownership (Windows coexistence)
 
@@ -639,10 +656,15 @@ and `[timing].reply_timeout`.
   `key 1  126x126 at 20,2` for `--margin 4` (the #70 measurement, §5.4).
 - `keys` and `fill` take `--no-keep-alive`, `--keep-alive-period <ms>` and
   `--keep-alive-timeout <ms>` for the keep-alive measurements; without them
-  the `[timing]` defaults apply (the configuration file is read from the
-  profile slice on). A period that is not below the timeout is refused
-  before the device is opened (§6.1). `keys` reclaims a lost claim too and
-  says so on stderr.
+  `keep_alive_period` and `keep_alive_timeout` come from the user's
+  `config.toml` (`[timing]`, §6.1), else from its defaults, and `keys`
+  diverts with `[timing].divert_settle` and `divert_spacing`. Only
+  `config.toml` is read, not the profiles; one that cannot be loaded
+  stops `keys` and `fill` with `configuration not loaded:` and the
+  diagnostic (`probe` does not read it). A period that is not below the
+  timeout is refused before the device is opened (§6.1), naming the flag
+  or the `[timing]` key each value came from. `keys` reclaims a lost
+  claim too and says so on stderr.
 
 ---
 
@@ -750,7 +772,8 @@ and `--keep-alive-timeout` the same way before they open the device.
     (`crates/keyvo-daemon/tests/kwin.rs`). The script file itself is
     checked for its header comment and placeholders; its behaviour inside
     KWin is the owner's User test.
-- **X11 (v1):** `_NET_ACTIVE_WINDOW` via `x11rb`.
+- **X11 (v1, planned):** `_NET_ACTIVE_WINDOW` via `x11rb`; not built in
+  the pre-alpha.
 - **GNOME, Hyprland, Sway (community):** no cross-compositor Wayland focus
   protocol exists (KWin 6.7 and Mutter 51 implement neither
   `wlr-foreign-toplevel-management` nor `ext-foreign-toplevel-list`). keyvo
@@ -1217,7 +1240,7 @@ state (tmux, git status, editor sessions) are built.
 easier to secure and test. Revisit after M2 if the plugin path proves too
 heavy.
 
-**First-class integration.** `integrations/claude-code/` is a Claude Code
+**First-class integration (planned).** `integrations/claude-code/` is a Claude Code
 plugin: hooks (`SessionStart`, `Stop`, `Notification`, …) push overlays over
 the socket (working / waiting / needs-permission), slash commands map to
 keys, and an MCP server exposes `set_key`/`push_overlay` to the agent. Tier 1
@@ -1320,6 +1343,8 @@ justfile page, `gh`, `kubectl`, other agent CLIs, Kitty/WezTerm.
   ~300 ms full-grid splash on profile switch, `[render].splash`, **default
   `false`** (owner decision, §16 question 16): the accent bar on every key
   already shows the switch. A Settings toggle in the GUI turns it on.
+  As built (pre-alpha), `[render].splash` is parsed and validated but has
+  no effect: the splash comes with M1-6.
 - Test policy: `keyvo-core` ≥ 85 % and `keyvo-hid` ≥ 80 % line coverage,
   goals measured via `cargo-llvm-cov` → codecov, whose org gates block a PR
   (patch >= 80 %, project at most 1 % below the base);
@@ -1473,6 +1498,10 @@ icon and action (none, a chord's keys or an `exec` command).
 - **Reloads.** After the daemon's `config` event the editor reads the key
   again; a field being edited keeps its text. The "Open in editor" button
   and the file watch of `docs/design/gui-ux.md` §4.1 come with M4a-4.
+- **External changes, as built.** The app has no file watcher of its
+  own: it refetches the tiles and the selected key when the
+  daemon sends its `config` event, which the daemon's inotify watch
+  (§7.2) triggers. `docs/design/gui-ux.md` §4.1 stays the target.
 
 ---
 
@@ -1503,7 +1532,7 @@ icon and action (none, a chord's keys or an `exec` command).
 - No writes outside XDG dirs and `/etc/udev/rules.d/`; rules and units are
   installable from git and reversible.
 - Configuration is plain TOML; the GUI edits the same files.
-- Logging with levels (`tracing`); `keyvo doctor` diagnoses hidraw
+- Logging with levels (`tracing`); `keyvo doctor` (planned) diagnoses hidraw
   permissions, udev rule, `input` group / ACLs, `/dev/uinput`, KWin script
   state, socket ownership, Solaar presence, Options+ ownership (Windows).
 - Toolchain: pinned stable Rust (`rust-toolchain.toml`, edition 2024),
@@ -1640,6 +1669,17 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice R3 (2026-10-25)**: the docs aligned with the
+  pre-alpha as built, from the epic pre-review (#82). §5.10 `keys` and
+  `fill` take their keep-alive and divert timing from the user's
+  `config.toml` under their flags; §4 the layout tree marks what is
+  planned; §4.1 the test doubles are public items of `keyvo-core`, and the
+  render signature is the target, with the built `render::page`; §6.2 the
+  X11 watcher is planned; §9 `[render].splash` has no effect until M1-6;
+  §10 the app refetches on the daemon's `config` event and has no file
+  watcher of its own; §8 and §12 `doctor` and the Claude Code integration
+  are planned.
 
 - **v0.3, pre-alpha slice R1 (2026-10-25)**: hardening from the epic
   pre-review security pass (#81). §6.2 the KWin script directory is

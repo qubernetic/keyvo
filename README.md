@@ -114,7 +114,10 @@ just run -- preview vscode --page 2 -o grid.png   # an id from ~/.config/keyvo/p
 ## Documentation
 
 - [Specification](docs/spec.md): what keyvo is and why.
+- [Roadmap](docs/roadmap.md): milestones, the pre-alpha slices and their status.
 - [Socket API](docs/socket-api.md): the control socket's wire contract.
+- [Hardware notes](docs/hardware-notes.md): what the Keypad does, measured on
+  the device.
 - [Pre-alpha test guide](docs/pre-alpha-test.md): the hardware session on
   the host, with the example profiles.
 - [Project plan](docs/plans/2026-09-09-project-plan.md): decisions, architecture,

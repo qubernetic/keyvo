@@ -55,7 +55,13 @@ describe("server messages", () => {
       }
       expect(json(serverLine(message)), line).toEqual(json(line));
     }
-    expect(codes).toEqual(["reload_failed", "invalid_json", "unsupported_version", "invalid_request"]);
+    expect(codes).toEqual([
+      "reload_failed",
+      "invalid_json",
+      "unsupported_version",
+      "invalid_request",
+      "unavailable",
+    ]);
   });
 
   it("every event fixture is an event and round-trips, every class once at least", () => {

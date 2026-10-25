@@ -53,6 +53,12 @@ and reconnects when the device is gone.
 detents per revolution) and a small roller (40 per revolution), connected over the
 Bolt receiver or Bluetooth. Driven by `keyvo-hid` in M3.
 
+**Divert**: Taking a control's presses from the device's default action to
+keyvo: `setCidReporting(cid, 0x03)` on `0x1B04` for the page buttons (and the
+Dialpad's buttons in M3), after which the device sends their presses as HID++
+notifications instead of acting on them. Volatile; re-sent on every open and
+reconnect, with the `[timing].divert_settle` and `divert_spacing` waits.
+
 **Display mode**: The Keypad's LCD ownership state on the VLP plane, claimed by
 the daemon at start so that painted images replace the Logitech logo and
 released on exit. Part of the Keypad driver in `keyvo-hid`.
@@ -66,6 +72,11 @@ through `ROOT.getFeature` at connect time, never hard-coded.
 drawn with the theme's feedback primitives unless the key's own `states`
 override them. `success` reverts after `[render].feedback_hold`; `error`
 stays until the next press.
+
+**First light**: The first hardware session on the owner's Keypad (#40,
+2026-10-25): `keyvo probe`, `keys` and `fill` run on the device, with the
+measurements recorded in `docs/hardware-notes.md` and its frames turned into
+fixtures. Findings from it are the pre-alpha slices 6c to 6i.
 
 **Focus hysteresis**: The delay (default 150 ms, `[timing].focus_hysteresis`)
 that a focus change must survive before the state machine switches profile, so
@@ -111,6 +122,11 @@ a tile.
 **Keypad**: The MX Creative Keypad (`046d:c354`): nine LCD keys in a 3×3 grid,
 numbered 1..9 row-major, plus two page buttons. keyvo's primary device.
 
+**Mirror**: A client's copy of the daemon's state (`keyvo_client::Mirror`):
+the view, device, focus context, held keys, recent trace entries and the last
+reload error, filled from the `status`, `subscribe` and `press` replies and kept
+current by the events. The GUI's Home screen draws the pad from it.
+
 **Mode**: `auto` or `manual`. In auto mode the focus source selects the profile
 and page; in manual mode the user pages through the active profile with the page
 buttons and focus changes are ignored. Toggled by a long press on a page button
@@ -127,6 +143,10 @@ Overlays stack in push order and are removed with `pop_overlay`.
 **Page**: One arrangement of the nine keys inside a profile. Every profile has a
 `context` page; the global profile also has the `general` page; manual mode may
 add more.
+
+**Page grace**: The time (default 10 s, `[timing].page_grace`) after the last
+use of a page button during which an app switch keeps the general page instead
+of returning to the context page, so the user's choice sticks.
 
 **Plugin**: An executable under `~/.config/keyvo/plugins/<name>/` described by
 `plugin.toml`, started and restarted by the daemon, speaking the NDJSON socket
@@ -197,6 +217,11 @@ the file in the daemon.
 actions, bound in `~/.config/keyvo/trust.toml` to the content hash of its
 three files and re-asked whenever they change (direnv style). Granted with
 `keyvo project trust` or the GUI prompt.
+
+**View**: What the pad shows: the profile id, the page (counted from 1) and the
+mode (`keyvo_core::state::View`). The state machine computes it, the daemon
+paints it, and the socket reports it in `status`, `subscribe` and the
+`profile`, `page` and `mode` events.
 
 **VLP plane**: The Keypad's second protocol, on report IDs `0x13` (control,
 per-fragment acknowledgements) and `0x14` (bulk), with its own root and the

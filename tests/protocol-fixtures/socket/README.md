@@ -13,7 +13,7 @@ the event lines to a fake daemon.
 | File | Content |
 |---|---|
 | `requests.ndjson` | one request per command, every field written out |
-| `responses.ndjson` | the answers to them: `status` with and without a Keypad, `subscribe`, a dry-run and a real `press`, `reload` and its failure, `notify_context`, and the three request errors |
+| `responses.ndjson` | the answers to them: `status` with and without a Keypad, `subscribe`, a dry-run and a real `press`, `reload` and its failure, `notify_context`, the three request errors, and the `unavailable` refusal of a connection over the cap (`crates/keyvo-daemon/tests/socket.rs` checks the daemon sends it) |
 | `events.ndjson` | every event class; the `trace` lines are the records of `crates/keyvo-core/tests/fixtures/trace/records.ndjson` |
 
 The lines are written by hand from the protocol, not captured. Key order in

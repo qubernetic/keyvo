@@ -64,6 +64,25 @@ fn write_through_a_symlink_replaces_its_target_and_keeps_the_link() {
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "new");
 }
 
+#[cfg(unix)]
+#[test]
+fn write_into_a_read_only_directory_fails_and_keeps_the_old_file() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = tempfile::tempdir().unwrap();
+    let profiles = dir.path().join("profiles");
+    std::fs::create_dir(&profiles).unwrap();
+    let path = profiles.join("global.toml");
+    std::fs::write(&path, "old").unwrap();
+    std::fs::set_permissions(&profiles, std::fs::Permissions::from_mode(0o500)).unwrap();
+    let result = store::write(&path, "new");
+    let content = std::fs::read_to_string(&path).unwrap();
+    let left = names(&profiles);
+    std::fs::set_permissions(&profiles, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(result.is_err());
+    assert_eq!(content, "old");
+    assert_eq!(left, ["global.toml"]);
+}
+
 #[test]
 fn write_into_a_missing_directory_fails() {
     let dir = tempfile::tempdir().unwrap();

@@ -53,6 +53,10 @@ action = { type = "exec", cmd = "exit 1" }
 [pages.keys.5]
 label = "Copy"
 action = { type = "chord", keys = "ctrl+c" }
+
+[pages.keys.6]
+label = "Mark"
+action = { type = "exec", cmd = "touch '@MARKER@'" }
 "#;
 
 const TERMINAL: &str = r#"
@@ -70,6 +74,8 @@ label = "Shell"
 struct Running {
     _dir: tempfile::TempDir,
     config_dir: PathBuf,
+    /// The file the `exec` of global key 6 creates.
+    marker: PathBuf,
     socket: PathBuf,
     pad: Pad,
     injector: FakeInputInjector,
@@ -88,7 +94,12 @@ impl Running {
         let config_dir = dir.path().join("config");
         std::fs::create_dir_all(config_dir.join("profiles")).unwrap();
         std::fs::write(config_dir.join("config.toml"), CONFIG).unwrap();
-        std::fs::write(config_dir.join("profiles/global.toml"), GLOBAL).unwrap();
+        let marker = dir.path().join("marker");
+        std::fs::write(
+            config_dir.join("profiles/global.toml"),
+            GLOBAL.replace("@MARKER@", marker.to_str().unwrap()),
+        )
+        .unwrap();
         std::fs::write(config_dir.join("profiles/terminal.toml"), TERMINAL).unwrap();
         // tempdir is 0755 here; the runtime directory below it is created.
         let socket = dir.path().join("run/keyvo.sock");
@@ -125,6 +136,7 @@ impl Running {
         Self {
             _dir: dir,
             config_dir,
+            marker,
             socket,
             pad,
             injector,
@@ -325,6 +337,34 @@ async fn a_dry_run_press_returns_a_simulated_entry_and_runs_nothing() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_dry_run_press_of_an_exec_key_starts_nothing_and_paints_nothing() {
+    let running = Running::start().await;
+    let mut client = running.client().await;
+    let painted = running.pad.images().len();
+    let response = client
+        .ask(r#"{"v":1,"cmd":"press","key":6,"dry_run":true}"#)
+        .await;
+    let entry = &response["result"]["entry"];
+    assert_eq!(entry["action"]["type"], "exec");
+    assert_eq!(entry["result"], json!({"status": "dry_run"}));
+    // Longer than the exec and a repaint take when the press is real.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(!running.marker.exists());
+    assert_eq!(running.pad.images().len(), painted);
+
+    // Without dry_run the same key starts its command.
+    client.ask(r#"{"v":1,"cmd":"press","key":6}"#).await;
+    tokio::time::timeout(PATIENCE, async {
+        while !running.marker.exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the exec creates the marker");
+    running.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn bad_lines_get_error_responses_and_the_connection_stays() {
     let running = Running::start().await;
     let mut client = running.client().await;
@@ -404,9 +444,15 @@ async fn a_connection_over_the_cap_is_refused() {
 
     let mut third = running.client().await;
     let response: Value = serde_json::from_str(&third.recv().await).unwrap();
-    assert_eq!(response["error"]["code"], "unavailable");
-    let message = response["error"]["message"].as_str().unwrap();
-    assert!(message.contains("2 connections"), "{message}");
+    // The fixture line, written for the default cap of 32.
+    let fixture = include_str!("../../../tests/protocol-fixtures/socket/responses.ndjson")
+        .lines()
+        .find(|line| line.contains("\"unavailable\""))
+        .expect("an unavailable line in responses.ndjson");
+    let expected: Value =
+        serde_json::from_str(&fixture.replace("at most 32 connections", "at most 2 connections"))
+            .unwrap();
+    assert_eq!(response, expected);
     third.closed().await;
 
     // A slot that frees up serves the next client. Until then a client is
