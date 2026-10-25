@@ -409,9 +409,15 @@ version `docs/hardware-notes.md` records.
   paint, a key paint leaves a strip of the panel colour at the bottom and
   right edge of the key (first light, `docs/hardware-notes.md` item 7).
   The daemon paints the panel background before the keys (§5.5, #77), so
-  the strip shows the profile's background, not an earlier paint; the
-  measurement is #70, the per-key margin that covers the measured window
-  #72.
+  the strip shows the profile's background, not an earlier paint. Photos
+  cannot measure the strip (the domed key caps act as a lens, the strip
+  changes with the viewing angle), so #70 measures on the device: `keyvo
+  fill --all --margin <M>` (§5.10) grows every key rectangle by M pixels
+  until no strip shows from any angle. That smallest M is the source of
+  the default of the per-key `[render]` margin (#72). The published
+  geometry bounds it: the clamp to the panel stops the top at 6 px, left
+  23, right 22, bottom 40; the keys are at least 39 px apart, so up to
+  19 px no key overlaps a neighbour.
 
 ### 5.5 Image writes and flow control
 
@@ -616,8 +622,8 @@ and `[timing].reply_timeout`.
   per event, `{"edge":"press","key":5}`, `{"edge":"release","page":"left"}`
   (another diverted control: `"cid":<n>`). The keep-alive runs between
   reads.
-- `keyvo fill <#rrggbb|png> [--key N|--all|--panel]`: first ping and claim,
-  then a baseline JPEG (quality 90) of the color, or of the PNG scaled to
+- `keyvo fill <#rrggbb|png> [--key N|--all|--panel] [--margin PX]`: first
+  ping and claim, then a baseline JPEG (quality 90) of the color, or of the PNG scaled to
   the rectangle, per key in the geometry's order (`--all`, the default) or
   on the panel's rectangle (§5.5); one line per write with the JPEG size,
   the fragments and the ACKs. `--hold <seconds>` keeps the claim and the
@@ -625,7 +631,12 @@ and `[timing].reply_timeout`.
   a lost claim (§5.3) is taken back, reported as `display reclaimed after
   a lost claim; painting again`, and the image is painted again.
   `--index-base` and `--swid` set the writer settings the hardware check
-  compares.
+  compares. `--margin <px>` (default 0, with `--key` and `--all`; refused
+  with `--panel`, which already is the bounding box) grows every key
+  rectangle by that many pixels on all four sides and clamps it to the
+  panel (`0..width`, `0..height` of the geometry) on each side; the
+  source is scaled to the grown rectangle and the report line shows it,
+  `key 1  126x126 at 20,2` for `--margin 4` (the #70 measurement, §5.4).
 - `keys` and `fill` take `--no-keep-alive`, `--keep-alive-period <ms>` and
   `--keep-alive-timeout <ms>` for the keep-alive measurements; without them
   the `[timing]` defaults apply (the configuration file is read from the
@@ -1598,6 +1609,12 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 6i (2026-10-25)**: §5.10 `keyvo fill
+  --margin <px>`, key rectangles grown and clamped to the panel (#80);
+  §5.4 the margin measurement on the device replaces the photos of #70
+  and is the source of the #72 default, with the limits of the published
+  geometry.
 
 - **v0.3, pre-alpha slice 6h (2026-10-25)**: §5.5 the order of a paint,
   panel background first and then the keys, on every claim, reclaim and

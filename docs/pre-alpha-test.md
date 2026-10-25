@@ -8,7 +8,7 @@ the step number and what you saw; section 7 says what goes back on the
 issues.
 
 Plan about two hours. Keep three terminals open in the repository
-checkout (called T1, T2 and T3 below) and a phone for the photographs.
+checkout (called T1, T2 and T3 below).
 
 ## 1. Preconditions
 
@@ -114,61 +114,55 @@ every key. The same files serve as test images in section 6.
 ## 4. Visible key window (#70)
 
 The daemon must not run during this section; only `keyvo fill` drives
-the pad. Photograph the pad straight on, from above, in even light, the
-whole panel in the frame. Name the photos `70-<step>.jpg`.
+the pad. Photos do not settle the window: the domed key caps act as a
+lens, and the strip of the panel colour beside a key appears or
+disappears with the viewing angle. Instead, the key rectangle is grown
+with `fill --margin` until no strip is visible from any angle; that
+margin is the default of the `[render]` margin in #72.
+
+`--margin <PX>` grows every key rectangle the device publishes by `PX`
+pixels on all four sides and clamps it to the panel on each side; the
+report line shows the grown rectangle (`key 1  126x126 at 20,2` for
+`--margin 4`). Limits of the published geometry (first light,
+`docs/hardware-notes.md` item 6): the top row starts at `y=6`, so the
+top margin stops at 6 px; left 23, right 22, bottom 40 px (key 8; 41 for
+keys 7 and 9). The gap between two keys is at least 39 px, so margins up
+to 19 px do not overlap a neighbour.
 
 First note the firmware: `just run -- probe` and copy the `firmware` line
 marked `application, active` (first light: `U1 66.00.B0017`).
 
-1. **White panel, black keys.** One command line, so the second claim
-   follows the first before the keep-alive expires:
+1. **White panel, black keys, growing margin.** One command line per
+   step, so the second claim follows the first before the keep-alive
+   expires:
 
    ```bash
-   just run -- fill '#ffffff' --panel && just run -- fill '#000000' --all --hold 30
+   just run -- fill '#ffffff' --panel && just run -- fill '#000000' --all --margin <M> --hold 20
    ```
 
-   Expected: both print one line per write with `acked` equal to
-   `fragments`; the panel turns white, then the nine keys black. During
-   the 30 s hold, photograph (`70-1.jpg`). On first light a white strip
-   stayed at the bottom and the right edge of each key.
+   Run it with M = 0, 2, 4, 6, 8, then by 1 around the first value
+   without a strip. Expected: both commands print one line per write with
+   `acked` equal to `fragments`, and the key lines show the grown
+   rectangle. During every 20 s hold, look at the pad from several angles
+   (straight on, from each side, from above and below). On first light
+   (M = 0) a white strip stayed at the bottom and the right edge of each
+   key.
 
-2. **Black panel, white keys.**
+2. **The result.** The smallest M with no strip of the panel colour on
+   any key from any angle, and the edge on which the strip disappeared
+   last. If a strip stays on the top edge at M = 6, note that the
+   framebuffer cannot cover it there (the clamp stops the top at 0).
+
+3. **Swapped colours, once.** Confirm the result with a black panel and
+   white keys:
 
    ```bash
-   just run -- fill '#000000' --panel && just run -- fill '#ffffff' --all --hold 30
+   just run -- fill '#000000' --panel && just run -- fill '#ffffff' --all --margin <M> --hold 20
    ```
 
-   Photograph during the hold (`70-2.jpg`).
+   Expected: no black strip on any key from any angle.
 
-3. **Keys on the logo, without a panel paint.** Unplug the Keypad, wait
-   5 s, plug it back in, wait until the logo shows, then:
-
-   ```bash
-   just run -- probe | grep display     # expected: mode a2
-   just run -- fill '#ffffff' --all --hold 30
-   ```
-
-   Photograph during the hold (`70-3.jpg`). Note what fills the strip:
-   the logo, the previous image, or nothing visible.
-
-4. **Per key, from the photos.** For each key 1 to 9 note: the edges on
-   which a strip shows (top, bottom, left, right), and its estimated width
-   in pixels. The key is 118 px wide, so a strip a tenth of the key wide
-   is about 12 px. Note whether all nine keys behave the same.
-
-A table for the notes:
-
-| Key | Edges with a strip | Width (px) | Same in 70-1, 70-2, 70-3? |
-|---|---|---|---|
-| 1 | | | |
-| 2 | | | |
-| 3 | | | |
-| 4 | | | |
-| 5 | | | |
-| 6 | | | |
-| 7 | | | |
-| 8 | | | |
-| 9 | | | |
+4. **Post** the result on #70 (section 7): no photos.
 
 ## 5. End to end (#52)
 
@@ -504,11 +498,10 @@ you made one.
 
 - Device: MX Creative Keypad 046d:c354, firmware <application, active line of probe>
 - Commit: <git rev-parse --short HEAD from section 1>
-- Method: docs/pre-alpha-test.md section 4, steps 1 to 3; Solaar stopped
-- Photos: 70-1.jpg (white panel, black keys), 70-2.jpg (black panel, white keys), 70-3.jpg (keys on the logo)
-- Step 3: the strip shows <the logo / the previous image / nothing visible>
-- Per key: <the table from section 4>
-- All nine keys the same: <yes / no, which differ>
+- Method: docs/pre-alpha-test.md section 4 (fill --margin), several viewing angles; Solaar stopped
+- Margin: M = <smallest margin with no strip on any key from any angle>
+- Last edge: <the edge on which the strip disappeared last>; top strip left at M = 6: <no / yes, the framebuffer cannot cover it>
+- Swapped colours (black panel, white keys, --margin M): <no strip / strip on ...>
 ```
 
 **On #52**, one comment:
