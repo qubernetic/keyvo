@@ -31,6 +31,10 @@ use support::{Image, Pad, Pads, startup};
 /// How long a test waits for one event before it fails.
 const PATIENCE: Duration = Duration::from_secs(10);
 
+/// The control socket the daemon is told about, inside its configuration
+/// directory; these tests talk to the controller directly.
+const SOCKET: &str = "run/keyvo.sock";
+
 const CONFIG: &str = "\
 [timing]
 divert_settle = 0
@@ -129,10 +133,13 @@ impl Daemon {
         let (sender, events) = broadcast::channel(256);
         let (requests, inbox) = mpsc::unbounded_channel();
         let (stop, stopped) = oneshot::channel::<()>();
-        let config_dir = dir.path().to_path_buf();
+        let paths = daemon::Paths {
+            config_dir: dir.path().to_path_buf(),
+            socket: dir.path().join(SOCKET),
+        };
         let task = tokio::spawn(async move {
             daemon::run(
-                &config_dir,
+                &paths,
                 Pads::new(pads),
                 injector,
                 watcher,
@@ -778,6 +785,25 @@ async fn a_dry_run_press_is_traced_as_simulated_and_executes_nothing() {
     daemon
         .shows(&pad, &image_of(&marking(&marker), 1, Look::Success))
         .await;
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_exec_child_sees_the_daemon_socket() {
+    let marks = tempfile::tempdir().unwrap();
+    let out = marks.path().join("socket");
+    let global = GLOBAL.replace(
+        "sleep 0.1; exit 1",
+        &format!("printf '%s' \\\"$KEYVO_SOCKET\\\" > '{}'", out.display()),
+    );
+    let (mut daemon, _, _) = started(&global).await;
+    assert_eq!(daemon.press(1, false).await.result, Outcome::Pending);
+    let done = daemon.trace().await;
+    assert!(done.result.is_success(), "{done:?}");
+    assert_eq!(
+        std::fs::read_to_string(&out).unwrap(),
+        daemon.dir.path().join(SOCKET).to_string_lossy()
+    );
     daemon.stop().await;
 }
 

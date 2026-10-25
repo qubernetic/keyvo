@@ -57,8 +57,12 @@ pub async fn serve(
             }
         }
     });
+    let paths = daemon::Paths {
+        config_dir: config_dir.to_path_buf(),
+        socket: socket.to_path_buf(),
+    };
     let result = daemon::run(
-        config_dir,
+        &paths,
         HidrawConnector::new(device),
         Injector::open(),
         watcher,
