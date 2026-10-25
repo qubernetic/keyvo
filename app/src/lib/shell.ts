@@ -67,6 +67,17 @@ export function layout(width: number): Columns {
   };
 }
 
+/** The header's overflow menu (§2); an entry is enabled once it exists,
+ * and none does in the pre-alpha (export and import are M1 CLI commands,
+ * the others come with the screens of M4a). */
+export const MENU: readonly { label: MessageKey; enabled: boolean }[] = [
+  { label: "menu.export", enabled: false },
+  { label: "menu.import", enabled: false },
+  { label: "menu.config", enabled: false },
+  { label: "menu.setup", enabled: false },
+  { label: "menu.about", enabled: false },
+];
+
 export type DeviceChoice = "keypad" | "simulator";
 
 /** The header selector's entries: every device the daemon reports, then
