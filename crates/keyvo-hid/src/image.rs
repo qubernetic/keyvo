@@ -224,16 +224,24 @@ pub struct ImageConfig {
     /// `[timing].ack_timeout`: how long a fragment waits for its ACK before
     /// the next one goes out anyway.
     pub ack_timeout: Duration,
+    /// `maxImageSize` from display fn0 ([`crate::display::Capabilities`]),
+    /// once read: the largest image the device takes.
+    pub max_image_size: Option<usize>,
 }
 
 impl ImageConfig {
-    /// The largest JPEG one write carries: as many fragments as the 4-bit
-    /// fragment index counts from the index base without wrapping. What the
-    /// device does past that is not measured yet (plan §5 item 10).
+    /// The largest JPEG one write carries: the device's `maxImageSize`, and
+    /// at most as many fragments as the 4-bit fragment index counts from the
+    /// index base without wrapping. What the device does past that is not
+    /// measured yet (plan §5 item 10).
     #[must_use]
     pub const fn max_image_len(&self) -> usize {
         let fragments = (SEQ_INDEX - self.index_base.first()) as usize + 1;
-        FIRST_PAYLOAD + (fragments - 1) * NEXT_PAYLOAD
+        let numbered = FIRST_PAYLOAD + (fragments - 1) * NEXT_PAYLOAD;
+        match self.max_image_size {
+            Some(size) if size < numbered => size,
+            _ => numbered,
+        }
     }
 }
 
@@ -243,8 +251,79 @@ impl Default for ImageConfig {
             swid: DEFAULT_SWID,
             index_base: IndexBase::default(),
             ack_timeout: DEFAULT_ACK_TIMEOUT,
+            max_image_size: None,
         }
     }
+}
+
+/// One encoded part of a crop.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Band {
+    /// Where it goes.
+    pub rect: Rect,
+    /// The JPEG of `rect`.
+    pub jpeg: Vec<u8>,
+}
+
+/// The images that paint `rect`, each at most `limit` bytes
+/// ([`ImageConfig::max_image_len`]): `encode` gives the JPEG of a
+/// rectangle. A crop above the limit is cut into horizontal bands of the
+/// full width, top to bottom, as Options+ does (spec §5.5); when a band is
+/// still too large the crop is cut into more bands.
+///
+/// # Errors
+///
+/// The errors of `encode`, and [`ImageError::TooLarge`] when a single row
+/// is above the limit.
+pub fn bands<E: From<ImageError>>(
+    rect: Rect,
+    limit: usize,
+    mut encode: impl FnMut(Rect) -> Result<Vec<u8>, E>,
+) -> Result<Vec<Band>, E> {
+    let whole = encode(rect)?;
+    if whole.len() <= limit {
+        return Ok(vec![Band { rect, jpeg: whole }]);
+    }
+    let rows = usize::from(rect.height);
+    let mut parts = whole.len().div_ceil(limit.max(1)).min(rows);
+    loop {
+        let mut out = Vec::with_capacity(parts);
+        let mut too_large = None;
+        for band in split(rect, parts) {
+            let jpeg = encode(band)?;
+            if jpeg.len() > limit {
+                too_large = Some(jpeg.len());
+                break;
+            }
+            out.push(Band { rect: band, jpeg });
+        }
+        let Some(len) = too_large else {
+            return Ok(out);
+        };
+        if parts >= rows {
+            return Err(ImageError::TooLarge { len, max: limit }.into());
+        }
+        // A band of 1/parts of the crop was `len` bytes: about
+        // parts * len / limit bands fit.
+        parts = (parts + 1)
+            .max((parts * len).div_ceil(limit.max(1)))
+            .min(rows);
+    }
+}
+
+/// `rect` cut into `parts` horizontal bands of the full width, top to
+/// bottom; every band has the same height but the last, which may be lower.
+fn split(rect: Rect, parts: usize) -> Vec<Rect> {
+    let height = u16::try_from(usize::from(rect.height).div_ceil(parts.max(1))).unwrap_or(1);
+    let bottom = rect.y + rect.height;
+    (rect.y..bottom)
+        .step_by(usize::from(height.max(1)))
+        .map(|y| Rect {
+            y,
+            height: height.min(bottom - y),
+            ..rect
+        })
+        .collect()
 }
 
 /// Errors of an image write.
@@ -675,6 +754,142 @@ mod tests {
             ..base_zero
         };
         assert_eq!(base_one.max_image_len(), max - 4090);
+    }
+
+    const UNION: Rect = Rect {
+        x: 23,
+        y: 6,
+        width: 435,
+        height: 434,
+    };
+
+    /// A fake encoder: a JPEG of the rectangle's size, 10 bytes per row.
+    fn by_rows(calls: &mut Vec<Rect>) -> impl FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_ {
+        |rect| {
+            calls.push(rect);
+            Ok(jpeg(rect.width, rect.height, 10 * usize::from(rect.height)))
+        }
+    }
+
+    #[test]
+    fn max_image_size_caps_one_image() {
+        let config = ImageConfig {
+            max_image_size: Some(1000),
+            ..ImageConfig::default()
+        };
+        assert_eq!(config.max_image_len(), 1000);
+        assert_eq!(
+            fragments(0xff, 2, &config, KEY, &jpeg(118, 118, 1001)),
+            Err(ImageError::TooLarge {
+                len: 1001,
+                max: 1000
+            })
+        );
+        // The fragment index space still caps a larger device limit.
+        let roomy = ImageConfig {
+            max_image_size: Some(124_928),
+            ..ImageConfig::default()
+        };
+        assert_eq!(roomy.max_image_len(), 4075 + 15 * 4090);
+    }
+
+    #[test]
+    fn a_crop_within_the_limit_is_one_band() {
+        let mut calls = Vec::new();
+        let bands = bands(UNION, 4340, by_rows(&mut calls)).unwrap();
+        assert_eq!(bands.len(), 1);
+        assert_eq!(bands[0].rect, UNION);
+        assert_eq!(calls, [UNION]);
+    }
+
+    #[test]
+    fn a_crop_above_the_limit_is_split_into_full_width_bands_top_to_bottom() {
+        let mut calls = Vec::new();
+        // 4340 bytes against a 2000-byte limit: three bands of 145, 145 and
+        // 144 rows.
+        let bands = bands(UNION, 2000, by_rows(&mut calls)).unwrap();
+        let rects: Vec<_> = bands.iter().map(|band| band.rect).collect();
+        let band = |y, height| Rect {
+            x: 23,
+            y,
+            width: 435,
+            height,
+        };
+        assert_eq!(rects, [band(6, 145), band(151, 145), band(296, 144)]);
+        assert!(bands.iter().all(|band| band.jpeg.len() <= 2000));
+        assert_eq!(calls[0], UNION);
+        assert_eq!(calls[1..], rects);
+    }
+
+    #[test]
+    fn bands_grow_in_number_until_each_fits() {
+        // Rows near the top encode larger: 30 bytes each above y=100.
+        let mut encode = |rect: Rect| -> Result<Vec<u8>, ImageError> {
+            let len: usize = (rect.y..rect.y + rect.height)
+                .map(|y| if y < 100 { 30 } else { 1 })
+                .sum();
+            Ok(jpeg(rect.width, rect.height, len.max(30)))
+        };
+        let limit = 1500;
+        let bands = bands(UNION, limit, &mut encode).unwrap();
+        assert!(bands.len() > 2);
+        assert!(bands.iter().all(|band| band.jpeg.len() <= limit));
+        assert_eq!(
+            bands.iter().map(|band| band.rect.height).sum::<u16>(),
+            UNION.height
+        );
+    }
+
+    #[test]
+    fn a_row_above_the_limit_cannot_be_split() {
+        let mut encode =
+            |rect: Rect| -> Result<Vec<u8>, ImageError> { Ok(jpeg(rect.width, rect.height, 5000)) };
+        assert_eq!(
+            bands(KEY, 4000, &mut encode).map(|bands| bands.len()),
+            Err(ImageError::TooLarge {
+                len: 5000,
+                max: 4000
+            })
+        );
+    }
+
+    #[test]
+    fn the_bands_of_a_crop_are_written_in_order() {
+        let config = ImageConfig {
+            max_image_size: Some(2000),
+            ..ImageConfig::default()
+        };
+        let mut calls = Vec::new();
+        let bands = bands(UNION, config.max_image_len(), by_rows(&mut calls)).unwrap();
+        let mut transport = FakeHidTransport::new().expect(
+            &[&[0x13, 0xff, 0x00, 0x0d, 0xe0, 0x19, 0xa1][..], &[0; 25]].concat(),
+            &[&[
+                &[0x13, 0xff, 0x00, 0x0d, 0xc0, 0x19, 0xa1, 0x02][..],
+                &[0; 24],
+            ]
+            .concat()],
+        );
+        for band in &bands {
+            let fragment = fragments(0xff, 2, &config, band.rect, &band.jpeg)
+                .unwrap()
+                .remove(0);
+            let mut response = vec![0x13, 0xff, 0x02, 0x2d, 0xc0, 0x00, 0x01];
+            response.resize(32, 0);
+            transport = transport.expect(&fragment, &[&response]);
+        }
+        let mut hidpp = Hidpp::new(transport, 0xff, config.swid, Duration::from_secs(1));
+        for band in &bands {
+            write(&mut hidpp, &config, band.rect, &band.jpeg).unwrap();
+        }
+        let tops: Vec<_> = hidpp
+            .transport_mut()
+            .written()
+            .iter()
+            .skip(1)
+            .map(|fragment| u16::from_be_bytes([fragment[11], fragment[12]]))
+            .collect();
+        assert_eq!(tops, [6, 151, 296]);
+        assert!(hidpp.transport_mut().is_done());
     }
 
     #[test]
