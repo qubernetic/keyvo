@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use keyvo_core::config::Config;
 use keyvo_core::diagnostic::Position;
-use keyvo_core::layout::{LoadError, config_dir, load};
+use keyvo_core::layout::{LoadError, config_dir, load, runtime_dir};
 use keyvo_core::profile::{GLOBAL_ID, Profile};
 
 fn dir(name: &str) -> PathBuf {
@@ -32,6 +32,22 @@ fn config_dir_follows_xdg_config_home_then_home() {
     }
     assert_eq!(config_dir(None, None), None);
     assert_eq!(config_dir(None, some("")), None);
+}
+
+#[test]
+fn runtime_dir_follows_xdg_runtime_dir_then_the_temp_directory() {
+    let some = |s: &'static str| Some(OsStr::new(s));
+    let temp = Path::new("/tmp");
+    assert_eq!(
+        runtime_dir(some("/run/user/1000"), temp, 1000),
+        PathBuf::from("/run/user/1000/keyvo")
+    );
+    for xdg in [None, some(""), some("relative/run")] {
+        assert_eq!(
+            runtime_dir(xdg, temp, 1000),
+            PathBuf::from("/tmp/keyvo-1000")
+        );
+    }
 }
 
 #[test]
