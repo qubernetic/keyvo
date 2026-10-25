@@ -493,6 +493,12 @@ After this block: `cp contrib/profiles/*.toml ~/.config/keyvo/profiles/`.
 - [ ] #79 With the daemon painting the global profile, `kill -STOP $(pgrep -x keyvo-daemon)`, wait 5 s, `kill -CONT $(pgrep -x keyvo-daemon)`: after one `claim lost, display reclaimed` the dark blue background comes back first, then the keys; no logo strip beside a key (together with #73 item 3).
 - [ ] #79 `just run -- preview global -o /tmp/keyvo-global.png` shows the same dark blue between the keys as the pad.
 
+### Display fields in probe and fill --full (#91)
+
+- [ ] #91 `just run -- probe`: under `display`, after the mode line, read `deviceScreenCount 1`, `maxImageSize 124928 bytes`, `maxImageFPS 30` and `deferrableDisplayUpdate 1  rgb565 1  rgb888 0  jpeg 1  calibrated 1  origin 0` (the captured values, spec §5.10); the `geometry` line reads `480x480, 9 buttons, 0 visible areas`. Post any value that differs on #89.
+- [ ] #91 Daemon stopped: `just run -- fill '#ff00ff' --full` prints one line `full  480x480 at 0,0  ... acked` and the whole panel turns magenta, the border outside the keys included; `just run -- fill '#ff00ff' --panel` for comparison prints `panel  435x434 at 23,6`.
+- [ ] #91 `just run -- fill '#ff00ff' --full --panel` (and `--full --key 1`, `--full --all`) refuses with `cannot be used with` and exit code 2, before it touches the device.
+
 ### First-light records (#75)
 
 - [ ] #75 Read `docs/hardware-notes.md`, "Measurements", against the first-light report on #40 and its logs: every number and log citation matches.

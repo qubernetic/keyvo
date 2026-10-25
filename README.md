@@ -37,9 +37,9 @@ From a checkout, the first device commands already run against a Keypad
 
 ```bash
 just build
-just run -- probe                   # features, firmware, display mode, geometry
+just run -- probe                   # features, firmware, display mode, capabilities, geometry
 just run -- keys --json             # one JSON object per press and release
-just run -- fill '#ff8000' --key 5  # or a PNG; --all (default) or --panel
+just run -- fill '#ff8000' --key 5  # or a PNG; --all (default), --panel or --full
 just run -- probe --feature 0x1b04  # one feature id on both ROOT planes
 just run -- --dump probe            # every frame in and out on stderr
 bin/keyvo-daemon                    # paint ~/.config/keyvo/profiles/global.toml, run its keys, page buttons
