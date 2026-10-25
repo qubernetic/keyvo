@@ -63,7 +63,7 @@ Two fixtures carry the reclaim after a lost claim (spec §5.3):
 
 | File | Source | Content |
 |---|---|---|
-| `claim-lost.txt` | first-light report on #40 (2026-10-25, firmware `U1 66.00.B0017`) | the display mode-change event to `a1` and the `KEEP_ALIVE` expiry event one expiry sends in the same millisecond; the report quotes the leading bytes, the padding is zero |
+| `claim-lost.txt` | first light (see above), `sniff.log` 1792912466.383 and .386, the end of `28-item3-default.log` | the `KEEP_ALIVE` expiry event, then the display mode-change event to `a1`, 0 to 4 ms apart, as every expiry of the log sends them |
 | `display-reclaim.txt` | hcooper #1765 to #1773, steps 6 and 7 of `display-claim.txt` | setMode(a0) and the getMode that confirms it, with the mode-change event announcing `a0` |
 
 Two fixtures are not captured; `keyvo probe --feature` (spec §5.10) is

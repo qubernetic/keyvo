@@ -270,6 +270,11 @@ fn hcooper_claim_takes_the_display_from_logo_to_streaming_mode() {
 /// The `KEEP_ALIVE` index in the fixtures.
 const KEEP_ALIVE_INDEX: u8 = 0x04;
 
+/// The lines of `claim-lost.txt`, in the order the device sends them: the
+/// `KEEP_ALIVE` expiry event, then the mode-change event to `a1`.
+const EXPIRY_EVENT: usize = 0;
+const MODE_EVENT: usize = 1;
+
 /// The claim, then `lost` (lines of `claim-lost.txt`) answering its last
 /// request, then the reclaim exchange `reclaims` times.
 fn claim_then_lost(lost: &[usize], reclaims: usize) -> String {
@@ -304,17 +309,20 @@ fn reclaims_after(script: &str) -> usize {
 
 #[test]
 fn the_mode_and_expiry_events_of_one_expiry_give_one_reclaim() {
-    assert_eq!(reclaims_after(&claim_then_lost(&[0, 1], 1)), 1);
+    assert_eq!(
+        reclaims_after(&claim_then_lost(&[EXPIRY_EVENT, MODE_EVENT], 1)),
+        1
+    );
 }
 
 #[test]
 fn the_mode_event_alone_gives_one_reclaim() {
-    assert_eq!(reclaims_after(&claim_then_lost(&[0], 1)), 1);
+    assert_eq!(reclaims_after(&claim_then_lost(&[MODE_EVENT], 1)), 1);
 }
 
 #[test]
 fn the_expiry_event_alone_gives_one_reclaim() {
-    assert_eq!(reclaims_after(&claim_then_lost(&[1], 1)), 1);
+    assert_eq!(reclaims_after(&claim_then_lost(&[EXPIRY_EVENT], 1)), 1);
 }
 
 #[test]
@@ -344,7 +352,7 @@ fn the_claim_watch_tells_lost_claims_from_other_reports() {
 
 #[test]
 fn a_reclaim_the_display_does_not_confirm_is_an_error() {
-    let mut script = claim_then_lost(&[0], 0);
+    let mut script = claim_then_lost(&[MODE_EVENT], 0);
     let refused =
         fixture!("display-reclaim.txt").replace("< 13 ff 02 5e c0 a0", "< 13 ff 02 5e c0 a1");
     script.push_str(&refused);
