@@ -281,8 +281,18 @@ fn run<T: HidTransport, C: Clock>(
                 ..ImageConfig::default()
             };
             let mut session = Session::open(hidpp, clock, keep_alive.timing())?;
-            fill::fill(&mut session, &source, placement(key, panel), &config, out)?;
-            fill::hold(&mut session, clock, Duration::from_secs(hold), sleep)
+            let placement = placement(key, panel);
+            fill::fill(&mut session, &source, placement, &config, out)?;
+            fill::hold(
+                &mut session,
+                clock,
+                Duration::from_secs(hold),
+                sleep,
+                |session| {
+                    writeln!(out, "display reclaimed after a lost claim; painting again")?;
+                    fill::fill(session, &source, placement, &config, out)
+                },
+            )
         }
     }
 }
@@ -418,7 +428,14 @@ mod tests {
             index_base: keyvo_hid::image::IndexBase::One,
             ..ImageConfig::default()
         };
-        let script = crate::fill::tests::script(&source, &[Target::Key(5)], &config);
+        let key = crate::fill::tests::paints(&source, &[Target::Key(5)], &config);
+        // The paint, a lost claim during the hold, the reclaim, the repaint.
+        let script = format!(
+            "{}{key}{}{}{key}",
+            fixture("display-claim.txt"),
+            fixture("claim-lost.txt"),
+            fixture("display-reclaim.txt"),
+        );
         let text = run(
             &[
                 "fill",
@@ -434,6 +451,13 @@ mod tests {
             &script,
         );
         assert!(text.starts_with("key 5  118x118 at 181,163  "), "{text}");
+        let lines: Vec<_> = text.lines().collect();
+        assert_eq!(lines.len(), 3, "{text}");
+        assert_eq!(
+            lines[1],
+            "display reclaimed after a lost claim; painting again"
+        );
+        assert_eq!(lines[2], lines[0]);
     }
 
     #[test]

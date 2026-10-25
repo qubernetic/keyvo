@@ -10,7 +10,7 @@ use keyvo_core::hid::HidTransport;
 use keyvo_hid::input::{Control, Edge, Input, InputEvent};
 use keyvo_hid::reprog::{self, DivertTiming, PAGE_LEFT, PAGE_RIGHT};
 
-use crate::session::Session;
+use crate::session::{Inbound, Session};
 
 /// Diverts the page buttons, then writes every input event to `out` until
 /// `keep_going` says stop; it is asked whenever a read found nothing.
@@ -38,12 +38,13 @@ pub fn keys<T: HidTransport, C: Clock>(
     loop {
         session.tick()?;
         let wait = session.until_due();
-        match session.hidpp.next_frame(wait)? {
-            Some(frame) => {
+        match session.next_frame(wait)? {
+            Some(Inbound::Frame(frame)) => {
                 for event in input.feed(&frame) {
                     writeln!(out, "{}", format_event(event, json))?;
                 }
             }
+            Some(Inbound::Reclaimed) => eprintln!("display reclaimed after a lost claim"),
             None if keep_going() => {}
             None => return Ok(()),
         }
