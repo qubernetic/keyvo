@@ -115,8 +115,9 @@ impl Target {
 }
 
 /// The index the first fragment of an image carries in its sequence byte.
-/// Options+ counts from 0 (captured), Julusian and logilinux from 1; both are
-/// reported to work, the hardware check (plan §5 item 7) decides.
+/// Options+ counts from 0 (captured), Julusian and logilinux from 1; both
+/// paint with either software id (measured, `docs/hardware-notes.md` item 7),
+/// so the Options+ default stays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum IndexBase {
     /// `e0`, `a0 61`: Options+.
@@ -351,7 +352,8 @@ pub struct Written {
 
 /// Paints `jpeg` at `rect`: resolves the display index, then sends the
 /// fragments one by one, each after the device acknowledged the one before
-/// on `0x13` (`13 ff <display> <fn|swid> c<index> 00 <index>`, captured).
+/// on `0x13` (`13 ff <display> <fn|swid> c<index> 00 <last>`, `<last>` 01 on
+/// the last fragment, else 00; measured, `docs/hardware-notes.md` item 7).
 /// When an ACK does not come within `[timing].ack_timeout` the next fragment
 /// goes out anyway; [`Written::acked`] tells how many came. Other reports
 /// read while waiting stay with the [`Hidpp`] for the input path.

@@ -1,0 +1,27 @@
+# The image fragment ACKs of four two-fragment panel writes (spec §5.5),
+# one per index base and software id: `13 ff 02 2<swid> c<index> 00 <last>`.
+# The swid echoes the write's, the index echoes the fragment index as sent
+# (c0 c1 with base 0, c1 c2 with base 1), and the byte after the 00 is 01 on
+# the last fragment, else 00.
+#
+# Source: first light, 2026-10-25, firmware U1 66.00.B0017, the passive
+# sniffer on /dev/hidraw6 (`sniff.log` of the first-light logs attached to
+# qubernetic/keyvo#40); each comment names the command log and the
+# sniff.log Unix timestamps. Each run printed `panel 435x434 at 23,6 5924
+# bytes, 2 fragments, 2 acked` (line 3 of its log). The sniffer reads only:
+# the writes these ACKs answer are not in the log; the golden test builds
+# them with keyvo's encoder and puts each ACK after its fragment.
+#
+# 1. Index base 0, swid 0xd (`07-fill-panel-blue.log`; 1792912084.527, .528).
+< 13 ff 02 2d c0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 2d c1 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 2. Index base 1, swid 0xd (`10-fill-panel-ib1.log`; 1792912093.942, .943).
+< 13 ff 02 2d c1 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 2d c2 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 3. Index base 0, swid 0xb (`13-fill-panel-swidb.log`; 1792912103.368, .370).
+< 13 ff 02 2b c0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 2b c1 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 4. Index base 1, swid 0xb (`16-fill-panel-ib1-swidb.log`; 1792912112.782,
+#    .783).
+< 13 ff 02 2b c1 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 2b c2 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00

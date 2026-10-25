@@ -56,6 +56,7 @@ archive's helper scripts are not in the repository.
 | File | Source | Content |
 |---|---|---|
 | `key-input.txt` | `sniff.log` 1792912081.451 to 1792913088.037, `20-keys-json.log` lines 26-35, `35-item13-fill-while-keys.log` | LCD key held-set reports (key 2, keys 2 and 1, key 2, none, key 1, none), the mode-change event to `a0` and the ACK of a key 1 paint, which yield nothing |
+| `image-acks.txt` | `sniff.log` 1792912084.527 to 1792912112.783, `07-fill-panel-blue.log`, `10-fill-panel-ib1.log`, `13-fill-panel-swidb.log`, `16-fill-panel-ib1-swidb.log` | the ACKs of four two-fragment panel writes, index base 0 and 1 with swid `0xd` and `0xb`: `13 ff 02 2<swid> c<index> 00 <01 on the last fragment>`; the golden test builds the writes with keyvo's encoder |
 | `page-buttons.txt` | `sniff.log` 1792912854.503 to 1792913298.613, `20-keys-json.log` lines 30-33, `21-keys-json-replug.log` lines 4-7 | diverted page-button CID lists, both buttons held (`01 a2 01 a1`), around the setCidReporting reply of the divert after a replug |
 
 Two fixtures carry the reclaim after a lost claim (spec §5.3):

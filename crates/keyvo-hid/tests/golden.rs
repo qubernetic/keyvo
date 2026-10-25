@@ -4,6 +4,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use std::fmt::Write as _;
 use std::time::Duration;
 
 use keyvo_core::clock::FakeClock;
@@ -11,7 +12,7 @@ use keyvo_core::hid::FakeHidTransport;
 use keyvo_hid::display::{self, DisplayMode};
 use keyvo_hid::firmware::{self, FirmwareEntity, FirmwareKind};
 use keyvo_hid::hidpp::{DEVICE_DIRECT, Hidpp, HidppError, Plane, SoftwareId};
-use keyvo_hid::image::{self, ImageConfig, ImageError, Rect, Target, Written};
+use keyvo_hid::image::{self, ImageConfig, ImageError, IndexBase, Rect, Target, Written};
 use keyvo_hid::input::{Control, Input, InputEvent};
 use keyvo_hid::keep_alive::{self, KeepAlive, KeepAliveTiming, TimeoutRange};
 use keyvo_hid::reprog::{self, ControlInfo, DivertTiming};
@@ -519,6 +520,58 @@ fn a_missing_ack_times_out_and_the_next_fragment_goes_out_anyway() {
         }
     );
     assert!(hidpp.transport_mut().is_done());
+}
+
+#[test]
+fn first_light_acks_of_both_index_bases_and_both_software_ids_count() {
+    // The ACK pairs of `image-acks.txt`, in the fixture's order.
+    let acks: Vec<_> = fixture!("image-acks.txt")
+        .lines()
+        .filter(|line| line.starts_with('<'))
+        .collect();
+    let settings = [
+        (IndexBase::Zero, 0xd),
+        (IndexBase::One, 0xd),
+        (IndexBase::Zero, 0xb),
+        (IndexBase::One, 0xb),
+    ];
+    assert_eq!(acks.len(), 2 * settings.len());
+    for ((index_base, swid), pair) in settings.into_iter().zip(acks.chunks(2)) {
+        let config = ImageConfig {
+            swid: SoftwareId::new(swid).unwrap(),
+            index_base,
+            ..ImageConfig::default()
+        };
+        let jpeg = startup_jpeg();
+        let fragments = image::fragments(DEVICE_DIRECT, 2, &config, CAPTURED_PANEL, &jpeg).unwrap();
+        assert_eq!(fragments.len(), 2);
+        // The writer resolves the display index first, then sends each
+        // fragment after the ACK of the one before.
+        let mut script = fixture!("vlp-get-feature-display.txt").to_owned();
+        for (fragment, ack) in fragments.iter().zip(pair) {
+            writeln!(script, "> {}\n{ack}", to_hex(fragment)).unwrap();
+        }
+        let mut hidpp = replay(&script);
+        let written = image::write(&mut hidpp, &config, CAPTURED_PANEL, &jpeg).unwrap();
+        assert_eq!(
+            written,
+            Written {
+                fragments: 2,
+                acked: 2
+            },
+            "{index_base:?}, swid {swid:#x}"
+        );
+        assert_eq!(hidpp.take_unmatched(), None);
+        assert!(hidpp.transport_mut().is_done());
+    }
+}
+
+fn to_hex(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Every event the fixture's reports cause, read through `Hidpp::next_frame`.
