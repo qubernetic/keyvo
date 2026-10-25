@@ -11,6 +11,8 @@ pub mod device;
 pub mod engine;
 pub mod exec;
 #[cfg(target_os = "linux")]
+pub mod kwin;
+#[cfg(target_os = "linux")]
 pub mod linux;
 #[cfg(target_os = "linux")]
 pub mod watch;
