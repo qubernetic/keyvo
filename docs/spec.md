@@ -1577,8 +1577,45 @@ list, the capability and the CSP as stated here.
 (`app/src-tauri/deny.toml`); `just app-build` builds the frontend and the
 shell into `bin/keyvo-app`.
 
-**As built (pre-alpha Home).** The window is Home only, without the rail
-and header of `docs/design/gui-ux.md` §2. On start it asks `status`, then
+**As built (pre-alpha shell).** The window opens at 1200 x 760 and shrinks
+to 960 x 640 (`tauri.conf.json`). It has the header, the navigation rail
+and the columns of `docs/design/gui-ux.md` §2:
+
+- **Rail.** Home, Profiles, Behaviors, Projects, Integrations, Devices,
+  Settings, on `Ctrl+1` to `Ctrl+7`, lucide icons (`app/src/assets/lucide`,
+  the pad's lucide release) with labels, icons only below 1100 px. Home
+  and Profiles are built (Profiles shows its three columns, each with one
+  sentence saying it is not built yet). The other five carry
+  `aria-disabled`: they stay in the tab order, hovering shows "Coming
+  soon", keyboard focus adds the sentence naming their roadmap item
+  (M4a-5, M4a-6, M4a-8), and neither a click nor the shortcut navigates;
+  the shortcut focuses the item instead.
+- **Header.** The app name, the device selector (the Keypad while the
+  daemon reports it connected, and "Simulator"; only "Simulator" while
+  the Keypad is missing or the daemon unreachable; the choice changes
+  nothing else yet) and the overflow menu with Export, Import, Open config
+  folder, Re-run setup step and About, all disabled with "Coming soon".
+- **Columns.** List column, editor and right column; the right column
+  collapses below 1200 px, the list column below 1000 px, and a toggle at
+  each column's edge shows or hides it until the width crosses its limit
+  again. Home has the editor area only. Home stays mounted while another
+  screen shows, so the header follows the daemon; its `Ctrl+Z` then does
+  nothing.
+- **Tokens and controls.** `color-scheme: dark` on `:root` matches the
+  dark token set, so the webview's own popups (the option list of a
+  `<select>`) are dark. `app/src/styles/controls.css` gives every form
+  control (button, input, select, textarea, option, menu, menu item,
+  tooltip) a text and background token pair, 32 px minimum height and the
+  focus ring from `--kv-accent`; reduced motion turns every animation and
+  transition off. `app/src/styles/tokens.test.ts` checks that every rule
+  in the stylesheets and components that sets a colour sets the text and
+  its background from tokens, that no rule outside `:root` has a literal
+  colour, that every such pair passes 4.5:1 and the focus ring 3:1.
+- **Strings.** Every string is in `app/src/lib/i18n.ts` (English) and
+  reaches the screen through `t(key, values)`; `app/src/strings.test.ts`
+  keeps literal words out of the component markup.
+
+**As built (pre-alpha Home).** On start Home asks `status`, then
 subscribes with a replay of the newest 20 trace entries; `app/src/lib/home.ts`
 folds the updates the way `Mirror` does.
 
@@ -1816,6 +1853,13 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha slice G1 (2026-10-26)**: §10 the app shell as built:
+  rail with the five unbuilt screens disabled and announced, header with
+  the device selector and a disabled overflow menu, columns with their
+  collapse order, 1200 x 760 window with a 960 x 640 minimum, a text and
+  background token pair on every form control with `color-scheme` set
+  (fixes the unreadable option list of a select), every string through
+  one i18n module.
 - **v0.3, pre-alpha slice R2 (2026-10-26)**: §6.1 the global layer as
   built: a key an app profile leaves out shows and runs the global
   profile's context-page key (`keyvo_core::stack`), and the trace entry
