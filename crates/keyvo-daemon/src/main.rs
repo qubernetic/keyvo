@@ -17,7 +17,8 @@ struct Cli {
     /// connection attempt.
     #[arg(long, value_name = "PATH")]
     device: Option<PathBuf>,
-    /// Control socket; default `$XDG_RUNTIME_DIR/keyvo/keyvo.sock`.
+    /// Control socket; default `$KEYVO_SOCKET`, else
+    /// `$XDG_RUNTIME_DIR/keyvo/keyvo.sock`.
     #[arg(long, value_name = "PATH")]
     socket: Option<PathBuf>,
 }
@@ -42,9 +43,11 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let runtime_dir = keyvo_daemon::runtime::dir(std::env::var_os("XDG_RUNTIME_DIR").as_deref());
-    let socket = cli
-        .socket
-        .unwrap_or_else(|| runtime_dir.join(keyvo_core::socket::SOCKET_FILE));
+    let socket = keyvo_daemon::runtime::socket(
+        cli.socket,
+        std::env::var_os("KEYVO_SOCKET").as_deref(),
+        &runtime_dir,
+    );
     let watcher = keyvo_daemon::kwin::KWinWatcher::session(&runtime_dir);
     keyvo_daemon::linux::serve(&config_dir, cli.device, &socket, watcher, shutdown()).await?;
     Ok(())
