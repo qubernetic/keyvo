@@ -344,6 +344,8 @@ impl<I: InputInjector> Controller<'_, I> {
                 self.emit(Event::Disconnected { error });
             }
             device::Event::Painted { keys } => self.emit(Event::Painted { keys }),
+            // The actor repaints the keys it holds by itself.
+            device::Event::Reclaimed => tracing::warn!("keypad: claim lost, display reclaimed"),
             device::Event::Input(input) => {
                 let now = Instant::now().into_std();
                 match (input.control, input.edge) {

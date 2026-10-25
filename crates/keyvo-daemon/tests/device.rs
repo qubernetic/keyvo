@@ -166,6 +166,32 @@ fn a_lost_device_is_reopened_reclaimed_and_repainted() {
 }
 
 #[test]
+fn a_lost_claim_is_reclaimed_once_and_every_key_repainted() {
+    let pad = Pad::new(&(startup() + &support::fixture("display-reclaim.txt")));
+    let actor = Actor::start(Pads::new([pad.clone()]));
+    assert_eq!(actor.next(), Event::Connected { keys: 9 });
+    let specs = labelled(&["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
+    actor.commands.send(Command::Paint(specs.clone())).unwrap();
+    let all: Vec<u8> = (1..=9).collect();
+    assert_eq!(actor.next(), Event::Painted { keys: all.clone() });
+
+    pad.send(&support::reports(&support::fixture("claim-lost.txt")));
+    assert_eq!(actor.next(), Event::Reclaimed);
+    assert_eq!(actor.next(), Event::Painted { keys: all });
+    assert!(pad.script_done());
+    let images = pad.images();
+    assert_eq!(images[9..], images[..9]);
+    // The twin event gives no second reclaim.
+    assert!(
+        actor
+            .events
+            .recv_timeout(Duration::from_millis(100))
+            .is_err()
+    );
+    actor.stop();
+}
+
+#[test]
 fn a_missing_device_is_reported_once_and_paints_wait_for_it() {
     let actor = Actor::start(Pads::new([]));
     assert_eq!(

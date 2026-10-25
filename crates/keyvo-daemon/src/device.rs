@@ -6,7 +6,9 @@
 //!
 //! When the device is gone, or the claim fails, the actor waits
 //! `[timing].reconnect_interval` and opens it again: a new connection
-//! claims, diverts and repaints every key.
+//! claims, diverts and repaints every key. A claim lost on a live
+//! connection (keep-alive expiry, spec §5.3) is taken back with
+//! `setMode(a0)` and every key is repainted.
 //!
 //! HID I/O is synchronous (`HidTransport::read` blocks up to its timeout),
 //! so the actor is a plain thread and talks to the tokio controller through
@@ -20,12 +22,13 @@ use keyvo_core::clock::SystemClock;
 use keyvo_core::config::Timing;
 use keyvo_core::hid::{HidTransport, TransportError};
 use keyvo_core::render::{KeySpec, RenderError, Renderer, TileSize};
-use keyvo_hid::display::{self, ClaimError};
-use keyvo_hid::hidpp::{DEVICE_DIRECT, Hidpp, HidppError, SoftwareId};
+use keyvo_hid::display::{self, ClaimError, ClaimWatch};
+use keyvo_hid::hidpp::{DEVICE_DIRECT, Hidpp, HidppError, Plane, SoftwareId};
 use keyvo_hid::image::{self, ImageConfig, ImageError, Rect};
 use keyvo_hid::input::{Input, InputEvent};
 use keyvo_hid::keep_alive::{KeepAlive, KeepAliveTiming};
 use keyvo_hid::reprog::{self, DivertError, DivertTiming};
+use keyvo_hid::root::feature;
 
 /// Software id of the actor's requests, as `keyvo probe` uses it; image
 /// writes carry [`ImageConfig::swid`].
@@ -118,6 +121,9 @@ pub enum Event {
     },
     /// A key or page-button press or release.
     Input(InputEvent),
+    /// The claim was lost (keep-alive expiry, spec §5.3) and is taken
+    /// back; every key is painted again.
+    Reclaimed,
 }
 
 /// Why a connection ended.
@@ -228,6 +234,8 @@ fn serve<T: HidTransport>(
     let keys = u8::try_from(count).map_err(|_| DeviceError::TooManyKeys(count))?;
     let mut input = Input::new(hidpp.device_index(), claim.display_index, keys)
         .with_page_buttons(diverted.reprog_index);
+    let watch = ClaimWatch::new(hidpp.device_index(), claim.display_index)
+        .with_keep_alive(hidpp.feature_index(Plane::Classic, feature::KEEP_ALIVE)?);
     let mut painted: Vec<Option<KeySpec>> = vec![None; count];
     emit(Event::Connected { keys });
     loop {
@@ -271,6 +279,11 @@ fn serve<T: HidTransport>(
         keep_alive.poll(&mut hidpp)?;
         let wait = keep_alive.until_due().min(settings.poll);
         if let Some(frame) = hidpp.next_frame(wait)? {
+            if watch.reclaim_on(&mut hidpp, &frame)? {
+                painted.fill(None);
+                emit(Event::Reclaimed);
+                continue;
+            }
             for event in input.feed(&frame) {
                 emit(Event::Input(event));
             }

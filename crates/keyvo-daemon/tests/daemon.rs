@@ -441,6 +441,25 @@ async fn a_held_key_fires_its_long_press_before_the_release() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_keep_alive_expiry_is_reclaimed_and_every_key_repainted() {
+    let pad = Pad::new(&(startup() + &support::fixture("display-reclaim.txt")));
+    let mut daemon = Daemon::start(GLOBAL, vec![pad.clone()], FakeInputInjector::new());
+    assert_eq!(daemon.painted().await, (1..=9).collect::<Vec<_>>());
+    pad.send(&support::reports(&support::fixture("claim-lost.txt")));
+    assert_eq!(daemon.painted().await, (1..=9).collect::<Vec<_>>());
+    assert!(pad.script_done());
+    let images = pad.images();
+    assert_eq!(images.len(), 18);
+    for key in 1..=9 {
+        assert_eq!(
+            images[8 + usize::from(key)],
+            image_of(GLOBAL, key, Look::Idle)
+        );
+    }
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_lost_keypad_is_reclaimed_and_repainted() {
     let first = Pad::new(&startup());
     let second = Pad::new(&startup());

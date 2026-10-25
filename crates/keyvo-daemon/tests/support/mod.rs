@@ -51,6 +51,19 @@ pub fn exchanges(script: &str, range: std::ops::Range<usize>) -> String {
     out
 }
 
+/// The device reports (`<` lines) of a fixture script, in order.
+pub fn reports(script: &str) -> Vec<Vec<u8>> {
+    script
+        .lines()
+        .filter_map(|line| line.strip_prefix('<'))
+        .map(|hex| {
+            hex.split_whitespace()
+                .map(|byte| u8::from_str_radix(byte, 16).unwrap())
+                .collect()
+        })
+        .collect()
+}
+
 /// What a connection to the Keypad starts with: the first keep-alive ping,
 /// the display claim and the page-button divert.
 pub fn startup() -> String {
@@ -81,6 +94,7 @@ struct Partial {
 #[derive(Debug)]
 struct State {
     script: FakeHidTransport,
+    sent: VecDeque<Vec<u8>>,
     acks: VecDeque<Vec<u8>>,
     input: VecDeque<Vec<u8>>,
     partial: Option<Partial>,
@@ -99,6 +113,7 @@ impl Pad {
     pub fn new(script: &str) -> Self {
         Self(Arc::new(Mutex::new(State {
             script: FakeHidTransport::from_script(script).unwrap(),
+            sent: VecDeque::new(),
             acks: VecDeque::new(),
             input: VecDeque::new(),
             partial: None,
@@ -131,6 +146,13 @@ impl Pad {
         }
         report.resize(20, 0);
         self.state().input.push_back(report);
+    }
+
+    /// The device sends `reports` next, together and ahead of the scripted
+    /// replies, as the two events of a keep-alive expiry come within one
+    /// millisecond, before any answer to what keyvo writes after them.
+    pub fn send(&self, reports: &[Vec<u8>]) {
+        self.state().sent.extend(reports.iter().cloned());
     }
 
     /// Every image received so far, in order.
@@ -203,7 +225,7 @@ impl HidTransport for Pad {
             if state.unplugged {
                 return Err(TransportError::Disconnected);
             }
-            match state.acks.pop_front() {
+            match state.sent.pop_front().or_else(|| state.acks.pop_front()) {
                 Some(ack) => Some(ack),
                 None => match state.script.read(timeout)? {
                     Some(report) => Some(report),
