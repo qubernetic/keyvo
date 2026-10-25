@@ -24,7 +24,6 @@ const PATIENCE: Duration = Duration::from_secs(10);
 
 fn settings() -> Settings {
     Settings::from_timing(&Timing {
-        keep_alive_period: Duration::from_secs(3600),
         divert_settle: Duration::ZERO,
         divert_spacing: Duration::ZERO,
         render_coalesce: Duration::from_millis(5),
@@ -219,7 +218,7 @@ fn a_failed_claim_is_reported_and_retried() {
     // The keep-alive start only; the claim's first request is unexpected.
     let broken = Pad::new(&support::exchanges(
         &support::fixture("keep-alive-ping.txt"),
-        0..2,
+        0..1,
     ));
     let good = Pad::new(&startup());
     let actor = Actor::start(Pads::new([broken, good]));

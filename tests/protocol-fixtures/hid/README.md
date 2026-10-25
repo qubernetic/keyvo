@@ -5,8 +5,9 @@ Request/response scripts replayed by `FakeHidTransport` (`keyvo-core`,
 (`crates/keyvo-hid/tests/golden.rs`), the `keyvo-cli` command tests
 (`crates/keyvo-cli/src/`) and the `keyvo-daemon` tests
 (`crates/keyvo-daemon/tests/`), whose `Pad` replays `keep-alive-ping.txt`
-(exchanges 0 and 1), `display-claim.txt` and `reprog-divert.txt` for every
-connection and answers the key image fragments itself.
+(exchange 0), `display-claim.txt` and `reprog-divert.txt` for every
+connection and answers the keep-alive pings and the key image fragments
+itself.
 
 ## Notation
 

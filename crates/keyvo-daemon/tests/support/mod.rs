@@ -1,12 +1,15 @@
 //! Test doubles for the daemon: [`Pad`], a Keypad built on
 //! `FakeHidTransport`, and [`Pads`], a connector that hands out pads.
 //!
-//! The scripted part (keep-alive, claim, divert) is replayed byte for byte
-//! by `FakeHidTransport`. Image fragments are the one thing a script cannot
-//! hold, because their bytes are the renderer's output: the pad takes them
-//! like the device does, acknowledges each fragment on `0x13` in the
-//! captured layout (`13 ff <display> <fn|swid> c<index> 00 <index>`) and
-//! records every finished image with its rectangle.
+//! The scripted part (keep-alive lookup, claim, divert) is replayed byte
+//! for byte by `FakeHidTransport`. Image fragments are the one thing a
+//! script cannot hold, because their bytes are the renderer's output: the
+//! pad takes them like the device does, acknowledges each fragment on
+//! `0x13` in the captured layout (`13 ff <display> <fn|swid> c<index> 00
+//! <index>`) and records every finished image with its rectangle. It also
+//! echoes every keep-alive ping, whenever the actor sends one, so the tests
+//! run with the default `[timing]` period (spec §6.1 refuses a period that
+//! is not below the timeout).
 
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used)]
 
@@ -21,6 +24,9 @@ use keyvo_daemon::device::Connector;
 pub const DISPLAY: u8 = 2;
 /// The `0x1B04` feature index in the fixtures.
 pub const REPROG: u8 = 0x0b;
+/// The head of a keepAlive(3000) ping in the fixtures (index 0x04, fn1,
+/// swid 0xe); the pad echoes it like the device, whenever it comes.
+const KEEP_ALIVE_PING: [u8; 6] = [0x11, 0xff, 0x04, 0x1e, 0x0b, 0xb8];
 /// Longest a read of an idle pad blocks, so the actor does not spin.
 const IDLE_READ: Duration = Duration::from_millis(2);
 
@@ -64,12 +70,13 @@ pub fn reports(script: &str) -> Vec<Vec<u8>> {
         .collect()
 }
 
-/// What a connection to the Keypad starts with: the first keep-alive ping,
-/// the display claim and the page-button divert.
+/// What a connection to the Keypad starts with: the `KEEP_ALIVE` lookup,
+/// the display claim and the page-button divert. The pings themselves are
+/// answered by the pad.
 pub fn startup() -> String {
     format!(
         "{}{}{}",
-        exchanges(&fixture("keep-alive-ping.txt"), 0..2),
+        exchanges(&fixture("keep-alive-ping.txt"), 0..1),
         fixture("display-claim.txt"),
         fixture("reprog-divert.txt"),
     )
@@ -177,6 +184,10 @@ impl HidTransport for Pad {
         let mut state = self.state();
         if state.unplugged {
             return Err(TransportError::Disconnected);
+        }
+        if report.starts_with(&KEEP_ALIVE_PING) {
+            state.acks.push_back(report.to_vec());
+            return Ok(());
         }
         if report.first() != Some(&0x14) {
             return state.script.write(report);

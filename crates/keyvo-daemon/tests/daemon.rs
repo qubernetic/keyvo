@@ -32,7 +32,6 @@ const PATIENCE: Duration = Duration::from_secs(10);
 
 const CONFIG: &str = "\
 [timing]
-keep_alive_period = 3600000
 divert_settle = 0
 divert_spacing = 0
 render_coalesce = 5
