@@ -23,6 +23,9 @@ ARG CARGO_INSTA_VERSION=1.48.0
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Debian packages come unpinned from the digest-pinned base image's trixie
+# repository. webkit2gtk-4.1 and the rest of the list from build-essential
+# on are the Tauri 2 build prerequisites for the desktop app (app/src-tauri).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -32,6 +35,12 @@ RUN apt-get update \
         libudev-dev \
         pkg-config \
         xz-utils \
+        build-essential \
+        file \
+        libayatana-appindicator3-dev \
+        librsvg2-dev \
+        libwebkit2gtk-4.1-dev \
+        libxdo-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Node LTS from the official tarball (no distro package, no nvm), verified
