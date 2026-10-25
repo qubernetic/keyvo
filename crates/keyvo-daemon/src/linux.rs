@@ -17,7 +17,7 @@ use tokio::sync::{broadcast, mpsc};
 
 use crate::daemon::{self, Event};
 use crate::device::Connector;
-use crate::socket::Server;
+use crate::socket::{Limits, Server};
 
 /// Name of the virtual keyboard keyvo creates.
 const UINPUT_NAME: &str = "keyvo";
@@ -43,8 +43,10 @@ pub async fn serve(
 ) -> io::Result<()> {
     let server = Server::bind(socket)?;
     tracing::info!("control socket at {}", server.path().display());
+    // Read once at start; a reload does not change the socket's limits.
+    let limits = Limits::from_config(&daemon::config(config_dir));
     let (requests, inbox) = mpsc::unbounded_channel();
-    let server = tokio::spawn(async move { server.serve(requests).await });
+    let server = tokio::spawn(async move { server.serve(requests, limits).await });
     let (events, mut log) = broadcast::channel(EVENT_BACKLOG);
     tokio::spawn(async move {
         loop {

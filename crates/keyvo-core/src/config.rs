@@ -1,7 +1,8 @@
-//! `config.toml`: the `[timing]` (spec §6.1) and `[render]` (spec §9)
-//! tables, pre-alpha subset. Durations are integer milliseconds; a key left
+//! `config.toml`: the `[timing]` (spec §6.1), `[render]` (spec §9),
+//! `[trace]` and `[daemon]` (spec §8) tables, pre-alpha subset. Durations are integer milliseconds; a key left
 //! out keeps its documented default; unknown keys are errors.
 
+use std::num::NonZeroUsize;
 use std::path::Path;
 use std::time::Duration;
 
@@ -21,6 +22,8 @@ pub struct Config {
     pub render: Render,
     /// Trace settings (spec §8).
     pub trace: Trace,
+    /// Limits of the daemon's control socket (spec §8).
+    pub daemon: Daemon,
 }
 
 impl Config {
@@ -146,6 +149,12 @@ pub struct Timing {
     #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub reload_settle: Duration,
+    /// Wait after a failed `accept` on the control socket before the next
+    /// one, so a full file table does not spin the daemon (spec §8).
+    /// Default 100 ms.
+    #[serde(with = "millis")]
+    #[schemars(with = "u64")]
+    pub accept_backoff: Duration,
 }
 
 impl Default for Timing {
@@ -164,6 +173,7 @@ impl Default for Timing {
             exec_timeout: Duration::from_secs(30),
             reconnect_interval: Duration::from_millis(1000),
             reload_settle: Duration::from_millis(100),
+            accept_backoff: Duration::from_millis(100),
         }
     }
 }
@@ -210,6 +220,29 @@ pub struct Trace {
 impl Default for Trace {
     fn default() -> Self {
         Self { ring: 1000 }
+    }
+}
+
+/// The `[daemon]` table (spec §8): limits of the control socket. They are
+/// read when the daemon starts; a reload does not change them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct Daemon {
+    /// Longest request line in bytes, without its newline; a longer one
+    /// gets an error response and the connection is closed. At least 1.
+    /// Default 65536.
+    pub socket_line_bytes: NonZeroUsize,
+    /// Connections served at once; one more gets an `unavailable` error
+    /// and is closed. At least 1. Default 32.
+    pub socket_connections: NonZeroUsize,
+}
+
+impl Default for Daemon {
+    fn default() -> Self {
+        Self {
+            socket_line_bytes: NonZeroUsize::MIN.saturating_add(64 * 1024 - 1),
+            socket_connections: NonZeroUsize::MIN.saturating_add(32 - 1),
+        }
     }
 }
 

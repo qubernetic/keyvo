@@ -25,6 +25,12 @@ their roadmap issues. Until then they are rejected as `invalid_request`.
   socket when it stops.
 - Trust model as in `ssh-agent`: any process of the same user may send any
   command (`SECURITY.md`).
+- The clients check the other side before they send anything
+  (`keyvo_client::open`, used by `keyvo ctl` and the app): the socket's
+  directory must be a directory of the user that nobody else may enter
+  (a `0755` directory is refused), and the process listening on the
+  socket must run as the user (`SO_PEERCRED`). A failed check is an error
+  that names the socket and the reason.
 
 ## Framing
 
@@ -37,6 +43,15 @@ their roadmap issues. Until then they are rejected as `invalid_request`.
   depth, so it keeps working when a later daemon adds fields within
   version 1. Requests are the other way round: the daemon rejects unknown
   fields (below).
+- Limits (`docs/spec.md` §8). A request line longer than
+  `[daemon].socket_line_bytes` (default 65536 bytes, without the newline)
+  is answered with `invalid_request` without an `id` ("the line is longer
+  than N bytes"), and the daemon closes the connection; it never holds
+  more than the limit of an unfinished line. The daemon serves at most
+  `[daemon].socket_connections` connections at once (default 32); one more
+  gets an `unavailable` response without an `id` and is closed, so try
+  again later. `keyvo_client` reads daemon lines up to 1 MiB and fails a
+  longer one.
 
 ## Requests and responses
 
@@ -58,15 +73,16 @@ the requests arrived on the connection:
 A request with an unknown command, an unknown field or a bad value is
 rejected and nothing runs. Because of this, a typo such as `"dryrun"`
 never turns a dry run into a real press. The connection stays open after
-an error, except after a line that is not UTF-8, which closes it.
+an error, except after a line that is not UTF-8 or longer than the line
+limit, which closes it.
 
 | Error `code` | When |
 |---|---|
 | `invalid_json` | The line is not one JSON object. |
 | `unsupported_version` | `v` is missing or not `1`. |
-| `invalid_request` | Unknown command, unknown field, or a bad value (for example `key` outside 1..9). |
+| `invalid_request` | Unknown command, unknown field, or a bad value (for example `key` outside 1..9); or a line over the line limit, after which the connection closes. |
 | `reload_failed` | `reload`: the configuration directory does not load. The last good state stays, and `message` lists every problem as `<file>:<line>:<column>: <message>`. |
-| `unavailable` | The daemon is shutting down. |
+| `unavailable` | The daemon is shutting down, or already serves `[daemon].socket_connections` connections (the new one is closed). |
 
 ## Commands
 

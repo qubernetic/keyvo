@@ -172,9 +172,19 @@ fn an_answer_to_another_request_is_skipped() {
     assert!(client.next_event().unwrap().is_none());
 }
 
+/// A temporary socket directory with `mode`; the daemon creates its own
+/// `0700`.
+fn socket_dir(mode: u32) -> tempfile::TempDir {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(mode)).unwrap();
+    dir
+}
+
 #[test]
 fn connect_talks_to_a_unix_socket() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = socket_dir(0o700);
     let path = dir.path().join("keyvo.sock");
     let listener = UnixListener::bind(&path).unwrap();
     let answer = answering(lines(fixture!("responses.ndjson"))[5], 1);
@@ -197,8 +207,22 @@ fn connect_talks_to_a_unix_socket() {
 }
 
 #[test]
+fn connect_refuses_a_socket_directory_others_can_enter() {
+    for mode in [0o755, 0o770, 0o701] {
+        let dir = socket_dir(mode);
+        let path = dir.path().join("keyvo.sock");
+        let _listener = UnixListener::bind(&path).unwrap();
+        let error = Client::connect(&path).unwrap_err();
+        assert!(matches!(error, ClientError::Untrusted { .. }), "{error:?}");
+        let message = error.to_string();
+        assert!(message.contains("not private to this user"), "{message}");
+        assert!(message.contains(&*path.to_string_lossy()), "{message}");
+    }
+}
+
+#[test]
 fn connect_without_a_daemon_names_the_socket() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = socket_dir(0o700);
     let path = dir.path().join("keyvo.sock");
     let error = Client::connect(&path).unwrap_err();
     assert!(matches!(error, ClientError::Connect { .. }), "{error:?}");
@@ -215,6 +239,30 @@ fn a_hang_up_before_the_answer_is_closed() {
         client.request(Command::Status {}),
         Err(ClientError::Closed)
     ));
+}
+
+#[test]
+fn a_line_over_the_limit_is_refused_without_holding_it() {
+    let limit = keyvo_client::client::LINE_LIMIT;
+    let long = format!(r#"{{"v":1,"event":"key","pad":"{}"}}"#, "x".repeat(limit));
+    let mut client = Client::new(Script::new(&[&long]));
+    let error = client.request(Command::Status {}).unwrap_err();
+    assert!(
+        matches!(error, ClientError::TooLong(n) if n == limit),
+        "{error:?}"
+    );
+    assert!(
+        error
+            .to_string()
+            .contains(&format!("longer than {limit} bytes")),
+        "{error}"
+    );
+
+    // A line of exactly the limit is read.
+    let answer = answering(lines(fixture!("responses.ndjson"))[5], 1);
+    let padded = format!("{answer}{}", " ".repeat(limit - answer.len()));
+    let mut client = Client::new(Script::new(&[&padded]));
+    assert_eq!(client.request(Command::Reload {}).unwrap(), Reply::Done {});
 }
 
 #[test]

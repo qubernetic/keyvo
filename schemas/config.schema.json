@@ -1,5 +1,26 @@
 {
   "$defs": {
+    "Daemon": {
+      "additionalProperties": false,
+      "description": "The `[daemon]` table (spec §8): limits of the control socket. They are\nread when the daemon starts; a reload does not change them.",
+      "properties": {
+        "socket_connections": {
+          "default": 32,
+          "description": "Connections served at once; one more gets an `unavailable` error\nand is closed. At least 1. Default 32.",
+          "format": "uint",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "socket_line_bytes": {
+          "default": 65536,
+          "description": "Longest request line in bytes, without its newline; a longer one\ngets an error response and the connection is closed. At least 1.\nDefault 65536.",
+          "format": "uint",
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "Render": {
       "additionalProperties": false,
       "description": "The `[render]` table (spec §9).",
@@ -30,6 +51,13 @@
       "additionalProperties": false,
       "description": "The `[timing]` table (spec §6.1).",
       "properties": {
+        "accept_backoff": {
+          "default": 100,
+          "description": "Wait after a failed `accept` on the control socket before the next\none, so a full file table does not spin the daemon (spec §8).\nDefault 100 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "ack_timeout": {
           "default": 50,
           "description": "How long an image fragment waits for its ACK (spec §5.5). Default\n50 ms.",
@@ -143,6 +171,14 @@
   "additionalProperties": false,
   "description": "The whole `config.toml`.",
   "properties": {
+    "daemon": {
+      "$ref": "#/$defs/Daemon",
+      "default": {
+        "socket_connections": 32,
+        "socket_line_bytes": 65536
+      },
+      "description": "Limits of the daemon's control socket (spec §8)."
+    },
     "render": {
       "$ref": "#/$defs/Render",
       "default": {
@@ -155,6 +191,7 @@
     "timing": {
       "$ref": "#/$defs/Timing",
       "default": {
+        "accept_backoff": 100,
         "ack_timeout": 50,
         "divert_settle": 100,
         "divert_spacing": 20,

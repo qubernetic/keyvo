@@ -693,6 +693,7 @@ Defaults, all configurable under `[timing]` in `config.toml`:
 | `exec_timeout` | 30000 ms | an `exec` action still running after this long is killed with its process group and fails, §8 |
 | `reconnect_interval` | 1000 ms | wait between two attempts to open the Keypad after it is gone or not found, §5.1 |
 | `reload_settle` | 100 ms | quiet time after the last change in the configuration directory before the daemon reloads it, §7.2 |
+| `accept_backoff` | 100 ms | wait after a failed `accept` on the control socket before the next one, so a full file table does not spin the daemon, §8 |
 
 `keep_alive_period` must be shorter than `keep_alive_timeout`: a period at
 or above the timeout lets the claim run out between two pings (§5.3). The
@@ -718,7 +719,12 @@ and `--keep-alive-timeout` the same way before they open the device.
     it to `$XDG_RUNTIME_DIR/keyvo/keyvo-focus.js` (without
     `XDG_RUNTIME_DIR`: `keyvo-<uid>` in the temporary directory). The
     directory is created `0700`; one other users can write is refused,
-    as the script runs inside KWin.
+    as the script runs inside KWin. The check and the write are repeated
+    before every load, so a KWin restart never loads a script from a
+    directory that was aged away and recreated by another account in the
+    temporary-directory fallback, or a file changed since the last load.
+    A directory refused at start ends the watch; one refused at a later
+    load is logged and that load is skipped.
   - Loading: `isScriptLoaded("keyvo-focus")`, and `unloadScript` for a
     stale copy left by an earlier daemon; `loadScript(path,
     "keyvo-focus")`; `run` on `/Scripting/Script<id>`
@@ -1151,6 +1157,20 @@ As built (pre-alpha, `keyvo_core::socket` and `keyvo_daemon::socket`):
 - The daemon refuses to start when the socket's directory is not private
   or another daemon answers on the socket. It replaces a stale socket
   file and removes the socket when it stops.
+- Limits, under `[daemon]` in `config.toml`, read when the daemon starts
+  (a reload does not change them):
+
+  | Key | Default | Meaning |
+  |---|---|---|
+  | `socket_line_bytes` | 65536 | longest request line in bytes, without its newline; a longer one gets an `invalid_request` error and the connection is closed. At least 1 |
+  | `socket_connections` | 32 | connections served at once; one more gets an `unavailable` error and is closed. At least 1 |
+
+  A failed `accept` waits `[timing].accept_backoff` (§6.1). The client
+  side reads daemon lines up to 1 MiB (`keyvo_client::client::LINE_LIMIT`).
+- The clients (`keyvo_client::open`, shared by `keyvo ctl` and the app)
+  send nothing before two checks pass: the socket's directory is private
+  to the user (a `0755` directory is refused) and the listening process
+  runs as the user (`SO_PEERCRED`).
 - `keyvo ctl <command> [json]` prints the response line and exits 1 on an
   error. `keyvo ctl subscribe` prints every later line. The socket is
   `--socket`, else `$KEYVO_SOCKET`, else the default.
@@ -1389,9 +1409,18 @@ the Tauri event `keyvo://update`; a newer `subscribe` stops the older one);
 `key` (a key's file and fields, `Editor::key`); `edit_key` (new fields
 written into a key, `Editor::set_key`, the fields before it back; an error
 is a `Problem` object with `message` and, when it has a place, `path`,
-`line` and `column`).
-`just app-test` runs `npm ci`, `svelte-check` and vitest; `just app-build`
-builds the frontend and the shell into `bin/keyvo-app`.
+`line` and `column`). `build.rs` declares the six commands in the Tauri app
+manifest, and the main window's capability
+(`app/src-tauri/capabilities/default.json`) allows exactly those and
+`core:event:allow-listen`/`allow-unlisten` for `keyvo://update`; there is
+no `core:default` and no plugin, so the page cannot reach the window,
+path, menu or other core APIs. The CSP loads only the app's own code and
+connects only to the Tauri IPC. `app/src/shell.test.ts` keeps the command
+list, the capability and the CSP as stated here.
+`just app-test` runs `npm ci`, `svelte-check`, vitest, `npm audit
+--audit-level=high` and `cargo deny` on the shell's own lock
+(`app/src-tauri/deny.toml`); `just app-build` builds the frontend and the
+shell into `bin/keyvo-app`.
 
 **As built (pre-alpha Home).** The window is Home only, without the rail
 and header of `docs/design/gui-ux.md` §2. On start it asks `status`, then
@@ -1491,7 +1520,9 @@ icon and action (none, a chord's keys or an `exec` command).
   `keyvo-core`) and `keyvo-cli`.
 - Desktop app: `tauri` 2 and `tauri-build` (in `app/src-tauri`, outside
   the root workspace, so `cargo deny` of the workspace does not cover it;
-  Tauri 2 on Linux pulls the gtk-rs 0.18 crates), `base64`; the frontend
+  `app/src-tauri/deny.toml` checks its lock with the root policy plus two
+  documented exceptions; Tauri 2 on Linux pulls the gtk-rs 0.18 crates),
+  `base64`; the frontend
   `svelte` 5, `vite`, `vitest`, `jsdom`, `@testing-library/svelte`,
   `svelte-check` and `@tauri-apps/api`. Build packages in the dev image:
   `libwebkit2gtk-4.1-dev`, `build-essential`, `file`, `libxdo-dev`,
@@ -1609,6 +1640,17 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice R1 (2026-10-25)**: hardening from the epic
+  pre-review security pass (#81). §6.2 the KWin script directory is
+  checked and the script rewritten before every load; §12 the app's own
+  lockfiles are checked by `cargo deny` (`app/src-tauri/deny.toml`) and
+  `npm audit` in `just app-test`; §10 the app manifest and a capability
+  that allows the six app commands and event listening, without
+  `core:default`; §8 the clients check the socket directory and the
+  daemon's uid before they send; §8 and §6.1 the socket limits
+  `[daemon].socket_line_bytes`, `[daemon].socket_connections` and
+  `[timing].accept_backoff`, and the client's line limit.
 
 - **v0.3, pre-alpha slice 6i (2026-10-25)**: §5.10 `keyvo fill
   --margin <px>`, key rectangles grown and clamped to the panel (#80);

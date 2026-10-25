@@ -91,11 +91,14 @@ cov: _up
 
 # ---- Desktop app (app/) ----------------------------------------------------
 
-# Frontend checks: clean install from package-lock.json, svelte-check, vitest
+# App checks: clean install from package-lock.json, svelte-check, vitest, and
+# both app lockfiles against advisories and licences (app/src-tauri/deny.toml)
 app-test: _up
     {{ exec }} npm --prefix app ci --no-fund --no-audit
     {{ exec }} npm --prefix app run check
     {{ exec }} npm --prefix app test
+    {{ exec }} npm --prefix app audit --audit-level=high
+    {{ exec }} cargo deny --manifest-path app/src-tauri/Cargo.toml check
 
 # Build the frontend and the Tauri shell (outside the root workspace, needs the
 # dev image's webkit2gtk) and copy keyvo-app to bin/ (profile: dev or release)

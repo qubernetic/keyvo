@@ -1,0 +1,60 @@
+# cargo-deny policy of the desktop app's own lockfile (app/src-tauri/Cargo.lock).
+# The app crate is outside the root workspace, so the root deny.toml never
+# sees this lock. This file is the root policy plus the exceptions the Tauri
+# dependency tree needs, each with its reason; anything else fails the check.
+# Run with `just app-test`; the CI `app` job runs the same check.
+
+[graph]
+all-features = true
+
+[advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+yanked = "deny"
+unmaintained = "all"
+ignore = [
+    # proc-macro-error 1.0.4 is unmaintained. It is a build-time proc macro of
+    # glib-macros 0.18, which Tauri 2 pulls in through the gtk3 bindings of
+    # its Linux webview (webkit2gtk 2.0, gtk 0.18). It runs only at compile
+    # time and no fixed release exists; it goes when Tauri moves off gtk-rs
+    # 0.18. Revisit on every tauri bump.
+    { id = "RUSTSEC-2024-0370", reason = "build-time proc macro of gtk-rs 0.18 under Tauri's Linux webview; no fixed release" },
+]
+
+[licenses]
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "OFL-1.1",
+    # Weak copyleft, file-scoped; allowed but review each new MPL crate in the PR.
+    "MPL-2.0",
+]
+confidence-threshold = 0.9
+# The allow list is the policy, not the current dependency set.
+unused-allowed-license = "allow"
+exceptions = [
+    # target-lexicon 0.12 (cfg-expr, system-deps, the build scripts of the
+    # gtk/webkit sys crates) is Apache-2.0 with the LLVM exception, which only
+    # adds a permission to Apache-2.0. Allowed for this crate alone.
+    { allow = ["Apache-2.0 WITH LLVM-exception"], crate = "target-lexicon" },
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Path dependencies (keyvo-client, keyvo-core) carry no version.
+allow-wildcard-paths = true
+highlight = "all"
+deny = []
+skip = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

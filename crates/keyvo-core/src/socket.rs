@@ -91,7 +91,7 @@ pub enum ErrorCode {
     /// `reload`: the configuration directory does not load; the last good
     /// state stays.
     ReloadFailed,
-    /// The daemon is shutting down.
+    /// The daemon is shutting down, or serves its connection cap.
     Unavailable,
 }
 

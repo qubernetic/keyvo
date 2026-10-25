@@ -4,7 +4,8 @@
 //! class, caption and pid of every activated window.
 //!
 //! `NameOwnerChanged` for `org.kde.KWin` loads the script again after a
-//! `KWin` restart. A missing `KWin` is logged and waited for, a script
+//! `KWin` restart; every load checks the script directory and writes the
+//! script anew first. A missing `KWin` is logged and waited for, a script
 //! `KWin` refuses is logged; neither ends the watch. A stale copy from an
 //! earlier daemon is unloaded first, so the script runs once.
 
@@ -90,7 +91,9 @@ pub async fn watch(conn: &Connection, script_dir: &Path, sink: FocusSink) -> Res
         .unique_name()
         .map(ToString::to_string)
         .unwrap_or_default();
-    let path = write_script(script_dir, &service)?;
+    // Checked once up front so a directory that is not private ends the
+    // watch before anything is served; `load` checks and writes again.
+    write_script(script_dir, &service)?;
     conn.object_server()
         .at(
             OBJECT_PATH,
@@ -120,7 +123,7 @@ pub async fn watch(conn: &Connection, script_dir: &Path, sink: FocusSink) -> Res
         .body()
         .deserialize()?;
     if running {
-        load(conn, &path).await;
+        load(conn, script_dir, &service).await;
     } else {
         tracing::info!("KWin is not running; focus switching waits for it");
     }
@@ -132,7 +135,7 @@ pub async fn watch(conn: &Connection, script_dir: &Path, sink: FocusSink) -> Res
         if new.is_empty() {
             tracing::info!("KWin is gone; focus switching waits for it");
         } else {
-            load(conn, &path).await;
+            load(conn, script_dir, &service).await;
         }
     }
     Err(zbus::Error::InputOutput(io::Error::from(io::ErrorKind::BrokenPipe).into()).into())
@@ -151,9 +154,20 @@ fn write_script(dir: &Path, service: &str) -> io::Result<PathBuf> {
     Ok(path)
 }
 
-/// Loads and runs the script; a failure is logged, the watch goes on.
-async fn load(conn: &Connection, path: &Path) {
-    match try_load(conn, path).await {
+/// Checks the directory, writes the script again and loads and runs it; a
+/// failure is logged, the watch goes on. The check and the write come
+/// before every load: in the `/tmp/keyvo-<uid>` fallback the directory can
+/// age away between two `KWin` starts and be recreated by another account,
+/// and the file `KWin` reads must be the one written here.
+async fn load(conn: &Connection, dir: &Path, service: &str) {
+    let path = match write_script(dir, service) {
+        Ok(path) => path,
+        Err(error) => {
+            tracing::warn!("not loading the KWin script: {error}");
+            return;
+        }
+    };
+    match try_load(conn, &path).await {
         Ok(id) => tracing::info!("KWin script loaded as script {id}; focus switching on"),
         Err(error) => tracing::warn!("cannot load the KWin script: {error}"),
     }

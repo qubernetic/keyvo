@@ -1,7 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: the app's own commands only, no plugins",
+  "description": "The main window: the app's own commands (build.rs AppManifest) and listening to their events; no core:default, no plugins",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "allow-status",
+    "allow-tiles",
+    "allow-press",
+    "allow-subscribe",
+    "allow-key",
+    "allow-edit-key",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
+  ]
 }

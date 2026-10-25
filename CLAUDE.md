@@ -36,7 +36,7 @@ just fmt          # cargo fmt --all (fmt-check only verifies)
 just deny         # cargo-deny check
 just cov          # cargo-llvm-cov in the nextest ci profile; CI uploads it to Codecov
 just ci           # fmt-check + lint + test --profile ci + deny + cov, the sequence CI runs
-just app-test     # desktop app frontend: npm ci, svelte-check, vitest (works in native mode)
+just app-test     # desktop app: npm ci, svelte-check, vitest, npm audit, cargo deny on app/src-tauri (works in native mode)
 just app-build    # frontend build plus the Tauri shell (needs the dev image's webkit2gtk), bin/keyvo-app
 just run -- probe # run the built binary (bin/keyvo) on the host against real hardware
 just test-hw      # hardware checks on the host

@@ -585,6 +585,7 @@ name = "keyvo-client"
 version = "0.0.0"
 dependencies = [
  "keyvo-core",
+ "rustix",
  "serde",
  "serde_json",
  "tempfile",
