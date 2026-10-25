@@ -13,10 +13,11 @@ use keyvo_core::hid::TransportError;
 use keyvo_core::inject::{InjectError, InputInjector};
 use keyvo_hid::hidraw::HidrawTransport;
 use keyvo_hid::sysfs;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 
 use crate::daemon::{self, Event};
 use crate::device::Connector;
+use crate::socket::Server;
 
 /// Name of the virtual keyboard keyvo creates.
 const UINPUT_NAME: &str = "keyvo";
@@ -26,35 +27,48 @@ const EVENT_BACKLOG: usize = 256;
 /// Runs the daemon on this machine until `shutdown`: the Keypad at
 /// `device` or found under sysfs, chords on uinput, the focused window from
 /// `watcher` (the binary passes [`crate::kwin::KWinWatcher`]), the
-/// configuration in `config_dir`. Every trace record is logged.
+/// configuration in `config_dir`, the control socket at `socket`. Every
+/// trace record is logged.
 ///
 /// # Errors
 ///
-/// The errors of [`daemon::run`].
+/// When the socket cannot be bound (another daemon runs, or its directory
+/// is not private), and the errors of [`daemon::run`].
 pub async fn serve(
     config_dir: &Path,
     device: Option<PathBuf>,
+    socket: &Path,
     watcher: impl WindowWatcher,
     shutdown: impl Future<Output = ()>,
 ) -> io::Result<()> {
+    let server = Server::bind(socket)?;
+    tracing::info!("control socket at {}", server.path().display());
+    let (requests, inbox) = mpsc::unbounded_channel();
+    let server = tokio::spawn(async move { server.serve(requests).await });
     let (events, mut log) = broadcast::channel(EVENT_BACKLOG);
     tokio::spawn(async move {
-        while let Ok(event) = log.recv().await {
-            if let Event::Trace(record) = event {
-                tracing::info!("press: {record:?}");
+        loop {
+            match log.recv().await {
+                Ok(Event::Trace(record)) => tracing::info!("press: {record:?}"),
+                Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(broadcast::error::RecvError::Closed) => break,
             }
         }
     });
-    daemon::run(
+    let result = daemon::run(
         config_dir,
         HidrawConnector::new(device),
         Injector::open(),
         watcher,
         events,
-        tokio::sync::mpsc::unbounded_channel().1,
+        inbox,
         shutdown,
     )
-    .await
+    .await;
+    // Dropping the server removes the socket file.
+    server.abort();
+    let _ = server.await;
+    result
 }
 
 /// Opens the given hidraw node, or searches the Keypad's node under sysfs
@@ -210,16 +224,57 @@ mod tests {
     async fn serve_runs_until_shutdown_without_a_keypad() {
         let dir = tempfile::tempdir().unwrap();
         let absent = dir.path().join("hidraw-absent");
+        let socket = dir.path().join("run/keyvo.sock");
         let watcher = FakeWindowWatcher::new();
-        serve(
+        let client = {
+            let socket = socket.clone();
+            async move {
+                // The socket answers while the daemon runs.
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                let mut stream = std::os::unix::net::UnixStream::connect(&socket).unwrap();
+                std::io::Write::write_all(&mut stream, b"{\"v\":1,\"cmd\":\"status\"}\n").unwrap();
+                let mut line = String::new();
+                tokio::task::spawn_blocking(move || {
+                    std::io::BufRead::read_line(&mut std::io::BufReader::new(stream), &mut line)
+                        .unwrap();
+                    line
+                })
+                .await
+                .unwrap()
+            }
+        };
+        let (line, served) = tokio::join!(
+            client,
+            serve(
+                dir.path(),
+                Some(absent),
+                &socket,
+                watcher.clone(),
+                tokio::time::sleep(std::time::Duration::from_millis(200)),
+            )
+        );
+        served.unwrap();
+        assert!(line.contains("\"ok\":true"), "{line}");
+        assert!(line.contains("\"connected\":false"), "{line}");
+        assert!(watcher.focus(WindowContext::new("org.kde.konsole", "~")));
+        assert!(!socket.exists());
+    }
+
+    #[tokio::test]
+    async fn serve_refuses_a_socket_another_daemon_serves() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("run/keyvo.sock");
+        let _first = Server::bind(&socket).unwrap();
+        let error = serve(
             dir.path(),
-            Some(absent),
-            watcher.clone(),
-            tokio::time::sleep(std::time::Duration::from_millis(50)),
+            None,
+            &socket,
+            FakeWindowWatcher::new(),
+            std::future::ready(()),
         )
         .await
-        .unwrap();
-        assert!(watcher.focus(WindowContext::new("org.kde.konsole", "~")));
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::AddrInUse);
     }
 
     #[test]
