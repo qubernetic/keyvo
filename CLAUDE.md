@@ -84,7 +84,7 @@ keyvo/
 
 "Planned" marks what the pre-alpha has not built yet (`docs/roadmap.md` names the milestone).
 
-Platform traits in `keyvo-core`: `HidTransport`, `InputInjector`, `WindowWatcher`. Clients implement none of them; `keyvo-client` is the client side of the socket, and `app/src-tauri` (its own `Cargo.lock`, compiled only by `just app-build` and the CI `app` job) is thin glue over it. Core rendering targets the pure function `(profile, page, mode, overlay_stack, window_ctx) -> 9 KeySpecs + accent + dialpad bindings`; as built it is `keyvo_core::render::page(profile, page, keys)`, the specs of one page, with the state machine choosing profile and page (spec §4.1).
+Platform traits in `keyvo-core`: `HidTransport`, `InputInjector`, `WindowWatcher`. Clients implement none of them; `keyvo-client` is the client side of the socket, and `app/src-tauri` (its own `Cargo.lock`, compiled only by `just app-build` and the CI `app` job) is thin glue over it. Core rendering targets the pure function `(profile, page, mode, overlay_stack, window_ctx) -> 9 KeySpecs + accent + dialpad bindings`; as built it is `keyvo_core::render::page(stack, keys)`, the specs of one page over the global layer (`keyvo_core::stack`: a key the app profile lacks comes from the global profile's context page), with the state machine choosing profile and page (spec §4.1, §6.1).
 
 ## Workflow Loop
 

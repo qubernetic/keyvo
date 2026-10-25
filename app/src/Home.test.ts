@@ -12,17 +12,29 @@ import type { Daemon, Tile, Update } from "./lib/daemon";
 import type { Editor, KeyFields, Target } from "./lib/editor";
 import { eventsOf, nth, responses } from "./lib/fixtures";
 import { HOME_TRACE } from "./lib/home";
-import type { PressKind, Status, TraceRecord } from "./lib/protocol";
+import type { PressKind, Size, Status, TraceRecord } from "./lib/protocol";
 
 const STATUS = responses()[0] as Status;
+const TILE = { width: 118, height: 118 };
 const DRY_RUN = (responses()[3] as { entry: TraceRecord }).entry;
 const PROFILE = "/home/u/.config/keyvo/profiles/terminal.toml";
 
-function tiles(profile: string, page: number): Tile[] {
-  return Array.from({ length: 9 }, (_, index) => ({
+/** Key 4 is the profile's own, key 3 a global key under it, key 5 has no
+ * layer (as the tiles of a GUI before the layer was reported). */
+function tiles(profile: string, page: number, keys = 9): Tile[] {
+  return Array.from({ length: keys }, (_, index) => ({
     image: `data:image/png;base64,${profile}-${page}-${index + 1}`,
     ...(index === 4 ? { label: "Test", action: { type: "exec" as const, cmd: "cargo test" } } : {}),
-    ...(index === 3 ? { label: "Palette", action: { type: "chord" as const, keys: "ctrl+p" } } : {}),
+    ...(index === 3
+      ? {
+          label: "Palette",
+          action: { type: "chord" as const, keys: "ctrl+p" },
+          layer: profile === "global" ? ("global" as const) : ("app" as const),
+        }
+      : {}),
+    ...(index === 2
+      ? { label: "Type", action: { type: "chord" as const, keys: "shift+k" }, layer: "global" as const }
+      : {}),
   }));
 }
 
@@ -31,7 +43,9 @@ function fake(overrides: Partial<Daemon> = {}) {
   let listener: ((update: Update) => void) | undefined;
   const daemon = {
     status: vi.fn(() => Promise.resolve(STATUS)),
-    tiles: vi.fn((profile: string, page: number) => Promise.resolve(tiles(profile, page))),
+    tiles: vi.fn((profile: string, page: number, keys: number, _tile: Size) =>
+      Promise.resolve(tiles(profile, page, keys)),
+    ),
     press: vi.fn((key: number, kind: PressKind) =>
       Promise.resolve({ ...DRY_RUN, key, trigger: { press: kind, simulated: true } }),
     ),
@@ -89,7 +103,9 @@ describe("Home mirror", () => {
     for (const row of rows) {
       expect(within(row).getAllByRole("gridcell")).toHaveLength(3);
     }
-    expect(daemon.daemon.tiles).toHaveBeenCalledWith("terminal", 1);
+    // Key count and tile size are the geometry of the status reply.
+    expect(daemon.daemon.tiles).toHaveBeenCalledWith("terminal", 1, 9, TILE);
+    expect(key(1)).toHaveStyle({ width: "118px", height: "118px" });
     // The image is decorative (alt=""): the key's name says what it shows.
     expect(key(1).querySelector("img")).toHaveAttribute(
       "src",
@@ -97,13 +113,28 @@ describe("Home mirror", () => {
     );
     expect(key(1).querySelector("img")).toHaveAttribute("alt", "");
     expect(key(1)).toHaveAccessibleName("Key 1: unbound");
-    expect(key(4)).toHaveAccessibleName("Key 4: Palette, chord ctrl+p");
+    expect(key(4)).toHaveAccessibleName("Key 4: Palette, chord ctrl+p, app layer");
+  });
+
+  it("names the layer of each key and marks the global keys under an app profile", async () => {
+    const daemon = await mounted();
+    expect(key(3)).toHaveAccessibleName("Key 3: Type, chord shift+k, global layer");
+    expect(within(key(3)).getByText("global")).toBeInTheDocument();
+    expect(within(key(4)).queryByText("global")).not.toBeInTheDocument();
+    // On the global profile every key is global: no mark.
+    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
+    await waitFor(() =>
+      expect(key(4)).toHaveAccessibleName("Key 4: Palette, chord ctrl+p, global layer"),
+    );
+    expect(within(key(3)).queryByText("global")).not.toBeInTheDocument();
   });
 
   it("follows the view events and fetches the new page", async () => {
     const daemon = await mounted();
     await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
-    await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenLastCalledWith("global", 2));
+    await waitFor(() =>
+      expect(daemon.daemon.tiles).toHaveBeenLastCalledWith("global", 2, 9, TILE),
+    );
     expect(
       screen.getByRole("grid", { name: "Keypad mirror: profile global, page 2" }),
     ).toBeInTheDocument();
@@ -121,6 +152,44 @@ describe("Home mirror", () => {
     await daemon.send({ kind: "event", event: good });
     await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenCalledTimes(3));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("lays out the keys and sizes the tiles the daemon's geometry reports", async () => {
+    const rect = (x: number, y: number) => ({ x, y, width: 90, height: 80 });
+    const geometry = {
+      panel: { width: 200, height: 200 },
+      tile: { width: 90, height: 80 },
+      rects: [rect(0, 0), rect(100, 0), rect(0, 100), rect(100, 100)],
+    };
+    const status: Status = { ...STATUS, device: { connected: true, keys: 4, geometry } };
+    const daemon = fake({ status: vi.fn(() => Promise.resolve(status)) });
+    render(Home, { props: { daemon: daemon.daemon, editor: editor() } });
+    await waitFor(() => expect(key(4)).toHaveAccessibleName("Key 4: Palette, chord ctrl+p, app layer"));
+    expect(daemon.daemon.tiles).toHaveBeenCalledWith("terminal", 1, 4, { width: 90, height: 80 });
+    const rows = within(screen.getByRole("grid")).getAllByRole("row");
+    expect(rows.map((row) => within(row).getAllByRole("gridcell").length)).toEqual([2, 2]);
+    expect(key(1)).toHaveStyle({ width: "90px", height: "80px" });
+    expect(screen.queryByRole("button", { name: /^Key 5\b/ })).not.toBeInTheDocument();
+    // Arrows move inside the reported 2x2 grid; digits past the last key do nothing.
+    await fireEvent.keyDown(screen.getByRole("grid"), { key: "ArrowRight" });
+    await fireEvent.keyDown(screen.getByRole("grid"), { key: "ArrowRight" });
+    expect(key(2)).toHaveFocus();
+    await fireEvent.keyDown(screen.getByRole("grid"), { key: "ArrowDown" });
+    expect(key(4)).toHaveFocus();
+    await fireEvent.keyDown(screen.getByRole("grid"), { key: "7" });
+    expect(key(4)).toHaveFocus();
+  });
+
+  it("shows no mirror until a Keypad has reported its geometry", async () => {
+    const daemon = fake({ status: vi.fn(() => Promise.resolve(responses()[1] as Status)) });
+    render(Home, { props: { daemon: daemon.daemon, editor: editor() } });
+    expect(await screen.findByText(/once a Keypad has reported its geometry/)).toBeInTheDocument();
+    expect(screen.queryByRole("grid")).not.toBeInTheDocument();
+    expect(daemon.daemon.tiles).not.toHaveBeenCalled();
+    // A connected Keypad brings it.
+    await daemon.send({ kind: "event", event: nth(eventsOf("device"), 0) });
+    await waitFor(() => expect(key(9)).toBeInTheDocument());
+    expect(daemon.daemon.tiles).toHaveBeenCalledWith("global", 1, 9, TILE);
   });
 
   it("says why a page has no tiles", async () => {
@@ -197,10 +266,14 @@ describe("Home event list", () => {
     const items = within(list).getAllByRole("listitem");
     expect(items.map((item) => item.textContent?.trim())).toEqual([
       expect.stringContaining("Key 1: unbound"),
-      expect.stringContaining("Key 5 long, simulated: exec cargo test, dry run, nothing executed"),
-      expect.stringContaining("Key 9: exec gh pr view --web, failed: no such file or directory: gh"),
-      expect.stringContaining("Key 1: exec cargo build, exited 101 after 2318 ms"),
-      expect.stringContaining("Key 4: chord ctrl+p, sent"),
+      expect.stringContaining(
+        "Key 5 long, simulated, app layer: exec cargo test, dry run, nothing executed",
+      ),
+      expect.stringContaining(
+        "Key 9, app layer: exec gh pr view --web, failed: no such file or directory: gh",
+      ),
+      expect.stringContaining("Key 1, app layer: exec cargo build, exited 101 after 2318 ms"),
+      expect.stringContaining("Key 4, app layer: chord ctrl+p, sent"),
     ]);
   });
 
@@ -216,7 +289,7 @@ describe("Home virtual pad", () => {
     await fireEvent.click(key(5));
     expect(daemon.daemon.press).toHaveBeenCalledWith(5, "short");
     expect(await screen.findByRole("status", { name: "Press result" })).toHaveTextContent(
-      "Key 5, simulated: exec cargo test, dry run, nothing executed",
+      "Key 5, simulated, global layer: exec cargo test, dry run, nothing executed",
     );
   });
 
@@ -326,10 +399,11 @@ describe("Home without a daemon", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Daemon unreachable: no shell");
   });
 
-  it("shows the empty grid while connecting", () => {
+  it("shows no keys while connecting, as the geometry comes with the status", () => {
     const daemon = fake({ status: vi.fn(() => new Promise<Status>(() => {})) });
     render(Home, { props: { daemon: daemon.daemon, editor: editor() } });
-    expect(screen.getByRole("grid", { name: "Keypad mirror" })).toBeInTheDocument();
+    expect(screen.queryByRole("grid")).not.toBeInTheDocument();
+    expect(screen.queryByText(/reported its geometry/)).not.toBeInTheDocument();
     expect(screen.getByText("Connecting to the daemon")).toBeInTheDocument();
   });
 });

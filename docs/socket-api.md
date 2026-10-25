@@ -17,7 +17,10 @@ their roadmap issues. Until then they are rejected as `invalid_request`.
 
 - A Unix stream socket at `$XDG_RUNTIME_DIR/keyvo/keyvo.sock`. Without an
   absolute `XDG_RUNTIME_DIR` it is `keyvo-<uid>/keyvo.sock` in the
-  temporary directory. `keyvo-daemon --socket PATH` puts it elsewhere.
+  temporary directory. `keyvo-daemon --socket PATH` puts it elsewhere;
+  without the flag the daemon takes `$KEYVO_SOCKET` when it is set and not
+  empty, the same order as `keyvo ctl`, `keyvo-client` and the app. `exec`
+  actions receive the socket's path as `KEYVO_SOCKET`.
 - The socket is mode `0600`. Its directory is created `0700`. The daemon
   refuses to start when the directory exists but is not private to the
   user, or when another daemon answers on the socket. A socket file left
@@ -93,10 +96,24 @@ No fields. The result:
 | Field | Type | Meaning |
 |---|---|---|
 | `version` | string | The daemon's version. |
-| `device` | object | `connected` (bool); `keys` (the key count) when connected; `error` (why not) when the daemon knows. |
+| `config_dir` | string | The configuration directory the daemon loads (`--config-dir` or the default, spec §7.1). A client that edits profiles (the app) edits this tree. |
+| `device` | object | `connected` (bool); `keys` (the key count) and `geometry` when connected; `error` (why not) when the daemon knows. |
 | `view` | object | What the pad shows: `profile` (id), `page` (from 1), `mode` (`auto` or `manual`). |
 | `context` | object, optional | The last focus report: `class`, `title`, `pid` when known, `source` (`watcher` or `notify_context`). Left out before the first report. |
 | `trace` | integer | The entries in the trace ring buffer. |
+
+`geometry` is the display as the Keypad publishes it (spec §5.4), so a
+client neither hard-codes the key count nor the tile size:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `panel` | object | `width`, `height` of the panel in pixels. |
+| `tile` | object | `width`, `height` the keys are rendered at: key 1's rectangle (every key of the Keypad has the same size), `0`x`0` without keys. |
+| `rects` | array | One `x`, `y`, `width`, `height` per key, key 1 first. Rows are not exactly aligned (the Keypad's first row has `y` 6, 7, 6). |
+
+```json
+{"connected":true,"keys":9,"geometry":{"panel":{"width":480,"height":480},"tile":{"width":118,"height":118},"rects":[{"x":24,"y":6,"width":118,"height":118}, ...]}}
+```
 
 ### `subscribe`
 
@@ -125,7 +142,9 @@ should send `status` when it notices a gap.
 | `kind` | `short` or `long` | `short` | The press kind. |
 | `dry_run` | bool | `false` | Resolve and trace, execute nothing. |
 
-The press resolves on the active profile and page, as a device press does.
+The press resolves on the active profile and page, as a device press does:
+a key the active app profile does not define resolves to the global
+profile's key (spec §6.1).
 The result is `{"entry": <trace entry>}`, and the same entry goes to the
 ring buffer and to `trace` subscribers.
 
@@ -169,7 +188,7 @@ with M2-5.
 | `profile` | `profile`, `page`, `mode` | Another profile shows. |
 | `page` | `profile`, `page`, `mode` | Another page shows. |
 | `mode` | `profile`, `page`, `mode` | The mode changed. |
-| `device` | `connected`, `keys` or `error` | The Keypad was claimed or lost. |
+| `device` | `connected`, `keys` and `geometry`, or `error` | The Keypad was claimed or lost; the fields of `status`'s `device`. |
 | `context` | `class`, `title`, `pid` (optional), `source` | A focus source reported a window. A report does not always switch the profile. |
 | `trace` | `entry` | A press was resolved (dry run, unbound, chord) or an `exec` ended. |
 | `config` | `reloaded`, `error` (when it failed) | The configuration directory was reloaded, or did not load. |
@@ -181,8 +200,11 @@ changes several of them sends one event per changed class, in the order
 ## Trace entries
 
 The pre-alpha subset of spec §8: `timestamp_ms` (milliseconds since the
-Unix epoch), `trigger` (`press`, `simulated`), `profile`, `page`, `key`,
-`action` (the key's action as in the profile, or `null`), and `result`
+Unix epoch), `trigger` (`press`, `simulated`), `profile` (the active
+profile), `page`, `key`, `layer` (`app` or `global`: the layer that
+supplied the key, spec §6.1; `global` for a key the active app profile does
+not define; left out when no layer defines it), `action` (the key's action
+as in the profile, or `null`), and `result`
 with `status` set to one of the following:
 
 - `unbound`

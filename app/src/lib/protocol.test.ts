@@ -12,6 +12,7 @@ import {
   parseServerMessage,
   requestLine,
   type ServerMessage,
+  type Status,
 } from "./protocol";
 
 const FIXTURES = join(
@@ -77,6 +78,25 @@ describe("server messages", () => {
     expect([...classes].sort()).toEqual(
       ["config", "context", "device", "key", "mode", "page", "profile", "trace"],
     );
+  });
+
+  it("the status reply carries the configuration directory and the device geometry", () => {
+    const statuses = fixture("responses.ndjson")
+      .map(parseServerMessage)
+      .flatMap((message) =>
+        message.kind === "response" && message.response.ok && "config_dir" in message.response.result
+          ? [message.response.result as Status]
+          : [],
+      );
+    expect(statuses.map((status) => status.config_dir)).toEqual([
+      "/home/u/.config/keyvo",
+      "/home/u/.config/keyvo",
+    ]);
+    const [connected, missing] = statuses;
+    expect(connected?.device.geometry?.tile).toEqual({ width: 118, height: 118 });
+    expect(connected?.device.geometry?.rects).toHaveLength(connected?.device.keys ?? 0);
+    expect(connected?.device.geometry?.rects[1]).toEqual({ x: 182, y: 7, width: 118, height: 118 });
+    expect(missing?.device.geometry).toBeUndefined();
   });
 
   it("an unknown field from a later daemon is kept, not refused", () => {

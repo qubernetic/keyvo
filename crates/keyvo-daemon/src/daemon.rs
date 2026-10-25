@@ -31,7 +31,7 @@
 use std::collections::VecDeque;
 use std::future::Future;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc as std_mpsc;
 use std::time::SystemTime;
 
@@ -42,7 +42,7 @@ use keyvo_core::layout::{self, Loaded, Profiles};
 use keyvo_core::press::{PressDetector, PressKind};
 use keyvo_core::profile::{Action, KeySlot};
 use keyvo_core::socket::{
-    Command as Wire, Context, ContextSource, DeviceStatus, Edge as KeyEdge, Status,
+    Command as Wire, Context, ContextSource, DeviceStatus, Edge as KeyEdge, Geometry, Status,
 };
 use keyvo_core::state::{PageButton, View};
 use keyvo_core::trace::{Outcome, TraceRecord, Trigger};
@@ -62,6 +62,8 @@ pub enum Event {
     Connected {
         /// Its key count.
         keys: u8,
+        /// Its display as it publishes it.
+        geometry: Geometry,
     },
     /// The Keypad is gone or cannot be claimed.
     Disconnected {
@@ -127,8 +129,18 @@ pub enum Answer {
     Noted,
 }
 
-/// Runs the daemon on the configuration in `config_dir` until `shutdown`
-/// completes. `watcher` reports the focused window; one that does not
+/// Where the daemon's files are.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Paths {
+    /// The configuration directory (spec §7.1), reported in `status`.
+    pub config_dir: PathBuf,
+    /// The control socket (spec §8), handed to `exec` children as
+    /// `KEYVO_SOCKET`.
+    pub socket: PathBuf,
+}
+
+/// Runs the daemon on the configuration in `paths.config_dir` until
+/// `shutdown` completes. `watcher` reports the focused window; one that does not
 /// start is logged and the daemon runs without focus switching. Socket
 /// clients' commands arrive on `requests`.
 ///
@@ -136,7 +148,7 @@ pub enum Answer {
 ///
 /// When the device actor's thread cannot be started or ends in a panic.
 pub async fn run<C, I, W>(
-    config_dir: &Path,
+    paths: &Paths,
     connector: C,
     injector: I,
     mut watcher: W,
@@ -149,6 +161,7 @@ where
     I: InputInjector + Send + 'static,
     W: WindowWatcher,
 {
+    let config_dir = paths.config_dir.as_path();
     let loaded = layout::load(config_dir).unwrap_or_else(|errors| {
         tracing::warn!("configuration not loaded:\n{errors}");
         let _ = events.send(Event::ReloadFailed {
@@ -181,6 +194,7 @@ where
     let (done, mut finished) = mpsc::unbounded_channel();
     let mut controller = Controller {
         config_dir,
+        socket: &paths.socket,
         engine,
         injector,
         events,
@@ -192,6 +206,7 @@ where
         device: DeviceStatus {
             connected: false,
             keys: None,
+            geometry: None,
             error: None,
         },
         context: None,
@@ -288,6 +303,7 @@ async fn sleep(deadline: Option<Instant>) {
 
 struct Controller<'a, I> {
     config_dir: &'a Path,
+    socket: &'a Path,
     engine: Engine,
     injector: I,
     events: broadcast::Sender<Event>,
@@ -335,20 +351,23 @@ impl<I: InputInjector> Controller<'_, I> {
 
     fn device(&mut self, event: device::Event) {
         match event {
-            device::Event::Connected { keys } => {
+            device::Event::Connected { keys, panel } => {
                 self.engine.set_key_count(keys);
+                let geometry = Geometry::from(&panel);
                 self.device = DeviceStatus {
                     connected: true,
                     keys: Some(keys),
+                    geometry: Some(geometry.clone()),
                     error: None,
                 };
                 self.dirty();
-                self.emit(Event::Connected { keys });
+                self.emit(Event::Connected { keys, geometry });
             }
             device::Event::Disconnected { error } => {
                 self.device = DeviceStatus {
                     connected: false,
                     keys: None,
+                    geometry: None,
                     error: Some(error.clone()),
                 };
                 self.emit(Event::Disconnected { error });
@@ -481,7 +500,7 @@ impl<I: InputInjector> Controller<'_, I> {
             }
             Some(Action::Exec { cmd }) => {
                 self.engine.started(&record, Instant::now().into_std());
-                let env = exec::env(&record);
+                let env = exec::env(&record, self.socket);
                 let timeout = self.engine.config().timing.exec_timeout;
                 let done = self.done.clone();
                 let mut running = record.clone();
@@ -529,6 +548,7 @@ impl<I: InputInjector> Controller<'_, I> {
         let answer = match request.command {
             Wire::Status {} => Answer::Status(Status {
                 version: keyvo_core::VERSION.to_owned(),
+                config_dir: self.config_dir.to_string_lossy().into_owned(),
                 device: self.device.clone(),
                 view: self.engine.view(),
                 context: self.context.clone(),

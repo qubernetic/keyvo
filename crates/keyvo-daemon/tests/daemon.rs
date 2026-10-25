@@ -17,7 +17,8 @@ use keyvo_core::inject::FakeInputInjector;
 use keyvo_core::press::PressKind;
 use keyvo_core::profile::{KeySlot, Profile};
 use keyvo_core::render::{Canvas, KeyPlace, KeySpec, Renderer};
-use keyvo_core::socket::{Command, Context, ContextSource, DeviceStatus, Edge, Status};
+use keyvo_core::socket::{Command, Context, ContextSource, DeviceStatus, Edge, Geometry, Status};
+use keyvo_core::stack::Layer;
 use keyvo_core::state::{Mode, View};
 use keyvo_core::trace::{Outcome, TraceRecord};
 use keyvo_daemon::daemon::{self, Answer, Event, Request};
@@ -29,6 +30,10 @@ use support::{Image, Pad, Pads, startup};
 
 /// How long a test waits for one event before it fails.
 const PATIENCE: Duration = Duration::from_secs(10);
+
+/// The control socket the daemon is told about, inside its configuration
+/// directory; these tests talk to the controller directly.
+const SOCKET: &str = "run/keyvo.sock";
 
 const CONFIG: &str = "\
 [timing]
@@ -128,10 +133,13 @@ impl Daemon {
         let (sender, events) = broadcast::channel(256);
         let (requests, inbox) = mpsc::unbounded_channel();
         let (stop, stopped) = oneshot::channel::<()>();
-        let config_dir = dir.path().to_path_buf();
+        let paths = daemon::Paths {
+            config_dir: dir.path().to_path_buf(),
+            socket: dir.path().join(SOCKET),
+        };
         let task = tokio::spawn(async move {
             daemon::run(
-                &config_dir,
+                &paths,
                 Pads::new(pads),
                 injector,
                 watcher,
@@ -300,7 +308,25 @@ fn image_on(text: &str, page: usize, key: u8, look: Look) -> Image {
 /// The one image of page `page` of `text` with every key idle: the union
 /// of the key rectangles, which a new profile, page or mode sends.
 fn union_on(text: &str, page: usize) -> Image {
-    let profile = profile(text);
+    union_of_profile(&profile(text), page)
+}
+
+/// [`union_of`] the app profile `text` over the global profile `global`,
+/// whose first page is its context page: a key `text` lacks shows the
+/// global key, with the accent of `text` (spec §6.1).
+fn union_over(text: &str, global: &str) -> Image {
+    let mut stacked = profile(text);
+    for (slot, key) in &profile(global).pages[0].keys {
+        stacked.pages[0]
+            .keys
+            .entry(*slot)
+            .or_insert_with(|| key.clone());
+    }
+    union_of_profile(&stacked, 1)
+}
+
+/// [`union_on`] for a parsed `profile`.
+fn union_of_profile(profile: &Profile, page: usize) -> Image {
     let renderer = Renderer::new();
     let mut canvas = renderer
         .canvas(
@@ -309,7 +335,7 @@ fn union_on(text: &str, page: usize) -> Image {
         )
         .unwrap();
     for key in 1..=9 {
-        let spec = spec_on(&profile, page, key, Look::Idle);
+        let spec = spec_on(profile, page, key, Look::Idle);
         renderer
             .draw(&mut canvas, usize::from(key - 1), &spec)
             .unwrap();
@@ -526,7 +552,7 @@ async fn a_lost_keypad_is_reclaimed_and_repainted() {
         .await;
     assert_eq!(error, "device disconnected");
     daemon
-        .until(|event| matches!(event, Event::Connected { keys: 9 }).then_some(()))
+        .until(|event| matches!(event, Event::Connected { keys: 9, .. }).then_some(()))
         .await;
     assert_eq!(daemon.painted().await.len(), 9);
     assert_eq!(second.images(), [union_of(GLOBAL)]);
@@ -585,13 +611,26 @@ async fn the_painted_profile_follows_the_focused_window() {
     // The switch writes exactly one image: the union of the keys, with the
     // terminal's panel background and every key on it.
     assert_eq!(daemon.painted().await, (1..=9).collect::<Vec<_>>());
-    assert_eq!(pad.images(), [union_of(GLOBAL), union_of(TERMINAL)]);
-    // A key press resolves on the terminal profile now.
+    // The terminal lacks keys 2 to 9: the global keys show under it.
+    assert_eq!(
+        pad.images(),
+        [union_of(GLOBAL), union_over(TERMINAL, GLOBAL)]
+    );
+    // A key press resolves on the terminal profile now, a key it lacks on
+    // the global layer: key 2 sends the global chord.
     pad.hold(&[2]);
     pad.hold(&[]);
     let record = daemon.trace().await;
     assert_eq!(record.profile, "terminal");
-    assert_eq!(record.result, Outcome::Unbound);
+    assert_eq!(record.layer, Some(Layer::Global));
+    assert!(matches!(record.result, Outcome::Sent { .. }));
+    pad.hold(&[1]);
+    pad.hold(&[]);
+    let own = daemon.trace().await;
+    assert_eq!(
+        (own.layer, own.result),
+        (Some(Layer::App), Outcome::Unbound)
+    );
 
     // Another class without a profile of its own shows the global one.
     assert!(watcher.focus(WindowContext::new("org.kde.dolphin", "Home")));
@@ -649,7 +688,7 @@ async fn a_reload_selects_the_profile_for_the_focused_window_again() {
     // No profile matches yet: nothing switches. A new profile file does.
     std::fs::write(daemon.dir.path().join("profiles/terminal.toml"), TERMINAL).unwrap();
     assert_eq!(daemon.switched().await, view("terminal", 1, Mode::Auto));
-    daemon.shows(&pad, &union_of(TERMINAL)).await;
+    daemon.shows(&pad, &union_over(TERMINAL, GLOBAL)).await;
     daemon.stop().await;
 }
 
@@ -660,11 +699,15 @@ async fn status_reports_the_device_the_view_and_the_trace_size() {
     daemon.painted().await;
     let status = daemon.status().await;
     assert_eq!(status.version, keyvo_core::VERSION);
+    assert_eq!(status.config_dir, daemon.dir.path().to_string_lossy());
+    // The geometry is the one the device published, not a built-in one.
+    let geometry = Geometry::from(&display::captured_geometry().panel());
     assert_eq!(
         status.device,
         DeviceStatus {
             connected: true,
             keys: Some(9),
+            geometry: Some(geometry),
             error: None
         }
     );
@@ -681,6 +724,7 @@ async fn status_reports_the_device_the_view_and_the_trace_size() {
         DeviceStatus {
             connected: false,
             keys: None,
+            geometry: None,
             error: Some("device disconnected".into())
         }
     );
@@ -741,6 +785,25 @@ async fn a_dry_run_press_is_traced_as_simulated_and_executes_nothing() {
     daemon
         .shows(&pad, &image_of(&marking(&marker), 1, Look::Success))
         .await;
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_exec_child_sees_the_daemon_socket() {
+    let marks = tempfile::tempdir().unwrap();
+    let out = marks.path().join("socket");
+    let global = GLOBAL.replace(
+        "sleep 0.1; exit 1",
+        &format!("printf '%s' \\\"$KEYVO_SOCKET\\\" > '{}'", out.display()),
+    );
+    let (mut daemon, _, _) = started(&global).await;
+    assert_eq!(daemon.press(1, false).await.result, Outcome::Pending);
+    let done = daemon.trace().await;
+    assert!(done.result.is_success(), "{done:?}");
+    assert_eq!(
+        std::fs::read_to_string(&out).unwrap(),
+        daemon.dir.path().join(SOCKET).to_string_lossy()
+    );
     daemon.stop().await;
 }
 

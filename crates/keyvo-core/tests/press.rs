@@ -78,12 +78,20 @@ mod resolution {
     use keyvo_core::chord::Chord;
     use keyvo_core::press::{self, PressKind};
     use keyvo_core::profile::{Action, KeySlot, Profile};
+    use keyvo_core::stack::{Layer, Stack};
     use keyvo_core::trace::{Outcome, TraceRecord, Trigger};
 
     fn demo() -> Profile {
         let path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/profiles/valid/demo.toml");
         Profile::from_toml(&std::fs::read_to_string(&path).unwrap(), &path).unwrap()
+    }
+
+    /// A press of `key` on page `page` of the demo profile alone.
+    fn resolve(page: usize, key: u8, trigger: Trigger) -> TraceRecord {
+        let profile = demo();
+        let stack = Stack::alone(&profile, page).unwrap();
+        press::resolve(&stack, slot(key), trigger, at())
     }
 
     fn slot(n: u8) -> KeySlot {
@@ -102,7 +110,7 @@ mod resolution {
 
     #[test]
     fn a_press_resolves_to_the_key_action_and_waits_for_its_result() {
-        let record = press::resolve(&demo(), 1, slot(2), REAL_SHORT, at());
+        let record = resolve(1, 2, REAL_SHORT);
         assert_eq!(
             record,
             TraceRecord {
@@ -111,6 +119,7 @@ mod resolution {
                 profile: "demo".to_owned(),
                 page: 1,
                 key: slot(2),
+                layer: Some(Layer::App),
                 action: Some(Action::Chord {
                     keys: Chord::parse("ctrl+shift+g").unwrap()
                 }),
@@ -125,7 +134,7 @@ mod resolution {
             press: PressKind::Long,
             simulated: false,
         };
-        let record = press::resolve(&demo(), 1, slot(1), trigger, at());
+        let record = resolve(1, 1, trigger);
         assert_eq!(
             record.action,
             Some(Action::Exec {
@@ -142,18 +151,21 @@ mod resolution {
             press: PressKind::Short,
             simulated: true,
         };
-        let record = press::resolve(&demo(), 1, slot(5), trigger, at());
+        let record = resolve(1, 5, trigger);
         assert!(record.action.is_some());
         assert_eq!(record.result, Outcome::DryRun);
     }
 
     #[test]
     fn a_key_without_an_action_is_unbound() {
-        for (page, key) in [(1, 7), (1, 8), (2, 5), (3, 1), (0, 1)] {
-            let record = press::resolve(&demo(), page, slot(key), REAL_SHORT, at());
+        for (page, key) in [(1, 7), (1, 8), (2, 5)] {
+            let record = resolve(page, key, REAL_SHORT);
             assert_eq!(record.action, None, "page {page} key {key}");
             assert_eq!(record.result, Outcome::Unbound, "page {page} key {key}");
         }
+        // A page the profile does not have has no stack to press on.
+        assert!(Stack::alone(&demo(), 3).is_err());
+        assert!(Stack::alone(&demo(), 0).is_err());
     }
 
     #[test]
@@ -206,30 +218,27 @@ mod resolution {
         let path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/trace/records.ndjson");
         let expected = std::fs::read_to_string(&path).unwrap();
-        let profile = demo();
-        let mut chord = press::resolve(&profile, 1, slot(4), REAL_SHORT, at());
+        let mut chord = resolve(1, 4, REAL_SHORT);
         let events = Chord::parse("ctrl+p").unwrap().events();
         chord.finish(Outcome::Sent { events });
-        let mut exec = press::resolve(&profile, 1, slot(1), REAL_SHORT, at());
+        let mut exec = resolve(1, 1, REAL_SHORT);
         exec.finish(Outcome::Exited {
             code: Some(101),
             duration_ms: 2318,
         });
-        let mut failed = press::resolve(&profile, 1, slot(9), REAL_SHORT, at());
+        let mut failed = resolve(1, 9, REAL_SHORT);
         failed.finish(Outcome::Failed {
             error: "no such file or directory: gh".to_owned(),
         });
-        let dry = press::resolve(
-            &profile,
+        let dry = resolve(
             1,
-            slot(5),
+            5,
             Trigger {
                 press: PressKind::Long,
                 simulated: true,
             },
-            at(),
         );
-        let unbound = press::resolve(&profile, 2, slot(1), REAL_SHORT, at());
+        let unbound = resolve(2, 1, REAL_SHORT);
         let lines: String = [chord, exec, failed, dry, unbound]
             .iter()
             .map(|record| serde_json::to_string(record).unwrap() + "\n")

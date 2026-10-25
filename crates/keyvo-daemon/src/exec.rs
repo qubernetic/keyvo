@@ -4,30 +4,38 @@
 //! the whole group is killed and the action fails.
 //!
 //! Pre-alpha environment: `KEYVO_KEY`, `KEYVO_PROFILE`, `KEYVO_PAGE`,
-//! `KEYVO_PRESS` and `KEYVO_LAYER`. The window, socket and project
+//! `KEYVO_PRESS`, `KEYVO_LAYER` and `KEYVO_SOCKET`. The window and project
 //! variables come with their slices.
 
+use std::path::Path;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use keyvo_core::profile::GLOBAL_ID;
+use keyvo_core::stack::Layer;
 use keyvo_core::trace::{Outcome, TraceRecord};
 use tokio::process::Command;
 
 /// The `KEYVO_*` variables an `exec` started by `record` receives.
+/// `KEYVO_PROFILE` is the active profile, `KEYVO_LAYER` the layer that
+/// supplied the key: `global` for a global key under an app profile.
+/// `KEYVO_SOCKET` is the daemon's control `socket`, so the command can
+/// talk back (`keyvo ctl` reads the variable).
 #[must_use]
-pub fn env(record: &TraceRecord) -> Vec<(&'static str, String)> {
-    let layer = if record.profile == GLOBAL_ID {
-        "global"
+pub fn env(record: &TraceRecord, socket: &Path) -> Vec<(&'static str, String)> {
+    // A record without a layer ran no key; the profile's own layer then.
+    let layer = record.layer.unwrap_or(if record.profile == GLOBAL_ID {
+        Layer::Global
     } else {
-        "app"
-    };
+        Layer::App
+    });
     vec![
         ("KEYVO_KEY", record.key.get().to_string()),
         ("KEYVO_PROFILE", record.profile.clone()),
         ("KEYVO_PAGE", record.page.to_string()),
         ("KEYVO_PRESS", record.trigger.press.as_str().to_owned()),
-        ("KEYVO_LAYER", layer.to_owned()),
+        ("KEYVO_LAYER", layer.as_str().to_owned()),
+        ("KEYVO_SOCKET", socket.to_string_lossy().into_owned()),
     ]
 }
 
@@ -103,7 +111,7 @@ mod tests {
 
     const LONG: Duration = Duration::from_secs(20);
 
-    fn record(profile: &str, press: PressKind) -> TraceRecord {
+    fn record(profile: &str, layer: Layer, press: PressKind) -> TraceRecord {
         TraceRecord {
             timestamp_ms: 0,
             trigger: Trigger {
@@ -113,14 +121,20 @@ mod tests {
             profile: profile.to_owned(),
             page: 2,
             key: KeySlot::new(7).unwrap(),
+            layer: Some(layer),
             action: Some(Action::Exec { cmd: "true".into() }),
             result: Outcome::Pending,
         }
     }
 
+    const SOCKET: &str = "/run/user/1000/keyvo/keyvo.sock";
+
     #[test]
-    fn the_environment_names_key_profile_page_press_and_layer() {
-        let env = env(&record("global", PressKind::Long));
+    fn the_environment_names_key_profile_page_press_layer_and_socket() {
+        let env = env(
+            &record("global", Layer::Global, PressKind::Long),
+            Path::new(SOCKET),
+        );
         assert_eq!(
             env,
             vec![
@@ -129,10 +143,22 @@ mod tests {
                 ("KEYVO_PAGE", "2".to_owned()),
                 ("KEYVO_PRESS", "long".to_owned()),
                 ("KEYVO_LAYER", "global".to_owned()),
+                ("KEYVO_SOCKET", SOCKET.to_owned()),
             ]
         );
-        let app = super::env(&record("konsole", PressKind::Short));
+        let app = super::env(
+            &record("konsole", Layer::App, PressKind::Short),
+            Path::new(SOCKET),
+        );
         assert_eq!(app[4], ("KEYVO_LAYER", "app".to_owned()));
+        // A global key under the konsole profile: the active profile, the
+        // layer that supplied the key.
+        let fallen = super::env(
+            &record("konsole", Layer::Global, PressKind::Short),
+            Path::new(SOCKET),
+        );
+        assert_eq!(fallen[1], ("KEYVO_PROFILE", "konsole".to_owned()));
+        assert_eq!(fallen[4], ("KEYVO_LAYER", "global".to_owned()));
     }
 
     #[tokio::test]
@@ -153,12 +179,19 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("env");
         let cmd = format!(
-            "printf '%s %s' \"$KEYVO_KEY\" \"$KEYVO_PRESS\" > '{}'",
+            "printf '%s %s %s' \"$KEYVO_KEY\" \"$KEYVO_PRESS\" \"$KEYVO_SOCKET\" > '{}'",
             out.display()
         );
-        let env = env(&record("global", PressKind::Short));
+        let env = env(
+            &record("global", Layer::Global, PressKind::Short),
+            Path::new(SOCKET),
+        );
         assert!(run(&cmd, &env, LONG).await.is_success());
-        assert_eq!(std::fs::read_to_string(out).unwrap(), "7 short");
+        // The child can talk back to the daemon (`keyvo ctl`) on its socket.
+        assert_eq!(
+            std::fs::read_to_string(out).unwrap(),
+            format!("7 short {SOCKET}")
+        );
     }
 
     #[tokio::test]

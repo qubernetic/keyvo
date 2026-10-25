@@ -22,10 +22,11 @@ use resvg::tiny_skia::{
 use resvg::usvg::{self, fontdb};
 
 use crate::feedback::Look;
-use crate::profile::{Color, Key, KeySlot, KeyState, Profile};
+use crate::profile::{Color, Key, KeySlot, KeyState};
+use crate::stack::Stack;
 
 /// Width and height of a tile in pixels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TileSize {
     /// Width.
     pub width: u16,
@@ -102,28 +103,21 @@ impl KeySpec {
     }
 }
 
-/// The specs of keys 1 to `keys` on page `page` (counted from 1) of
-/// `profile`. The key count comes from the device's geometry; keys the page
-/// does not define are blank.
-///
-/// # Errors
-///
-/// [`RenderError::NoSuchPage`].
-pub fn page(profile: &Profile, page: usize, keys: u8) -> Result<Vec<KeySpec>, RenderError> {
-    let found = page
-        .checked_sub(1)
-        .and_then(|index| profile.pages.get(index))
-        .ok_or_else(|| RenderError::NoSuchPage {
-            profile: profile.profile.id.clone(),
-            page,
-            pages: profile.pages.len(),
-        })?;
-    Ok((1..=keys)
+/// The specs of keys 1 to `keys` of `stack`'s page, every key with the
+/// accent of the profile on top. The key count comes from the device's
+/// geometry; a key that no layer defines is blank, one the profile lacks
+/// shows the global key (spec §6.1).
+#[must_use]
+pub fn page(stack: &Stack<'_>, keys: u8) -> Vec<KeySpec> {
+    let accent = stack.profile().profile.accent;
+    (1..=keys)
         .map(|n| {
-            let key = KeySlot::new(n).and_then(|slot| found.keys.get(&slot));
-            KeySpec::from_key(key, profile.profile.accent)
+            let key = KeySlot::new(n)
+                .and_then(|slot| stack.key(slot))
+                .map(|(key, _)| key);
+            KeySpec::from_key(key, accent)
         })
-        .collect())
+        .collect()
 }
 
 /// Where one key's tile goes on the panel.

@@ -302,7 +302,7 @@ impl State {
 }
 
 /// The page named `context`, else the first; counted from 1.
-fn context_page(profile: &Profile) -> usize {
+pub(crate) fn context_page(profile: &Profile) -> usize {
     named_page(profile, "context").unwrap_or(1)
 }
 

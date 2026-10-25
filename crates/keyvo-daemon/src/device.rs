@@ -137,6 +137,8 @@ pub enum Event {
     Connected {
         /// The key count of the geometry.
         keys: u8,
+        /// The panel and the key rectangles of the geometry.
+        panel: Panel,
     },
     /// The device is gone or could not be claimed. Reported once per
     /// change of the error, not for every attempt.
@@ -269,7 +271,10 @@ fn serve<T: HidTransport>(
         .with_keep_alive(hidpp.feature_index(Plane::Classic, feature::KEEP_ALIVE)?);
     let mut shown = Shown::new(count);
     let mut queue = Queue::new();
-    emit(Event::Connected { keys });
+    emit(Event::Connected {
+        keys,
+        panel: panel.clone(),
+    });
     loop {
         if !drain(wanted, commands) {
             return Ok(());

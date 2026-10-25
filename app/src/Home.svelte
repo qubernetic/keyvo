@@ -1,21 +1,29 @@
 <script lang="ts">
-  // Home (docs/design/gui-ux.md §3.1): the 3x3 mirror of the page the pad
-  // shows, the status strip, the recent trace entries, and the virtual pad:
+  // Home (docs/design/gui-ux.md §3.1): the mirror of the page the pad
+  // shows, laid out and sized by the geometry the daemon reports, the
+  // status strip, the recent trace entries, and the virtual pad:
   // a click is a short dry-run press, a right click a long one. Beside the
   // mirror, the key editor for the selected key.
   import KeyEditor from "./KeyEditor.svelte";
   import type { Daemon, Tile } from "./lib/daemon";
   import type { Editor, Target } from "./lib/editor";
-  import { apply, fromStatus, HOME_TRACE, initial, summarize, type HomeState } from "./lib/home";
+  import {
+    apply,
+    fromStatus,
+    grid,
+    HOME_TRACE,
+    initial,
+    summarize,
+    type HomeState,
+  } from "./lib/home";
   import type { PressKind, TraceRecord } from "./lib/protocol";
 
   let { daemon, editor }: { daemon: Daemon; editor: Editor } = $props();
 
-  /** The Keypad's grid until the daemon reports the device geometry. */
-  const COLUMNS = 3;
-  const KEYS = 9;
-
   let home: HomeState = $state(initial());
+  /** The key numbers in rows, as the daemon's geometry lays them out. */
+  const rows: number[][] = $derived(home.geometry === undefined ? [] : grid(home.geometry));
+  const keyCount = $derived(home.geometry?.rects.length ?? 0);
   let connecting = $state(true);
   /** Why the daemon cannot be reached; the rest is the last frame. */
   let unreachable: string | undefined = $state();
@@ -80,11 +88,12 @@
   let fetched = 0;
   $effect(() => {
     const view = home.view;
+    const geometry = home.geometry;
     void home.reloads;
     void edits;
-    if (view === undefined) return;
+    if (view === undefined || geometry === undefined) return;
     const mine = ++fetched;
-    daemon.tiles(view.profile, view.page).then(
+    daemon.tiles(view.profile, view.page, geometry.rects.length, geometry.tile).then(
       (got) => {
         if (mine !== fetched) return;
         tiles = got;
@@ -112,7 +121,13 @@
   function name(key: number): string {
     const tile = tiles[key - 1];
     const label = tile?.label === undefined ? "" : `${tile.label}, `;
-    return `Key ${key}: ${label}${action(tile)}`;
+    const layer = tile?.layer === undefined ? "" : `, ${tile.layer} layer`;
+    return `Key ${key}: ${label}${action(tile)}${layer}`;
+  }
+
+  /** A global key under an app profile (spec §6.1), which the mirror marks. */
+  function fallen(key: number): boolean {
+    return tiles[key - 1]?.layer === "global" && home.view?.profile !== "global";
   }
 
   async function press(key: number, kind: PressKind) {
@@ -132,22 +147,23 @@
 
   /** The key the arrow `arrow` moves to from `key`, inside the grid. */
   function moved(key: number, arrow: string): number {
-    const row = Math.floor((key - 1) / COLUMNS);
-    const column = (key - 1) % COLUMNS;
-    const rows = KEYS / COLUMNS;
+    const row = rows.findIndex((keys) => keys.includes(key));
+    if (row < 0) return key;
+    const column = rows[row]?.indexOf(key) ?? 0;
     const [r, c] =
       arrow === "ArrowUp"
         ? [Math.max(row - 1, 0), column]
         : arrow === "ArrowDown"
-          ? [Math.min(row + 1, rows - 1), column]
+          ? [Math.min(row + 1, rows.length - 1), column]
           : arrow === "ArrowLeft"
             ? [row, Math.max(column - 1, 0)]
-            : [row, Math.min(column + 1, COLUMNS - 1)];
-    return r * COLUMNS + c + 1;
+            : [row, column + 1];
+    const target = rows[r] ?? [];
+    return target[Math.min(c, target.length - 1)] ?? key;
   }
 
   function keydown(event: KeyboardEvent) {
-    if (/^[1-9]$/.test(event.key)) {
+    if (/^[1-9]$/.test(event.key) && Number(event.key) <= keyCount) {
       event.preventDefault();
       select(Number(event.key));
     } else if (event.key === " ") {
@@ -177,9 +193,6 @@
     return new Date(entry.timestamp_ms).toLocaleTimeString();
   }
 
-  const rows = Array.from({ length: KEYS / COLUMNS }, (_, row) =>
-    Array.from({ length: COLUMNS }, (_, column) => row * COLUMNS + column + 1),
-  );
   const target: Target | undefined = $derived(
     home.view === undefined
       ? undefined
@@ -232,6 +245,11 @@
   </section>
 
   <div class="workspace">
+    {#if home.geometry === undefined}
+      {#if home.view !== undefined}
+        <p class="note">The mirror appears once a Keypad has reported its geometry.</p>
+      {/if}
+    {:else}
     <div role="grid" tabindex="-1" aria-label={gridName} class="grid" onkeydown={keydown}>
       {#each rows as row, index (index)}
         <div role="row" class="row">
@@ -242,6 +260,8 @@
                 type="button"
                 class="key"
                 class:held={home.held.includes(key)}
+                style:width={`${home.geometry.tile.width}px`}
+                style:height={`${home.geometry.tile.height}px`}
                 tabindex={key === selected ? 0 : -1}
                 aria-label={name(key)}
                 onclick={() => void press(key, "short")}
@@ -249,6 +269,9 @@
               >
                 {#if tiles[key - 1]}
                   <img src={tiles[key - 1]?.image} alt="" />
+                  {#if fallen(key)}
+                    <span class="layer" aria-hidden="true">global</span>
+                  {/if}
                 {:else}
                   <span aria-hidden="true">{key}</span>
                 {/if}
@@ -258,6 +281,7 @@
         </div>
       {/each}
     </div>
+    {/if}
     <KeyEditor {editor} {target} revision={home.reloads} onedited={() => edits++} />
   </div>
   {#if tilesError !== undefined}
@@ -336,8 +360,6 @@
   }
 
   .key {
-    width: 118px;
-    height: 118px;
     padding: 0;
     border: 2px solid transparent;
     border-radius: var(--kv-radius);
@@ -357,10 +379,25 @@
     border-color: var(--kv-fg);
   }
 
+  .key {
+    position: relative;
+  }
+
   .key img {
     display: block;
     width: 100%;
     height: 100%;
+  }
+
+  .key .layer {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    padding: 0 4px;
+    border-radius: var(--kv-radius);
+    background: var(--kv-bg-alt);
+    color: var(--kv-fg);
+    font-size: 0.75em;
   }
 
   .note,

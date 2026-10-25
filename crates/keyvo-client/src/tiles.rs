@@ -1,9 +1,12 @@
 //! The pad's keys for the GUI, rendered like the daemon renders them for
-//! the LCD (spec §10, device mirror).
+//! the LCD (spec §10, device mirror): a key the shown profile does not
+//! define comes from the global profile (spec §6.1), and each key names the
+//! layer that supplied it.
 
 use keyvo_core::layout::Profiles;
 use keyvo_core::profile::{Action, KeySlot};
 use keyvo_core::render::{self, RenderError, Renderer, Tile, TileSize};
+use keyvo_core::stack::{Layer, Stack};
 use keyvo_core::state::View;
 use serde::Serialize;
 
@@ -19,7 +22,8 @@ pub enum TileError {
 }
 
 /// What a key of the mirror says besides its pixels: its label and its
-/// action as in the profile, for the GUI to announce.
+/// action as in the profile, and the layer they come from, for the GUI to
+/// announce.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
 pub struct KeySummary {
     /// The key's label.
@@ -28,6 +32,17 @@ pub struct KeySummary {
     /// The key's action; none for an unbound key.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub action: Option<Action>,
+    /// The layer that supplied the key; none when no layer defines it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layer: Option<Layer>,
+}
+
+/// The page `view` shows over the global layer.
+fn stack<'a>(profiles: &'a Profiles, view: &View) -> Result<Stack<'a>, TileError> {
+    let profile = profiles
+        .get(&view.profile)
+        .ok_or_else(|| TileError::UnknownProfile(view.profile.clone()))?;
+    Ok(Stack::new(profiles, profile, view.page)?)
 }
 
 /// The `keys` keys of the page `view` shows, in key order.
@@ -36,25 +51,15 @@ pub struct KeySummary {
 ///
 /// As [`Tiles::page`].
 pub fn keys(profiles: &Profiles, view: &View, keys: u8) -> Result<Vec<KeySummary>, TileError> {
-    let profile = profiles
-        .get(&view.profile)
-        .ok_or_else(|| TileError::UnknownProfile(view.profile.clone()))?;
-    let page = view
-        .page
-        .checked_sub(1)
-        .and_then(|index| profile.pages.get(index))
-        .ok_or_else(|| RenderError::NoSuchPage {
-            profile: view.profile.clone(),
-            page: view.page,
-            pages: profile.pages.len(),
-        })?;
+    let stack = stack(profiles, view)?;
     Ok((1..=keys)
         .map(|n| {
             KeySlot::new(n)
-                .and_then(|slot| page.keys.get(&slot))
-                .map_or_else(KeySummary::default, |key| KeySummary {
+                .and_then(|slot| stack.key(slot))
+                .map_or_else(KeySummary::default, |(key, layer)| KeySummary {
                     label: key.label.clone(),
                     action: key.action.clone(),
+                    layer: Some(layer),
                 })
         })
         .collect())
@@ -94,10 +99,7 @@ impl Tiles {
         keys: u8,
         size: TileSize,
     ) -> Result<Vec<Tile>, TileError> {
-        let profile = profiles
-            .get(&view.profile)
-            .ok_or_else(|| TileError::UnknownProfile(view.profile.clone()))?;
-        render::page(profile, view.page, keys)?
+        render::page(&stack(profiles, view)?, keys)
             .iter()
             .map(|spec| Ok(self.renderer.tile(spec, size)?))
             .collect()

@@ -15,6 +15,7 @@ use serde_json::{Map, Value};
 
 use crate::press::PressKind;
 use crate::profile::KeySlot;
+use crate::render::{Panel, TileSize};
 use crate::state::View;
 use crate::trace::TraceRecord;
 
@@ -314,6 +315,9 @@ impl Response {
 pub struct Status {
     /// The daemon's version.
     pub version: String,
+    /// The configuration directory the daemon loads (`--config-dir` or
+    /// the default, spec §7.1); a client edits this tree.
+    pub config_dir: String,
     /// The Keypad.
     pub device: DeviceStatus,
     /// What the pad shows.
@@ -351,9 +355,78 @@ pub struct DeviceStatus {
     /// Its key count, when connected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keys: Option<u8>,
+    /// Its display as it publishes it, when connected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geometry: Option<Geometry>,
     /// Why there is none, when the daemon knows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+/// The Keypad's display as the device publishes it (spec §5.4): what a
+/// client needs to lay out and render a mirror of the keys, so no client
+/// hard-codes the key count or the tile size.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Geometry {
+    /// The panel size.
+    pub panel: TileSize,
+    /// The size the keys are rendered at: key 1's rectangle (every key of
+    /// the Keypad has the same), 0x0 without keys.
+    pub tile: TileSize,
+    /// The key rectangles on the panel, key 1 first.
+    pub rects: Vec<Rect>,
+}
+
+impl Geometry {
+    /// The key count, `None` past 255 keys.
+    #[must_use]
+    pub fn key_count(&self) -> Option<u8> {
+        u8::try_from(self.rects.len()).ok()
+    }
+
+    /// The size the keys are rendered at.
+    #[must_use]
+    pub const fn tile_size(&self) -> TileSize {
+        self.tile
+    }
+}
+
+impl From<&Panel> for Geometry {
+    fn from(panel: &Panel) -> Self {
+        Self {
+            panel: panel.size,
+            tile: panel.keys.first().map_or(
+                TileSize {
+                    width: 0,
+                    height: 0,
+                },
+                |key| key.size,
+            ),
+            rects: panel
+                .keys
+                .iter()
+                .map(|key| Rect {
+                    x: key.x,
+                    y: key.y,
+                    width: key.size.width,
+                    height: key.size.height,
+                })
+                .collect(),
+        }
+    }
+}
+
+/// One key's rectangle on the panel, in pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Rect {
+    /// Left edge.
+    pub x: u16,
+    /// Top edge.
+    pub y: u16,
+    /// Width.
+    pub width: u16,
+    /// Height.
+    pub height: u16,
 }
 
 /// A focus report.

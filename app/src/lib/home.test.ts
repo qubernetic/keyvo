@@ -3,7 +3,7 @@
 // subscription, folded the way crates/keyvo-client/src/mirror.rs folds them.
 import { describe, expect, it } from "vitest";
 
-import { apply, fromStatus, HOME_TRACE, initial, summarize } from "./home";
+import { apply, fromStatus, grid, HOME_TRACE, initial, summarize } from "./home";
 import type { Status, TraceRecord } from "./protocol";
 import { events, eventsOf, nth, responses } from "./fixtures";
 
@@ -15,17 +15,47 @@ function traces(): TraceRecord[] {
 }
 
 describe("fromStatus", () => {
-  it("takes the view, the device and the context", () => {
+  it("takes the view, the device and its geometry, and the context", () => {
     const state = fromStatus(STATUS);
     expect(state.view).toEqual({ profile: "terminal", page: 1, mode: "auto" });
-    expect(state.device).toEqual({ connected: true, keys: 9 });
+    expect(state.device).toMatchObject({ connected: true, keys: 9 });
+    expect(state.geometry?.tile).toEqual({ width: 118, height: 118 });
+    expect(state.geometry?.rects).toHaveLength(9);
     expect(state.context?.class).toBe("org.kde.konsole");
     expect(state.trace).toEqual([]);
     expect(state.closed).toBeUndefined();
   });
 
-  it("leaves the context out before the first report", () => {
-    expect(fromStatus(responses()[1] as Status).context).toBeUndefined();
+  it("leaves the context and the geometry out before the first report", () => {
+    const state = fromStatus(responses()[1] as Status);
+    expect(state.context).toBeUndefined();
+    expect(state.geometry).toBeUndefined();
+  });
+});
+
+describe("grid", () => {
+  it("lays the reported keys out in rows, top to bottom and left to right", () => {
+    const geometry = fromStatus(STATUS).geometry;
+    expect(geometry && grid(geometry)).toEqual([
+      [1, 2, 3],
+      [4, 5, 6],
+      [7, 8, 9],
+    ]);
+  });
+
+  it("follows the rectangles, not a fixed 3x3", () => {
+    const rect = (x: number, y: number) => ({ x, y, width: 50, height: 40 });
+    const geometry = {
+      panel: { width: 200, height: 100 },
+      tile: { width: 50, height: 40 },
+      // Out of table order, and key 4 a few pixels lower than key 3.
+      rects: [rect(0, 50), rect(60, 0), rect(0, 0), rect(120, 3), rect(60, 52)],
+    };
+    expect(grid(geometry)).toEqual([
+      [3, 2, 4],
+      [1, 5],
+    ]);
+    expect(grid({ ...geometry, rects: [] })).toEqual([]);
   });
 });
 
@@ -44,6 +74,15 @@ describe("apply", () => {
       state = apply(state, { kind: "event", event });
       expect(state.view).toEqual({ profile: event.profile, page: event.page, mode: event.mode });
     }
+  });
+
+  it("a connected device event brings its geometry, a lost one keeps the last", () => {
+    const [connected, lost] = [nth(eventsOf("device"), 0), nth(eventsOf("device"), 1)];
+    const state = apply(fromStatus(responses()[1] as Status), { kind: "event", event: connected });
+    expect(state.geometry?.rects).toHaveLength(9);
+    const unplugged = apply(state, { kind: "event", event: lost });
+    expect(unplugged.device?.connected).toBe(false);
+    expect(unplugged.geometry).toEqual(state.geometry);
   });
 
   it("device and context events replace the last report", () => {
@@ -109,23 +148,30 @@ describe("apply", () => {
 describe("summarize", () => {
   it("says what every fixture entry did on one line", () => {
     expect(traces().map(summarize)).toEqual([
-      "Key 4: chord ctrl+p, sent",
-      "Key 1: exec cargo build, exited 101 after 2318 ms",
-      "Key 9: exec gh pr view --web, failed: no such file or directory: gh",
-      "Key 5 long, simulated: exec cargo test, dry run, nothing executed",
+      "Key 4, app layer: chord ctrl+p, sent",
+      "Key 1, app layer: exec cargo build, exited 101 after 2318 ms",
+      "Key 9, app layer: exec gh pr view --web, failed: no such file or directory: gh",
+      "Key 5 long, simulated, app layer: exec cargo test, dry run, nothing executed",
       "Key 1: unbound",
     ]);
   });
 
   it("says when an exec is still running", () => {
     const pending = (responses()[4] as { entry: TraceRecord }).entry;
-    expect(summarize(pending)).toBe("Key 1 long: exec cargo build, running");
+    expect(summarize(pending)).toBe("Key 1 long, global layer: exec cargo build, running");
+  });
+
+  it("names the global layer of a key the app profile lacks", () => {
+    const entry = nth(traces(), 0);
+    expect(summarize({ ...entry, profile: "terminal", layer: "global" })).toBe(
+      "Key 4, global layer: chord ctrl+p, sent",
+    );
   });
 
   it("names a status it does not know", () => {
     const entry = nth(traces(), 0);
     expect(summarize({ ...entry, result: { status: "teleported" } })).toBe(
-      "Key 4: chord ctrl+p, teleported",
+      "Key 4, app layer: chord ctrl+p, teleported",
     );
   });
 });

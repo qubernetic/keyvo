@@ -18,6 +18,7 @@ use keyvo_core::layout::Loaded;
 use keyvo_core::press;
 use keyvo_core::profile::{Key, KeySlot, Profile};
 use keyvo_core::render::{self, KeySpec};
+use keyvo_core::stack::{Layer, Stack};
 use keyvo_core::state::{PageButton, State, View};
 use keyvo_core::trace::{TraceRecord, Trigger};
 
@@ -116,20 +117,28 @@ impl Engine {
         self.state.next_deadline()
     }
 
-    fn key(&self, page: usize, slot: KeySlot) -> Option<&Key> {
-        page.checked_sub(1)
-            .and_then(|index| self.active().pages.get(index))
-            .and_then(|found| found.keys.get(&slot))
+    /// The active page over the global layer (spec §6.1); `None` when the
+    /// active profile does not have the page.
+    fn stack(&self) -> Option<Stack<'_>> {
+        Stack::new(&self.loaded.profiles, self.active(), self.page()).ok()
     }
 
-    /// What every key shows at `now`, keys 1 to the device's key count. A
-    /// profile without the active page shows blank keys.
+    /// The key at `slot` on the active page and the layer it comes from.
+    fn key(&self, slot: KeySlot) -> Option<(&Key, Layer)> {
+        self.stack().and_then(|stack| stack.key(slot))
+    }
+
+    /// What every key shows at `now`, keys 1 to the device's key count: the
+    /// active profile's key, else the global one. A profile without the
+    /// active page shows blank keys.
     #[must_use]
     pub fn specs(&self, now: Instant) -> Vec<KeySpec> {
         let profile = self.active();
         let page = self.page();
-        let specs = render::page(profile, page, self.keys)
-            .unwrap_or_else(|_| vec![KeySpec::default(); usize::from(self.keys)]);
+        let specs = self.stack().map_or_else(
+            || vec![KeySpec::default(); usize::from(self.keys)],
+            |stack| render::page(&stack, self.keys),
+        );
         (1..=self.keys)
             .filter_map(KeySlot::new)
             .zip(specs)
@@ -142,7 +151,7 @@ impl Engine {
                 if look == Look::Idle {
                     spec
                 } else {
-                    spec.with_look(self.key(page, slot), look)
+                    spec.with_look(self.key(slot).map(|(key, _)| key), look)
                 }
             })
             .collect()
@@ -165,10 +174,14 @@ impl Engine {
             .or_insert_with(|| Feedback::new(&render))
     }
 
-    /// Resolves a press of `slot` on the active profile and page; an error
-    /// or success look of the key ends, unless the press is simulated.
+    /// Resolves a press of `slot` on the active profile and page, a key the
+    /// profile lacks on the global layer; an error or success look of the
+    /// key ends, unless the press is simulated.
     pub fn press(&mut self, slot: KeySlot, trigger: Trigger, at: SystemTime) -> TraceRecord {
-        let record = press::resolve(self.active(), self.page(), slot, trigger, at);
+        let record = self.stack().map_or_else(
+            || press::unbound(&self.active().profile.id, self.page(), slot, trigger, at),
+            |stack| press::resolve(&stack, slot, trigger, at),
+        );
         if !trigger.simulated {
             self.feedback(&record).pressed();
         }
@@ -286,7 +299,8 @@ action = { type = "exec", cmd = "true" }
         engine.set_key_count(9);
         let specs = engine.specs(Instant::now());
         assert_eq!(specs.len(), 9);
-        assert_eq!(specs, render::page(engine.active(), 1, 9).unwrap());
+        let stack = Stack::new(&engine.loaded.profiles, engine.active(), 1).unwrap();
+        assert_eq!(specs, render::page(&stack, 9));
         assert_eq!(specs[0].label.as_deref(), Some("Build"));
         assert_eq!(engine.page(), 1);
     }
@@ -309,6 +323,49 @@ action = { type = "exec", cmd = "true" }
             }
         );
         assert_eq!(engine.specs(now)[0].label.as_deref(), Some("Play"));
+    }
+
+    #[test]
+    fn a_key_the_app_profile_lacks_shows_and_runs_the_global_key() {
+        let mut engine = Engine::new(loaded_with(&[GLOBAL, CODE]));
+        engine.set_key_count(9);
+        let now = Instant::now();
+        focus_code(&mut engine, now);
+        let specs = engine.specs(now);
+        assert_eq!(specs[0].label.as_deref(), Some("Run"));
+        // `code` has no key 2: the global "Copy", with the code accent.
+        assert_eq!(specs[1].label.as_deref(), Some("Copy"));
+        assert_eq!(specs[1].accent, engine.active().profile.accent);
+        let record = engine.press(slot(2), short(), SystemTime::UNIX_EPOCH);
+        assert_eq!(record.profile, "code");
+        assert_eq!(record.layer, Some(Layer::Global));
+        assert!(matches!(record.action, Some(Action::Chord { .. })));
+        let own = engine.press(slot(1), short(), SystemTime::UNIX_EPOCH);
+        assert_eq!(own.layer, Some(Layer::App));
+    }
+
+    #[test]
+    fn a_global_key_shows_its_own_states_on_the_app_page() {
+        let mut engine = Engine::new(loaded_with(&[
+            &GLOBAL.replace(
+                "[[pages]]\nname = \"general\"",
+                "[pages.keys.3]\nlabel = \"Lint\"\naction = { type = \"exec\", cmd = \"true\" }\n\
+                 states.error = { label = \"Dirty\" }\n\n[[pages]]\nname = \"general\"",
+            ),
+            CODE,
+        ]));
+        engine.set_key_count(9);
+        let now = Instant::now();
+        focus_code(&mut engine, now);
+        let mut record = engine.press(slot(3), short(), SystemTime::UNIX_EPOCH);
+        assert_eq!(record.layer, Some(Layer::Global));
+        record.finish(Outcome::Failed { error: "x".into() });
+        engine.finished(&record, now);
+        let spec = &engine.specs(now)[2];
+        assert_eq!(
+            (spec.look, spec.label.as_deref()),
+            (Look::Error, Some("Dirty"))
+        );
     }
 
     #[test]

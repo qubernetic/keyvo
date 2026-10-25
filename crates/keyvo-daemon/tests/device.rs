@@ -66,6 +66,15 @@ impl Actor {
     }
 }
 
+/// The report of a claimed Keypad of the captured geometry, which the
+/// test pads publish.
+fn connected() -> Event {
+    Event::Connected {
+        keys: 9,
+        panel: display::captured_geometry().panel(),
+    }
+}
+
 fn labelled(labels: &[&str]) -> Vec<KeySpec> {
     labels
         .iter()
@@ -128,7 +137,7 @@ fn key_of(accent: Option<Color>, specs: &[KeySpec], key: u8) -> Image {
 fn the_actor_claims_paints_one_union_image_then_only_the_changed_key() {
     let pad = Pad::new(&startup());
     let actor = Actor::start(Pads::new([pad.clone()]));
-    assert_eq!(actor.next(), Event::Connected { keys: 9 });
+    assert_eq!(actor.next(), connected());
     let mut specs = labelled(&["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
     actor.commands.send(paint(&specs)).unwrap();
     assert_eq!(
@@ -153,7 +162,7 @@ fn the_actor_claims_paints_one_union_image_then_only_the_changed_key() {
 fn two_changed_keys_go_as_one_crop_of_their_bounds() {
     let pad = Pad::new(&startup());
     let actor = Actor::start(Pads::new([pad.clone()]));
-    assert_eq!(actor.next(), Event::Connected { keys: 9 });
+    assert_eq!(actor.next(), connected());
     let mut specs = labelled(&["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
     actor.commands.send(paint(&specs)).unwrap();
     assert!(matches!(actor.next(), Event::Painted { .. }));
@@ -171,7 +180,7 @@ fn two_changed_keys_go_as_one_crop_of_their_bounds() {
 fn a_new_accent_paints_one_union_image_in_its_background() {
     let pad = Pad::new(&startup());
     let actor = Actor::start(Pads::new([pad.clone()]));
-    assert_eq!(actor.next(), Event::Connected { keys: 9 });
+    assert_eq!(actor.next(), connected());
     let specs = labelled(&["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
     actor.commands.send(paint(&specs)).unwrap();
     let all: Vec<u8> = (1..=9).collect();
@@ -203,7 +212,7 @@ fn a_new_accent_paints_one_union_image_in_its_background() {
 fn a_new_view_paints_the_union_even_where_keys_stay_the_same() {
     let pad = Pad::new(&startup());
     let actor = Actor::start(Pads::new([pad.clone()]));
-    assert_eq!(actor.next(), Event::Connected { keys: 9 });
+    assert_eq!(actor.next(), connected());
     let specs = labelled(&["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
     let view = |page| View {
         profile: "global".into(),
@@ -242,7 +251,7 @@ fn a_display_that_refuses_its_capabilities_is_still_painted() {
     assert_ne!(script, startup());
     let pad = Pad::new(&script);
     let actor = Actor::start(Pads::new([pad.clone()]));
-    assert_eq!(actor.next(), Event::Connected { keys: 9 });
+    assert_eq!(actor.next(), connected());
     let specs = labelled(&["1", "2", "3"]);
     actor.commands.send(paint(&specs)).unwrap();
     assert_eq!(
@@ -260,7 +269,7 @@ fn a_display_that_refuses_its_capabilities_is_still_painted() {
 fn key_presses_and_releases_are_reported() {
     let pad = Pad::new(&startup());
     let actor = Actor::start(Pads::new([pad.clone()]));
-    assert_eq!(actor.next(), Event::Connected { keys: 9 });
+    assert_eq!(actor.next(), connected());
     pad.hold(&[5]);
     assert_eq!(
         actor.next(),
@@ -279,7 +288,7 @@ fn a_lost_device_is_reopened_reclaimed_and_repainted() {
     let first = Pad::new(&startup());
     let second = Pad::new(&startup());
     let actor = Actor::start(Pads::new([first.clone(), second.clone()]));
-    assert_eq!(actor.next(), Event::Connected { keys: 9 });
+    assert_eq!(actor.next(), connected());
     let specs = labelled(&["a", "b", "c"]);
     actor.commands.send(paint(&specs)).unwrap();
     assert_eq!(
@@ -295,7 +304,7 @@ fn a_lost_device_is_reopened_reclaimed_and_repainted() {
             error: "device disconnected".into()
         }
     );
-    assert_eq!(actor.next(), Event::Connected { keys: 9 });
+    assert_eq!(actor.next(), connected());
     assert_eq!(
         actor.next(),
         Event::Painted {
@@ -311,7 +320,7 @@ fn a_lost_device_is_reopened_reclaimed_and_repainted() {
 fn a_lost_claim_is_reclaimed_once_and_the_union_repainted() {
     let pad = Pad::new(&(startup() + &support::fixture("display-reclaim.txt")));
     let actor = Actor::start(Pads::new([pad.clone()]));
-    assert_eq!(actor.next(), Event::Connected { keys: 9 });
+    assert_eq!(actor.next(), connected());
     let specs = labelled(&["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
     actor.commands.send(paint(&specs)).unwrap();
     let all: Vec<u8> = (1..=9).collect();
@@ -367,14 +376,14 @@ fn a_failed_claim_is_reported_and_retried() {
         Event::Disconnected { error } => assert!(error.contains("unexpected write"), "{error}"),
         other => panic!("{other:?}"),
     }
-    assert_eq!(actor.next(), Event::Connected { keys: 9 });
+    assert_eq!(actor.next(), connected());
     actor.stop();
 }
 
 #[test]
 fn closing_the_command_channel_ends_the_actor() {
     let actor = Actor::start(Pads::new([Pad::new(&startup())]));
-    assert_eq!(actor.next(), Event::Connected { keys: 9 });
+    assert_eq!(actor.next(), connected());
     drop(actor.commands);
     actor.thread.join().unwrap();
 }

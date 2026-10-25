@@ -49,9 +49,32 @@ export type Command =
 /** A command with the id its response echoes. */
 export type Request = Command & { id?: unknown };
 
+/** Width and height in pixels. */
+export interface Size {
+  width: number;
+  height: number;
+}
+
+/** One key's rectangle on the panel. */
+export interface Rect extends Size {
+  x: number;
+  y: number;
+}
+
+/** The Keypad's display as the device publishes it (spec §5.4). */
+export interface Geometry {
+  panel: Size;
+  /** The size the keys are rendered at. */
+  tile: Size;
+  /** Key 1 first. */
+  rects: Rect[];
+}
+
 export interface DeviceStatus {
   connected: boolean;
   keys?: number;
+  /** Present while a Keypad is connected. */
+  geometry?: Geometry;
   error?: string;
 }
 
@@ -64,6 +87,8 @@ export interface Context {
 
 export interface Status {
   version: string;
+  /** The configuration directory the daemon loads; the app edits this tree. */
+  config_dir: string;
   device: DeviceStatus;
   view: View;
   context?: Context;
@@ -78,6 +103,9 @@ export interface Subscribed {
 
 export type Action = { type: "chord"; keys: string } | { type: "exec"; cmd: string };
 
+/** The layer of the stack that supplied a key (spec §6.1). */
+export type Layer = "global" | "app";
+
 /** One trace entry (spec §8). */
 export interface TraceRecord {
   timestamp_ms: number;
@@ -85,6 +113,8 @@ export interface TraceRecord {
   profile: string;
   page: number;
   key: number;
+  /** Absent when no layer defines the key. */
+  layer?: Layer;
   action: Action | null;
   result: { status: string; [field: string]: unknown };
 }

@@ -112,10 +112,13 @@ impl Running {
         let pad = Pad::new(&startup());
         let pads = Pads::new([pad.clone()]);
         let daemon_injector = injector.clone();
-        let daemon_config = config_dir.clone();
+        let paths = daemon::Paths {
+            config_dir: config_dir.clone(),
+            socket: socket.clone(),
+        };
         let daemon = tokio::spawn(async move {
             daemon::run(
-                &daemon_config,
+                &paths,
                 pads,
                 daemon_injector,
                 FakeWindowWatcher::new(),
@@ -621,6 +624,7 @@ async fn device_key_and_failed_reload_events_reach_a_subscriber_of_everything() 
                     DeviceStatus {
                         connected: false,
                         keys: None,
+                        geometry: None,
                         error: Some("device disconnected".into())
                     }
                 );
