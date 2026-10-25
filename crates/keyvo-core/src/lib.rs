@@ -11,6 +11,7 @@ pub mod config;
 pub mod diagnostic;
 pub mod feedback;
 pub mod hid;
+pub mod inject;
 pub mod layout;
 pub mod press;
 pub mod profile;

@@ -36,6 +36,7 @@ just build
 just run -- probe                   # features, firmware, display mode, geometry
 just run -- keys --json             # one JSON object per press and release
 just run -- fill '#ff8000' --key 5  # or a PNG; --all (default) or --panel
+bin/keyvo-daemon                    # paint ~/.config/keyvo/profiles/global.toml, run its keys
 ```
 
 The commands need read-write access to the Keypad's `/dev/hidraw*` node and

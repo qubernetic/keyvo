@@ -9,12 +9,31 @@ repository.workspace = true
 authors.workspace = true
 publish.workspace = true
 
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 name = "keyvo-daemon"
 path = "src/main.rs"
 
 [dependencies]
+anyhow = "1"
+clap.workspace = true
 keyvo-core.workspace = true
+keyvo-hid.workspace = true
+thiserror.workspace = true
+tokio = { version = "1", features = ["macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+evdev = "0.13"
+futures-util = { version = "0.3", default-features = false }
+inotify = "0.11"
+rustix = { version = "1", default-features = false, features = ["std", "process"] }
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true

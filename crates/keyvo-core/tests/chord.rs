@@ -205,3 +205,15 @@ fn key_names_resolve_through_the_evdev_table() {
     // Aliases in the header resolve to their value.
     assert_eq!(KeyCode::from_name("hangeul"), KeyCode::from_name("hanguel"));
 }
+
+#[test]
+fn every_code_of_the_table_is_listed_once_in_order() {
+    let all: Vec<_> = KeyCode::all().collect();
+    assert!(all.windows(2).all(|pair| pair[0] < pair[1]));
+    assert!(all.contains(&KeyCode::new(LEFTCTRL)));
+    assert!(all.contains(&KeyCode::from_name("f24").unwrap()));
+    // Every chord key a parser accepts can be declared on a uinput device.
+    for name in ["a", "leftmeta", "playpause", "KEY_F13"] {
+        assert!(all.contains(&KeyCode::from_name(name).unwrap()), "{name}");
+    }
+}

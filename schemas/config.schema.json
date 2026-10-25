@@ -51,6 +51,13 @@
           "minimum": 0,
           "type": "integer"
         },
+        "exec_timeout": {
+          "default": 30000,
+          "description": "An `exec` action still running after this long is killed and fails\n(spec §8). Default 30000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "focus_hysteresis": {
           "default": 150,
           "description": "A focus change shorter than this does not repaint. Default 150 ms.",
@@ -82,6 +89,20 @@
         "page_grace": {
           "default": 10000,
           "description": "After a page-button use, an app switch keeps the general page for\nthis long (spec §6.3). Default 10000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reconnect_interval": {
+          "default": 1000,
+          "description": "Wait between two attempts to open the Keypad after it is gone (spec\n§5.1). Default 1000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reload_settle": {
+          "default": 100,
+          "description": "Quiet time after the last change in the configuration directory\nbefore it is reloaded (spec §7.2). Default 100 ms.",
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
@@ -123,11 +144,14 @@
         "ack_timeout": 50,
         "divert_settle": 100,
         "divert_spacing": 20,
+        "exec_timeout": 30000,
         "focus_hysteresis": 150,
         "keep_alive_period": 1000,
         "keep_alive_timeout": 3000,
         "long_press": 1000,
         "page_grace": 10000,
+        "reconnect_interval": 1000,
+        "reload_settle": 100,
         "render_coalesce": 50,
         "reply_timeout": 1000
       },
