@@ -5,7 +5,13 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
-use keyvo_core::socket::{Command, ErrorBody, Event, ProtocolError, Reply, Request, ServerMessage};
+use keyvo_core::press::PressKind;
+use keyvo_core::profile::KeySlot;
+use keyvo_core::socket::{
+    Command, ErrorBody, Event, EventClass, ProtocolError, Reply, Request, ServerMessage,
+};
+use keyvo_core::state::View;
+use keyvo_core::trace::TraceRecord;
 use serde_json::Value;
 
 /// What went wrong on the connection.
@@ -31,6 +37,9 @@ pub enum ClientError {
     /// The daemon refused the request.
     #[error("the daemon refused the request: {}", .0.message)]
     Refused(ErrorBody),
+    /// The daemon answered the named command with another command's reply.
+    #[error("the daemon answered `{0}` with another reply")]
+    Unexpected(&'static str),
 }
 
 impl Client<UnixStream> {
@@ -101,6 +110,41 @@ impl<S: Read + Write> Client<S> {
                 }
                 ServerMessage::Response(_) => {}
             }
+        }
+    }
+
+    /// A dry-run press of `key` (the simulator's path): the daemon resolves
+    /// and traces it, executes nothing, and returns the trace entry.
+    ///
+    /// # Errors
+    ///
+    /// As [`Client::request`], and when the daemon answers with another
+    /// reply.
+    pub fn dry_run(&mut self, key: KeySlot, kind: PressKind) -> Result<TraceRecord, ClientError> {
+        match self.request(Command::Press {
+            key,
+            kind,
+            dry_run: true,
+        })? {
+            Reply::Pressed(pressed) => Ok(pressed.entry),
+            _ => Err(ClientError::Unexpected("press")),
+        }
+    }
+
+    /// Subscribes to every event class, after the newest `replay` trace
+    /// entries; the view the pad shows at that moment.
+    ///
+    /// # Errors
+    ///
+    /// As [`Client::request`], and when the daemon answers with another
+    /// reply.
+    pub fn subscribe(&mut self, replay: usize) -> Result<View, ClientError> {
+        match self.request(Command::Subscribe {
+            events: EventClass::ALL.to_vec(),
+            replay,
+        })? {
+            Reply::Subscribed(subscribed) => Ok(subscribed.view),
+            _ => Err(ClientError::Unexpected("subscribe")),
         }
     }
 
