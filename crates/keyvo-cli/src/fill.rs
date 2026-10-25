@@ -12,7 +12,8 @@ use image::imageops::FilterType;
 use image::{ImageFormat, Rgb, RgbImage};
 use keyvo_core::clock::Clock;
 use keyvo_core::hid::HidTransport;
-use keyvo_hid::image::{self as lcd, ImageConfig, Target};
+use keyvo_hid::display::Geometry;
+use keyvo_hid::image::{self as lcd, ImageConfig, Rect, Target};
 
 use crate::session::{Inbound, Session};
 
@@ -94,8 +95,31 @@ pub enum Placement {
     Panel,
 }
 
+/// `rect` grown by `margin` pixels on all four sides and clamped to the
+/// panel of `geometry` (`0..width`, `0..height`) on each side separately.
+/// The clamp never cuts into `rect` itself, so a margin of 0 is the
+/// published rectangle whatever the panel size.
+#[must_use]
+pub fn grow(rect: Rect, margin: u16, geometry: &Geometry) -> Rect {
+    let right = rect.x.saturating_add(rect.width);
+    let bottom = rect.y.saturating_add(rect.height);
+    let x = rect.x.saturating_sub(margin);
+    let y = rect.y.saturating_sub(margin);
+    let right = right.saturating_add(margin).min(geometry.width.max(right));
+    let bottom = bottom
+        .saturating_add(margin)
+        .min(geometry.height.max(bottom));
+    Rect {
+        x,
+        y,
+        width: right - x,
+        height: bottom - y,
+    }
+}
+
 /// Paints `source` at `placement` and reports each write on `out`; the
-/// keep-alive runs between the writes.
+/// keep-alive runs between the writes. Every key rectangle is first grown
+/// by `margin` ([`grow`]); the panel is painted as published.
 ///
 /// # Errors
 ///
@@ -105,6 +129,7 @@ pub fn fill<T: HidTransport, C: Clock>(
     session: &mut Session<T, C>,
     source: &Source,
     placement: Placement,
+    margin: u16,
     config: &ImageConfig,
     out: &mut impl Write,
 ) -> anyhow::Result<()> {
@@ -115,7 +140,10 @@ pub fn fill<T: HidTransport, C: Clock>(
         Placement::Panel => vec![Target::Panel],
     };
     for target in targets {
-        let rect = target.rect(&geometry)?;
+        let rect = match target {
+            Target::Key(_) => grow(target.rect(&geometry)?, margin, &geometry),
+            Target::Panel => target.rect(&geometry)?,
+        };
         let jpeg = source.jpeg(rect.width, rect.height)?;
         let written = lcd::write(&mut session.hidpp, config, rect, &jpeg)?;
         let label = match target {
@@ -178,7 +206,6 @@ pub(crate) mod tests {
     use crate::tests::{exchanges, fixture, replay};
     use keyvo_core::clock::FakeClock;
     use keyvo_core::hid::to_hex;
-    use keyvo_hid::display::Geometry;
     use keyvo_hid::hidpp::DEVICE_DIRECT;
     use keyvo_hid::image::ImageError;
     use keyvo_hid::keep_alive::{DEFAULT_PERIOD, KeepAliveTiming};
@@ -188,7 +215,7 @@ pub(crate) mod tests {
     /// The display's VLP index in the captures.
     const DISPLAY: u8 = 2;
 
-    fn geometry() -> Geometry {
+    pub(crate) fn geometry() -> Geometry {
         Session::open(
             replay(&fixture("display-claim.txt")),
             FakeClock::new(),
@@ -199,20 +226,20 @@ pub(crate) mod tests {
         .geometry
     }
 
-    /// The claim, then for every target the fragments of `source`'s JPEG,
-    /// each answered by its ACK in the device's layout
-    /// (`13 ff 02 <fn|swid> c<index> 00 <01 on the last fragment, else 00>`,
-    /// `image-acks.txt`).
-    pub(crate) fn script(source: &Source, targets: &[Target], config: &ImageConfig) -> String {
-        fixture("display-claim.txt") + &paints(source, targets, config)
-    }
-
     /// For every target the fragments of `source`'s JPEG with their ACKs.
     pub(crate) fn paints(source: &Source, targets: &[Target], config: &ImageConfig) -> String {
         let geometry = geometry();
+        let rects: Vec<_> = targets.iter().map(|t| t.rect(&geometry).unwrap()).collect();
+        paints_at(source, &rects, config)
+    }
+
+    /// For every rectangle the fragments of `source`'s JPEG, each answered
+    /// by its ACK in the device's layout
+    /// (`13 ff 02 <fn|swid> c<index> 00 <01 on the last fragment, else 00>`,
+    /// `image-acks.txt`).
+    pub(crate) fn paints_at(source: &Source, rects: &[Rect], config: &ImageConfig) -> String {
         let mut script = String::new();
-        for target in targets {
-            let rect = target.rect(&geometry).unwrap();
+        for &rect in rects {
             let jpeg = source.jpeg(rect.width, rect.height).unwrap();
             for fragment in lcd::fragments(DEVICE_DIRECT, DISPLAY, config, rect, &jpeg).unwrap() {
                 let index = fragment[4] & 0x0f;
@@ -226,16 +253,93 @@ pub(crate) mod tests {
     }
 
     fn run(source: &Source, placement: Placement, targets: &[Target]) -> anyhow::Result<String> {
+        let geometry = geometry();
+        let rects: Vec<_> = targets.iter().map(|t| t.rect(&geometry).unwrap()).collect();
+        run_at(source, placement, 0, &rects)
+    }
+
+    /// `fill` with `margin`, against a script that expects `rects`.
+    fn run_at(
+        source: &Source,
+        placement: Placement,
+        margin: u16,
+        rects: &[Rect],
+    ) -> anyhow::Result<String> {
         let config = ImageConfig::default();
-        let mut session = Session::open(
-            replay(&script(source, targets, &config)),
-            FakeClock::new(),
-            None,
-        )?;
+        let script = fixture("display-claim.txt") + &paints_at(source, rects, &config);
+        let mut session = Session::open(replay(&script), FakeClock::new(), None)?;
         let mut out = Vec::new();
-        fill(&mut session, source, placement, &config, &mut out)?;
+        fill(&mut session, source, placement, margin, &config, &mut out)?;
         assert!(session.hidpp.transport_mut().is_done());
         Ok(String::from_utf8(out)?)
+    }
+
+    #[test]
+    fn a_margin_grows_every_key_on_all_four_sides() {
+        let geometry = geometry();
+        let grown: Vec<_> = geometry
+            .keys
+            .iter()
+            .map(|k| Rect {
+                x: k.x - 4,
+                y: k.y - 4,
+                width: k.width + 8,
+                height: k.height + 8,
+            })
+            .collect();
+        let text = run_at(&Source::Color(ORANGE), Placement::All, 4, &grown).unwrap();
+        assert!(text.starts_with("key 1  126x126 at 20,2  "), "{text}");
+        assert_eq!(text.lines().count(), 9);
+    }
+
+    #[test]
+    fn a_margin_is_clamped_to_the_panel_on_that_side_only() {
+        let source = Source::Color(ORANGE);
+        // Key 1 at 24,6: the top edge stops at 0, the others grow by 8.
+        let top = Rect {
+            x: 16,
+            y: 0,
+            width: 134,
+            height: 132,
+        };
+        let text = run_at(&source, Placement::Key(1), 8, &[top]).unwrap();
+        assert!(text.starts_with("key 1  134x132 at 16,0  "), "{text}");
+        // Key 9 at 340,321: right and bottom stop at 480, left and top grow.
+        let corner = Rect {
+            x: 295,
+            y: 276,
+            width: 185,
+            height: 204,
+        };
+        let text = run_at(&source, Placement::Key(9), 45, &[corner]).unwrap();
+        assert!(text.starts_with("key 9  185x204 at 295,276  "), "{text}");
+    }
+
+    #[test]
+    fn the_panel_ignores_the_margin() {
+        let geometry = geometry();
+        let panel = Target::Panel.rect(&geometry).unwrap();
+        let text = run_at(&Source::Color(ORANGE), Placement::Panel, 4, &[panel]).unwrap();
+        assert!(text.starts_with("panel  435x434 at 23,6  "), "{text}");
+    }
+
+    #[test]
+    fn grow_never_shrinks_a_key_past_a_too_small_panel() {
+        let geometry = Geometry {
+            width: 100,
+            height: 100,
+            ..geometry()
+        };
+        let key = Target::Key(9).rect(&geometry).unwrap();
+        assert_eq!(
+            grow(key, 4, &geometry),
+            Rect {
+                x: 336,
+                y: 317,
+                width: 122,
+                height: 122,
+            }
+        );
     }
 
     fn decoded(jpeg: &[u8]) -> RgbImage {
@@ -372,7 +476,15 @@ pub(crate) mod tests {
         let clock = FakeClock::new();
         let mut session = Session::open(replay(&script), &clock, None).unwrap();
         let mut out = Vec::new();
-        fill(&mut session, &source, Placement::Panel, &config, &mut out).unwrap();
+        fill(
+            &mut session,
+            &source,
+            Placement::Panel,
+            0,
+            &config,
+            &mut out,
+        )
+        .unwrap();
         let mut repaints = 0;
         hold(
             &mut session,
@@ -381,7 +493,7 @@ pub(crate) mod tests {
             |wait| clock.advance(wait),
             |session| {
                 repaints += 1;
-                fill(session, &source, Placement::Panel, &config, &mut out)
+                fill(session, &source, Placement::Panel, 0, &config, &mut out)
             },
         )
         .unwrap();
