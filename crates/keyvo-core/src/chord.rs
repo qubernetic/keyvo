@@ -49,6 +49,15 @@ impl KeyCode {
             .ok()
             .map(|index| Self(keycodes::KEYCODES[index].1))
     }
+
+    /// Every code of the table, ascending, each once: the keys an
+    /// `InputInjector` device declares so it can press any chord.
+    pub fn all() -> impl Iterator<Item = Self> {
+        let mut codes: Vec<u16> = keycodes::KEYCODES.iter().map(|(_, code)| *code).collect();
+        codes.sort_unstable();
+        codes.dedup();
+        codes.into_iter().map(Self)
+    }
 }
 
 /// One edge of a key: pressed (`down`) or released.
