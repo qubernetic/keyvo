@@ -168,10 +168,10 @@ jobs:
   app:
     name: app
     runs-on: ubuntu-24.04
-    # A cold Tauri build (image, npm install, clippy and a debug build of
-    # about 450 crates) is several times the `ci` job; 45 minutes leaves room
-    # for a slow runner while still stopping a hung step.
-    timeout-minutes: 45
+    # The first run (image without cache, npm install, clippy and a debug
+    # build of about 450 crates) took about 5 minutes on ubuntu-24.04; 30
+    # minutes leaves room for a slow runner while still stopping a hung step.
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
