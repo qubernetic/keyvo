@@ -26,7 +26,7 @@ use crate::profile::{Color, Key, KeySlot, KeyState};
 use crate::stack::Stack;
 
 /// Width and height of a tile in pixels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TileSize {
     /// Width.
     pub width: u16,

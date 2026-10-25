@@ -42,7 +42,7 @@ use keyvo_core::layout::{self, Loaded, Profiles};
 use keyvo_core::press::{PressDetector, PressKind};
 use keyvo_core::profile::{Action, KeySlot};
 use keyvo_core::socket::{
-    Command as Wire, Context, ContextSource, DeviceStatus, Edge as KeyEdge, Status,
+    Command as Wire, Context, ContextSource, DeviceStatus, Edge as KeyEdge, Geometry, Status,
 };
 use keyvo_core::state::{PageButton, View};
 use keyvo_core::trace::{Outcome, TraceRecord, Trigger};
@@ -62,6 +62,8 @@ pub enum Event {
     Connected {
         /// Its key count.
         keys: u8,
+        /// Its display as it publishes it.
+        geometry: Geometry,
     },
     /// The Keypad is gone or cannot be claimed.
     Disconnected {
@@ -192,6 +194,7 @@ where
         device: DeviceStatus {
             connected: false,
             keys: None,
+            geometry: None,
             error: None,
         },
         context: None,
@@ -335,20 +338,23 @@ impl<I: InputInjector> Controller<'_, I> {
 
     fn device(&mut self, event: device::Event) {
         match event {
-            device::Event::Connected { keys } => {
+            device::Event::Connected { keys, panel } => {
                 self.engine.set_key_count(keys);
+                let geometry = Geometry::from(&panel);
                 self.device = DeviceStatus {
                     connected: true,
                     keys: Some(keys),
+                    geometry: Some(geometry.clone()),
                     error: None,
                 };
                 self.dirty();
-                self.emit(Event::Connected { keys });
+                self.emit(Event::Connected { keys, geometry });
             }
             device::Event::Disconnected { error } => {
                 self.device = DeviceStatus {
                     connected: false,
                     keys: None,
+                    geometry: None,
                     error: Some(error.clone()),
                 };
                 self.emit(Event::Disconnected { error });
@@ -529,6 +535,7 @@ impl<I: InputInjector> Controller<'_, I> {
         let answer = match request.command {
             Wire::Status {} => Answer::Status(Status {
                 version: keyvo_core::VERSION.to_owned(),
+                config_dir: self.config_dir.to_string_lossy().into_owned(),
                 device: self.device.clone(),
                 view: self.engine.view(),
                 context: self.context.clone(),

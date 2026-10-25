@@ -6,8 +6,9 @@
 
 use keyvo_core::press::PressKind;
 use keyvo_core::profile::KeySlot;
+use keyvo_core::render::{KeyPlace, Panel, TileSize};
 use keyvo_core::socket::{
-    Command, ErrorCode, Event, EventClass, Reply, Request, Response, ServerMessage,
+    Command, ErrorCode, Event, EventClass, Geometry, Rect, Reply, Request, Response, ServerMessage,
 };
 use keyvo_core::state::{Mode, View};
 use serde_json::Value;
@@ -182,6 +183,90 @@ fn every_event_round_trips_its_fixture() {
     for class in EventClass::ALL {
         assert!(classes.contains(&class), "{class:?}");
     }
+}
+
+/// The Keypad's panel as captured (spec §5.4).
+fn captured_panel() -> Panel {
+    let origins = [
+        (24, 6),
+        (182, 7),
+        (340, 6),
+        (23, 164),
+        (181, 163),
+        (339, 164),
+        (23, 322),
+        (181, 321),
+        (340, 321),
+    ];
+    let size = TileSize {
+        width: 118,
+        height: 118,
+    };
+    Panel {
+        size: TileSize {
+            width: 480,
+            height: 480,
+        },
+        keys: origins
+            .iter()
+            .map(|&(x, y)| KeyPlace { x, y, size })
+            .collect(),
+    }
+}
+
+#[test]
+fn status_carries_the_geometry_and_the_configuration_directory() {
+    let mut statuses = lines(fixture!("responses.ndjson")).filter_map(|line| {
+        match serde_json::from_str::<Response>(line).unwrap().result {
+            Ok(Reply::Status(status)) => Some(status),
+            _ => None,
+        }
+    });
+    let with = statuses.next().unwrap();
+    assert_eq!(with.config_dir, "/home/u/.config/keyvo");
+    let geometry = with.device.geometry.unwrap();
+    assert_eq!(geometry, Geometry::from(&captured_panel()));
+    assert_eq!(geometry.key_count(), with.device.keys);
+    assert_eq!(
+        geometry.tile_size(),
+        TileSize {
+            width: 118,
+            height: 118
+        }
+    );
+    assert_eq!(
+        geometry.rects[1],
+        Rect {
+            x: 182,
+            y: 7,
+            width: 118,
+            height: 118
+        }
+    );
+    // Without a Keypad there is no geometry; the directory is always there.
+    let without = statuses.next().unwrap();
+    assert_eq!(without.config_dir, "/home/u/.config/keyvo");
+    assert_eq!(without.device.geometry, None);
+}
+
+#[test]
+fn a_panel_without_keys_has_no_tile() {
+    let panel = Panel {
+        size: TileSize {
+            width: 10,
+            height: 10,
+        },
+        keys: Vec::new(),
+    };
+    let geometry = Geometry::from(&panel);
+    assert_eq!(
+        geometry.tile_size(),
+        TileSize {
+            width: 0,
+            height: 0
+        }
+    );
+    assert_eq!(geometry.key_count(), Some(0));
 }
 
 #[test]

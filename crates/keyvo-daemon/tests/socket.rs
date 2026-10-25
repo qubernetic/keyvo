@@ -621,6 +621,7 @@ async fn device_key_and_failed_reload_events_reach_a_subscriber_of_everything() 
                     DeviceStatus {
                         connected: false,
                         keys: None,
+                        geometry: None,
                         error: Some("device disconnected".into())
                     }
                 );

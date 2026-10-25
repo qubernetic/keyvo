@@ -235,14 +235,16 @@ impl Subscription {
     /// The wire events of `event` for this subscriber.
     fn wire(&mut self, event: Event) -> Vec<Wire> {
         let events = match event {
-            Event::Connected { keys } => vec![Wire::Device(DeviceStatus {
+            Event::Connected { keys, geometry } => vec![Wire::Device(DeviceStatus {
                 connected: true,
                 keys: Some(keys),
+                geometry: Some(geometry),
                 error: None,
             })],
             Event::Disconnected { error } => vec![Wire::Device(DeviceStatus {
                 connected: false,
                 keys: None,
+                geometry: None,
                 error: Some(error),
             })],
             Event::Painted { .. } => Vec::new(),

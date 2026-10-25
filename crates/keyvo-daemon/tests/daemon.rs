@@ -17,7 +17,7 @@ use keyvo_core::inject::FakeInputInjector;
 use keyvo_core::press::PressKind;
 use keyvo_core::profile::{KeySlot, Profile};
 use keyvo_core::render::{Canvas, KeyPlace, KeySpec, Renderer};
-use keyvo_core::socket::{Command, Context, ContextSource, DeviceStatus, Edge, Status};
+use keyvo_core::socket::{Command, Context, ContextSource, DeviceStatus, Edge, Geometry, Status};
 use keyvo_core::stack::Layer;
 use keyvo_core::state::{Mode, View};
 use keyvo_core::trace::{Outcome, TraceRecord};
@@ -545,7 +545,7 @@ async fn a_lost_keypad_is_reclaimed_and_repainted() {
         .await;
     assert_eq!(error, "device disconnected");
     daemon
-        .until(|event| matches!(event, Event::Connected { keys: 9 }).then_some(()))
+        .until(|event| matches!(event, Event::Connected { keys: 9, .. }).then_some(()))
         .await;
     assert_eq!(daemon.painted().await.len(), 9);
     assert_eq!(second.images(), [union_of(GLOBAL)]);
@@ -692,11 +692,15 @@ async fn status_reports_the_device_the_view_and_the_trace_size() {
     daemon.painted().await;
     let status = daemon.status().await;
     assert_eq!(status.version, keyvo_core::VERSION);
+    assert_eq!(status.config_dir, daemon.dir.path().to_string_lossy());
+    // The geometry is the one the device published, not a built-in one.
+    let geometry = Geometry::from(&display::captured_geometry().panel());
     assert_eq!(
         status.device,
         DeviceStatus {
             connected: true,
             keys: Some(9),
+            geometry: Some(geometry),
             error: None
         }
     );
@@ -713,6 +717,7 @@ async fn status_reports_the_device_the_view_and_the_trace_size() {
         DeviceStatus {
             connected: false,
             keys: None,
+            geometry: None,
             error: Some("device disconnected".into())
         }
     );
