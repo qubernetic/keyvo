@@ -112,6 +112,27 @@ length. Record the dump lines a result rests on in the record's
 
 ## Measurements
 
+### Display capabilities, `maxImageSize` (2026-10-25)
+
+Not a measurement on the author's unit: `keyvo probe` does not read
+display fn0 yet. The value comes from a capture, decoded with the layout
+the display pipeline report read from the Options+ helper, and it corrects
+the figure the Options+ inventory gave.
+
+- Device: MX Creative Keypad 046d:c354 of the hcooper captures (firmware
+  not in the capture notes)
+- Method: display fn0 `getCapabilities` reply `01 00 7a 1e 00 00 00 1b`
+  (`docs/research/hcooper-captures.md` step 9), decoded with the layout of
+  `docs/research/options-plus-display-pipeline.md` section 0.
+- Result: `deviceScreenCount` 1; `maxImageSize` u16 BE `0x007a` in units
+  of 1024 bytes = **124 928 bytes per image**, not the 31 262 bytes of
+  `docs/research/options-plus-inventory.md` (a misread of `00 7a 1e` as
+  one u24); `maxImageFPS` `0x1e` = 30; flags `0x1b` = deferrable display
+  update, rgb565, jpeg, calibrated, origin 0. The VLP root's available
+  memory, 124 960 bytes, is `maxImageSize` + 32.
+- Settles: spec §5.5, the capability table and the per-image size limit.
+  Confirming it on this unit needs the fn0 fields in `keyvo probe`.
+
 ### First light (2026-10-25)
 
 Every record of this session shares the setup:

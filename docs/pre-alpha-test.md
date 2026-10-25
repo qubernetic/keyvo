@@ -1,7 +1,7 @@
 # Pre-alpha home test
 
-One session on the host with the Keypad attached: the visible key window
-measurement (#70), the end-to-end check (#52), and the User test
+One session on the host with the Keypad attached: the no-strip check (#70,
+once #72 is merged), the end-to-end check (#52), and the User test
 checklists of every slice merged into `epic/34-pre-alpha`. Every step
 names the command and what it should show. Where a result differs, note
 the step number and what you saw; section 7 says what goes back on the
@@ -57,7 +57,9 @@ git rev-parse --short HEAD      # note it: the commit under test
 
 4. **KDE Plasma 6 on Wayland**, `qdbus6` on the path (`qdbus6
    org.kde.KWin` lists `/Scripting`), and `notify-send` available
-   (`command -v notify-send` prints a path).
+   (`command -v notify-send` prints a path). Fedora and Aurora ship the
+   tool as `qdbus-qt6`, not `qdbus6`: use that name here and in section 5
+   and the #64 checklist wherever `qdbus6` stands.
 
 ## 2. Build
 
@@ -82,6 +84,19 @@ image predates #66: run `just rebuild`, then `just dev`, then the two
 builds again. If `bin/keyvo-app` later fails to start on a missing
 `libwebkit2gtk-4.1` library, note it for #52 (the host lacks the runtime)
 and skip the GUI steps.
+
+On an atomic host (Aurora, Fedora Kinoite) that does not layer
+`webkit2gtk`, the app runs inside the installed `org.gnome.Platform//51`
+Flatpak runtime instead, until the Flatpak manifest of M4b-1 exists (the
+owner's comment on #52 of 2026-10-25; the runtime's glibc covers the
+binary's). Wherever the guide says `bin/keyvo-app`, run, from the
+repository root:
+
+```bash
+flatpak run --filesystem=host --filesystem=xdg-run/keyvo \
+  --socket=wayland --socket=fallback-x11 --share=ipc --device=dri \
+  --command="$PWD/bin/keyvo-app" org.gnome.Platform//51
+```
 
 ## 3. Install the example profiles
 
@@ -111,56 +126,53 @@ page 1 of 1: ...`, with nothing on stderr. Open the PNGs: the labels and
 icons of the table above, an accent bar in the profile's colour under
 every key. The same files serve as test images in section 6.
 
-## 4. Visible key window (#70)
+## 4. No strip beside the keys (#70, after #72)
 
-The daemon must not run during this section; only `keyvo fill` drives
-the pad. Photos do not settle the window: the domed key caps act as a
-lens, and the strip of the panel colour beside a key appears or
-disappears with the viewing angle. Instead, the key rectangle is grown
-with `fill --margin` until no strip is visible from any angle; that
-margin is the default of the `[render]` margin in #72.
+Run this section only once slice 6l (composite paint, #72) is merged into
+`epic/34-pre-alpha`. Until then the daemon paints the panel background
+and then the nine keys as separate images, and the strip this section
+looks for is expected.
 
-`--margin <PX>` grows every key rectangle the device publishes by `PX`
-pixels on all four sides and clamps it to the panel on each side; the
-report line shows the grown rectangle (`key 1  126x126 at 20,2` for
-`--margin 4`). Limits of the published geometry (first light,
-`docs/hardware-notes.md` item 6): the top row starts at `y=6`, so the
-top margin stops at 6 px; left 23, right 22, bottom 40 px (key 8; 41 for
-keys 7 and 9). The gap between two keys is at least 39 px, so margins up
-to 19 px do not overlap a neighbour.
+On first light a key painted over a panel paint left a strip of the
+panel colour at its bottom and right edge (`docs/hardware-notes.md` item
+7). Options+ never shows it, because it paints the background and all
+keys as one composite image and a single key as a crop of the same
+canvas (`docs/research/options-plus-display-pipeline.md`, "What changes
+the plan" item 1); #72 makes keyvo paint the same way, which makes a
+per-key margin unnecessary. Magenta and green instead of white and black,
+so a one-pixel strip stands out (the owner's method on #52). Photos do
+not settle it: the domed key caps act as a lens, and a strip appears or
+disappears with the viewing angle, so look at the pad from several angles
+(straight on, from each side, from above and below).
 
 First note the firmware: `just run -- probe` and copy the `firmware` line
 marked `application, active` (first light: `U1 66.00.B0017`).
 
-1. **White panel, black keys, growing margin.** One command line per
-   step, so the second claim follows the first before the keep-alive
-   expires:
+1. **Control: separate images.** The daemon is stopped. One command line,
+   so the second claim follows the first before the keep-alive expires:
 
    ```bash
-   just run -- fill '#ffffff' --panel && just run -- fill '#000000' --all --margin <M> --hold 20
+   just run -- fill '#ff00ff' --panel && just run -- fill '#00ff00' --all --hold 20
    ```
 
-   Run it with M = 0, 2, 4, 6, 8, then by 1 around the first value
-   without a strip. Expected: both commands print one line per write with
-   `acked` equal to `fragments`, and the key lines show the grown
-   rectangle. During every 20 s hold, look at the pad from several angles
-   (straight on, from each side, from above and below). On first light
-   (M = 0) a white strip stayed at the bottom and the right edge of each
-   key.
+   Expected: both commands print one line per write with `acked` equal to
+   `fragments`; the keys are green with a magenta strip at their bottom
+   and right edge, as on first light. This shows the strip is visible
+   from where you look.
 
-2. **The result.** The smallest M with no strip of the panel colour on
-   any key from any angle, and the edge on which the strip disappeared
-   last. If a strip stays on the top edge at M = 6, note that the
-   framebuffer cannot cover it there (the clamp stops the top at 0).
+2. **Composite paint on a magenta leftover.** With the magenta panel and
+   green keys of step 1 still on the pad, start `bin/keyvo-daemon` in T1
+   with a window focused that no profile matches (Dolphin), and leave it
+   running for 20 s.
 
-3. **Swapped colours, once.** Confirm the result with a black panel and
-   white keys:
+   Expected: the global profile appears in one update, not key by key;
+   no magenta and no green anywhere on or beside a key from any angle,
+   only the profile's dark blue background around and between the keys.
 
-   ```bash
-   just run -- fill '#000000' --panel && just run -- fill '#ffffff' --all --margin <M> --hold 20
-   ```
-
-   Expected: no black strip on any key from any angle.
+3. **One key, then a profile switch.** With the daemon running, press
+   key 5 (OK) and focus a Konsole window, then Dolphin again. Expected:
+   the pressed key and each profile switch leave no strip of the earlier
+   colour beside any key. Stop the daemon with Ctrl-C.
 
 4. **Post** the result on #70 (section 7): no photos.
 
@@ -189,7 +201,8 @@ is for `keyvo ctl`, T3 for the app.
    stat -c %a "$XDG_RUNTIME_DIR/keyvo" "$XDG_RUNTIME_DIR/keyvo/keyvo.sock"
    ```
 
-   Expected: `true`, then `700` and `600`.
+   On Fedora and Aurora the first command is `qdbus-qt6` instead of
+   `qdbus6`. Expected: `true`, then `700` and `600`.
 
 3. **Global profile painted.** Focus a window no profile matches (for
    example Dolphin). Expected: the pad shows Notify, Fail, Type, Slow and
@@ -400,7 +413,7 @@ original first item's `focus switching off` warning does not appear.
 ### KWin focus watcher (#64)
 
 - [ ] #64 `bin/keyvo-daemon` logs `KWin script loaded as script <n>; focus switching on` (section 5 step 1).
-- [ ] #64 `qdbus6 ... isScriptLoaded keyvo-focus` prints `true`; `stat -c %a "$XDG_RUNTIME_DIR/keyvo"` prints `700` (section 5 step 2). `head -20 "$XDG_RUNTIME_DIR/keyvo/keyvo-focus.js"` shows the header, and the `service` line holds the daemon's unique name (`:1.<n>`), not `@SERVICE@`.
+- [ ] #64 `qdbus6 ... isScriptLoaded keyvo-focus` (`qdbus-qt6` on Fedora and Aurora) prints `true`; `stat -c %a "$XDG_RUNTIME_DIR/keyvo"` prints `700` (section 5 step 2). `head -20 "$XDG_RUNTIME_DIR/keyvo/keyvo-focus.js"` shows the header, and the `service` line holds the daemon's unique name (`:1.<n>`), not `@SERVICE@`.
 - [ ] #64 Focusing Konsole switches to the Konsole profile, focusing another window goes back to global, one info log line per switch (section 5 steps 4 and 5).
 - [ ] #64 Title rule: create `~/.config/keyvo/profiles/titletest.toml` with the content below, then run `printf '\e]0;keyvo-test\a'` in a focused Konsole. The pad switches to the red `Title` profile without a focus change. Delete the file afterwards.
 
@@ -494,14 +507,14 @@ you made one.
 **On #70**, one comment:
 
 ```markdown
-## Visible key window (<YYYY-MM-DD>)
+## No strip beside the keys (<YYYY-MM-DD>)
 
 - Device: MX Creative Keypad 046d:c354, firmware <application, active line of probe>
-- Commit: <git rev-parse --short HEAD from section 1>
-- Method: docs/pre-alpha-test.md section 4 (fill --margin), several viewing angles; Solaar stopped
-- Margin: M = <smallest margin with no strip on any key from any angle>
-- Last edge: <the edge on which the strip disappeared last>; top strip left at M = 6: <no / yes, the framebuffer cannot cover it>
-- Swapped colours (black panel, white keys, --margin M): <no strip / strip on ...>
+- Commit: <git rev-parse --short HEAD from section 1, with #72 merged>
+- Method: docs/pre-alpha-test.md section 4 (magenta panel, green keys, then the daemon's composite paint), several viewing angles; Solaar stopped
+- Control (step 1): <magenta strip at bottom and right of each key / other: ...>
+- Composite (step 2): <one update, no strip / strip on key ..., edge ...>
+- Key press and profile switch (step 3): <no strip / strip on ...>
 ```
 
 **On #52**, one comment:

@@ -387,6 +387,24 @@ version `docs/hardware-notes.md` records.
   mode is `a2`, not `a1`. `a1` is the device/logo mode a `KEEP_ALIVE`
   expiry leaves (§5.3); the capture's `a1` is that state. `a0` is the
   host-controlled mode `setMode(a0)` sets; without pings it stays.
+- Display state names (the Options+ state enum, read in the display
+  pipeline report, `docs/research/options-plus-display-pipeline.md`
+  section 6; it corrects the inventory's mapping of `a3` to `a6`):
+
+  | Value | Name | Value | Name |
+  |---|---|---|---|
+  | `a0` | Streaming (host-controlled) | `d0` | Unknown |
+  | `a1` | Standby | `d1` | USB Preconfiguration |
+  | `a2` | StandbyBright | `d2` | Idle |
+  | `a3` | Splash (not in this device's list) | `d3` | LowPower |
+  | `a4` | SplashBright | `d4..d6` | TDE embedded image, TDE embedded animation, TDE pattern |
+  | `a5` | OnboardingBright | | |
+  | `a6` | Dfu | | |
+
+  The `a*` states are the ones a host sets; the `d*` states are reported
+  by the device. ClearScreen is not a command of the feature: Options+
+  clears the panel by writing a black 480×480 JPEG at (0, 0) through fn2
+  (§5.5), and never does so on its redraw path. keyvo does not need it.
 - keyvo's claim (`keyvo_hid::display::claim`, after the keep-alive has
   started): VLP root fn1, `getFeature(0x19A1)`, display fn3 (refused unless
   the list holds `a0`), display fn5, display fn1 geometry, then, unless the
@@ -398,11 +416,15 @@ version `docs/hardware-notes.md` records.
   `setMode` is. VLP root fn2 is left out: painting works without it
   (measured, first light).
 - **The device publishes its own key geometry** via display fn1
-  `getGeometry(01)`, answered over four packets. The joined reply: display
-  shape (u8, 1), a dimension field (u16, `0x0060`, meaning unconfirmed),
-  panel width and height (u16, 480×480), the key count (9), a second count
-  (0, meaning unconfirmed), then one 9-byte record per key: shape (u8, 1),
-  x, y, w, h (u16 each). The author's Keypad (firmware `U1 66.00.B0017`,
+  `getGeometry(01)` (Options+ calls it `getDisplayInfo(1)`), answered over
+  four packets. The joined reply: byte 0 `displayShape` (u8, 1), bytes 1..2
+  `dimension` (u16 BE, `0x0060` = 96), bytes 3..4 and 5..6 the horizontal
+  and vertical resolution (u16 BE, 480×480), byte 7 the button count (9),
+  byte 8 the visible-area count (0), then one 9-byte record per button and
+  after them one per visible area: shape (u8, 1), x, y, w, h (u16 BE each)
+  (field names from the display pipeline report,
+  `docs/research/options-plus-display-pipeline.md` section 0). The
+  author's Keypad (firmware `U1 66.00.B0017`,
   measured on first light, `docs/hardware-notes.md` item 6) gives w = h =
   118 and these origins:
 
@@ -428,17 +450,38 @@ version `docs/hardware-notes.md` records.
   The daemon paints the panel background before the keys (§5.5, #77), so
   the strip shows the profile's background, not an earlier paint. Photos
   cannot measure the strip (the domed key caps act as a lens, the strip
-  changes with the viewing angle), so #70 measures on the device: `keyvo
-  fill --all --margin <M>` (§5.10) grows every key rectangle by M pixels
-  until no strip shows from any angle. That smallest M is the source of
-  the default of the per-key `[render]` margin (#72). The published
+  changes with the viewing angle). Options+ avoids the strip by painting
+  the background and the keys as one composite image and a single key as
+  a crop of the same canvas (display pipeline report,
+  `docs/research/options-plus-display-pipeline.md`, "What changes the
+  plan" item 1); #72 adopts that, which makes a per-key margin
+  unnecessary, and #70 checks the result on the device
+  (`docs/pre-alpha-test.md` section 4). `keyvo fill --all --margin <M>`
+  (§5.10) stays as a diagnostic that grows every key rectangle by M
+  pixels. The published
   geometry bounds it: the clamp to the panel stops the top at 6 px, left
   23, right 22, bottom 40; the keys are at least 39 px apart, so up to
   19 px no key overlaps a neighbour.
 
 ### 5.5 Image writes and flow control
 
-- Format: baseline JPEG, RGB888 (RGB565 is rejected; reported). Per-key
+- Capabilities (display fn0 `getCapabilities`, captured in hcooper step 9
+  as `01 00 7a 1e 00 00 00 1b`; layout from the display pipeline report,
+  `docs/research/options-plus-display-pipeline.md` section 0):
+
+  | Byte | Field | Width and unit | This unit |
+  |---|---|---|---|
+  | 0 | `deviceScreenCount` | u8 | 1 |
+  | 1..2 | `maxImageSize` | u16 BE in KiB (value × 1024 bytes), per image | `0x007a` = 124 928 bytes |
+  | 3 | `maxImageFPS` | u8 | 30 |
+  | 4..6 | not read by Options+ | | |
+  | 7 | flags: bit 0 `deferrableDisplayUpdate`, bit 1 `rgb565`, bit 2 `rgb888`, bit 3 `jpeg`, bit 4 `calibrated`, bits 5..6 `origin` (2 bits) | u8 | `0x1b`: deferrable, rgb565, jpeg, calibrated; origin 0 |
+
+  The inventory's 31 262 bytes was a misread of the same bytes. The VLP
+  root's available memory, 124 960 bytes, is `maxImageSize` + 32.
+- Format: baseline JPEG. Prior art reported RGB888 accepted and RGB565
+  rejected; the fn0 flags above say the opposite (`rgb565` 1, `rgb888`
+  0). keyvo writes JPEG only, so neither raw format is tested. Per-key
   images are 118×118 at the key's published rectangle; a full-panel paint is
   435×434 at (23, 6) on the 480×480 canvas (Options+, captured; logilinux uses
   434×434). Quality 85–95; the header dimensions must equal the JPEG SOF
@@ -447,8 +490,17 @@ version `docs/hardware-notes.md` records.
   `14 ff 02 <fn|swid> <seq> 01 00 01 00 <x:u16> <y:u16> <w:u16> <h:u16> <len:u24>`
   then JPEG bytes; continuation fragments carry a 5-byte header; every
   fragment is exactly 4095 bytes, zero-padded, so the first carries 4075
-  JPEG bytes and each continuation 4090. `01 00 01 00` reads as display 1,
-  no deferred update, one image, format JPEG (Julusian; unconfirmed).
+  JPEG bytes and each continuation 4090. The fn2 `setImage` payload
+  (display pipeline report, `docs/research/options-plus-display-pipeline.md`
+  section 0, which corrects the inventory's "defer=1, count u16"): byte 0
+  `displayIndex` (u8, send 1, the index of `getDisplayInfo(1)`), byte 1
+  `deferDisplayUpdate` in bit 0 (send 0, the other bits 0), byte 2
+  `count` (u8, the number of images), then per image a 12-byte image
+  header, `format` (u8, low nibble; JPEG is 0), `x`, `y`, `w`, `h` (u16 BE
+  each) and `length` (u24 BE), followed by `length` bytes of image data.
+  So `01 00 01 00` is display 1, no deferred update, one image, format
+  JPEG. Options+ always sends one image without the defer bit; keyvo does
+  the same, and both fields stay hardware experiments.
   Sequence byte: bit `0x80` first, bit `0x40` last, bit `0x20` always set,
   the low four bits the fragment index: `e0` = first+last, `a0` = first of
   several, `21` a middle one, `61`-style = last with index. Options+ uses
@@ -470,6 +522,9 @@ version `docs/hardware-notes.md` records.
   Until then the guard is the fragment index: one write carries at most as
   many fragments as the four index bits count from the index base without
   wrapping (16 with base 0, 65 425 bytes; 15 with base 1, 61 335 bytes).
+  The device's own per-image limit is fn0 `maxImageSize` (124 928 bytes
+  on this unit, above); Options+ splits a larger image into horizontal
+  bands.
 - **The device ACKs every fragment on `0x13`** (`13 ff 02 <fn|swid> c0 …`
   for fragment 0, `c1 00 01 …` for fragment 1, …). The "own writes echo back
   as key 1" trap in other projects is this ACK. keyvo uses **ACK-driven flow
@@ -1669,6 +1724,15 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 6j (2026-10-25)**: corrections from the display
+  pipeline report (#86, #88). §5.4 the display state names (`a3` Splash
+  to `a6` Dfu, `d2` Idle, `d3` LowPower), ClearScreen as a black image,
+  the fn1 fields (button count, visible-area count); §5.5 the fn2
+  `setImage` header (`displayIndex`, `deferDisplayUpdate`, `count`,
+  12-byte image headers) and the fn0 capabilities (`maxImageSize` 124 928
+  bytes in KiB units, not 31 262; `maxImageFPS` 30; the flag bits). No
+  wire byte changes.
 
 - **v0.3, pre-alpha slice R3 (2026-10-25)**: the docs aligned with the
   pre-alpha as built, from the epic pre-review (#82). §5.10 `keys` and
