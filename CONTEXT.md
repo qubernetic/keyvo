@@ -38,7 +38,7 @@ then injected through `uinput` by the daemon.
 
 **Context page**: The page of the active profile that auto mode shows while the
 matched application has focus; overlays apply only here. Named `context` in the
-profile's `[[pages]]`.
+profile's `[[pages]]`; a profile without one uses its first page.
 
 **Desk state**: The mouse and keyboard settings a profile applies on
 activation (DPI, backlight, button remaps), stored under `[devices]` and applied
@@ -203,4 +203,6 @@ classic plane.
 
 **Window watcher**: The platform trait in `keyvo-core` (`WindowWatcher`) whose
 implementations in the daemon turn a focus source into `(class, title)` events
-for the state machine.
+(`WindowContext`) for the state machine. `FakeWindowWatcher` reports windows by
+hand in tests; the pre-alpha daemon binary has no focus source until the KWin
+watcher lands.
