@@ -150,6 +150,10 @@ pub struct Panel {
 pub struct Theme {
     /// Background of a key without its own color.
     pub background: Color,
+    /// The panel around the keys, of a profile without an accent.
+    pub panel: Color,
+    /// How far the panel turns toward the profile's accent, 0 to 1.
+    pub panel_tint: f32,
     /// Corner radius.
     pub radius: f32,
     /// Width of the accent bar.
@@ -207,6 +211,8 @@ impl Default for Theme {
     fn default() -> Self {
         Self {
             background: Color::rgb(0x26, 0x28, 0x2c),
+            panel: Color::rgb(0x00, 0x00, 0x00),
+            panel_tint: 0.2,
             radius: 0.12,
             accent_width: 0.4,
             accent_height: 0.05,
@@ -301,7 +307,7 @@ impl Tile {
         }
     }
 
-    /// The pixels as RGB, transparent parts over black (the panel color).
+    /// The pixels as RGB, transparent parts over black.
     #[must_use]
     pub fn rgb(&self) -> Vec<u8> {
         // Premultiplied RGBA: dropping alpha composites over black.
@@ -314,17 +320,56 @@ impl Tile {
             .collect()
     }
 
-    /// The baseline JPEG the device draws (spec §5.5).
+    /// The pixels as RGB, transparent parts over `under`, the panel color
+    /// the tile is put on ([`Renderer::panel_color`]).
+    #[must_use]
+    pub fn rgb_on(&self, under: Color) -> Vec<u8> {
+        // Premultiplied RGBA: the color shows through by 1 - alpha.
+        let over = |channel: u8, under: u8, alpha: u8| {
+            let shown = u16::from(under) * u16::from(255 - alpha) / 255;
+            u8::try_from(u16::from(channel) + shown).unwrap_or(u8::MAX)
+        };
+        self.pixmap
+            .data()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .flat_map(|&[r, g, b, a]| {
+                [
+                    over(r, under.r, a),
+                    over(g, under.g, a),
+                    over(b, under.b, a),
+                ]
+            })
+            .collect()
+    }
+
+    /// The baseline JPEG the device draws (spec §5.5), transparent parts
+    /// over black.
     ///
     /// # Errors
     ///
     /// [`RenderError::Jpeg`].
     pub fn jpeg(&self) -> Result<Vec<u8>, RenderError> {
+        self.encode(&self.rgb())
+    }
+
+    /// The baseline JPEG the device draws, transparent parts over `under`
+    /// (see [`Tile::rgb_on`]).
+    ///
+    /// # Errors
+    ///
+    /// [`RenderError::Jpeg`].
+    pub fn jpeg_on(&self, under: Color) -> Result<Vec<u8>, RenderError> {
+        self.encode(&self.rgb_on(under))
+    }
+
+    fn encode(&self, rgb: &[u8]) -> Result<Vec<u8>, RenderError> {
         let size = self.size();
         let mut jpeg = Vec::new();
         image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, JPEG_QUALITY)
             .encode(
-                &self.rgb(),
+                rgb,
                 u32::from(size.width),
                 u32::from(size.height),
                 image::ExtendedColorType::Rgb8,
@@ -499,20 +544,46 @@ impl Renderer {
         }
     }
 
-    /// The whole panel: black, with the tile of `specs[i]` at `panel.keys[i]`
-    /// (a blank tile where `specs` runs out). For previews; the device gets
-    /// one [`Tile`] per key.
+    /// The panel background of a profile with `accent`: the theme's panel
+    /// color, tinted with the accent by [`Theme::panel_tint`].
+    #[must_use]
+    pub fn panel_color(&self, accent: Option<Color>) -> Color {
+        accent.map_or(self.theme.panel, |accent| {
+            mix(self.theme.panel, accent, self.theme.panel_tint)
+        })
+    }
+
+    /// A tile of `size` in the panel background of a profile with
+    /// `accent`, which the device gets before the keys (spec §5.5).
+    ///
+    /// # Errors
+    ///
+    /// [`RenderError::EmptyTile`] for a zero width or height.
+    pub fn backdrop(&self, accent: Option<Color>, size: TileSize) -> Result<Tile, RenderError> {
+        let mut pixmap = Pixmap::new(u32::from(size.width), u32::from(size.height)).ok_or(
+            RenderError::EmptyTile {
+                width: size.width,
+                height: size.height,
+            },
+        )?;
+        let color = self.panel_color(accent);
+        pixmap.fill(tiny_skia::Color::from_rgba8(
+            color.r, color.g, color.b, 0xff,
+        ));
+        Ok(Tile { pixmap })
+    }
+
+    /// The whole panel: the panel background of the specs' accent, with the
+    /// tile of `specs[i]` at `panel.keys[i]` (a blank tile where `specs` runs
+    /// out). For previews; the device gets the background and then one
+    /// [`Tile`] per key.
     ///
     /// # Errors
     ///
     /// [`RenderError::EmptyTile`] for a panel or key of zero size.
     pub fn panel(&self, specs: &[KeySpec], panel: &Panel) -> Result<Tile, RenderError> {
-        let mut pixmap = Pixmap::new(u32::from(panel.size.width), u32::from(panel.size.height))
-            .ok_or(RenderError::EmptyTile {
-                width: panel.size.width,
-                height: panel.size.height,
-            })?;
-        pixmap.fill(tiny_skia::Color::BLACK);
+        let accent = specs.iter().find_map(|spec| spec.accent);
+        let Tile { mut pixmap } = self.backdrop(accent, panel.size)?;
         let blank = KeySpec::default();
         for (index, place) in panel.keys.iter().enumerate() {
             let tile = self.tile(specs.get(index).unwrap_or(&blank), place.size)?;
@@ -835,5 +906,62 @@ mod tests {
         let rgb = tile.rgb();
         assert_eq!(rgb.len(), 40 * 40 * 3);
         assert_eq!(&rgb[..3], &[0, 0, 0]);
+    }
+
+    #[test]
+    fn the_panel_is_black_without_an_accent_and_tinted_with_one() {
+        let renderer = Renderer::new();
+        assert_eq!(renderer.panel_color(None), Color::rgb(0, 0, 0));
+        let accent = Color::rgb(0x4e, 0x8b, 0xd6);
+        assert_eq!(renderer.panel_color(Some(accent)), Color::rgb(16, 28, 43));
+    }
+
+    #[test]
+    fn the_backdrop_is_the_panel_color_everywhere() {
+        let accent = Color::rgb(0x4e, 0x8b, 0xd6);
+        let tile = Renderer::new()
+            .backdrop(
+                Some(accent),
+                TileSize {
+                    width: 6,
+                    height: 4,
+                },
+            )
+            .unwrap();
+        assert_eq!(tile.rgb(), [16, 28, 43].repeat(6 * 4));
+        assert!(
+            Renderer::new()
+                .backdrop(
+                    None,
+                    TileSize {
+                        width: 0,
+                        height: 4
+                    }
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn transparent_corners_take_the_color_they_are_put_on() {
+        let tile = Renderer::new()
+            .tile(
+                &KeySpec::default(),
+                TileSize {
+                    width: 40,
+                    height: 40,
+                },
+            )
+            .unwrap();
+        let rgb = tile.rgb_on(Color::rgb(16, 28, 43));
+        assert_eq!(&rgb[..3], &[16, 28, 43]);
+        // An opaque pixel keeps its color.
+        let middle = (20 * 40 + 20) * 3;
+        assert_eq!(&rgb[middle..middle + 3], &tile.rgb()[middle..middle + 3]);
+        assert_eq!(tile.rgb_on(Color::rgb(0, 0, 0)), tile.rgb());
+        assert_ne!(
+            tile.jpeg_on(Color::rgb(16, 28, 43)).unwrap(),
+            tile.jpeg().unwrap()
+        );
     }
 }
