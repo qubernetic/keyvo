@@ -18,6 +18,7 @@ pub mod press;
 pub mod profile;
 pub mod render;
 pub mod schema;
+pub mod state;
 pub mod trace;
 
 /// Version of the keyvo workspace, taken from `Cargo.toml` at compile time.
