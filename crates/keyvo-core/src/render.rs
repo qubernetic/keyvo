@@ -375,30 +375,6 @@ impl Tile {
             .collect()
     }
 
-    /// The pixels as RGB, transparent parts over `under`, the panel color
-    /// the tile is put on ([`Renderer::panel_color`]).
-    #[must_use]
-    pub fn rgb_on(&self, under: Color) -> Vec<u8> {
-        // Premultiplied RGBA: the color shows through by 1 - alpha.
-        let over = |channel: u8, under: u8, alpha: u8| {
-            let shown = u16::from(under) * u16::from(255 - alpha) / 255;
-            u8::try_from(u16::from(channel) + shown).unwrap_or(u8::MAX)
-        };
-        self.pixmap
-            .data()
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .flat_map(|&[r, g, b, a]| {
-                [
-                    over(r, under.r, a),
-                    over(g, under.g, a),
-                    over(b, under.b, a),
-                ]
-            })
-            .collect()
-    }
-
     /// The baseline JPEG the device draws (spec §5.5), transparent parts
     /// over black.
     ///
@@ -407,16 +383,6 @@ impl Tile {
     /// [`RenderError::Jpeg`].
     pub fn jpeg(&self) -> Result<Vec<u8>, RenderError> {
         self.encode(&self.rgb())
-    }
-
-    /// The baseline JPEG the device draws, transparent parts over `under`
-    /// (see [`Tile::rgb_on`]).
-    ///
-    /// # Errors
-    ///
-    /// [`RenderError::Jpeg`].
-    pub fn jpeg_on(&self, under: Color) -> Result<Vec<u8>, RenderError> {
-        self.encode(&self.rgb_on(under))
     }
 
     fn encode(&self, rgb: &[u8]) -> Result<Vec<u8>, RenderError> {
@@ -1104,25 +1070,29 @@ mod tests {
     }
 
     #[test]
-    fn transparent_corners_take_the_color_they_are_put_on() {
-        let tile = Renderer::new()
-            .tile(
-                &KeySpec::default(),
-                TileSize {
-                    width: 40,
-                    height: 40,
-                },
-            )
-            .unwrap();
-        let rgb = tile.rgb_on(Color::rgb(16, 28, 43));
+    fn transparent_corners_take_the_canvas_background() {
+        let renderer = Renderer::new();
+        let size = TileSize {
+            width: 40,
+            height: 40,
+        };
+        let place = KeyPlace { x: 5, y: 5, size };
+        let panel = Panel {
+            size: TileSize {
+                width: 50,
+                height: 50,
+            },
+            keys: vec![place],
+        };
+        let accent = Some(Color::rgb(0x4e, 0x8b, 0xd6));
+        let mut canvas = renderer.canvas(accent, &panel).unwrap();
+        assert_eq!(canvas.background(), Color::rgb(16, 28, 43));
+        renderer.draw(&mut canvas, 0, &KeySpec::default()).unwrap();
+        let rgb = canvas.crop(place).unwrap().rgb();
         assert_eq!(&rgb[..3], &[16, 28, 43]);
-        // An opaque pixel keeps its color.
+        // An opaque pixel keeps the tile's color.
         let middle = (20 * 40 + 20) * 3;
-        assert_eq!(&rgb[middle..middle + 3], &tile.rgb()[middle..middle + 3]);
-        assert_eq!(tile.rgb_on(Color::rgb(0, 0, 0)), tile.rgb());
-        assert_ne!(
-            tile.jpeg_on(Color::rgb(16, 28, 43)).unwrap(),
-            tile.jpeg().unwrap()
-        );
+        let tile = renderer.tile(&KeySpec::default(), size).unwrap().rgb();
+        assert_eq!(&rgb[middle..middle + 3], &tile[middle..middle + 3]);
     }
 }
