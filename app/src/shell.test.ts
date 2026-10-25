@@ -69,6 +69,22 @@ describe("the main window's capability", () => {
   });
 });
 
+describe("the main window", () => {
+  const config = JSON.parse(read(join(SHELL, "tauri.conf.json"))) as {
+    app: { windows: Record<string, unknown>[] };
+  };
+
+  it("opens at 1200 x 760 and shrinks to 960 x 640 (docs/design/gui-ux.md §2)", () => {
+    expect(config.app.windows).toHaveLength(1);
+    expect(config.app.windows[0]).toMatchObject({
+      width: 1200,
+      height: 760,
+      minWidth: 960,
+      minHeight: 640,
+    });
+  });
+});
+
 describe("the content security policy", () => {
   const config = JSON.parse(read(join(SHELL, "tauri.conf.json"))) as {
     app: { security: { csp: string } };

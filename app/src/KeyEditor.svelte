@@ -33,6 +33,7 @@
     editor,
     target,
     revision = 0,
+    active = true,
     onedited,
   }: {
     editor: Editor;
@@ -40,6 +41,8 @@
     target?: Target;
     /** Bumped when the files may have changed on disk (a reload). */
     revision?: number;
+    /** False while another screen shows: Ctrl+Z and Ctrl+Shift+Z are not ours. */
+    active?: boolean;
     /** Called after every write. */
     onedited?: () => void;
   } = $props();
@@ -184,6 +187,7 @@
   /** Ctrl+Z and Ctrl+Shift+Z for the session, unless a form field has the
    * focus: there they undo the typing. */
   function keydown(event: KeyboardEvent) {
+    if (!active) return;
     if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "z") return;
     const focus = event.target;
     if (

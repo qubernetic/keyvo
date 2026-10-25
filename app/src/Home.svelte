@@ -19,9 +19,22 @@
     type HomeState,
   } from "./lib/home";
   import { t } from "./lib/i18n";
-  import type { PressKind, TraceRecord } from "./lib/protocol";
+  import type { DeviceStatus, PressKind, TraceRecord } from "./lib/protocol";
 
-  let { daemon, editor }: { daemon: Daemon; editor: Editor } = $props();
+  let {
+    daemon,
+    editor,
+    active = true,
+    ondevice,
+  }: {
+    daemon: Daemon;
+    editor: Editor;
+    /** False while the shell shows another screen: Home keeps following the
+     * daemon but leaves the keyboard alone. */
+    active?: boolean;
+    /** The device the daemon reports, none while it cannot be reached. */
+    ondevice?: (device: DeviceStatus | undefined) => void;
+  } = $props();
 
   let home: HomeState = $state(initial());
   /** The key numbers in rows, as the daemon's geometry lays them out. */
@@ -82,6 +95,10 @@
       stop?.();
       stop = undefined;
     };
+  });
+
+  $effect(() => {
+    ondevice?.(unreachable === undefined ? home.device : undefined);
   });
 
   /** Writes of the key editor, so the tiles follow them without a daemon. */
@@ -288,7 +305,7 @@
       {/each}
     </div>
     {/if}
-    <KeyEditor {editor} {target} revision={home.reloads} onedited={() => edits++} />
+    <KeyEditor {editor} {target} {active} revision={home.reloads} onedited={() => edits++} />
   </div>
   {#if tilesError !== undefined}
     <p class="note">{t("home.tilesError", { error: tilesError })}</p>

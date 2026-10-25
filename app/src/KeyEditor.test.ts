@@ -159,6 +159,18 @@ describe("KeyEditor", () => {
     expect(editor.editor.editKey).toHaveBeenCalledTimes(1);
   });
 
+  it("leaves Ctrl+Z alone while the shell shows another screen", async () => {
+    const editor = await mounted();
+    await type(field("Label"), "Paste");
+    await waitFor(() => expect(editor.editor.editKey).toHaveBeenCalledTimes(1));
+    await editor.view.rerender({ active: false });
+    await fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    expect(editor.editor.editKey).toHaveBeenCalledTimes(1);
+    await editor.view.rerender({ active: true });
+    await fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    await waitFor(() => expect(editor.editor.editKey).toHaveBeenCalledTimes(2));
+  });
+
   it("drops what is left to redo on a new write", async () => {
     const editor = await mounted();
     await type(field("Label"), "Paste");
