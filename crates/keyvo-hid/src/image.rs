@@ -1,10 +1,11 @@
 //! LCD image writes on the VLP bulk report `0x14` (spec §5.5): a JPEG is cut
 //! into 4095-byte fragments addressed to the display feature `0x19A1`.
 //!
-//! The first fragment carries a 20-byte header: the VLP header, `01 00 01 00`
-//! (display 1, no deferred update, one image, format JPEG in the Julusian
-//! reading), the rectangle and the 24-bit JPEG length. Continuation fragments
-//! carry the 5-byte VLP header only. Every fragment is zero-padded.
+//! The first fragment carries a 20-byte header: the VLP header, then the
+//! [`ImageHeader`] (display index, deferred-update flag, image count, and
+//! per image the format, the rectangle and the 24-bit JPEG length).
+//! Continuation fragments carry the 5-byte VLP header only. Every fragment
+//! is zero-padded.
 
 use std::time::Duration;
 
@@ -23,12 +24,20 @@ const SEQ_FIRST: u8 = 0x80;
 const SEQ_ALWAYS: u8 = 0x20;
 /// The fragment index bits of the sequence byte.
 const SEQ_INDEX: u8 = 0x0f;
-/// Display 1, no deferred update, one image, format JPEG (Julusian's reading
-/// of the constant `01 00 01 00`, unconfirmed).
-const IMAGE_PREFIX: [u8; 4] = [0x01, 0x00, 0x01, 0x00];
-/// Header bytes of the first fragment: the VLP header, [`IMAGE_PREFIX`],
-/// x, y, w, h (u16 each) and the 24-bit length.
-const FIRST_HEADER_LEN: usize = 20;
+/// The display a `setImage` addresses: display 1, the one
+/// `getDisplayInfo(1)` describes. Options+ always sends 1
+/// (`docs/research/options-plus-display-pipeline.md` section 0).
+pub const DISPLAY_INDEX: u8 = 1;
+/// The wire value of the JPEG image format (captured).
+pub const FORMAT_JPEG: u8 = 0;
+/// Bit 0 of byte 1: `deferDisplayUpdate`.
+const DEFER_DISPLAY_UPDATE: u8 = 0x01;
+/// Bytes of an [`ImageHeader`]: display index, flags, count, format, x, y,
+/// w, h (u16 each) and the 24-bit length.
+const IMAGE_HEADER_LEN: usize = 15;
+/// Header bytes of the first fragment: the VLP header and the
+/// [`ImageHeader`].
+const FIRST_HEADER_LEN: usize = 5 + IMAGE_HEADER_LEN;
 /// JPEG bytes in the first fragment.
 const FIRST_PAYLOAD: usize = ReportId::VlpBulk.size() - FIRST_HEADER_LEN;
 /// JPEG bytes in a continuation fragment.
@@ -50,6 +59,65 @@ pub struct Rect {
     pub width: u16,
     /// Height.
     pub height: u16,
+}
+
+/// The parameters a `setImage` command starts with, for a command of one
+/// image (spec §5.5). The protocol allows up to 255 images per command and a
+/// deferred update; Options+ uses neither, so keyvo sends one image with the
+/// flag clear.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImageHeader {
+    /// Byte 0, `displayIndex`; [`DISPLAY_INDEX`].
+    pub display_index: u8,
+    /// Byte 1 bit 0, `deferDisplayUpdate`; the device shows the image only
+    /// with a later write that has it clear.
+    pub defer_display_update: bool,
+    /// Byte 2, the number of images in the command.
+    pub count: u8,
+    /// The image's format; [`FORMAT_JPEG`].
+    pub format: u8,
+    /// Where the image goes.
+    pub rect: Rect,
+    /// The image's length in bytes, sent as 24 bits.
+    pub length: u32,
+}
+
+impl ImageHeader {
+    /// The header of one JPEG of `length` bytes at `rect`, shown at once.
+    #[must_use]
+    pub const fn jpeg(rect: Rect, length: u32) -> Self {
+        Self {
+            display_index: DISPLAY_INDEX,
+            defer_display_update: false,
+            count: 1,
+            format: FORMAT_JPEG,
+            rect,
+            length,
+        }
+    }
+
+    /// The header bytes; the length keeps its low 24 bits.
+    #[must_use]
+    pub fn encode(&self) -> [u8; IMAGE_HEADER_LEN] {
+        let mut bytes = [0; IMAGE_HEADER_LEN];
+        bytes[0] = self.display_index;
+        bytes[1] = if self.defer_display_update {
+            DEFER_DISPLAY_UPDATE
+        } else {
+            0
+        };
+        bytes[2] = self.count;
+        bytes[3] = self.format;
+        let rect = self.rect;
+        for (at, value) in [rect.x, rect.y, rect.width, rect.height]
+            .into_iter()
+            .enumerate()
+        {
+            bytes[4 + 2 * at..6 + 2 * at].copy_from_slice(&value.to_be_bytes());
+        }
+        bytes[12..].copy_from_slice(&self.length.to_be_bytes()[1..]);
+        bytes
+    }
 }
 
 /// Where an image goes. Every placement comes from the geometry the device
@@ -314,9 +382,8 @@ pub fn fragments(
     let mut payloads = vec![head];
     payloads.extend(tail.chunks(NEXT_PAYLOAD));
     let count = payloads.len();
-    // The low three bytes; the limit keeps the length far below 2^24.
-    let length = jpeg.len().to_be_bytes();
-    let length = &length[length.len() - 3..];
+    // The limit keeps the length far below 2^24.
+    let header = ImageHeader::jpeg(rect, u32::try_from(jpeg.len()).unwrap_or(u32::MAX)).encode();
 
     (config.index_base.first()..)
         .zip(payloads)
@@ -326,11 +393,7 @@ pub fn fragments(
             let mut params = Vec::with_capacity(report.size());
             if position == 0 {
                 seq |= SEQ_FIRST;
-                params.extend(IMAGE_PREFIX);
-                for value in [rect.x, rect.y, rect.width, rect.height] {
-                    params.extend(value.to_be_bytes());
-                }
-                params.extend(length);
+                params.extend(header);
             }
             if position + 1 == count {
                 seq |= VLP_SEQ_LAST;
@@ -612,6 +675,22 @@ mod tests {
             ..base_zero
         };
         assert_eq!(base_one.max_image_len(), max - 4090);
+    }
+
+    #[test]
+    fn the_deferred_update_flag_is_bit_0_of_byte_1() {
+        let header = ImageHeader {
+            defer_display_update: true,
+            count: 2,
+            ..ImageHeader::jpeg(KEY, 0x0012_3456)
+        };
+        assert_eq!(
+            header.encode(),
+            [
+                0x01, 0x01, 0x02, 0x00, 0x00, 0xb5, 0x00, 0xa3, 0x00, 0x76, 0x00, 0x76, 0x12, 0x34,
+                0x56
+            ]
+        );
     }
 
     #[test]
