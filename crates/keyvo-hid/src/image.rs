@@ -7,6 +7,7 @@
 //! Continuation fragments carry the 5-byte VLP header only. Every fragment
 //! is zero-padded.
 
+use std::collections::VecDeque;
 use std::time::Duration;
 
 use crate::display::Geometry;
@@ -59,6 +60,170 @@ pub struct Rect {
     pub width: u16,
     /// Height.
     pub height: u16,
+}
+
+impl Rect {
+    /// True when `other` lies inside this rectangle.
+    #[must_use]
+    pub fn covers(&self, other: &Self) -> bool {
+        self.x <= other.x
+            && self.y <= other.y
+            && u32::from(self.x) + u32::from(self.width)
+                >= u32::from(other.x) + u32::from(other.width)
+            && u32::from(self.y) + u32::from(self.height)
+                >= u32::from(other.y) + u32::from(other.height)
+    }
+
+    /// The bounding box of both rectangles.
+    #[must_use]
+    pub fn union(&self, other: &Self) -> Self {
+        let x = self.x.min(other.x);
+        let y = self.y.min(other.y);
+        let right = self
+            .x
+            .saturating_add(self.width)
+            .max(other.x.saturating_add(other.width));
+        let bottom = self
+            .y
+            .saturating_add(self.height)
+            .max(other.y.saturating_add(other.height));
+        Self {
+            x,
+            y,
+            width: right - x,
+            height: bottom - y,
+        }
+    }
+}
+
+/// How many images wait for the device at most; Options+ keeps two
+/// (`docs/research/options-plus-display-pipeline.md` section 1).
+pub const QUEUE_DEPTH: usize = 2;
+
+/// An area of the panel waiting to be sent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pending {
+    /// The area.
+    pub rect: Rect,
+    /// The keys (1-based) whose change it carries, ascending.
+    pub keys: Vec<u8>,
+}
+
+/// What [`Queue::send_next`] sent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sent {
+    /// The area.
+    pub rect: Rect,
+    /// The keys whose change it carried.
+    pub keys: Vec<u8>,
+    /// The `setImage` commands it took: one, or one per band.
+    pub images: usize,
+}
+
+/// The areas waiting to be painted (spec §5.5). The queue holds areas, not
+/// images: an area is encoded from the caller's canvas when it is sent, so
+/// what goes out is always the newest content. At most [`QUEUE_DEPTH`]
+/// areas wait. A new area that a pending one covers only adds its keys to
+/// it; pending areas the new one covers are dropped as stale; a third area
+/// joins the newest pending one in their bounding box, so no change is lost
+/// (Options+ drops the oldest image instead).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Queue {
+    pending: VecDeque<Pending>,
+}
+
+impl Queue {
+    /// An empty queue.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Queues `rect`, which carries the change of `keys`.
+    pub fn push(&mut self, rect: Rect, keys: &[u8]) {
+        if let Some(cover) = self.pending.iter_mut().find(|p| p.rect.covers(&rect)) {
+            merge(&mut cover.keys, keys);
+            return;
+        }
+        let mut new = Pending {
+            rect,
+            keys: Vec::new(),
+        };
+        merge(&mut new.keys, keys);
+        self.pending.retain(|pending| {
+            let stale = rect.covers(&pending.rect);
+            if stale {
+                merge(&mut new.keys, &pending.keys);
+            }
+            !stale
+        });
+        let full = self.pending.len() >= QUEUE_DEPTH;
+        match self.pending.back_mut() {
+            Some(newest) if full => {
+                newest.rect = newest.rect.union(&new.rect);
+                merge(&mut newest.keys, &new.keys);
+            }
+            _ => self.pending.push_back(new),
+        }
+    }
+
+    /// The waiting areas, oldest first.
+    pub fn pending(&self) -> impl Iterator<Item = &Pending> {
+        self.pending.iter()
+    }
+
+    /// The number of waiting areas.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.pending.len()
+    }
+
+    /// True when nothing waits.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.pending.is_empty()
+    }
+
+    /// Forgets every waiting area.
+    pub fn clear(&mut self) {
+        self.pending.clear();
+    }
+
+    /// Sends the oldest area: `encode` gives the JPEG of a rectangle, the
+    /// area goes as one `setImage`, or as [`bands`] when it is above
+    /// [`ImageConfig::max_image_len`]. Each image goes after the device's
+    /// response to the one before ([`write`]); there is no timer.
+    ///
+    /// # Errors
+    ///
+    /// The errors of `encode`, [`bands`] and [`write`]. The area is dropped
+    /// either way.
+    pub fn send_next<T: HidTransport, E: From<ImageError>>(
+        &mut self,
+        hidpp: &mut Hidpp<T>,
+        config: &ImageConfig,
+        encode: impl FnMut(Rect) -> Result<Vec<u8>, E>,
+    ) -> Result<Option<Sent>, E> {
+        let Some(Pending { rect, keys }) = self.pending.pop_front() else {
+            return Ok(None);
+        };
+        let bands = bands(rect, config.max_image_len(), encode)?;
+        for band in &bands {
+            write(hidpp, config, band.rect, &band.jpeg)?;
+        }
+        Ok(Some(Sent {
+            rect,
+            keys,
+            images: bands.len(),
+        }))
+    }
+}
+
+/// Adds `more` to the ascending `keys`.
+fn merge(keys: &mut Vec<u8>, more: &[u8]) {
+    keys.extend_from_slice(more);
+    keys.sort_unstable();
+    keys.dedup();
 }
 
 /// The parameters a `setImage` command starts with, for a command of one
@@ -889,6 +1054,193 @@ mod tests {
             .map(|fragment| u16::from_be_bytes([fragment[11], fragment[12]]))
             .collect();
         assert_eq!(tops, [6, 151, 296]);
+        assert!(hidpp.transport_mut().is_done());
+    }
+
+    const fn rect(x: u16, y: u16, width: u16, height: u16) -> Rect {
+        Rect {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    fn queued(queue: &Queue) -> Vec<(Rect, Vec<u8>)> {
+        queue
+            .pending()
+            .map(|pending| (pending.rect, pending.keys.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn rects_cover_and_unite() {
+        let a = rect(10, 10, 20, 20);
+        assert!(a.covers(&rect(15, 15, 5, 5)));
+        assert!(a.covers(&a));
+        assert!(!a.covers(&rect(25, 10, 10, 10)));
+        assert_eq!(a.union(&rect(40, 0, 10, 5)), rect(10, 0, 40, 30));
+    }
+
+    #[test]
+    fn at_most_two_images_wait_and_a_third_joins_the_newest() {
+        let mut queue = Queue::new();
+        queue.push(rect(0, 0, 10, 10), &[1]);
+        queue.push(rect(20, 0, 10, 10), &[2]);
+        queue.push(rect(40, 0, 10, 10), &[3]);
+        assert_eq!(queue.len(), QUEUE_DEPTH);
+        assert_eq!(
+            queued(&queue),
+            [
+                (rect(0, 0, 10, 10), vec![1]),
+                (rect(20, 0, 30, 10), vec![2, 3])
+            ]
+        );
+    }
+
+    #[test]
+    fn a_pending_image_the_new_one_covers_is_dropped_as_stale() {
+        let mut queue = Queue::new();
+        queue.push(rect(20, 0, 10, 10), &[2]);
+        queue.push(rect(0, 0, 10, 10), &[1]);
+        queue.push(rect(0, 0, 50, 50), &[1, 2, 3]);
+        assert_eq!(queued(&queue), [(rect(0, 0, 50, 50), vec![1, 2, 3])]);
+    }
+
+    #[test]
+    fn an_area_a_pending_image_covers_adds_only_its_keys() {
+        let mut queue = Queue::new();
+        queue.push(rect(0, 0, 50, 50), &[1, 2]);
+        queue.push(rect(20, 20, 10, 10), &[5]);
+        queue.push(rect(0, 0, 10, 10), &[1]);
+        assert_eq!(queued(&queue), [(rect(0, 0, 50, 50), vec![1, 2, 5])]);
+        queue.clear();
+        assert!(queue.is_empty());
+    }
+
+    /// Records the order of writes and of the reports reads return.
+    struct Log {
+        inner: FakeHidTransport,
+        events: Vec<String>,
+    }
+
+    impl HidTransport for Log {
+        fn write(&mut self, report: &[u8]) -> Result<(), keyvo_core::hid::TransportError> {
+            self.events
+                .push(format!("> {:02x} {:02x}", report[0], report[4]));
+            self.inner.write(report)
+        }
+
+        fn read(
+            &mut self,
+            timeout: Duration,
+        ) -> Result<Option<Vec<u8>>, keyvo_core::hid::TransportError> {
+            let report = self.inner.read(timeout)?;
+            if let Some(report) = &report {
+                self.events.push(format!(
+                    "< {:02x} {:02x} {:02x}",
+                    report[4], report[5], report[6]
+                ));
+            }
+            Ok(report)
+        }
+    }
+
+    #[test]
+    fn the_next_image_goes_only_after_the_set_image_response() {
+        let config = ImageConfig::default();
+        let first = rect(23, 6, 118, 118);
+        let second = rect(181, 7, 118, 118);
+        let mut transport = FakeHidTransport::new().expect(
+            &[&[0x13, 0xff, 0x00, 0x0d, 0xe0, 0x19, 0xa1][..], &[0; 25]].concat(),
+            &[&[
+                &[0x13, 0xff, 0x00, 0x0d, 0xc0, 0x19, 0xa1, 0x02][..],
+                &[0; 24],
+            ]
+            .concat()],
+        );
+        // The fn2 response of a one-fragment image: resultCode 0, count 1.
+        let mut response = vec![0x13, 0xff, 0x02, 0x2d, 0xc0, 0x00, 0x01];
+        response.resize(32, 0);
+        for at in [first, second] {
+            let fragment = fragments(0xff, 2, &config, at, &jpeg(118, 118, 300))
+                .unwrap()
+                .remove(0);
+            transport = transport.expect(&fragment, &[&response]);
+        }
+        let log = Log {
+            inner: transport,
+            events: Vec::new(),
+        };
+        let mut hidpp = Hidpp::new(log, 0xff, config.swid, Duration::from_secs(1));
+        let mut queue = Queue::new();
+        queue.push(first, &[1]);
+        queue.push(second, &[2]);
+        let encode =
+            |at: Rect| -> Result<Vec<u8>, ImageError> { Ok(jpeg(at.width, at.height, 300)) };
+        let sent = queue.send_next(&mut hidpp, &config, encode).unwrap();
+        assert_eq!(
+            sent,
+            Some(Sent {
+                rect: first,
+                keys: vec![1],
+                images: 1
+            })
+        );
+        let sent = queue.send_next(&mut hidpp, &config, encode).unwrap();
+        assert_eq!(sent.map(|sent| sent.keys), Some(vec![2]));
+        assert_eq!(queue.send_next(&mut hidpp, &config, encode), Ok(None));
+        assert_eq!(
+            hidpp.transport_mut().events,
+            [
+                "> 13 e0",
+                "< c0 19 a1", // getFeature(0x19A1)
+                "> 14 e0",
+                "< c0 00 01", // image 1, then its response
+                "> 14 e0",
+                "< c0 00 01", // image 2, then its response
+            ]
+        );
+        assert!(hidpp.transport_mut().inner.is_done());
+    }
+
+    #[test]
+    fn a_crop_above_the_limit_goes_as_bands_from_the_queue() {
+        let config = ImageConfig {
+            max_image_size: Some(2000),
+            ..ImageConfig::default()
+        };
+        let mut transport = FakeHidTransport::new().expect(
+            &[&[0x13, 0xff, 0x00, 0x0d, 0xe0, 0x19, 0xa1][..], &[0; 25]].concat(),
+            &[&[
+                &[0x13, 0xff, 0x00, 0x0d, 0xc0, 0x19, 0xa1, 0x02][..],
+                &[0; 24],
+            ]
+            .concat()],
+        );
+        let mut response = vec![0x13, 0xff, 0x02, 0x2d, 0xc0, 0x00, 0x01];
+        response.resize(32, 0);
+        for (y, height) in [(6, 145), (151, 145), (296, 144)] {
+            let at = rect(23, y, 435, height);
+            let fragment = fragments(
+                0xff,
+                2,
+                &config,
+                at,
+                &jpeg(435, height, 10 * usize::from(height)),
+            )
+            .unwrap()
+            .remove(0);
+            transport = transport.expect(&fragment, &[&response]);
+        }
+        let mut hidpp = Hidpp::new(transport, 0xff, config.swid, Duration::from_secs(1));
+        let mut queue = Queue::new();
+        queue.push(UNION, &[1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        let mut calls = Vec::new();
+        let sent = queue
+            .send_next(&mut hidpp, &config, by_rows(&mut calls))
+            .unwrap();
+        assert_eq!(sent.map(|sent| sent.images), Some(3));
         assert!(hidpp.transport_mut().is_done());
     }
 
