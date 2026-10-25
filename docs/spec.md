@@ -232,9 +232,11 @@ measured in M0-2 (plan §5 item 16).
   and long item walk. Among the nodes of `046d:c354` the one that carries
   `0x14` wins; none of them carrying it is an error that lists the nodes
   and their reports, and no node at all is "not found". `keyvo --device
-  <path>` skips the search. How many nodes Linux creates for the Keypad is
-  not measured yet (plan §5 item 1); the fixtures follow the macOS
-  collection list.
+  <path>` skips the search. Linux creates one USB interface and one hidraw
+  node for the Keypad, carrying all five reports `04 05 11 13 14` (measured,
+  first light, `docs/hardware-notes.md` item 1); the search by `0x14` stays
+  so a split topology is still handled. The sysfs fixtures carry the
+  captured 140-byte descriptor.
 - The Linux transport (`keyvo_hid::hidraw::HidrawTransport`) opens the node
   read-write, never exclusively. One `read` is one report (up to 4096
   bytes), its timeout a `poll`; `write` must take the whole report at once.
@@ -310,9 +312,17 @@ version `docs/hardware-notes.md` records.
 
 ### 5.3 Keep-alive (mandatory)
 
-- The Keypad exposes HID++ `0x0008 KEEP_ALIVE` (measured). Without pings the
-  device delivers no key input and does not hold paints; it reverts to the
-  logo / device mode (reported by shensquared, mx-console-suite, hcooper).
+- The Keypad exposes HID++ `0x0008 KEEP_ALIVE` (measured). Prior art
+  reports that without pings the device delivers no key input and reverts
+  to the logo (shensquared, mx-console-suite, hcooper). First light on
+  firmware `U1 66.00.B0017` measured otherwise (`docs/hardware-notes.md`
+  items 2 and 3): without pings key input arrives and a paint stays (still
+  `a0` 120 s after the paint). The revert to the logo is the `KEEP_ALIVE`
+  expiry, not a display-side watchdog: it comes the granted timeout after
+  the last ping (3.001 s with 3000 ms, 0.501 s with 500 ms, 10.001 s with
+  10000 ms), so only a client that has pinged can lose its claim this way.
+  keyvo still pings from the moment the device opens; the expiry is what
+  reverts the panel when keyvo stops or stalls.
 - Options+ calls `fn0 getTimeoutRange` → `500..10000 ms`, then `fn1
   keepAlive(3000)` and repeats it every ~1.01 s (captured). keyvo runs a
   keep-alive task with the same defaults from the moment the device opens,
@@ -330,10 +340,10 @@ version `docs/hardware-notes.md` records.
   the timeout ran out 3.000 s after the first ping and the claim was lost,
   although the device kept answering the pings.
 - **Lost claim and recovery.** When the timeout runs out, the Keypad sends
-  the display mode-change event to `a1` (`13 ff 02 10 cb a1`) and the
-  `KEEP_ALIVE` expiry event (`11 ff 04 00`, function 0, software id 0) in
-  the same millisecond, and the panel shows the logo; it stays there until
-  a host sends `setMode(a0)` again. `keyvo_hid::display::ClaimWatch` treats
+  the `KEEP_ALIVE` expiry event (`11 ff 04 00`, function 0, software id 0)
+  and then the display mode-change event to `a1` (`13 ff 02 10 cb a1`),
+  0 to 4 ms apart (measured, every expiry of first light), and the panel
+  shows the logo; it stays there until a host sends `setMode(a0)` again. `keyvo_hid::display::ClaimWatch` treats
   either report, and a mode-change event to any other mode than `a0`, as a
   lost claim: it re-sends `setMode(a0)`, confirms it with `getMode`, and
   drops the mode-change and expiry events read in the meantime, so one
@@ -344,18 +354,22 @@ version `docs/hardware-notes.md` records.
   `tests/protocol-fixtures/hid/`.
 - The firmware self-dims after idle or USB suspend while still accepting
   writes; the daemon re-asserts brightness after resume, after reconnect and
-  on wake events (§5.7). Exact revert and dim timings are measured in M0-1
-  (plan §5 items 2–4, 11).
+  on wake events (§5.7). The revert timing is measured (above); the dim
+  timing is deferred past the pre-alpha (plan §5 item 11).
 
 ### 5.4 Display claim and geometry
 
 - Startup (captured): VLP root fn1 (version info), VLP root fn2 with the
-  eight values `0x5e..0x65` (meaning unclear, requirement to be measured),
+  eight values `0x5e..0x65` (meaning unclear; not needed, below),
   `getFeature(0x19A1)` → VLP index 2, display fn3 (mode list
-  `a0 a1 a2 a4 a5 a6 d0..d6`), display fn5 get current mode (`a1` at boot),
-  display fn4 `setMode(a0)` = host-controlled display, acknowledged by an
-  unsolicited mode-change event. `a1` is the device/logo mode; keep-alive
-  expiry presumably flips back to it.
+  `a0 a1 a2 a4 a5 a6 d0..d6`), display fn5 get current mode (`a1` in the
+  capture), display fn4 `setMode(a0)` = host-controlled display,
+  acknowledged by an unsolicited mode-change event.
+- Display modes (measured, first light, `docs/hardware-notes.md` item 5):
+  after plugging in, and on a Keypad plugged in since boot and idle, the
+  mode is `a2`, not `a1`. `a1` is the device/logo mode a `KEEP_ALIVE`
+  expiry leaves (§5.3); the capture's `a1` is that state. `a0` is the
+  host-controlled mode `setMode(a0)` sets; without pings it stays.
 - keyvo's claim (`keyvo_hid::display::claim`, after the keep-alive has
   started): VLP root fn1, `getFeature(0x19A1)`, display fn3 (refused unless
   the list holds `a0`), display fn5, display fn1 geometry, then, unless the
@@ -364,21 +378,37 @@ version `docs/hardware-notes.md` records.
   a0`, function 1, swid 0) arrives during that read in the capture; keyvo
   consumes it, waiting at most the reply timeout, and records whether it
   came. A missing event is not an error, a mode other than `a0` after
-  `setMode` is. VLP root fn2 is left out until the hardware check shows it
-  is needed.
+  `setMode` is. VLP root fn2 is left out: painting works without it
+  (measured, first light).
 - **The device publishes its own key geometry** via display fn1
   `getGeometry(01)`, answered over four packets. The joined reply: display
   shape (u8, 1), a dimension field (u16, `0x0060`, meaning unconfirmed),
   panel width and height (u16, 480×480), the key count (9), a second count
   (0, meaning unconfirmed), then one 9-byte record per key: shape (u8, 1),
-  x, y, w, h (u16 each). The capture gives w = h = 118 and the origins
-  (24, 6), (182, 7), (340, 6), (23, 164), (181, 163), (339, 164), (23, 322),
-  (181, 321), (340, 321) for keys 1 to 9, close to, but not identical with,
-  Julusian's `23 + col*158`. keyvo numbers the keys by their position in
-  the table, rejects a table shorter than its key count or with a key
-  outside the panel, queries it on every claim and uses it for placement;
-  nothing about the grid is hard-coded. This is what makes the 2026 MX
-  Keypad a runtime question rather than a code change.
+  x, y, w, h (u16 each). The author's Keypad (firmware `U1 66.00.B0017`,
+  measured on first light, `docs/hardware-notes.md` item 6) gives w = h =
+  118 and these origins:
+
+  | Key | Origin | Key | Origin | Key | Origin |
+  |---|---|---|---|---|---|
+  | 1 | (24, 6) | 2 | (181, 7) | 3 | (340, 6) |
+  | 4 | (23, 164) | 5 | (181, 164) | 6 | (340, 164) |
+  | 7 | (23, 321) | 8 | (181, 322) | 9 | (339, 321) |
+
+  close to, but not identical with, Julusian's `23 + col*158`. The hcooper
+  capture differs on five keys: (182, 7) for key 2, (181, 163) for key 5,
+  (339, 164) for key 6, (181, 321) for key 8, (340, 321) for key 9; the
+  table varies between units or firmware. keyvo numbers the keys by their
+  position in the table, rejects a table shorter than its key count or
+  with a key outside the panel, queries it on every claim and uses it for
+  placement; nothing about the grid is hard-coded. This is what makes the
+  2026 MX Keypad a runtime question rather than a code change. Without a
+  device, `keyvo preview` uses the capture's table
+  (`display::captured_geometry`).
+- The visible key window is not the published rectangle: after a panel
+  paint, a key paint leaves a strip of the panel colour at the bottom and
+  right edge of the key (first light, `docs/hardware-notes.md` item 7).
+  The measurement is #70, the fix in the daemon's paint path #72.
 
 ### 5.5 Image writes and flow control
 
@@ -397,9 +427,10 @@ version `docs/hardware-notes.md` records.
   the low four bits the fragment index: `e0` = first+last, `a0` = first of
   several, `21` a middle one, `61`-style = last with index. Options+ uses
   index base 0 and swid `0xd`; Julusian/logilinux use base 1 and swid
-  `0xb` (`e1`, `a1 22 63`); both are reported to work. keyvo's writer
-  (`keyvo_hid::image`) takes both as settings with the Options+ defaults
-  until the hardware check (plan §5 item 7) decides. Golden tests
+  `0xb` (`e1`, `a1 22 63`). Both bases with both software ids paint
+  (measured, first light, `docs/hardware-notes.md` item 7), so keyvo's
+  writer (`keyvo_hid::image`) keeps both as settings with the Options+
+  defaults, index base 0 and swid `0xd`. Golden tests
   reproduce the captured writes byte for byte (frames #521, #639/#640 of
   `02-binding-paint`, #1779/#1780 of `03-options-plus-startup`).
 - Placement comes from the published geometry (§5.4): a key's image goes
@@ -418,10 +449,14 @@ version `docs/hardware-notes.md` records.
   as key 1" trap in other projects is this ACK. keyvo uses **ACK-driven flow
   control**: send the next fragment when the previous one is acknowledged,
   with a timeout fallback. This replaces the blind 5–10 ms pacing of prior
-  art and is expected to settle the "nine keys out of sync" problem
-  (Julusian #11); confirmed in M0-1 (plan §5 items 8–9).
-  The ACK is `13 ff <display> <fn|swid> c<index> 00 <index>` with the
-  write's function and software id; keyvo matches it on those and the
+  art and settles the "nine keys out of sync" problem (Julusian #11): on
+  first light every fragment was acknowledged, about 1 ms after it, and
+  nine keys painted without tearing or a key out of sync
+  (`docs/hardware-notes.md` item 8; frame rate, plan §5 item 9, is
+  deferred). The ACK is `13 ff <display> <fn|swid> c<index> 00 <last>`
+  with the write's function and software id, the fragment index as sent
+  and `<last>` `01` on the last fragment, else `00` (measured, fixture
+  `image-acks.txt`); keyvo matches it on the function, software id and
   index bits. Without an ACK within `[timing].ack_timeout` (§6.1) the next
   fragment goes out anyway and the write reports how many fragments were
   acknowledged. Reports read while waiting (key input) stay for the input
@@ -445,8 +480,12 @@ version `docs/hardware-notes.md` records.
   <k1> <k2> … 0`): a list of held key indices (1..9), from which the driver
   derives press/release by diffing against the previous held set. Byte 3
   (function/swid) is `0` for input and non-zero for ACKs; the parser gates
-  on it. Repeat rate while held, the meaning of the sequence byte, chords and
-  the maximum listed keys are measured in M0-1 (plan §5 item 13).
+  on it. Measured on first light (`docs/hardware-notes.md` item 13): the
+  list holds the keys in press order (holding 2 then 1 gives `01 02 01`),
+  the low nibble of the sequence byte counts up per report, and no report
+  repeats while a key is held (204 reports, none equal to the one before).
+  Three keys held at once were reported (`01 01 02 04`); the maximum is
+  not measured.
 - The decoder (`keyvo_hid::input::Input`) takes a report as input only
   when it comes from the device's index with byte 3 `00`: an LCD key
   report on the display's VLP index whose first parameter is the key-list
@@ -461,9 +500,12 @@ version `docs/hardware-notes.md` records.
 - Page buttons are `0x1B04 REPROG_CONTROLS_V4` controls CID `0x01A1`
   (left) and `0x01A2` (right), flags `0x20` divertable (measured). Divert
   with `setCidReporting(cid, 0x03)` after a 100 ms settle and 20 ms between
-  writes; verify with `fn2 getCidReporting`; the divert is volatile and is
-  re-sent on every open and reconnect. Diverted presses arrive as `0x11`
-  notifications carrying a u16 CID list; both buttons held is representable.
+  writes; verify with `fn2 getCidReporting`; the divert is reported to be
+  volatile and is re-sent on every open and reconnect (first light did not
+  read it before the re-send, `docs/hardware-notes.md` item 12). Diverted
+  presses arrive as `0x11` notifications carrying the held CIDs as u16 in
+  press order: `11 ff 0b 00 01 a2 01 a1` is right, then left, held
+  (measured).
 - keyvo's divert (`keyvo_hid::reprog::divert_page_buttons`, after the
   keep-alive has started): wait `[timing].divert_settle`, resolve the
   `0x1B04` index, `fn0 getCount`, `fn1 getCidInfo(n)` for every control
@@ -512,8 +554,11 @@ on a timer.
 
 ### 5.9 Verification
 
-Golden buffers from hcooper's captured frames and notno's packetizer tests
-live in `captures/` and `tests/protocol-fixtures/`; `FakeHidTransport`
+Golden buffers from hcooper's captured frames, the frames captured on the
+author's Keypad on first light (key and page-button input, image ACKs, the
+divert after a replug, a keep-alive expiry, the sysfs descriptor) and
+notno's packetizer tests live in `captures/`, `tests/protocol-fixtures/`
+and `crates/keyvo-hid/tests/fixtures/sysfs/`; `FakeHidTransport`
 integration tests replay them. HID fixtures live in
 `tests/protocol-fixtures/hid/` as scripts: `> <hex>` is a host write,
 `< <hex>` a device report answering the write above it (or unsolicited
@@ -1528,6 +1573,17 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 6b (2026-10-25)**: the first-light measurements
+  (#40, firmware `U1 66.00.B0017`) in `docs/hardware-notes.md`; §5.1 one
+  hidraw node; §5.3 without pings input arrives and a paint stays, the
+  revert to the logo is the `KEEP_ALIVE` expiry, its timing, the expiry
+  event before the mode event; §5.4 `a2` after plugging in, `a1` after an
+  expiry, VLP root fn2 not needed, the device's key origins (five differ
+  from the capture), the visible key window; §5.5 both index bases and
+  software ids paint, defaults kept, the ACK layout with the last-fragment
+  byte, ACK-driven pacing confirmed; §5.6 the key report and page-button
+  layouts as measured; §5.9 the first-light fixtures.
 
 - **v0.3, pre-alpha slice 6d (2026-10-25)**: §5.10 the global `--dump`
   flag and `keyvo probe --feature <id>` from first light (#40, finding 6);

@@ -98,9 +98,10 @@ sends a chord's key presses and releases to the desktop; on Linux a uinput
 keyboard named `keyvo` in the daemon.
 
 **Keep-alive**: The periodic `0x0008 KEEP_ALIVE` request (3000 ms requested,
-sent about every second) without which the Keypad emits no key events and
-reverts its LCD to the logo. A dedicated task in `keyvo-hid`, started before the
-first read.
+sent about every second). Once a ping has set the timeout, a missing ping
+lets it expire and the Keypad reverts its LCD to the logo (mode `a1`); a
+client that never pings keeps key input and its paint (measured, spec §5.3).
+A dedicated task in `keyvo-hid`, started before the first read.
 
 **Key spec**: What one key shows: background color, profile accent, icon,
 label, badge text and feedback look, taken from a key of a profile page and
