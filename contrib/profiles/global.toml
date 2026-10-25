@@ -1,0 +1,55 @@
+# keyvo example profile: the global profile, shown when no app profile
+# matches the focused window. Pre-alpha test kit (docs/pre-alpha-test.md);
+# copy it to ~/.config/keyvo/profiles/global.toml.
+#
+# The context page has one key per feedback look: success, error, running
+# (and the long-run badge after 10 s), and a chord. Keys 1 to 4 follow the
+# User test of #62, the three pages the one of #63: a short page-button
+# press toggles context and general, manual mode pages through all three.
+schema_version = 1
+
+[profile]
+id     = "global"
+name   = "Global"
+accent = "#4e8bd6"          # blue
+
+[[pages]]
+name = "context"
+
+[pages.keys.1]                # a notification "key 1 short" or "key 1 long", then success
+icon   = "lucide:play"
+label  = "Notify"
+action = { type = "exec", cmd = "notify-send keyvo \"key $KEYVO_KEY $KEYVO_PRESS\"" }
+
+[pages.keys.2]                # exits 1: the red x until the next press
+icon   = "lucide:x"
+label  = "Fail"
+action = { type = "exec", cmd = "exit 1" }
+
+[pages.keys.3]                # types "Key" into the focused window
+icon   = "lucide:terminal"
+label  = "Type"
+action = { type = "chord", keys = "shift+k, e, y" }
+
+[pages.keys.4]                # running arc, the long-run badge at 10 s, success at 15 s
+icon   = "lucide:hammer"
+label  = "Slow"
+action = { type = "exec", cmd = "sleep 15" }
+
+[pages.keys.5]                # exits 0: the green check for 2 s
+icon   = "lucide:check"
+label  = "OK"
+action = { type = "exec", cmd = "true" }
+
+[[pages]]
+name = "general"
+
+[pages.keys.1]
+icon  = "lucide:settings"
+label = "General"
+
+[[pages]]
+name = "third"
+
+[pages.keys.1]
+label = "Third"

@@ -1,0 +1,41 @@
+# keyvo example profile: VS Code, native (`code`) or Flatpak
+# (`com.visualstudio.code`). Pre-alpha test kit (docs/pre-alpha-test.md);
+# copy it to ~/.config/keyvo/profiles/vscode.toml.
+#
+# The orange accent tells it apart from the global (blue) and the Konsole
+# (green) profile at a glance.
+schema_version = 1
+
+[profile]
+id     = "vscode"
+name   = "VS Code"
+match  = { class = ["code", "com.visualstudio.code"] }
+accent = "#e0a83b"          # orange
+
+[[pages]]
+name = "context"
+
+[pages.keys.1]                # opens the command palette
+icon   = "lucide:search"
+label  = "Palette"
+action = { type = "chord", keys = "ctrl+shift+p" }
+
+[pages.keys.2]                # saves the file
+icon   = "lucide:save"
+label  = "Save"
+action = { type = "chord", keys = "ctrl+s" }
+
+[pages.keys.7]
+icon   = "lucide:check"
+label  = "OK"
+action = { type = "exec", cmd = "true" }
+
+[pages.keys.8]
+icon   = "lucide:x"
+label  = "Fail"
+action = { type = "exec", cmd = "exit 1" }
+
+[pages.keys.9]
+icon   = "lucide:hammer"
+label  = "Slow"
+action = { type = "exec", cmd = "sleep 15" }

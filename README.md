@@ -26,6 +26,10 @@ developer's desk.
 > **Status: pre-alpha.** The project is in its bootstrap phase. Nothing is
 > installable yet. Follow the [roadmap](docs/roadmap.md) and the
 > [milestones](https://github.com/qubernetic/keyvo/milestones) for progress.
+> To try the pre-alpha on a Keypad, follow the
+> [pre-alpha test guide](docs/pre-alpha-test.md): build, the example
+> profiles in [contrib/profiles/](contrib/profiles/), and every check step
+> by step.
 
 From a checkout, the first device commands already run against a Keypad
 (build in the devcontainer, run on the host; see
@@ -111,6 +115,8 @@ just run -- preview vscode --page 2 -o grid.png   # an id from ~/.config/keyvo/p
 
 - [Specification](docs/spec.md): what keyvo is and why.
 - [Socket API](docs/socket-api.md): the control socket's wire contract.
+- [Pre-alpha test guide](docs/pre-alpha-test.md): the hardware session on
+  the host, with the example profiles.
 - [Project plan](docs/plans/2026-09-09-project-plan.md): decisions, architecture,
   milestones.
 - [Research](docs/research/): protocol findings and prior-art analyses.

@@ -1,0 +1,40 @@
+# keyvo example profile: Konsole. Pre-alpha test kit
+# (docs/pre-alpha-test.md); copy it to ~/.config/keyvo/profiles/konsole.toml.
+#
+# The green accent tells it apart from the global (blue) and the VS Code
+# (orange) profile at a glance.
+schema_version = 1
+
+[profile]
+id     = "konsole"
+name   = "Konsole"
+match  = { class = ["org.kde.konsole", "konsole"] }
+accent = "#3fae5a"          # green
+
+[[pages]]
+name = "context"
+
+[pages.keys.1]                # opens a new tab
+icon   = "lucide:terminal"
+label  = "New tab"
+action = { type = "chord", keys = "ctrl+shift+t" }
+
+[pages.keys.2]                # opens the search bar
+icon   = "lucide:search"
+label  = "Find"
+action = { type = "chord", keys = "ctrl+shift+f" }
+
+[pages.keys.4]
+icon   = "lucide:check"
+label  = "OK"
+action = { type = "exec", cmd = "true" }
+
+[pages.keys.5]
+icon   = "lucide:x"
+label  = "Fail"
+action = { type = "exec", cmd = "exit 1" }
+
+[pages.keys.6]
+icon   = "lucide:hammer"
+label  = "Slow"
+action = { type = "exec", cmd = "sleep 15" }
