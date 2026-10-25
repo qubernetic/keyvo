@@ -9,12 +9,19 @@
 //!   makes it a short or long press, resolved on the active page. `chord`
 //!   goes through the [`InputInjector`]; `exec` runs in its own task and its
 //!   result comes back as the key's `success` or `error` look.
+//! - The [`WindowWatcher`] reports the focused window and the page buttons
+//!   arrive as diverted controls; both go to the context state machine,
+//!   which the controller wakes at its next deadline (focus hysteresis,
+//!   page-button long press). A changed profile, page or mode repaints and
+//!   is reported as [`Event::Switched`]. Without a watcher the daemon runs
+//!   on, without focus switching.
 //! - A change in the configuration directory reloads it after
 //!   `[timing].reload_settle` of quiet. A directory that does not load
 //!   keeps the last good state.
 //!
-//! The `[timing]` values of the device actor and `long_press` are read at
-//! start; the others apply from the next reload.
+//! The `[timing]` values of the device actor, `long_press`,
+//! `focus_hysteresis` and `page_grace` are read at start; the others apply
+//! from the next reload.
 
 use std::future::Future;
 use std::io;
@@ -23,12 +30,15 @@ use std::sync::mpsc as std_mpsc;
 use std::time::SystemTime;
 
 use keyvo_core::config::Config;
+use keyvo_core::focus::{WindowContext, WindowWatcher};
 use keyvo_core::inject::InputInjector;
 use keyvo_core::layout::{self, Loaded, Profiles};
 use keyvo_core::press::{PressDetector, PressKind};
 use keyvo_core::profile::{Action, KeySlot};
+use keyvo_core::state::{PageButton, View};
 use keyvo_core::trace::{Outcome, TraceRecord, Trigger};
 use keyvo_hid::input::{Control, Edge};
+use keyvo_hid::reprog::{PAGE_LEFT, PAGE_RIGHT};
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::Instant;
 
@@ -57,6 +67,8 @@ pub enum Event {
     },
     /// A press was resolved and, for an action, executed.
     Trace(TraceRecord),
+    /// The pad shows another profile, page or mode.
+    Switched(View),
     /// The configuration directory was reloaded.
     Reloaded,
     /// The configuration directory did not load; the last good state stays.
@@ -67,21 +79,24 @@ pub enum Event {
 }
 
 /// Runs the daemon on the configuration in `config_dir` until `shutdown`
-/// completes.
+/// completes. `watcher` reports the focused window; one that does not
+/// start is logged and the daemon runs without focus switching.
 ///
 /// # Errors
 ///
 /// When the device actor's thread cannot be started or ends in a panic.
-pub async fn run<C, I>(
+pub async fn run<C, I, W>(
     config_dir: &Path,
     connector: C,
     injector: I,
+    mut watcher: W,
     events: broadcast::Sender<Event>,
     shutdown: impl Future<Output = ()>,
 ) -> io::Result<()>
 where
     C: Connector,
     I: InputInjector + Send + 'static,
+    W: WindowWatcher,
 {
     let loaded = layout::load(config_dir).unwrap_or_else(|errors| {
         tracing::warn!("configuration not loaded:\n{errors}");
@@ -103,6 +118,13 @@ where
                 let _ = outbox.send(event);
             });
         })?;
+
+    let (focused, mut focus) = mpsc::unbounded_channel::<WindowContext>();
+    if let Err(error) = watcher.start(Box::new(move |window| {
+        let _ = focused.send(window);
+    })) {
+        tracing::warn!("focus switching off: {error}");
+    }
 
     let mut changes = watch(config_dir);
     let (done, mut finished) = mpsc::unbounded_channel();
@@ -126,19 +148,23 @@ where
             .next_change(now.into_std())
             .map(Instant::from_std);
         let long_at = controller.presses.next_deadline().map(Instant::from_std);
+        let state_at = controller.engine.next_deadline().map(Instant::from_std);
         tokio::select! {
             () = &mut shutdown => break,
             Some(event) = device_events.recv() => controller.device(event),
+            Some(window) = focus.recv() => controller.focus(window),
             Some(()) = changed(&mut changes) => {
                 controller.reload_at = Some(now + controller.engine.config().timing.reload_settle);
             }
-            Some((slot, record)) = finished.recv() => controller.finished(slot, record),
+            Some(record) = finished.recv() => controller.finished(record),
             () = sleep(controller.reload_at) => controller.reload(),
             () = sleep(controller.flush_at) => controller.flush(),
             () = sleep(look_at) => controller.dirty(),
             () = sleep(long_at) => controller.long_presses(),
+            () = sleep(state_at) => controller.poll_state(),
         }
     }
+    drop(watcher);
 
     let _ = commands.send(Command::Stop);
     tokio::task::spawn_blocking(move || actor.join())
@@ -204,7 +230,7 @@ struct Controller<'a, I> {
     presses: PressDetector<u8>,
     flush_at: Option<Instant>,
     reload_at: Option<Instant>,
-    done: mpsc::UnboundedSender<(KeySlot, TraceRecord)>,
+    done: mpsc::UnboundedSender<TraceRecord>,
 }
 
 impl<I: InputInjector> Controller<'_, I> {
@@ -244,10 +270,54 @@ impl<I: InputInjector> Controller<'_, I> {
                             self.pressed(key, kind);
                         }
                     }
-                    // The page buttons switch pages with slice 11.
-                    (Control::Page(cid), _) => tracing::debug!("page button 0x{cid:04x}"),
+                    (Control::Page(cid), edge) => {
+                        let button = match cid {
+                            PAGE_LEFT => PageButton::Left,
+                            PAGE_RIGHT => PageButton::Right,
+                            _ => {
+                                tracing::debug!("diverted control 0x{cid:04x} ignored");
+                                return;
+                            }
+                        };
+                        let before = self.engine.view();
+                        match edge {
+                            Edge::Press => self.engine.page_press(button, now),
+                            Edge::Release => self.engine.page_release(button, now),
+                        }
+                        self.switched(&before);
+                    }
                 }
             }
+        }
+    }
+
+    fn focus(&mut self, window: WindowContext) {
+        tracing::debug!("focus: {window:?}");
+        let before = self.engine.view();
+        self.engine.focus(window, Instant::now().into_std());
+        self.switched(&before);
+    }
+
+    /// A pending focus change or a page-button long press is due.
+    fn poll_state(&mut self) {
+        let before = self.engine.view();
+        self.engine.poll(Instant::now().into_std());
+        self.switched(&before);
+    }
+
+    /// Repaints and reports when the pad shows something else than
+    /// `before`.
+    fn switched(&mut self, before: &View) {
+        let view = self.engine.view();
+        if view != *before {
+            tracing::info!(
+                "showing profile {} page {} in {} mode",
+                view.profile,
+                view.page,
+                view.mode.as_str()
+            );
+            self.dirty();
+            self.emit(Event::Switched(view));
         }
     }
 
@@ -283,21 +353,20 @@ impl<I: InputInjector> Controller<'_, I> {
                 self.emit(Event::Trace(record));
             }
             Some(Action::Exec { cmd }) => {
-                self.engine.started(slot, Instant::now().into_std());
+                self.engine.started(&record, Instant::now().into_std());
                 let env = exec::env(&record);
                 let timeout = self.engine.config().timing.exec_timeout;
                 let done = self.done.clone();
                 tokio::spawn(async move {
                     record.finish(exec::run(&cmd, &env, timeout).await);
-                    let _ = done.send((slot, record));
+                    let _ = done.send(record);
                 });
             }
         }
     }
 
-    fn finished(&mut self, slot: KeySlot, record: TraceRecord) {
-        self.engine
-            .finished(slot, &record.result, Instant::now().into_std());
+    fn finished(&mut self, record: TraceRecord) {
+        self.engine.finished(&record, Instant::now().into_std());
         self.dirty();
         self.emit(Event::Trace(record));
     }
@@ -306,10 +375,12 @@ impl<I: InputInjector> Controller<'_, I> {
         self.reload_at = None;
         match layout::load(self.config_dir) {
             Ok(loaded) => {
+                let before = self.engine.view();
                 self.engine.reload(loaded);
                 tracing::info!("configuration reloaded");
                 self.dirty();
                 self.emit(Event::Reloaded);
+                self.switched(&before);
             }
             Err(errors) => {
                 tracing::warn!("configuration not reloaded, keeping the last good one:\n{errors}");

@@ -11,10 +11,12 @@ use std::time::Duration;
 
 use keyvo_core::chord::Chord;
 use keyvo_core::feedback::Look;
+use keyvo_core::focus::{FakeWindowWatcher, WindowContext};
 use keyvo_core::inject::FakeInputInjector;
 use keyvo_core::press::PressKind;
 use keyvo_core::profile::{KeySlot, Profile};
 use keyvo_core::render::{KeySpec, Renderer, TileSize};
+use keyvo_core::state::{Mode, View};
 use keyvo_core::trace::{Outcome, TraceRecord};
 use keyvo_daemon::daemon::{self, Event};
 use keyvo_hid::display;
@@ -36,7 +38,25 @@ reconnect_interval = 20
 reload_settle = 20
 long_press = 500
 exec_timeout = 1000
+focus_hysteresis = 10
 ";
+
+/// A profile for the terminal, its key 1 differs from the global one.
+const TERMINAL: &str = r##"
+schema_version = 1
+
+[profile]
+id = "terminal"
+name = "Terminal"
+match = { class = ["org.kde.konsole"] }
+accent = "#2ecc71"
+
+[[pages]]
+name = "context"
+[pages.keys.1]
+icon = "lucide:terminal"
+label = "Shell"
+"##;
 
 const GLOBAL: &str = r##"
 schema_version = 1
@@ -69,18 +89,43 @@ struct Daemon {
 }
 
 impl Daemon {
+    /// A daemon on `global` alone, without a focus source.
     fn start(global: &str, pads: Vec<Pad>, injector: FakeInputInjector) -> Self {
+        Self::start_with(
+            &[("global", global)],
+            pads,
+            injector,
+            FakeWindowWatcher::failing("no focus source"),
+        )
+    }
+
+    /// A daemon on the profiles `(id, text)`, focus reported by `watcher`.
+    fn start_with(
+        profiles: &[(&str, &str)],
+        pads: Vec<Pad>,
+        injector: FakeInputInjector,
+        watcher: FakeWindowWatcher,
+    ) -> Self {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("config.toml"), CONFIG).unwrap();
         std::fs::create_dir(dir.path().join("profiles")).unwrap();
-        std::fs::write(dir.path().join("profiles/global.toml"), global).unwrap();
+        for (id, text) in profiles {
+            std::fs::write(dir.path().join(format!("profiles/{id}.toml")), text).unwrap();
+        }
         let (sender, events) = broadcast::channel(256);
         let (stop, stopped) = oneshot::channel::<()>();
         let config_dir = dir.path().to_path_buf();
         let task = tokio::spawn(async move {
-            daemon::run(&config_dir, Pads::new(pads), injector, sender, async {
-                let _ = stopped.await;
-            })
+            daemon::run(
+                &config_dir,
+                Pads::new(pads),
+                injector,
+                watcher,
+                sender,
+                async {
+                    let _ = stopped.await;
+                },
+            )
             .await
         });
         Self {
@@ -113,6 +158,28 @@ impl Daemon {
         .await
     }
 
+    async fn switched(&mut self) -> View {
+        self.until(|event| match event {
+            Event::Switched(view) => Some(view.clone()),
+            _ => None,
+        })
+        .await
+    }
+
+    /// Waits until the last image `pad` received for the key of `image`
+    /// is `image`.
+    async fn shows(&mut self, pad: &Pad, image: &Image) {
+        let last = |pad: &Pad| {
+            pad.images()
+                .into_iter()
+                .rev()
+                .find(|i| i.rect == image.rect)
+        };
+        while last(pad).as_ref() != Some(image) {
+            self.painted().await;
+        }
+    }
+
     async fn trace(&mut self) -> TraceRecord {
         self.until(|event| match event {
             Event::Trace(record) => Some(record.clone()),
@@ -142,9 +209,14 @@ fn profile(text: &str) -> Profile {
 /// The image of key `key` of `text`'s first page in `look`, on the
 /// captured geometry.
 fn image_of(text: &str, key: u8, look: Look) -> Image {
+    image_on(text, 1, key, look)
+}
+
+/// The image of key `key` of page `page` (counted from 1) of `text`.
+fn image_on(text: &str, page: usize, key: u8, look: Look) -> Image {
     let profile = profile(text);
     let slot = KeySlot::new(key).unwrap();
-    let bound = profile.pages[0].keys.get(&slot);
+    let bound = profile.pages[page - 1].keys.get(&slot);
     let mut spec = KeySpec::from_key(bound, profile.profile.accent);
     if look != Look::Idle {
         spec = spec.with_look(bound, look);
@@ -339,5 +411,113 @@ async fn a_broken_profile_at_start_paints_the_builtin_global_profile() {
         Look::Idle,
     );
     assert_eq!(pad.images()[0], blank);
+    daemon.stop().await;
+}
+
+/// The global profile with a `general` page after its first one.
+fn with_general() -> String {
+    format!(
+        "{GLOBAL}
+[[pages]]
+name = \"general\"
+[pages.keys.1]
+icon = \"lucide:play\"
+label = \"Play\"
+"
+    )
+}
+
+fn view(profile: &str, page: usize, mode: Mode) -> View {
+    View {
+        profile: profile.to_owned(),
+        page,
+        mode,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_painted_profile_follows_the_focused_window() {
+    let pad = Pad::new(&startup());
+    let watcher = FakeWindowWatcher::new();
+    let mut daemon = Daemon::start_with(
+        &[("global", GLOBAL), ("terminal", TERMINAL)],
+        vec![pad.clone()],
+        FakeInputInjector::new(),
+        watcher.clone(),
+    );
+    assert_eq!(daemon.painted().await.len(), 9);
+    assert_eq!(pad.images()[0], image_of(GLOBAL, 1, Look::Idle));
+
+    assert!(watcher.focus(WindowContext::new("org.kde.konsole", "~ : bash")));
+    assert_eq!(daemon.switched().await, view("terminal", 1, Mode::Auto));
+    daemon.shows(&pad, &image_of(TERMINAL, 1, Look::Idle)).await;
+    // A key press resolves on the terminal profile now.
+    pad.hold(&[2]);
+    pad.hold(&[]);
+    let record = daemon.trace().await;
+    assert_eq!(record.profile, "terminal");
+    assert_eq!(record.result, Outcome::Unbound);
+
+    // Another class without a profile of its own shows the global one.
+    assert!(watcher.focus(WindowContext::new("org.kde.dolphin", "Home")));
+    assert_eq!(daemon.switched().await, view("global", 1, Mode::Auto));
+    daemon.shows(&pad, &image_of(GLOBAL, 1, Look::Idle)).await;
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_page_button_toggles_the_general_page() {
+    let global = with_general();
+    let (mut daemon, pad, _) = started(&global).await;
+    pad.buttons(&[0x01a1]);
+    pad.buttons(&[]);
+    assert_eq!(daemon.switched().await, view("global", 2, Mode::Auto));
+    daemon
+        .shows(&pad, &image_on(&global, 2, 1, Look::Idle))
+        .await;
+    pad.buttons(&[0x01a2]);
+    pad.buttons(&[]);
+    assert_eq!(daemon.switched().await, view("global", 1, Mode::Auto));
+    daemon
+        .shows(&pad, &image_on(&global, 1, 1, Look::Idle))
+        .await;
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_held_page_button_switches_the_mode_and_both_escape() {
+    let (mut daemon, pad, _) = started(&with_general()).await;
+    // Another diverted control is ignored.
+    pad.buttons(&[0x00c4]);
+    pad.buttons(&[]);
+    pad.buttons(&[0x01a2]);
+    assert_eq!(daemon.switched().await, view("global", 1, Mode::Manual));
+    pad.buttons(&[]);
+    pad.buttons(&[0x01a2]);
+    pad.buttons(&[]);
+    assert_eq!(daemon.switched().await, view("global", 2, Mode::Manual));
+    pad.buttons(&[0x01a1]);
+    pad.buttons(&[0x01a1, 0x01a2]);
+    assert_eq!(daemon.switched().await, view("global", 1, Mode::Auto));
+    pad.buttons(&[]);
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reload_selects_the_profile_for_the_focused_window_again() {
+    let pad = Pad::new(&startup());
+    let watcher = FakeWindowWatcher::new();
+    let mut daemon = Daemon::start_with(
+        &[("global", GLOBAL)],
+        vec![pad.clone()],
+        FakeInputInjector::new(),
+        watcher.clone(),
+    );
+    daemon.painted().await;
+    assert!(watcher.focus(WindowContext::new("org.kde.konsole", "~")));
+    // No profile matches yet: nothing switches. A new profile file does.
+    std::fs::write(daemon.dir.path().join("profiles/terminal.toml"), TERMINAL).unwrap();
+    assert_eq!(daemon.switched().await, view("terminal", 1, Mode::Auto));
+    daemon.shows(&pad, &image_of(TERMINAL, 1, Look::Idle)).await;
     daemon.stop().await;
 }
