@@ -93,7 +93,7 @@ fn the_keys_cover_a_chord_and_the_running_success_and_error_looks() {
 }
 
 #[test]
-fn the_global_profile_has_a_context_and_a_general_page() {
+fn the_global_profile_has_a_context_a_general_and_a_third_page() {
     let loaded = loaded();
     let pages: Vec<_> = loaded
         .profiles
@@ -102,7 +102,7 @@ fn the_global_profile_has_a_context_and_a_general_page() {
         .iter()
         .map(|p| p.name.as_deref())
         .collect();
-    assert_eq!(pages, [Some("context"), Some("general")]);
+    assert_eq!(pages, [Some("context"), Some("general"), Some("third")]);
 }
 
 #[test]
