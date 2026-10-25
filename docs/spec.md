@@ -639,10 +639,15 @@ and `[timing].reply_timeout`.
   `key 1  126x126 at 20,2` for `--margin 4` (the #70 measurement, §5.4).
 - `keys` and `fill` take `--no-keep-alive`, `--keep-alive-period <ms>` and
   `--keep-alive-timeout <ms>` for the keep-alive measurements; without them
-  the `[timing]` defaults apply (the configuration file is read from the
-  profile slice on). A period that is not below the timeout is refused
-  before the device is opened (§6.1). `keys` reclaims a lost claim too and
-  says so on stderr.
+  `keep_alive_period` and `keep_alive_timeout` come from the user's
+  `config.toml` (`[timing]`, §6.1), else from its defaults, and `keys`
+  diverts with `[timing].divert_settle` and `divert_spacing`. Only
+  `config.toml` is read, not the profiles; one that cannot be loaded
+  stops `keys` and `fill` with `configuration not loaded:` and the
+  diagnostic (`probe` does not read it). A period that is not below the
+  timeout is refused before the device is opened (§6.1), naming the flag
+  or the `[timing]` key each value came from. `keys` reclaims a lost
+  claim too and says so on stderr.
 
 ---
 

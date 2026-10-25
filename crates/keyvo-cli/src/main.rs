@@ -14,8 +14,9 @@ use std::time::Duration;
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use keyvo_core::clock::{Clock, SystemClock};
+use keyvo_core::config::{self, Timing};
 use keyvo_core::hid::{HidTransport, to_hex};
-use keyvo_core::{config, layout};
+use keyvo_core::layout;
 use keyvo_hid::dump::Dump;
 use keyvo_hid::hidpp::{DEFAULT_REPLY_TIMEOUT, DEVICE_DIRECT, Hidpp, SoftwareId};
 use keyvo_hid::hidraw::HidrawTransport;
@@ -168,42 +169,42 @@ struct KeepAliveArgs {
     /// Do not send keep-alive pings
     #[arg(long)]
     no_keep_alive: bool,
-    /// Time between two pings in ms (`[timing].keep_alive_period`, default
-    /// 1000)
+    /// Time between two pings in ms (default `[timing].keep_alive_period`
+    /// of config.toml, else 1000)
     #[arg(long, value_name = "MS")]
     keep_alive_period: Option<u64>,
-    /// Timeout requested with every ping in ms
-    /// (`[timing].keep_alive_timeout`, default 3000)
+    /// Timeout requested with every ping in ms (default
+    /// `[timing].keep_alive_timeout` of config.toml, else 3000)
     #[arg(long, value_name = "MS")]
     keep_alive_timeout: Option<u64>,
 }
 
 impl KeepAliveArgs {
-    /// `None` without keep-alive, else the timing with the defaults filled in.
+    /// `None` without keep-alive, else the flags over the user's `timing`.
     ///
     /// # Errors
     ///
-    /// A period that is not below the timeout (spec §6.1), naming both flags.
-    fn timing(&self) -> anyhow::Result<Option<KeepAliveTiming>> {
+    /// A period that is not below the timeout (spec §6.1), naming the flag
+    /// or the `[timing]` key each value came from.
+    fn timing(&self, timing: &Timing) -> anyhow::Result<Option<KeepAliveTiming>> {
         if self.no_keep_alive {
             return Ok(None);
         }
-        let defaults = KeepAliveTiming::default();
-        let timing = KeepAliveTiming {
-            period: self
-                .keep_alive_period
-                .map_or(defaults.period, Duration::from_millis),
-            timeout: self
-                .keep_alive_timeout
-                .map_or(defaults.timeout, Duration::from_millis),
-        };
-        if let Some(problem) = config::keep_alive_problem(
-            ("--keep-alive-period", timing.period),
-            ("--keep-alive-timeout", timing.timeout),
-        ) {
+        let period = self.keep_alive_period.map_or(
+            ("`[timing].keep_alive_period`", timing.keep_alive_period),
+            |ms| ("--keep-alive-period", Duration::from_millis(ms)),
+        );
+        let timeout = self.keep_alive_timeout.map_or(
+            ("`[timing].keep_alive_timeout`", timing.keep_alive_timeout),
+            |ms| ("--keep-alive-timeout", Duration::from_millis(ms)),
+        );
+        if let Some(problem) = config::keep_alive_problem(period, timeout) {
             anyhow::bail!(problem);
         }
-        Ok(Some(timing))
+        Ok(Some(KeepAliveTiming {
+            period: period.1,
+            timeout: timeout.1,
+        }))
     }
 }
 
@@ -214,14 +215,29 @@ impl DeviceCommand {
     /// # Errors
     ///
     /// The keep-alive flag errors.
-    fn check(&self) -> anyhow::Result<()> {
+    fn check(&self, timing: &Timing) -> anyhow::Result<()> {
         match self {
             Self::Probe { .. } => Ok(()),
             Self::Keys { keep_alive, .. } | Self::Fill { keep_alive, .. } => {
-                keep_alive.timing().map(drop)
+                keep_alive.timing(timing).map(drop)
             }
         }
     }
+}
+
+/// The `[timing]` of `config.toml` in the configuration directory `dir`;
+/// the defaults without a directory or a file.
+///
+/// # Errors
+///
+/// A `config.toml` that cannot be read or is not valid.
+fn config_timing(dir: Option<&Path>) -> anyhow::Result<Timing> {
+    let Some(dir) = dir else {
+        return Ok(Timing::default());
+    };
+    Ok(layout::load_config(dir)
+        .context("configuration not loaded")?
+        .timing)
 }
 
 fn main() -> anyhow::Result<()> {
@@ -266,7 +282,19 @@ fn main() -> anyhow::Result<()> {
             );
         }
     };
-    command.check()?;
+    // probe reads nothing from the configuration, so a broken file cannot
+    // stop it.
+    let timing = match command {
+        DeviceCommand::Probe { .. } => Timing::default(),
+        DeviceCommand::Keys { .. } | DeviceCommand::Fill { .. } => config_timing(
+            layout::config_dir(
+                std::env::var_os("XDG_CONFIG_HOME").as_deref(),
+                std::env::var_os("HOME").as_deref(),
+            )
+            .as_deref(),
+        )?,
+    };
+    command.check(&timing)?;
     let (transport, device) = open(
         cli.device.as_deref(),
         Path::new(sysfs::SYSFS_HIDRAW),
@@ -275,6 +303,7 @@ fn main() -> anyhow::Result<()> {
     let mut stderr = std::io::stderr();
     run_on(
         command,
+        &timing,
         transport,
         cli.dump.then_some(&mut stderr as &mut dyn Write),
         &device,
@@ -294,6 +323,7 @@ fn main() -> anyhow::Result<()> {
 #[allow(clippy::too_many_arguments)]
 fn run_on<T: HidTransport, C: Clock>(
     command: DeviceCommand,
+    timing: &Timing,
     transport: T,
     dump: Option<&mut dyn Write>,
     device: &str,
@@ -307,6 +337,7 @@ fn run_on<T: HidTransport, C: Clock>(
             let transport = Dump::new(transport, clock, log);
             run(
                 command,
+                timing,
                 hidpp(transport)?,
                 device,
                 clock,
@@ -317,6 +348,7 @@ fn run_on<T: HidTransport, C: Clock>(
         }
         None => run(
             command,
+            timing,
             hidpp(transport)?,
             device,
             clock,
@@ -327,15 +359,18 @@ fn run_on<T: HidTransport, C: Clock>(
     }
 }
 
-/// Runs `command` on the Keypad behind `hidpp`, described as `device`.
+/// Runs `command` on the Keypad behind `hidpp`, described as `device`, with
+/// the user's `timing` under the flags.
 /// Time comes from `clock`, waits go through `sleep`, and `keys` streams
 /// until `keep_going` says stop.
 ///
 /// # Errors
 ///
 /// The command's errors.
+#[allow(clippy::too_many_arguments)]
 fn run<T: HidTransport, C: Clock>(
     command: DeviceCommand,
+    timing: &Timing,
     mut hidpp: Hidpp<T>,
     device: &str,
     clock: &C,
@@ -349,11 +384,14 @@ fn run<T: HidTransport, C: Clock>(
             probe::probe_feature(&mut hidpp, device, id, out)
         }
         DeviceCommand::Keys { json, keep_alive } => {
-            let mut session = Session::open(hidpp, clock, keep_alive.timing()?)?;
+            let mut session = Session::open(hidpp, clock, keep_alive.timing(timing)?)?;
             eprintln!("keyvo keys on {device}; Ctrl-C to stop");
             keys::keys(
                 &mut session,
-                &DivertTiming::default(),
+                &DivertTiming {
+                    settle: timing.divert_settle,
+                    spacing: timing.divert_spacing,
+                },
                 sleep,
                 json,
                 out,
@@ -381,7 +419,7 @@ fn run<T: HidTransport, C: Clock>(
                 },
                 ..ImageConfig::default()
             };
-            let mut session = Session::open(hidpp, clock, keep_alive.timing()?)?;
+            let mut session = Session::open(hidpp, clock, keep_alive.timing(timing)?)?;
             let placement = placement(key, panel);
             fill::fill(&mut session, &source, placement, margin, &config, out)?;
             fill::hold(
@@ -434,7 +472,7 @@ fn hidpp<T: HidTransport>(transport: T) -> anyhow::Result<Hidpp<T>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Command, DeviceCommand, KeepAliveTiming};
+    use super::{Cli, Command, DeviceCommand, KeepAliveTiming, Timing};
     use clap::Parser;
     use keyvo_core::clock::FakeClock;
     use keyvo_core::hid::FakeHidTransport;
@@ -491,19 +529,66 @@ mod tests {
 
     /// `run` on a replayed device, with a fake clock that the sleeps move.
     fn run(args: &[&str], script: &str) -> String {
+        run_with(args, script, &Timing::default()).0
+    }
+
+    /// `run` with the user's `timing`; the output and every wait asked for.
+    fn run_with(args: &[&str], script: &str, timing: &Timing) -> (String, Vec<Duration>) {
         let clock = FakeClock::new();
+        let mut waits = Vec::new();
         let mut out = Vec::new();
         super::run(
             command(args),
+            timing,
             replay(script),
             "/dev/hidraw2",
             &clock,
-            |wait| clock.advance(wait),
+            |wait| {
+                waits.push(wait);
+                clock.advance(wait);
+            },
             || false,
             &mut out,
         )
         .unwrap();
-        String::from_utf8(out).unwrap()
+        (String::from_utf8(out).unwrap(), waits)
+    }
+
+    #[test]
+    fn keys_diverts_with_the_timing_of_the_configuration() {
+        let timing = Timing {
+            divert_settle: Duration::from_millis(250),
+            divert_spacing: Duration::from_millis(7),
+            ..Timing::default()
+        };
+        let (_, waits) = run_with(&["keys"], &crate::keys::tests::script(), &timing);
+        assert_eq!(
+            waits.first(),
+            Some(&Duration::from_millis(250)),
+            "{waits:?}"
+        );
+        assert!(waits.contains(&Duration::from_millis(7)), "{waits:?}");
+        assert!(!waits.contains(&Duration::from_millis(100)), "{waits:?}");
+    }
+
+    #[test]
+    fn config_timing_is_the_users_timing_or_the_defaults() {
+        assert_eq!(super::config_timing(None).unwrap(), Timing::default());
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            super::config_timing(Some(dir.path())).unwrap(),
+            Timing::default()
+        );
+        std::fs::write(
+            dir.path().join("config.toml"),
+            "[timing]\nkeep_alive_period = 500\n",
+        )
+        .unwrap();
+        let timing = super::config_timing(Some(dir.path())).unwrap();
+        assert_eq!(timing.keep_alive_period, Duration::from_millis(500));
+        std::fs::write(dir.path().join("config.toml"), "[timing]\nnope = 1\n").unwrap();
+        let error = format!("{:#}", super::config_timing(Some(dir.path())).unwrap_err());
+        assert!(error.contains("config.toml"), "{error}");
     }
 
     #[test]
@@ -564,6 +649,7 @@ mod tests {
         let (mut out, mut log) = (Vec::new(), Vec::new());
         super::run_on(
             command,
+            &Timing::default(),
             FakeHidTransport::from_script(&crate::keys::tests::script()).unwrap(),
             Some(&mut log),
             "/dev/hidraw2",
@@ -663,11 +749,69 @@ mod tests {
     }
 
     fn keep_alive(args: &[&str]) -> Option<KeepAliveTiming> {
+        keep_alive_on(args, &Timing::default())
+    }
+
+    fn keep_alive_on(args: &[&str], timing: &Timing) -> Option<KeepAliveTiming> {
         let cli = Cli::try_parse_from([&["keyvo", "keys"], args].concat()).unwrap();
         let Command::Device(DeviceCommand::Keys { keep_alive, .. }) = cli.command else {
             panic!("not keys");
         };
-        keep_alive.timing().unwrap()
+        keep_alive.timing(timing).unwrap()
+    }
+
+    #[test]
+    fn keep_alive_flags_default_to_the_timing_of_the_configuration() {
+        let timing = Timing {
+            keep_alive_period: Duration::from_millis(500),
+            keep_alive_timeout: Duration::from_millis(2000),
+            ..Timing::default()
+        };
+        assert_eq!(
+            keep_alive_on(&[], &timing),
+            Some(KeepAliveTiming {
+                period: Duration::from_millis(500),
+                timeout: Duration::from_millis(2000),
+            })
+        );
+        assert_eq!(
+            keep_alive_on(&["--keep-alive-period", "800"], &timing),
+            Some(KeepAliveTiming {
+                period: Duration::from_millis(800),
+                timeout: Duration::from_millis(2000),
+            })
+        );
+        // A flag that clashes with a configured value names both.
+        let error = command(&["keys", "--keep-alive-timeout", "400"])
+            .check(&timing)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.starts_with(
+                "`[timing].keep_alive_period` (500 ms) must be shorter than \
+                 --keep-alive-timeout (400 ms)"
+            ),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn keep_alive_help_names_the_configuration_default() {
+        use clap::CommandFactory;
+        let mut cli = Cli::command();
+        let help = cli
+            .find_subcommand_mut("keys")
+            .unwrap()
+            .render_long_help()
+            .to_string();
+        assert!(
+            help.contains("default `[timing].keep_alive_period`"),
+            "{help}"
+        );
+        assert!(
+            help.contains("default `[timing].keep_alive_timeout`"),
+            "{help}"
+        );
     }
 
     #[test]
@@ -685,11 +829,17 @@ mod tests {
             "--keep-alive-timeout",
             "3000",
         ];
-        let error = command(&fill).check().unwrap_err().to_string();
+        let error = command(&fill)
+            .check(&Timing::default())
+            .unwrap_err()
+            .to_string();
         assert!(error.starts_with(first), "{error}");
         // The default timeout counts too, and `keys` is checked the same way.
         let keys = ["keys", "--keep-alive-period", "3500"];
-        let error = command(&keys).check().unwrap_err().to_string();
+        let error = command(&keys)
+            .check(&Timing::default())
+            .unwrap_err()
+            .to_string();
         assert!(
             error.starts_with("--keep-alive-period (3500 ms)"),
             "{error}"
@@ -699,6 +849,7 @@ mod tests {
         let clock = FakeClock::new();
         let result = super::run(
             command(&fill),
+            &Timing::default(),
             replay(""),
             "/dev/hidraw2",
             &clock,
@@ -709,8 +860,8 @@ mod tests {
         assert!(result.unwrap_err().to_string().starts_with(first));
         // Without pings there is nothing to check.
         let silent = ["keys", "--no-keep-alive", "--keep-alive-period", "3500"];
-        assert!(command(&silent).check().is_ok());
-        assert!(command(&["probe"]).check().is_ok());
+        assert!(command(&silent).check(&Timing::default()).is_ok());
+        assert!(command(&["probe"]).check(&Timing::default()).is_ok());
     }
 
     #[test]
