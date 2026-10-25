@@ -4,6 +4,7 @@
 // session, and the line a problem is shown as.
 import { invoke } from "@tauri-apps/api/core";
 
+import { t } from "./i18n";
 import type { Action } from "./protocol";
 
 /** The fields of a key the editor writes, as keyvo_core::edit::KeyFields;
@@ -122,7 +123,7 @@ export function fromForm(form: Form): { fields: KeyFields } | { invalid: string 
   if (form.label !== "") fields.label = form.label;
   const color = form.color.trim();
   if (color !== "") {
-    if (!COLOR.test(color)) return { invalid: `The color ${color} is not written #rrggbb.` };
+    if (!COLOR.test(color)) return { invalid: t("editor.badColor", { color }) };
     fields.color = color.toLowerCase();
   }
   const action = form.action.trim();
@@ -130,11 +131,11 @@ export function fromForm(form: Form): { fields: KeyFields } | { invalid: string 
     case "none":
       break;
     case "chord":
-      if (action === "") return { invalid: "Enter the chord's keys to write it." };
+      if (action === "") return { invalid: t("editor.noKeys") };
       fields.action = { type: "chord", keys: action };
       break;
     case "exec":
-      if (action === "") return { invalid: "Enter the command to write it." };
+      if (action === "") return { invalid: t("editor.noCommand") };
       fields.action = { type: "exec", cmd: action };
       break;
   }

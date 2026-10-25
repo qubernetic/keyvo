@@ -4,12 +4,13 @@
   import Home from "./Home.svelte";
   import type { Daemon } from "./lib/daemon";
   import type { Editor } from "./lib/editor";
+  import { t } from "./lib/i18n";
 
   let { daemon, editor }: { daemon: Daemon; editor: Editor } = $props();
 </script>
 
 <main>
-  <h1>keyvo</h1>
+  <h1>{t("app.name")}</h1>
   <Home {daemon} {editor} />
 </main>
 

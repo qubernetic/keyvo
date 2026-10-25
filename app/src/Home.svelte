@@ -9,13 +9,16 @@
   import type { Editor, Target } from "./lib/editor";
   import {
     apply,
+    describeAction,
     fromStatus,
     grid,
     HOME_TRACE,
     initial,
+    phrase,
     summarize,
     type HomeState,
   } from "./lib/home";
+  import { t } from "./lib/i18n";
   import type { PressKind, TraceRecord } from "./lib/protocol";
 
   let { daemon, editor }: { daemon: Daemon; editor: Editor } = $props();
@@ -107,22 +110,14 @@
     );
   });
 
-  function action(tile: Tile | undefined): string {
-    switch (tile?.action?.type) {
-      case undefined:
-        return "unbound";
-      case "chord":
-        return `chord ${tile.action.keys}`;
-      case "exec":
-        return `exec ${tile.action.cmd}`;
-    }
-  }
-
   function name(key: number): string {
     const tile = tiles[key - 1];
-    const label = tile?.label === undefined ? "" : `${tile.label}, `;
-    const layer = tile?.layer === undefined ? "" : `, ${tile.layer} layer`;
-    return `Key ${key}: ${label}${action(tile)}${layer}`;
+    const parts = phrase([
+      tile?.label,
+      describeAction(tile?.action) ?? t("home.unbound"),
+      tile?.layer === undefined ? undefined : t("layer", { layer: tile.layer }),
+    ]);
+    return t("home.key", { key, parts });
   }
 
   /** A global key under an app profile (spec §6.1), which the mirror marks. */
@@ -136,7 +131,7 @@
       const entry: TraceRecord = await daemon.press(key, kind);
       result = summarize(entry);
     } catch (error) {
-      result = `Press failed: ${reason(error)}`;
+      result = t("home.pressFailed", { reason: reason(error) });
     }
   }
 
@@ -182,11 +177,15 @@
 
   function device(): string {
     const device = home.device;
-    if (device === undefined) return "unknown";
+    if (device === undefined) return t("home.unknown");
     if (device.connected) {
-      return device.keys === undefined ? "Keypad connected" : `Keypad connected, ${device.keys} keys`;
+      return device.keys === undefined
+        ? t("home.keypad")
+        : t("home.keypadKeys", { keys: device.keys });
     }
-    return device.error === undefined ? "No Keypad" : `No Keypad: ${device.error}`;
+    return device.error === undefined
+      ? t("home.noKeypad")
+      : t("home.noKeypadError", { error: device.error });
   }
 
   function time(entry: TraceRecord): string {
@@ -200,45 +199,52 @@
   );
   const gridName = $derived(
     home.view === undefined
-      ? "Keypad mirror"
-      : `Keypad mirror: profile ${home.view.profile}, page ${home.view.page}`,
+      ? t("home.mirror")
+      : t("home.mirrorView", { profile: home.view.profile, page: home.view.page }),
   );
 </script>
 
 <section class="home">
   {#if unreachable !== undefined}
     <div role="alert" class="banner error">
-      Daemon unreachable: {unreachable}
-      <button type="button" onclick={() => void connect()}>Retry</button>
+      {t("home.unreachable", { reason: unreachable })}
+      <button type="button" aria-label={t("home.retry")} onclick={() => void connect()}>
+        {t("home.retry")}
+      </button>
     </div>
   {:else if connecting && home.view === undefined}
-    <p class="banner">Connecting to the daemon</p>
+    <p class="banner">{t("home.connecting")}</p>
   {/if}
   {#if home.configError !== undefined}
-    <div role="alert" class="banner error">Configuration not loaded: {home.configError}</div>
+    <div role="alert" class="banner error">
+      {t("home.configError", { error: home.configError })}
+    </div>
   {/if}
 
-  <section class="strip" aria-label="Status">
+  <section class="strip" aria-label={t("home.status")}>
     <dl>
-      <div><dt id="kv-device">Device</dt><dd aria-labelledby="kv-device">{device()}</dd></div>
       <div>
-        <dt id="kv-profile">Profile</dt>
-        <dd aria-labelledby="kv-profile">{home.view?.profile ?? "unknown"}</dd>
+        <dt id="kv-device">{t("home.device")}</dt>
+        <dd aria-labelledby="kv-device">{device()}</dd>
       </div>
       <div>
-        <dt id="kv-page">Page</dt>
-        <dd aria-labelledby="kv-page">{home.view?.page ?? "unknown"}</dd>
+        <dt id="kv-profile">{t("home.profile")}</dt>
+        <dd aria-labelledby="kv-profile">{home.view?.profile ?? t("home.unknown")}</dd>
       </div>
       <div>
-        <dt id="kv-mode">Mode</dt>
-        <dd aria-labelledby="kv-mode">{home.view?.mode ?? "unknown"}</dd>
+        <dt id="kv-page">{t("home.page")}</dt>
+        <dd aria-labelledby="kv-page">{home.view?.page ?? t("home.unknown")}</dd>
       </div>
       <div>
-        <dt id="kv-context">Context</dt>
+        <dt id="kv-mode">{t("home.mode")}</dt>
+        <dd aria-labelledby="kv-mode">{home.view?.mode ?? t("home.unknown")}</dd>
+      </div>
+      <div>
+        <dt id="kv-context">{t("home.context")}</dt>
         <dd aria-labelledby="kv-context">
           {home.context === undefined
-            ? "no window reported"
-            : `${home.context.class}: ${home.context.title}`}
+            ? t("home.noWindow")
+            : t("home.window", { class: home.context.class, title: home.context.title })}
         </dd>
       </div>
     </dl>
@@ -247,7 +253,7 @@
   <div class="workspace">
     {#if home.geometry === undefined}
       {#if home.view !== undefined}
-        <p class="note">The mirror appears once a Keypad has reported its geometry.</p>
+        <p class="note">{t("home.noGeometry")}</p>
       {/if}
     {:else}
     <div role="grid" tabindex="-1" aria-label={gridName} class="grid" onkeydown={keydown}>
@@ -270,7 +276,7 @@
                 {#if tiles[key - 1]}
                   <img src={tiles[key - 1]?.image} alt="" />
                   {#if fallen(key)}
-                    <span class="layer" aria-hidden="true">global</span>
+                    <span class="layer" aria-hidden="true">{t("home.globalMark")}</span>
                   {/if}
                 {:else}
                   <span aria-hidden="true">{key}</span>
@@ -285,19 +291,19 @@
     <KeyEditor {editor} {target} revision={home.reloads} onedited={() => edits++} />
   </div>
   {#if tilesError !== undefined}
-    <p class="note">Tiles not rendered: {tilesError}</p>
+    <p class="note">{t("home.tilesError", { error: tilesError })}</p>
   {/if}
 
-  <p role="status" aria-label="Press result" class="result">
-    {result ?? "Click a key for a dry-run press, right click for a long one."}
+  <p role="status" aria-label={t("home.result")} class="result">
+    {result ?? t("home.resultHint")}
   </p>
 
   <section class="events">
-    <h2 id="kv-events">Recent events</h2>
+    <h2 id="kv-events">{t("home.events")}</h2>
     {#if home.trace.length === 0}
-      <p class="note">No presses yet.</p>
+      <p class="note">{t("home.noEvents")}</p>
     {:else}
-      <ol aria-label="Recent events">
+      <ol aria-label={t("home.events")}>
         {#each home.trace as entry, index (index)}
           <li><time>{time(entry)}</time> {summarize(entry)}</li>
         {/each}
