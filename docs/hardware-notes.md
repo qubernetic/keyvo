@@ -54,9 +54,11 @@ pre-alpha. Slice 6b turns the output into records in the format above.
    --hold 30`: does the paint appear, and how long does it stay?
 3. **Keep-alive cadence.** `just run -- fill '#00ff00' --panel --hold 60`
    with the defaults (ping every 1 s, timeout 3 s), then with
-   `--keep-alive-period 3000`, then `--no-keep-alive`. Record the time from
+   `--keep-alive-period 2900`, then `--no-keep-alive`. Record the time from
    the end of the hold (or from the paint, without keep-alive) until the
-   logo comes back.
+   logo comes back. (First light ran `--keep-alive-period 3000` and lost
+   the claim; a period at or above the timeout is refused since #69, spec
+   §5.3.)
 4. **Keep-alive range.** The `keep-alive` line of `just run -- probe`
    (expected `500..10000 ms`). Then `--keep-alive-timeout 500` and
    `--keep-alive-timeout 10000` with `--keep-alive-period 400` and a

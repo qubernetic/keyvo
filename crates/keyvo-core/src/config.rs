@@ -102,7 +102,8 @@ pub struct Timing {
     #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub page_grace: Duration,
-    /// Time between two keep-alive pings (spec §5.3). Default 1000 ms.
+    /// Time between two keep-alive pings (spec §5.3); must be shorter than
+    /// `keep_alive_timeout`. Default 1000 ms.
     #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub keep_alive_period: Duration,
