@@ -493,6 +493,9 @@ Defaults, all configurable under `[timing]` in `config.toml`:
 | `divert_settle` | 100 ms | wait before the first page-button divert request, §5.6 (Julusian PR #22) |
 | `divert_spacing` | 20 ms | wait between two `0x1B04` divert requests, §5.6 (Julusian PR #22) |
 | `reply_timeout` | 1000 ms | how long an HID++ request waits for its matching reply, §5.1 and §5.2 (captured replies come within about 1 ms) |
+| `exec_timeout` | 30000 ms | an `exec` action still running after this long is killed with its process group and fails, §8 |
+| `reconnect_interval` | 1000 ms | wait between two attempts to open the Keypad after it is gone or not found, §5.1 |
+| `reload_settle` | 100 ms | quiet time after the last change in the configuration directory before the daemon reloads it, §7.2 |
 
 ### 6.2 Window/context detection
 

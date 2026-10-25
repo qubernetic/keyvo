@@ -82,6 +82,21 @@ pub struct Timing {
     #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub reply_timeout: Duration,
+    /// An `exec` action still running after this long is killed and fails
+    /// (spec §8). Default 30000 ms.
+    #[serde(with = "millis")]
+    #[schemars(with = "u64")]
+    pub exec_timeout: Duration,
+    /// Wait between two attempts to open the Keypad after it is gone (spec
+    /// §5.1). Default 1000 ms.
+    #[serde(with = "millis")]
+    #[schemars(with = "u64")]
+    pub reconnect_interval: Duration,
+    /// Quiet time after the last change in the configuration directory
+    /// before it is reloaded (spec §7.2). Default 100 ms.
+    #[serde(with = "millis")]
+    #[schemars(with = "u64")]
+    pub reload_settle: Duration,
 }
 
 impl Default for Timing {
@@ -97,6 +112,9 @@ impl Default for Timing {
             divert_settle: Duration::from_millis(100),
             divert_spacing: Duration::from_millis(20),
             reply_timeout: Duration::from_millis(1000),
+            exec_timeout: Duration::from_secs(30),
+            reconnect_interval: Duration::from_millis(1000),
+            reload_settle: Duration::from_millis(100),
         }
     }
 }

@@ -37,6 +37,9 @@ fn defaults_match_spec_6_1_and_9() {
             divert_settle: ms(100),
             divert_spacing: ms(20),
             reply_timeout: ms(1000),
+            exec_timeout: ms(30_000),
+            reconnect_interval: ms(1000),
+            reload_settle: ms(100),
         }
     );
     assert_eq!(
