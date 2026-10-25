@@ -22,49 +22,35 @@ struct Cli {
 #[cfg(target_os = "linux")]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    use anyhow::Context;
-    use keyvo_core::layout;
-    use keyvo_daemon::daemon::{self, Event};
-    use keyvo_daemon::linux::{HidrawConnector, Injector};
-    use tokio::sync::broadcast;
-
     let cli = Cli::parse();
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stderr()))
         .init();
-    let config_dir = cli
-        .config_dir
-        .or_else(|| {
-            layout::config_dir(
-                std::env::var_os("XDG_CONFIG_HOME").as_deref(),
-                std::env::var_os("HOME").as_deref(),
-            )
-        })
-        .context("no configuration directory: set HOME or pass --config-dir")?;
+    let config_dir = config_dir(
+        cli.config_dir,
+        std::env::var_os("XDG_CONFIG_HOME").as_deref(),
+        std::env::var_os("HOME").as_deref(),
+    )?;
     tracing::info!(
         "keyvo-daemon {} with {}",
         keyvo_core::VERSION,
         config_dir.display()
     );
 
-    let (events, mut log) = broadcast::channel(256);
-    tokio::spawn(async move {
-        while let Ok(event) = log.recv().await {
-            if let Event::Trace(record) = event {
-                tracing::info!("press: {record:?}");
-            }
-        }
-    });
-    daemon::run(
-        &config_dir,
-        HidrawConnector::new(cli.device),
-        Injector::open(),
-        events,
-        shutdown(),
-    )
-    .await?;
+    keyvo_daemon::linux::serve(&config_dir, cli.device, shutdown()).await?;
     Ok(())
+}
+
+/// `--config-dir`, else the directory of the environment (spec §7.1).
+fn config_dir(
+    given: Option<PathBuf>,
+    xdg_config_home: Option<&std::ffi::OsStr>,
+    home: Option<&std::ffi::OsStr>,
+) -> anyhow::Result<PathBuf> {
+    given
+        .or_else(|| keyvo_core::layout::config_dir(xdg_config_home, home))
+        .ok_or_else(|| anyhow::anyhow!("no configuration directory: set HOME or pass --config-dir"))
 }
 
 /// Completes on `SIGINT` or `SIGTERM`.
@@ -108,5 +94,38 @@ mod tests {
         .unwrap();
         assert_eq!(cli.config_dir, Some(PathBuf::from("/c")));
         assert_eq!(cli.device, Some(PathBuf::from("/dev/hidraw2")));
+    }
+
+    #[test]
+    fn the_given_config_dir_wins_over_the_environment() {
+        let home = Some(std::ffi::OsStr::new("/home/u"));
+        assert_eq!(
+            config_dir(Some("/c".into()), None, home).unwrap(),
+            PathBuf::from("/c")
+        );
+        assert_eq!(
+            config_dir(None, None, home).unwrap(),
+            PathBuf::from("/home/u/.config/keyvo")
+        );
+        assert_eq!(
+            config_dir(None, None, None).unwrap_err().to_string(),
+            "no configuration directory: set HOME or pass --config-dir"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn shutdown_completes_on_sigterm() {
+        let signal = shutdown();
+        tokio::pin!(signal);
+        // The first poll installs the handlers; nothing has arrived yet.
+        let early = tokio::time::timeout(std::time::Duration::from_millis(10), &mut signal);
+        assert!(early.await.is_err());
+        // nextest runs every test in its own process.
+        rustix::process::kill_process(rustix::process::getpid(), rustix::process::Signal::TERM)
+            .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(10), signal)
+            .await
+            .unwrap();
     }
 }

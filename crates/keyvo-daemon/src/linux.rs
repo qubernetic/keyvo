@@ -1,6 +1,7 @@
 //! The Linux bindings of the daemon: the Keypad on hidraw (spec §5.1) and
 //! chord injection on uinput through `evdev` (spec §4.1).
 
+use std::future::Future;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -11,11 +12,45 @@ use keyvo_core::hid::TransportError;
 use keyvo_core::inject::{InjectError, InputInjector};
 use keyvo_hid::hidraw::HidrawTransport;
 use keyvo_hid::sysfs;
+use tokio::sync::broadcast;
 
+use crate::daemon::{self, Event};
 use crate::device::Connector;
 
 /// Name of the virtual keyboard keyvo creates.
 const UINPUT_NAME: &str = "keyvo";
+/// Daemon events the log keeps up with before it drops the oldest.
+const EVENT_BACKLOG: usize = 256;
+
+/// Runs the daemon on this machine until `shutdown`: the Keypad at
+/// `device` or found under sysfs, chords on uinput, the configuration in
+/// `config_dir`. Every trace record is logged.
+///
+/// # Errors
+///
+/// The errors of [`daemon::run`].
+pub async fn serve(
+    config_dir: &Path,
+    device: Option<PathBuf>,
+    shutdown: impl Future<Output = ()>,
+) -> io::Result<()> {
+    let (events, mut log) = broadcast::channel(EVENT_BACKLOG);
+    tokio::spawn(async move {
+        while let Ok(event) = log.recv().await {
+            if let Event::Trace(record) = event {
+                tracing::info!("press: {record:?}");
+            }
+        }
+    });
+    daemon::run(
+        config_dir,
+        HidrawConnector::new(device),
+        Injector::open(),
+        events,
+        shutdown,
+    )
+    .await
+}
 
 /// Opens the given hidraw node, or searches the Keypad's node under sysfs
 /// on every attempt, so a node number that changes after a replug is found.
@@ -163,6 +198,19 @@ mod tests {
             error,
             TransportError::Io("no hidraw node for 046d:c354".into())
         );
+    }
+
+    #[tokio::test]
+    async fn serve_runs_until_shutdown_without_a_keypad() {
+        let dir = tempfile::tempdir().unwrap();
+        let absent = dir.path().join("hidraw-absent");
+        serve(
+            dir.path(),
+            Some(absent),
+            tokio::time::sleep(std::time::Duration::from_millis(50)),
+        )
+        .await
+        .unwrap();
     }
 
     #[test]
