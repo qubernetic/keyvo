@@ -9,6 +9,7 @@ pub mod chord;
 pub mod clock;
 pub mod config;
 pub mod diagnostic;
+pub mod feedback;
 pub mod hid;
 pub mod layout;
 pub mod press;

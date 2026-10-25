@@ -159,6 +159,16 @@ pub enum Action {
     },
 }
 
+impl Action {
+    /// Whether the key shows the automatic `running`, `success` and
+    /// `error` states while and after the action runs (spec §7.2): `exec`
+    /// does, a chord is instant and does not.
+    #[must_use]
+    pub fn has_feedback(&self) -> bool {
+        matches!(self, Self::Exec { .. })
+    }
+}
+
 impl<'de> Deserialize<'de> for Action {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         // A tagged enum buffers its fields and the values lose their
