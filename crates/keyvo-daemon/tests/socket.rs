@@ -13,7 +13,8 @@ use std::time::Duration;
 
 use keyvo_core::focus::FakeWindowWatcher;
 use keyvo_core::inject::FakeInputInjector;
-use keyvo_core::socket::{Event, Reply, Response, ServerMessage};
+use keyvo_core::profile::KeySlot;
+use keyvo_core::socket::{DeviceStatus, Edge, Event, Reply, Response, ServerMessage};
 use keyvo_daemon::daemon;
 use keyvo_daemon::socket::Server;
 use serde_json::{Value, json};
@@ -26,6 +27,8 @@ use tokio::task::JoinHandle;
 use support::{Pad, Pads, startup};
 
 const PATIENCE: Duration = Duration::from_secs(10);
+/// Dry-run presses that overrun a subscriber that does not read.
+const PRESSES: usize = 5000;
 
 const CONFIG: &str = "\
 [timing]
@@ -67,7 +70,9 @@ label = "Shell"
 
 struct Running {
     _dir: tempfile::TempDir,
+    config_dir: PathBuf,
     socket: PathBuf,
+    pad: Pad,
     injector: FakeInputInjector,
     stop: oneshot::Sender<()>,
     daemon: JoinHandle<std::io::Result<()>>,
@@ -90,11 +95,13 @@ impl Running {
         let injector = FakeInputInjector::new();
         let (events, mut painted) = broadcast::channel(256);
         let (stop, stopped) = oneshot::channel::<()>();
-        let pads = Pads::new([Pad::new(&startup())]);
+        let pad = Pad::new(&startup());
+        let pads = Pads::new([pad.clone()]);
         let daemon_injector = injector.clone();
+        let daemon_config = config_dir.clone();
         let daemon = tokio::spawn(async move {
             daemon::run(
-                &config_dir,
+                &daemon_config,
                 pads,
                 daemon_injector,
                 FakeWindowWatcher::new(),
@@ -114,7 +121,9 @@ impl Running {
         .unwrap();
         Self {
             _dir: dir,
+            config_dir,
             socket,
+            pad,
             injector,
             stop,
             daemon,
@@ -415,4 +424,117 @@ async fn a_daemon_that_is_gone_answers_unavailable() {
     let error = response.result.unwrap_err();
     assert_eq!(error.message, "the daemon is shutting down");
     server.abort();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn device_key_and_failed_reload_events_reach_a_subscriber_of_everything() {
+    let running = Running::start().await;
+    let mut subscriber = running.client().await;
+    let response = subscriber.ask(r#"{"v":1,"cmd":"subscribe"}"#).await;
+    assert_eq!(response["result"]["events"].as_array().unwrap().len(), 8);
+
+    running.pad.hold(&[5]);
+    assert_eq!(
+        subscriber.event().await,
+        Event::Key {
+            key: KeySlot::new(5).unwrap(),
+            edge: Edge::Press
+        }
+    );
+    running.pad.hold(&[]);
+    assert!(matches!(
+        subscriber.event().await,
+        Event::Key {
+            edge: Edge::Release,
+            ..
+        }
+    ));
+    // The release resolved a chord press.
+    let Event::Trace { entry } = subscriber.event().await else {
+        panic!("not a trace event");
+    };
+    assert!(entry.result.is_success());
+
+    std::fs::write(running.config_dir.join("profiles/broken.toml"), "x").unwrap();
+    let mut client = running.client().await;
+    let response = client.ask(r#"{"v":1,"id":"r","cmd":"reload"}"#).await;
+    assert_eq!(response["error"]["code"], "reload_failed");
+    assert!(
+        response["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("broken.toml")
+    );
+    // The reload and the hot-reload that follows the write both fail.
+    let Event::Config(status) = subscriber.event().await else {
+        panic!("not a config event");
+    };
+    assert!(!status.reloaded && status.error.unwrap().contains("broken.toml"));
+
+    running.pad.unplug();
+    loop {
+        match subscriber.event().await {
+            Event::Device(device) => {
+                assert_eq!(
+                    device,
+                    DeviceStatus {
+                        connected: false,
+                        keys: None,
+                        error: Some("device disconnected".into())
+                    }
+                );
+                break;
+            }
+            Event::Config(_) => {}
+            other => panic!("{other:?}"),
+        }
+    }
+    running.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_subscriber_that_lags_loses_the_oldest_events_and_goes_on() {
+    let running = Running::start().await;
+    let mut subscriber = running.client().await;
+    subscriber
+        .ask(r#"{"v":1,"cmd":"subscribe","events":["trace"]}"#)
+        .await;
+    // More entries than the socket buffer and the event backlog (256) hold
+    // while it does not read.
+    let mut client = running.client().await;
+    for _ in 0..PRESSES {
+        client
+            .ask(r#"{"v":1,"cmd":"press","key":3,"dry_run":true}"#)
+            .await;
+    }
+    client
+        .ask(r#"{"v":1,"cmd":"press","key":9,"dry_run":true}"#)
+        .await;
+    let mut received = 0;
+    loop {
+        let Event::Trace { entry } = subscriber.event().await else {
+            panic!("not a trace event");
+        };
+        received += 1;
+        if entry.key.get() == 9 {
+            break;
+        }
+    }
+    assert!(received <= PRESSES, "{received}");
+    running.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_subscriber_outlives_the_daemon_and_hears_it_is_gone() {
+    let running = Running::start().await;
+    let mut subscriber = running.client().await;
+    subscriber
+        .ask(r#"{"v":1,"cmd":"subscribe","events":["config"]}"#)
+        .await;
+    running.stop.send(()).unwrap();
+    running.daemon.await.unwrap().unwrap();
+    // The server still accepts, but nobody answers.
+    let response = subscriber.ask(r#"{"v":1,"id":2,"cmd":"status"}"#).await;
+    assert_eq!(response["error"]["code"], "unavailable");
+    running.server.abort();
 }
