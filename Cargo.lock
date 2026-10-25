@@ -617,6 +617,7 @@ dependencies = [
  "evdev",
  "futures-util",
  "inotify",
+ "keyvo-client",
  "keyvo-core",
  "keyvo-hid",
  "rustix",
