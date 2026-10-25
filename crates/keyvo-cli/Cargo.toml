@@ -17,6 +17,7 @@ path = "src/main.rs"
 anyhow = "1"
 clap.workspace = true
 image.workspace = true
+keyvo-client.workspace = true
 keyvo-core.workspace = true
 keyvo-hid.workspace = true
 rustix = { version = "1", default-features = false, features = ["std", "process"] }

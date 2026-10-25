@@ -572,6 +572,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "image",
+ "keyvo-client",
  "keyvo-core",
  "keyvo-hid",
  "rustix",

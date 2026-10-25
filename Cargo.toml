@@ -13,6 +13,7 @@ publish = false
 
 [workspace.dependencies]
 clap = { version = "4", features = ["derive"] }
+keyvo-client = { path = "crates/keyvo-client" }
 keyvo-core = { path = "crates/keyvo-core" }
 keyvo-hid = { path = "crates/keyvo-hid" }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
