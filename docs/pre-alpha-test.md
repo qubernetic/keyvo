@@ -241,9 +241,10 @@ is for `keyvo ctl`, T3 for the app.
    Expected: `status` prints one JSON line with `"connected":true,"keys":9`
    and the shown profile, page and mode. `subscribe` prints its response
    line and then keeps running: press a pad key (a `key` event and a
-   `trace` event), switch windows (`context` and `profile` events), save a
-   profile file unchanged with `touch ~/.config/keyvo/profiles/konsole.toml`
-   (a `config` event). Ctrl-C ends it. Leave it running for steps 9 to 11.
+   `trace` event), switch windows (`context` and `profile` events), write
+   a profile file again unchanged with
+   `cp contrib/profiles/konsole.toml ~/.config/keyvo/profiles/` in T3 (a
+   `config` event; a bare `touch` changes no content and is not seen). Ctrl-C ends it. Leave it running for steps 9 to 11.
 
 9. **GUI mirror.** In T3:
 
