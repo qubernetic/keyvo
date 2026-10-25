@@ -16,6 +16,7 @@ use clap::{Parser, Subcommand};
 use keyvo_core::clock::{Clock, SystemClock};
 use keyvo_core::hid::{HidTransport, to_hex};
 use keyvo_core::{config, layout};
+use keyvo_hid::dump::Dump;
 use keyvo_hid::hidpp::{DEFAULT_REPLY_TIMEOUT, DEVICE_DIRECT, Hidpp, SoftwareId};
 use keyvo_hid::hidraw::HidrawTransport;
 use keyvo_hid::image::{ImageConfig, IndexBase};
@@ -37,6 +38,10 @@ struct Cli {
     /// The hidraw node to use, instead of searching sysfs for the Keypad
     #[arg(long, global = true, value_name = "PATH")]
     device: Option<PathBuf>,
+    /// Print every report written to and read from the Keypad to stderr:
+    /// ms since start, `>` out or `<` in, the bytes in hex
+    #[arg(long, global = true)]
+    dump: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -78,7 +83,12 @@ enum Command {
 #[derive(Subcommand)]
 enum DeviceCommand {
     /// Print what the Keypad reports about itself (read-only)
-    Probe,
+    Probe {
+        /// Only ask both ROOT planes for this feature id, in hex (`0x1b04`
+        /// or `1b04`): index and version, `absent`, or the error reply
+        #[arg(long, value_name = "ID", value_parser = parse_feature)]
+        feature: Option<u16>,
+    },
     /// Claim the Keypad, divert the page buttons and print every press and
     /// release until interrupted
     Keys {
@@ -130,6 +140,12 @@ fn parse_swid(text: &str) -> Result<SoftwareIdArg, String> {
     SoftwareId::new(value)
         .map(SoftwareIdArg)
         .map_err(|error| error.to_string())
+}
+
+/// `0x1b04` or `1b04`: feature ids are always hex.
+fn parse_feature(text: &str) -> Result<u16, String> {
+    let hex = text.strip_prefix("0x").unwrap_or(text);
+    u16::from_str_radix(hex, 16).map_err(|error| format!("`{text}`: {error}"))
 }
 
 /// The placement the `fill` flags select; every key without one.
@@ -195,7 +211,7 @@ impl DeviceCommand {
     /// The keep-alive flag errors.
     fn check(&self) -> anyhow::Result<()> {
         match self {
-            Self::Probe => Ok(()),
+            Self::Probe { .. } => Ok(()),
             Self::Keys { keep_alive, .. } | Self::Fill { keep_alive, .. } => {
                 keep_alive.timing().map(drop)
             }
@@ -251,15 +267,59 @@ fn main() -> anyhow::Result<()> {
         Path::new(sysfs::SYSFS_HIDRAW),
         Path::new(sysfs::DEV_DIR),
     )?;
-    run(
+    let mut stderr = std::io::stderr();
+    run_on(
         command,
-        hidpp(transport)?,
+        transport,
+        cli.dump.then_some(&mut stderr as &mut dyn Write),
         &device,
         &SystemClock,
         std::thread::sleep,
         || true,
         &mut std::io::stdout().lock(),
     )
+}
+
+/// [`run`] on `transport`, with every report it carries printed to `dump`
+/// when one is given (`--dump`).
+///
+/// # Errors
+///
+/// The command's errors.
+#[allow(clippy::too_many_arguments)]
+fn run_on<T: HidTransport, C: Clock>(
+    command: DeviceCommand,
+    transport: T,
+    dump: Option<&mut dyn Write>,
+    device: &str,
+    clock: &C,
+    sleep: impl FnMut(Duration),
+    keep_going: impl FnMut() -> bool,
+    out: &mut impl Write,
+) -> anyhow::Result<()> {
+    match dump {
+        Some(log) => {
+            let transport = Dump::new(transport, clock, log);
+            run(
+                command,
+                hidpp(transport)?,
+                device,
+                clock,
+                sleep,
+                keep_going,
+                out,
+            )
+        }
+        None => run(
+            command,
+            hidpp(transport)?,
+            device,
+            clock,
+            sleep,
+            keep_going,
+            out,
+        ),
+    }
 }
 
 /// Runs `command` on the Keypad behind `hidpp`, described as `device`.
@@ -279,7 +339,10 @@ fn run<T: HidTransport, C: Clock>(
     out: &mut impl Write,
 ) -> anyhow::Result<()> {
     match command {
-        DeviceCommand::Probe => probe::probe(&mut hidpp, device, out),
+        DeviceCommand::Probe { feature: None } => probe::probe(&mut hidpp, device, out),
+        DeviceCommand::Probe { feature: Some(id) } => {
+            probe::probe_feature(&mut hidpp, device, id, out)
+        }
         DeviceCommand::Keys { json, keep_alive } => {
             let mut session = Session::open(hidpp, clock, keep_alive.timing()?)?;
             eprintln!("keyvo keys on {device}; Ctrl-C to stop");
@@ -447,10 +510,80 @@ mod tests {
     }
 
     #[test]
+    fn run_dispatches_probe_feature() {
+        let script = format!(
+            "{}{}",
+            fixture("root-get-feature-absent.txt"),
+            fixture("vlp-get-feature-absent.txt")
+        );
+        let text = run(&["probe", "--feature", "0x0020"], &script);
+        assert_eq!(text.lines().nth(2), Some("vlp         0x0020  absent"));
+    }
+
+    #[test]
+    fn a_feature_id_is_hex_with_an_optional_prefix() {
+        let feature = |id: &str| match Cli::try_parse_from(["keyvo", "probe", "--feature", id])
+            .map(|cli| cli.command)
+        {
+            Ok(Command::Device(DeviceCommand::Probe { feature })) => Ok(feature),
+            Ok(_) => panic!("not probe"),
+            Err(error) => Err(error),
+        };
+        assert_eq!(feature("0x1B04").unwrap(), Some(0x1b04));
+        assert_eq!(feature("8040").unwrap(), Some(0x8040));
+        for id in ["zz", "0x10000", "", "-1"] {
+            assert!(feature(id).is_err(), "{id}");
+        }
+        assert!(matches!(
+            command(&["probe"]),
+            DeviceCommand::Probe { feature: None }
+        ));
+    }
+
+    #[test]
     fn run_dispatches_keys() {
         let text = run(&["keys", "--json"], &crate::keys::tests::script());
         assert_eq!(text.lines().count(), 8);
         assert_eq!(text.lines().next(), Some(r#"{"edge":"press","key":5}"#));
+    }
+
+    #[test]
+    fn keys_with_dump_logs_every_frame_apart_and_keeps_stdout_ndjson() {
+        let cli = Cli::try_parse_from(["keyvo", "keys", "--json", "--dump"]).unwrap();
+        assert!(cli.dump);
+        let Command::Device(command) = cli.command else {
+            panic!("not a device command");
+        };
+        let clock = FakeClock::new();
+        let (mut out, mut log) = (Vec::new(), Vec::new());
+        super::run_on(
+            command,
+            FakeHidTransport::from_script(&crate::keys::tests::script()).unwrap(),
+            Some(&mut log),
+            "/dev/hidraw2",
+            &clock,
+            |wait| clock.advance(wait),
+            || false,
+            &mut out,
+        )
+        .unwrap();
+        let out = String::from_utf8(out).unwrap();
+        assert_eq!(out.lines().count(), 8);
+        for line in out.lines() {
+            let value: serde_json::Value = serde_json::from_str(line).unwrap();
+            assert!(value.is_object(), "{line}");
+        }
+        let log = String::from_utf8(log).unwrap();
+        let first = log.lines().next().unwrap();
+        assert!(
+            first.ends_with(" > 11 ff 00 0e 00 08 00 00 00 00 00 00 00 00 00 00 00 00 00 00"),
+            "{first}"
+        );
+        assert!(
+            log.lines().any(|line| line.contains(" < 13 ff 02 ")),
+            "{log}"
+        );
+        assert!(!log.contains('{'), "{log}");
     }
 
     #[test]

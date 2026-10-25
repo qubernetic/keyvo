@@ -143,13 +143,41 @@ fn step<V>(result: Result<V, HidppError>) -> anyhow::Result<Result<V, String>> {
     }
 }
 
+/// `keyvo probe --feature <id>`: feature `id` asked of the ROOT of both
+/// planes, each answer in its line: index and version, `absent`, or the
+/// error reply. Read-only like [`probe`].
+///
+/// # Errors
+///
+/// The transport errors and write errors on `out`.
+pub fn probe_feature<T: HidTransport>(
+    hidpp: &mut Hidpp<T>,
+    device: &str,
+    id: u16,
+    out: &mut impl Write,
+) -> anyhow::Result<()> {
+    let mut report = Report { out };
+    report.line("device", device)?;
+    let classic = step(hidpp.get_feature(id))?;
+    let classic = outcome(classic.map(|i| i.map(|i| (i.index, i.version))));
+    report.line("classic", format!("0x{id:04x}  {classic}").as_str())?;
+    let vlp = step(hidpp.vlp_get_feature(id))?;
+    let vlp = outcome(vlp.map(|i| i.map(|i| (i.index, i.version))));
+    report.line("vlp", format!("0x{id:04x}  {vlp}").as_str())?;
+    Ok(())
+}
+
 fn feature_line(id: u16, name: &str, info: Result<Option<(u8, u8)>, String>) -> String {
-    let what = match info {
+    format!("0x{id:04x} {name:<18}  {}", outcome(info))
+}
+
+/// A `getFeature` answer as `index 0x0b  version 6`, `absent` or the error.
+fn outcome(info: Result<Option<(u8, u8)>, String>) -> String {
+    match info {
         Ok(Some((index, version))) => format!("index 0x{index:02x}  version {version}"),
         Ok(None) => "absent".to_owned(),
         Err(error) => format!("error: {error}"),
-    };
-    format!("0x{id:04x} {name:<18}  {what}")
+    }
 }
 
 /// The two-column report.
@@ -252,6 +280,67 @@ geometry    480x480, 9 keys
             "{text}"
         );
         assert!(text.ends_with("key 9  118x118 at 340,321\n"), "{text}");
+    }
+
+    fn run_feature(script: &str, id: u16) -> anyhow::Result<String> {
+        let mut hidpp = replay(script);
+        let mut out = Vec::new();
+        probe_feature(&mut hidpp, "/dev/hidraw2", id, &mut out)?;
+        assert!(hidpp.transport_mut().is_done(), "script not used up");
+        Ok(String::from_utf8(out)?)
+    }
+
+    #[test]
+    fn probe_feature_resolves_a_present_feature_on_each_plane() {
+        // 0x1b04 is classic only, 0x19a1 VLP only.
+        let vlp_absent = fixture("vlp-get-feature-absent.txt").replace("00 20", "1b 04");
+        let script = format!("{}{vlp_absent}", fixture("root-get-feature-reprog.txt"));
+        assert_eq!(
+            run_feature(&script, 0x1b04).unwrap(),
+            "device      /dev/hidraw2\n\
+             classic     0x1b04  index 0x0b  version 6\n\
+             vlp         0x1b04  absent\n"
+        );
+        let classic_absent = fixture("root-get-feature-absent.txt").replace("00 20", "19 a1");
+        let script = format!("{classic_absent}{}", fixture("vlp-get-feature-display.txt"));
+        assert_eq!(
+            run_feature(&script, 0x19a1).unwrap(),
+            "device      /dev/hidraw2\n\
+             classic     0x19a1  absent\n\
+             vlp         0x19a1  index 0x02  version 0\n"
+        );
+    }
+
+    #[test]
+    fn probe_feature_reports_an_absent_feature() {
+        let script = format!(
+            "{}{}",
+            fixture("root-get-feature-absent.txt"),
+            fixture("vlp-get-feature-absent.txt")
+        );
+        assert_eq!(
+            run_feature(&script, 0x0020).unwrap(),
+            "device      /dev/hidraw2\n\
+             classic     0x0020  absent\n\
+             vlp         0x0020  absent\n"
+        );
+    }
+
+    #[test]
+    fn probe_feature_reports_the_error_reply_and_asks_the_other_plane() {
+        let text = run_feature(&fixture("probe-feature-error.txt"), 0x1234).unwrap();
+        let lines: Vec<_> = text.lines().collect();
+        assert_eq!(
+            lines[1],
+            "classic     0x1234  error: device error InvalidArgument on feature index 0x00 function 0"
+        );
+        assert!(
+            lines[2]
+                .starts_with("vlp         0x1234  error: vlp error reply: 13 ff ff 00 0e 02 00"),
+            "{text}"
+        );
+        assert_eq!(lines.len(), 3);
+        assert!(run_feature("", 0x1234).is_err());
     }
 
     #[test]

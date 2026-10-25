@@ -81,12 +81,31 @@ pre-alpha. Slice 6b turns the output into records in the format above.
 12. **Page buttons.** `just run -- keys`: each page button gives one press
     and one release and no longer switches anything on the device itself.
     Unplug and replug, start `keys` again, and record whether the divert had
-    to be sent again (it is, on every start). Note the raw event bytes if
-    a debug dump is available.
+    to be sent again (it is, on every start). Note the raw event bytes
+    from `just run -- keys --dump` (see "Raw frames" below).
 13. **Own-write ACK against key 1.** Start `just run -- keys` in one
     terminal and run `just run -- fill '#ffffff' --key 1` in another: `keys`
     must print nothing for the paint. Then press key 1: one press, one
     release.
+
+## Raw frames
+
+A check that needs the bytes on the wire uses `--dump`, not an external
+sniffer on the hidraw node: any device command with `--dump` prints every
+report it writes (`>`) and reads (`<`) to stderr, with the milliseconds
+since the start (spec §5.10). stdout stays as without it, so
+`just run -- keys --json --dump 2>frames.txt | jq .` keeps the events and
+the frames apart. A `0x14` image fragment prints only its header and
+length. Record the dump lines a result rests on in the record's
+`Result`.
+
+- **An absent feature.** `just run -- --dump probe --feature 0x1234`: the
+  `classic` and `vlp` lines say `absent` or show the error reply, and the
+  dump shows the reply bytes. The VLP answer for a feature the device
+  lacks is not captured yet (spec §5.2); the dump settles it.
+- **A VLP error reply.** The same run, or any `vlp` line that reads
+  `error: vlp error reply: ...`: the whole report is in the line and in
+  the dump.
 
 ## Measurements
 

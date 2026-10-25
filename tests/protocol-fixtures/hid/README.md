@@ -51,6 +51,14 @@ Two fixtures carry the reclaim after a lost claim (spec §5.3):
 | `claim-lost.txt` | first-light report on #40 (2026-10-25, firmware `U1 66.00.B0017`) | the display mode-change event to `a1` and the `KEEP_ALIVE` expiry event one expiry sends in the same millisecond; the report quotes the leading bytes, the padding is zero |
 | `display-reclaim.txt` | hcooper #1765 to #1773, steps 6 and 7 of `display-claim.txt` | setMode(a0) and the getMode that confirms it, with the mode-change event announcing `a0` |
 
+Two fixtures are not captured; `keyvo probe --feature` (spec §5.10) is
+tested on them until the owner's `--dump` run records the real bytes:
+
+| File | Source | Content |
+|---|---|---|
+| `vlp-get-feature-absent.txt` | built from `vlp-get-feature-display.txt` and the id of `root-get-feature-absent.txt` | VLP getFeature(0x0020) answered with index 0, the absent answer keyvo assumes |
+| `probe-feature-error.txt` | the classic error layout of HID++ 2.0, the VLP error shape keyvo matches | getFeature(0x1234) refused with `InvalidArgument` on the classic and the VLP root |
+
 The image writer's golden tests also reproduce the LCD writes of
 `02-binding-paint.pcap` (frames #521, #639, #640, software id `0xd`) from
 `captures/external/hcooper/derived/binding-paint-frames.tsv`, which carries
