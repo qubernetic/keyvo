@@ -302,15 +302,22 @@ impl JsonSchema for SchemaVersion {
     }
 }
 
-fn profile_id<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
-    let id = String::deserialize(deserializer)?;
+/// Whether `id` is a valid profile id: lowercase letters, digits, `.`, `_`
+/// and `-`, starting with a letter or digit, so it is also a safe file name.
+#[must_use]
+pub fn is_valid_id(id: &str) -> bool {
     let mut chars = id.chars();
     let valid_first = chars
         .next()
         .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
-    let valid_rest =
-        chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-'));
-    if valid_first && valid_rest {
+    valid_first
+        && chars
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-'))
+}
+
+fn profile_id<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    let id = String::deserialize(deserializer)?;
+    if is_valid_id(&id) {
         Ok(id)
     } else {
         Err(de::Error::invalid_value(
@@ -517,6 +524,16 @@ mod tests {
         assert_eq!(Color::parse("#4e8bd"), None);
         assert_eq!(Color::parse("#4e8bdg"), None);
         assert_eq!(Color::parse("#é4e8b"), None);
+    }
+
+    #[test]
+    fn valid_ids_are_safe_file_names() {
+        for id in ["global", "org.kde.konsole", "a-b_c", "9"] {
+            assert!(is_valid_id(id), "{id}");
+        }
+        for id in ["", "..", "../x", "a/b", ".hidden", "Upper", "-x", "é"] {
+            assert!(!is_valid_id(id), "{id}");
+        }
     }
 
     #[test]

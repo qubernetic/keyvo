@@ -1,0 +1,24 @@
+# The terminal profile the key editor fixtures edit (README.md here).
+schema_version = 1
+
+[profile]
+id     = "terminal"
+name   = "Terminal"
+accent = "#2ecc71"
+
+[profile.match]
+class = ["org.kde.konsole"]   # Konsole only
+
+[[pages]]
+name = "context"
+
+[pages.keys.1]                # a new shell
+icon   = "lucide:terminal"
+label  = "Shell"
+action = { type = "exec", cmd = "konsole" }
+
+[pages.keys.2]                # the key the steps edit
+label  = "Paste"
+action = { type = "chord", keys = "ctrl+shift+c" }
+
+# Keys 3 to 9 are blank.
