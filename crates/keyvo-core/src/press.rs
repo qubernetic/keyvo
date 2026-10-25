@@ -6,16 +6,18 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant, SystemTime};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::profile::{KeySlot, Profile};
 use crate::trace::{Outcome, TraceRecord, Trigger};
 
 /// How a key was pressed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum PressKind {
-    /// Released before `[timing].long_press`.
+    /// Released before `[timing].long_press`; a socket `press` without
+    /// `kind`.
+    #[default]
     Short,
     /// Held for `[timing].long_press`.
     Long,

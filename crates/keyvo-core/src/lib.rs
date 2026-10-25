@@ -18,6 +18,7 @@ pub mod press;
 pub mod profile;
 pub mod render;
 pub mod schema;
+pub mod socket;
 pub mod state;
 pub mod trace;
 

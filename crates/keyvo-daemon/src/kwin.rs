@@ -11,7 +11,6 @@
 use std::ffi::OsStr;
 use std::future::Future;
 use std::io;
-use std::os::unix::fs::{DirBuilderExt, MetadataExt};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Mutex, PoisonError};
@@ -70,14 +69,11 @@ impl FocusObject {
     }
 }
 
-/// Where the daemon writes the script for `KWin`: `keyvo` under
-/// `$XDG_RUNTIME_DIR`, else `keyvo-<uid>` in the temporary directory.
+/// Where the daemon writes the script for `KWin`: the runtime directory
+/// ([`crate::runtime::dir`]).
 #[must_use]
 pub fn script_dir(runtime_dir: Option<&OsStr>) -> PathBuf {
-    match runtime_dir.filter(|dir| !dir.is_empty()) {
-        Some(dir) => Path::new(dir).join("keyvo"),
-        None => std::env::temp_dir().join(format!("keyvo-{}", rustix::process::getuid().as_raw())),
-    }
+    crate::runtime::dir(runtime_dir)
 }
 
 /// Serves the focus object on `conn`, writes the script to `script_dir`
@@ -145,20 +141,7 @@ pub async fn watch(conn: &Connection, script_dir: &Path, sink: FocusSink) -> Res
 /// Writes the script for `service` into `dir`, which must be private: the
 /// script runs inside `KWin`.
 fn write_script(dir: &Path, service: &str) -> io::Result<PathBuf> {
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(dir)?;
-    let meta = std::fs::symlink_metadata(dir)?;
-    if !meta.is_dir()
-        || meta.uid() != rustix::process::getuid().as_raw()
-        || meta.mode() & 0o077 != 0
-    {
-        return Err(io::Error::other(format!(
-            "{} is not private to this user",
-            dir.display()
-        )));
-    }
+    crate::runtime::ensure_private(dir)?;
     let path = dir.join(SCRIPT_FILE);
     let script = SCRIPT
         .replace("@SERVICE@", service)

@@ -166,10 +166,12 @@ impl Engine {
     }
 
     /// Resolves a press of `slot` on the active profile and page; an error
-    /// or success look of the key ends.
+    /// or success look of the key ends, unless the press is simulated.
     pub fn press(&mut self, slot: KeySlot, trigger: Trigger, at: SystemTime) -> TraceRecord {
         let record = press::resolve(self.active(), self.page(), slot, trigger, at);
-        self.feedback(&record).pressed();
+        if !trigger.simulated {
+            self.feedback(&record).pressed();
+        }
         record
     }
 
@@ -347,6 +349,23 @@ action = { type = "exec", cmd = "true" }
         // The next press of the key ends the error look.
         engine.press(slot(1), short(), SystemTime::UNIX_EPOCH);
         assert_eq!(engine.specs(now)[0].look, Look::Idle);
+    }
+
+    #[test]
+    fn a_simulated_press_keeps_the_error_look() {
+        let mut engine = Engine::new(loaded(GLOBAL));
+        engine.set_key_count(9);
+        let now = Instant::now();
+        let mut record = engine.press(slot(1), short(), SystemTime::UNIX_EPOCH);
+        record.finish(Outcome::Failed { error: "x".into() });
+        engine.finished(&record, now);
+        let simulated = Trigger {
+            press: PressKind::Short,
+            simulated: true,
+        };
+        let dry = engine.press(slot(1), simulated, SystemTime::UNIX_EPOCH);
+        assert_eq!(dry.result, Outcome::DryRun);
+        assert_eq!(engine.specs(now)[0].look, Look::Error);
     }
 
     #[test]

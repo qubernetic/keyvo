@@ -7,14 +7,16 @@
 //! The context snapshot, layer resolution and `on_fail` branch come with
 //! their issues.
 
-use serde::Serialize;
+use serde::de::{self, Deserializer};
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 
 use crate::chord::KeyEvent;
 use crate::press::PressKind;
 use crate::profile::{Action, KeySlot};
 
 /// What caused the press.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Trigger {
     /// Short or long.
     pub press: PressKind,
@@ -24,7 +26,7 @@ pub struct Trigger {
 }
 
 /// One trace entry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TraceRecord {
     /// Wall-clock time of the press, milliseconds since the Unix epoch.
     pub timestamp_ms: u64,
@@ -35,11 +37,31 @@ pub struct TraceRecord {
     /// The active page, counted from 1.
     pub page: usize,
     /// The pressed key.
+    #[serde(deserialize_with = "crate::profile::slot_number")]
     pub key: KeySlot,
     /// The action the press resolved to; `None` for an unbound key.
+    #[serde(deserialize_with = "known_action_fields")]
     pub action: Option<Action>,
     /// What came of it.
     pub result: Outcome,
+}
+
+/// The fields an [`Action`] reads; a record drops the others.
+const ACTION_FIELDS: [&str; 3] = ["type", "keys", "cmd"];
+
+/// Reads the action of a record. A profile rejects unknown action fields,
+/// a record ignores them, so a v1 client reads the records of a later
+/// daemon (`docs/socket-api.md`).
+fn known_action_fields<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Action>, D::Error> {
+    let Some(mut fields) = Option::<Map<String, Value>>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    fields.retain(|name, _| ACTION_FIELDS.contains(&name.as_str()));
+    Action::deserialize(Value::Object(fields))
+        .map(Some)
+        .map_err(de::Error::custom)
 }
 
 impl TraceRecord {
@@ -50,7 +72,7 @@ impl TraceRecord {
 }
 
 /// The result of a press.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum Outcome {
     /// The key has no action on this page; nothing runs.

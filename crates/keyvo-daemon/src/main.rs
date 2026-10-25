@@ -17,6 +17,9 @@ struct Cli {
     /// connection attempt.
     #[arg(long, value_name = "PATH")]
     device: Option<PathBuf>,
+    /// Control socket; default `$XDG_RUNTIME_DIR/keyvo/keyvo.sock`.
+    #[arg(long, value_name = "PATH")]
+    socket: Option<PathBuf>,
 }
 
 #[cfg(target_os = "linux")]
@@ -38,9 +41,12 @@ async fn main() -> anyhow::Result<()> {
         config_dir.display()
     );
 
-    let script_dir = keyvo_daemon::kwin::script_dir(std::env::var_os("XDG_RUNTIME_DIR").as_deref());
-    let watcher = keyvo_daemon::kwin::KWinWatcher::session(&script_dir);
-    keyvo_daemon::linux::serve(&config_dir, cli.device, watcher, shutdown()).await?;
+    let runtime_dir = keyvo_daemon::runtime::dir(std::env::var_os("XDG_RUNTIME_DIR").as_deref());
+    let socket = cli
+        .socket
+        .unwrap_or_else(|| runtime_dir.join(keyvo_core::socket::SOCKET_FILE));
+    let watcher = keyvo_daemon::kwin::KWinWatcher::session(&runtime_dir);
+    keyvo_daemon::linux::serve(&config_dir, cli.device, &socket, watcher, shutdown()).await?;
     Ok(())
 }
 
@@ -83,19 +89,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_config_dir_and_device_are_optional() {
+    fn the_config_dir_device_and_socket_are_optional() {
         let cli = Cli::try_parse_from(["keyvo-daemon"]).unwrap();
-        assert!(cli.config_dir.is_none() && cli.device.is_none());
+        assert!(cli.config_dir.is_none() && cli.device.is_none() && cli.socket.is_none());
         let cli = Cli::try_parse_from([
             "keyvo-daemon",
             "--config-dir",
             "/c",
             "--device",
             "/dev/hidraw2",
+            "--socket",
+            "/s.sock",
         ])
         .unwrap();
         assert_eq!(cli.config_dir, Some(PathBuf::from("/c")));
         assert_eq!(cli.device, Some(PathBuf::from("/dev/hidraw2")));
+        assert_eq!(cli.socket, Some(PathBuf::from("/s.sock")));
     }
 
     #[test]

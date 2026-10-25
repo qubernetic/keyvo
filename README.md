@@ -43,6 +43,15 @@ On KDE Plasma 6 the daemon loads its own KWin script
 ([contrib/kwin/keyvo-focus.js](contrib/kwin/keyvo-focus.js)), so the profile
 follows the focused window; nothing needs installing by hand.
 
+While the daemon runs, `keyvo ctl` talks to its control socket
+([docs/socket-api.md](docs/socket-api.md)):
+
+```bash
+just run -- ctl status                                  # device, profile, page, mode
+just run -- ctl press '{"key":5,"dry_run":true}'        # resolve and trace, run nothing
+just run -- ctl subscribe '{"events":["trace","profile"]}'
+```
+
 The commands need read-write access to the Keypad's `/dev/hidraw*` node and
 Solaar stopped; [docs/hardware-notes.md](docs/hardware-notes.md) lists the
 measurements they serve.
@@ -85,6 +94,7 @@ just run -- preview vscode --page 2 -o grid.png   # an id from ~/.config/keyvo/p
 ## Documentation
 
 - [Specification](docs/spec.md): what keyvo is and why.
+- [Socket API](docs/socket-api.md): the control socket's wire contract.
 - [Project plan](docs/plans/2026-09-09-project-plan.md): decisions, architecture,
   milestones.
 - [Research](docs/research/): protocol findings and prior-art analyses.

@@ -19,6 +19,8 @@ pub struct Config {
     pub timing: Timing,
     /// Rendering settings (spec §9).
     pub render: Render,
+    /// Trace settings (spec §8).
+    pub trace: Trace,
 }
 
 impl Config {
@@ -145,6 +147,22 @@ impl Default for Render {
             long_run_threshold: Duration::from_millis(10_000),
             splash: false,
         }
+    }
+}
+
+/// The `[trace]` table (spec §8), pre-alpha subset: the ring buffer the
+/// daemon keeps in memory; the file settings come with M1-8.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct Trace {
+    /// Trace entries the daemon keeps in memory; the oldest goes first.
+    /// Default 1000.
+    pub ring: usize,
+}
+
+impl Default for Trace {
+    fn default() -> Self {
+        Self { ring: 1000 }
     }
 }
 

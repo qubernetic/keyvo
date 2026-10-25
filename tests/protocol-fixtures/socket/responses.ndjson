@@ -1,0 +1,11 @@
+{"v":1,"id":1,"ok":true,"result":{"version":"0.0.0","device":{"connected":true,"keys":9},"view":{"profile":"terminal","page":1,"mode":"auto"},"context":{"class":"org.kde.konsole","title":"~ : bash","pid":4242,"source":"watcher"},"trace":12}}
+{"v":1,"id":1,"ok":true,"result":{"version":"0.0.0","device":{"connected":false,"error":"no hidraw node for 046d:c354"},"view":{"profile":"global","page":1,"mode":"auto"},"trace":0}}
+{"v":1,"id":"gui-2","ok":true,"result":{"events":["key","profile","page","mode","device","context","trace","config"],"view":{"profile":"global","page":1,"mode":"auto"}}}
+{"v":1,"id":3,"ok":true,"result":{"entry":{"timestamp_ms":1792929600250,"trigger":{"press":"short","simulated":true},"profile":"global","page":1,"key":5,"action":{"type":"exec","cmd":"cargo test"},"result":{"status":"dry_run"}}}}
+{"v":1,"id":4,"ok":true,"result":{"entry":{"timestamp_ms":1792929600250,"trigger":{"press":"long","simulated":false},"profile":"global","page":1,"key":1,"action":{"type":"exec","cmd":"cargo build"},"result":{"status":"pending"}}}}
+{"v":1,"id":5,"ok":true,"result":{}}
+{"v":1,"id":5,"ok":false,"error":{"code":"reload_failed","message":"profiles/global.toml:8:9: invalid type: integer `7`, expected a string"}}
+{"v":1,"id":6,"ok":true,"result":{}}
+{"v":1,"ok":false,"error":{"code":"invalid_json","message":"expected value at line 1 column 1"}}
+{"v":1,"id":7,"ok":false,"error":{"code":"unsupported_version","message":"protocol version 2 is not supported; this daemon speaks 1"}}
+{"v":1,"id":8,"ok":false,"error":{"code":"invalid_request","message":"unknown field `dryrun`, expected one of `key`, `kind`, `dry_run`"}}

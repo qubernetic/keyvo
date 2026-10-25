@@ -37,6 +37,17 @@ pub fn config_dir(xdg_config_home: Option<&OsStr>, home: Option<&OsStr>) -> Opti
         .map(|base| base.join("keyvo"))
 }
 
+/// The daemon's runtime directory, home of the socket (spec §8) and the
+/// `KWin` script (spec §6.2): `$XDG_RUNTIME_DIR/keyvo` when that is an
+/// absolute path, else `keyvo-<uid>` in `temp_dir`.
+#[must_use]
+pub fn runtime_dir(xdg_runtime_dir: Option<&OsStr>, temp_dir: &Path, uid: u32) -> PathBuf {
+    match xdg_runtime_dir.map(Path::new).filter(|p| p.is_absolute()) {
+        Some(dir) => dir.join("keyvo"),
+        None => temp_dir.join(format!("keyvo-{uid}")),
+    }
+}
+
 /// Everything read from one configuration directory.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Loaded {
