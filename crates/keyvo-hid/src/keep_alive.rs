@@ -17,6 +17,10 @@ use crate::root::feature;
 const FN_GET_TIMEOUT_RANGE: u8 = 0;
 /// `keepAlive(timeout)`.
 const FN_KEEP_ALIVE: u8 = 1;
+/// Function byte of the unsolicited expiry event (`11 ff 04 00`, swid 0):
+/// the timeout ran out before the next ping and the display went back to
+/// the logo (spec §5.3, first light on firmware `U1 66.00.B0017`).
+pub const EVENT_EXPIRED: u8 = 0;
 
 /// Default of `[timing].keep_alive_period` (spec §6.1): Options+ pings about
 /// every 1.01 s (captured).

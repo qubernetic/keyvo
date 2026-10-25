@@ -43,6 +43,13 @@ id `0xe` in these frames, so the tests use it too.
 | `probe.txt` | #1559 to #1691 (selected), #1309 to #1315 | `keyvo probe` in its request order: ping, getFeature for 0x0003, 0x0008, 0x1B04 and 0x8040, the firmware walk, the keep-alive range, the VLP protocol, getFeature(0x19A1), display modes, mode and geometry (replayed by `crates/keyvo-cli/src/probe.rs`) |
 | `image-write-panel.txt` | #1643, #1645, #1779 to #1785 | a 4362-byte panel JPEG in two `0x14` fragments, each followed by its `0x13` ACK (keyvo's order; Options+ sends both fragments first) |
 
+Two fixtures carry the reclaim after a lost claim (spec §5.3):
+
+| File | Source | Content |
+|---|---|---|
+| `claim-lost.txt` | first-light report on #40 (2026-10-25, firmware `U1 66.00.B0017`) | the display mode-change event to `a1` and the `KEEP_ALIVE` expiry event one expiry sends in the same millisecond; the report quotes the leading bytes, the padding is zero |
+| `display-reclaim.txt` | hcooper #1765 to #1773, steps 6 and 7 of `display-claim.txt` | setMode(a0) and the getMode that confirms it, with the mode-change event announcing `a0` |
+
 The image writer's golden tests also reproduce the LCD writes of
 `02-binding-paint.pcap` (frames #521, #639, #640, software id `0xd`) from
 `captures/external/hcooper/derived/binding-paint-frames.tsv`, which carries

@@ -266,6 +266,97 @@ fn hcooper_claim_takes_the_display_from_logo_to_streaming_mode() {
     assert!(hidpp.transport_mut().is_done());
 }
 
+/// The `KEEP_ALIVE` index in the fixtures.
+const KEEP_ALIVE_INDEX: u8 = 0x04;
+
+/// The claim, then `lost` (lines of `claim-lost.txt`) answering its last
+/// request, then the reclaim exchange `reclaims` times.
+fn claim_then_lost(lost: &[usize], reclaims: usize) -> String {
+    let events: Vec<_> = fixture!("claim-lost.txt")
+        .lines()
+        .filter(|line| line.starts_with('<'))
+        .collect();
+    let mut script = fixture!("display-claim.txt").to_owned();
+    for &n in lost {
+        script.push_str(events[n]);
+        script.push('\n');
+    }
+    script + &fixture!("display-reclaim.txt").repeat(reclaims)
+}
+
+/// Claims, then reads every inbound frame through the claim watch; the
+/// number of reclaims.
+fn reclaims_after(script: &str) -> usize {
+    let mut hidpp = replay(script);
+    let claim = display::claim(&mut hidpp).unwrap();
+    let watch = display::ClaimWatch::new(DEVICE_DIRECT, claim.display_index)
+        .with_keep_alive(KEEP_ALIVE_INDEX);
+    let mut reclaims = 0;
+    while let Some(frame) = hidpp.next_frame(Duration::ZERO).unwrap() {
+        if watch.reclaim_on(&mut hidpp, &frame).unwrap() {
+            reclaims += 1;
+        }
+    }
+    assert!(hidpp.transport_mut().is_done());
+    reclaims
+}
+
+#[test]
+fn the_mode_and_expiry_events_of_one_expiry_give_one_reclaim() {
+    assert_eq!(reclaims_after(&claim_then_lost(&[0, 1], 1)), 1);
+}
+
+#[test]
+fn the_mode_event_alone_gives_one_reclaim() {
+    assert_eq!(reclaims_after(&claim_then_lost(&[0], 1)), 1);
+}
+
+#[test]
+fn the_expiry_event_alone_gives_one_reclaim() {
+    assert_eq!(reclaims_after(&claim_then_lost(&[1], 1)), 1);
+}
+
+#[test]
+fn the_claim_watch_tells_lost_claims_from_other_reports() {
+    let watch = display::ClaimWatch::new(DEVICE_DIRECT, 2).with_keep_alive(KEEP_ALIVE_INDEX);
+    let frame = |hex: &str| {
+        let mut bytes = decode_hex(&hex.replace(' ', ""));
+        bytes.resize(if bytes[0] == 0x13 { 32 } else { 20 }, 0);
+        keyvo_hid::frame::Frame::parse(&bytes).unwrap()
+    };
+    for lost in ["13 ff 02 10 cb a1", "13 ff 02 10 c3 a2", "11 ff 04 00"] {
+        assert!(watch.is_loss(&frame(lost)), "{lost}");
+    }
+    for other in [
+        "13 ff 02 10 c6 a0",    // the mode-change event of the claim
+        "13 ff 02 00 c0 01 05", // a key report
+        "13 ff 02 4e c0 a1",    // a setMode reply
+        "11 ff 04 1e 0b b8",    // a keepAlive reply
+        "11 ff 0b 00 01 a1",    // a page-button notification
+        "13 01 02 10 cb a1",    // another device
+    ] {
+        assert!(!watch.is_loss(&frame(other)), "{other}");
+    }
+    // Without the keep-alive index only the mode event counts.
+    assert!(!display::ClaimWatch::new(DEVICE_DIRECT, 2).is_loss(&frame("11 ff 04 00")));
+}
+
+#[test]
+fn a_reclaim_the_display_does_not_confirm_is_an_error() {
+    let mut script = claim_then_lost(&[0], 0);
+    let refused =
+        fixture!("display-reclaim.txt").replace("< 13 ff 02 5e c0 a0", "< 13 ff 02 5e c0 a1");
+    script.push_str(&refused);
+    let mut hidpp = replay(&script);
+    let claim = display::claim(&mut hidpp).unwrap();
+    let watch = display::ClaimWatch::new(DEVICE_DIRECT, claim.display_index);
+    let frame = hidpp.next_frame(Duration::ZERO).unwrap().unwrap();
+    assert_eq!(
+        watch.reclaim_on(&mut hidpp, &frame),
+        Err(display::ClaimError::ModeNotConfirmed { mode: 0xa1 })
+    );
+}
+
 /// The panel the Options+ captures paint: the bounding box of the nine keys.
 const CAPTURED_PANEL: Rect = Rect {
     x: 23,

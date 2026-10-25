@@ -365,6 +365,16 @@ impl<T: HidTransport> Hidpp<T> {
         }
     }
 
+    /// Drops the kept reports that `matches` accepts; how many it dropped.
+    /// They are not counted in [`Hidpp::dropped_reports`]: the caller has
+    /// dealt with them.
+    pub fn discard_kept(&mut self, mut matches: impl FnMut(&Frame) -> bool) -> usize {
+        let before = self.unmatched.len();
+        self.unmatched
+            .retain(|raw| !Frame::parse(raw).is_ok_and(|frame| matches(&frame)));
+        before - self.unmatched.len()
+    }
+
     /// Reports dropped instead of kept for the input path: the ones that do
     /// not parse as a frame and the oldest ones pushed out past
     /// [`UNMATCHED_CAP`].
