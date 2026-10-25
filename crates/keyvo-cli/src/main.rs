@@ -83,7 +83,12 @@ enum Command {
 #[derive(Subcommand)]
 enum DeviceCommand {
     /// Print what the Keypad reports about itself (read-only)
-    Probe,
+    Probe {
+        /// Only ask both ROOT planes for this feature id, in hex (`0x1b04`
+        /// or `1b04`): index and version, `absent`, or the error reply
+        #[arg(long, value_name = "ID", value_parser = parse_feature)]
+        feature: Option<u16>,
+    },
     /// Claim the Keypad, divert the page buttons and print every press and
     /// release until interrupted
     Keys {
@@ -135,6 +140,12 @@ fn parse_swid(text: &str) -> Result<SoftwareIdArg, String> {
     SoftwareId::new(value)
         .map(SoftwareIdArg)
         .map_err(|error| error.to_string())
+}
+
+/// `0x1b04` or `1b04`: feature ids are always hex.
+fn parse_feature(text: &str) -> Result<u16, String> {
+    let hex = text.strip_prefix("0x").unwrap_or(text);
+    u16::from_str_radix(hex, 16).map_err(|error| format!("`{text}`: {error}"))
 }
 
 /// The placement the `fill` flags select; every key without one.
@@ -200,7 +211,7 @@ impl DeviceCommand {
     /// The keep-alive flag errors.
     fn check(&self) -> anyhow::Result<()> {
         match self {
-            Self::Probe => Ok(()),
+            Self::Probe { .. } => Ok(()),
             Self::Keys { keep_alive, .. } | Self::Fill { keep_alive, .. } => {
                 keep_alive.timing().map(drop)
             }
@@ -328,7 +339,10 @@ fn run<T: HidTransport, C: Clock>(
     out: &mut impl Write,
 ) -> anyhow::Result<()> {
     match command {
-        DeviceCommand::Probe => probe::probe(&mut hidpp, device, out),
+        DeviceCommand::Probe { feature: None } => probe::probe(&mut hidpp, device, out),
+        DeviceCommand::Probe { feature: Some(id) } => {
+            probe::probe_feature(&mut hidpp, device, id, out)
+        }
         DeviceCommand::Keys { json, keep_alive } => {
             let mut session = Session::open(hidpp, clock, keep_alive.timing()?)?;
             eprintln!("keyvo keys on {device}; Ctrl-C to stop");
@@ -493,6 +507,37 @@ mod tests {
             text.starts_with("device      /dev/hidraw2\nhid++       4.5\n"),
             "{text}"
         );
+    }
+
+    #[test]
+    fn run_dispatches_probe_feature() {
+        let script = format!(
+            "{}{}",
+            fixture("root-get-feature-absent.txt"),
+            fixture("vlp-get-feature-absent.txt")
+        );
+        let text = run(&["probe", "--feature", "0x0020"], &script);
+        assert_eq!(text.lines().nth(2), Some("vlp         0x0020  absent"));
+    }
+
+    #[test]
+    fn a_feature_id_is_hex_with_an_optional_prefix() {
+        let feature = |id: &str| match Cli::try_parse_from(["keyvo", "probe", "--feature", id])
+            .map(|cli| cli.command)
+        {
+            Ok(Command::Device(DeviceCommand::Probe { feature })) => Ok(feature),
+            Ok(_) => panic!("not probe"),
+            Err(error) => Err(error),
+        };
+        assert_eq!(feature("0x1B04").unwrap(), Some(0x1b04));
+        assert_eq!(feature("8040").unwrap(), Some(0x8040));
+        for id in ["zz", "0x10000", "", "-1"] {
+            assert!(feature(id).is_err(), "{id}");
+        }
+        assert!(matches!(
+            command(&["probe"]),
+            DeviceCommand::Probe { feature: None }
+        ));
     }
 
     #[test]

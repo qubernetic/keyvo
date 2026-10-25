@@ -1,0 +1,10 @@
+# VLP ROOT fn0 getFeature(0x0020) on report 0x13 (swid 0xe, sequence byte
+# e0) -> echoed id 0x0020, VLP index 0: the feature is not present.
+#
+# Not captured: Options+ never asks the VLP root for a feature it lacks.
+# Built from vlp-get-feature-display.txt with the id of
+# root-get-feature-absent.txt and index, version and maxMemory zero, the
+# absent answer keyvo assumes on the VLP plane (spec §5.2, like the classic
+# index 0). The owner's `keyvo probe --feature` run settles it (#71).
+> 13 ff 00 0e e0 00 20 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 00 0e c0 00 20 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
