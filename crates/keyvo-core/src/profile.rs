@@ -268,7 +268,8 @@ fn profile_id<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::E
 }
 
 /// The number of a key, 1 to 9, row-major, top-left is 1.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(transparent)]
 pub struct KeySlot(u8);
 
 impl KeySlot {

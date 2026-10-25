@@ -4,9 +4,12 @@
 //! at [`PressDetector::next_deadline`].
 
 use std::collections::BTreeMap;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use serde::Serialize;
+
+use crate::profile::{KeySlot, Profile};
+use crate::trace::{Outcome, TraceRecord, Trigger};
 
 /// How a key was pressed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -96,5 +99,43 @@ impl<K: Ord + Copy> PressDetector<K> {
             .filter(|held| !held.fired)
             .map(|held| held.since + self.long_press)
             .min()
+    }
+}
+
+/// Resolves a press of `key` on page `page` (counted from 1) of `profile`
+/// at `at` to a trace record. Both press kinds run the key's action; a
+/// simulated press resolves but is [`Outcome::DryRun`], an unbound key
+/// [`Outcome::Unbound`], anything else [`Outcome::Pending`] until the
+/// daemon has run it and calls [`TraceRecord::finish`].
+#[must_use]
+pub fn resolve(
+    profile: &Profile,
+    page: usize,
+    key: KeySlot,
+    trigger: Trigger,
+    at: SystemTime,
+) -> TraceRecord {
+    let action = page
+        .checked_sub(1)
+        .and_then(|index| profile.pages.get(index))
+        .and_then(|found| found.keys.get(&key))
+        .and_then(|bound| bound.action.clone());
+    let result = match (&action, trigger.simulated) {
+        (None, _) => Outcome::Unbound,
+        (Some(_), true) => Outcome::DryRun,
+        (Some(_), false) => Outcome::Pending,
+    };
+    TraceRecord {
+        timestamp_ms: at
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_or(0, |since| {
+                u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+            }),
+        trigger,
+        profile: profile.profile.id.clone(),
+        page,
+        key,
+        action,
+        result,
     }
 }

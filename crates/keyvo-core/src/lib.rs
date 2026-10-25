@@ -15,6 +15,7 @@ pub mod press;
 pub mod profile;
 pub mod render;
 pub mod schema;
+pub mod trace;
 
 /// Version of the keyvo workspace, taken from `Cargo.toml` at compile time.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

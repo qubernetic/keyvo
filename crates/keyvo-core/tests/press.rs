@@ -70,3 +70,170 @@ fn press_kinds_have_their_spec_names() {
     assert_eq!(PressKind::Long.as_str(), "long");
     assert_eq!(serde_json::to_string(&PressKind::Long).unwrap(), "\"long\"");
 }
+
+mod resolution {
+    use std::path::Path;
+    use std::time::{Duration, SystemTime};
+
+    use keyvo_core::chord::Chord;
+    use keyvo_core::press::{self, PressKind};
+    use keyvo_core::profile::{Action, KeySlot, Profile};
+    use keyvo_core::trace::{Outcome, TraceRecord, Trigger};
+
+    fn demo() -> Profile {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/profiles/valid/demo.toml");
+        Profile::from_toml(&std::fs::read_to_string(&path).unwrap(), &path).unwrap()
+    }
+
+    fn slot(n: u8) -> KeySlot {
+        KeySlot::new(n).unwrap()
+    }
+
+    /// 2026-10-25 12:00:00.250 UTC.
+    fn at() -> SystemTime {
+        SystemTime::UNIX_EPOCH + Duration::from_millis(1_792_929_600_250)
+    }
+
+    const REAL_SHORT: Trigger = Trigger {
+        press: PressKind::Short,
+        simulated: false,
+    };
+
+    #[test]
+    fn a_press_resolves_to_the_key_action_and_waits_for_its_result() {
+        let record = press::resolve(&demo(), 1, slot(2), REAL_SHORT, at());
+        assert_eq!(
+            record,
+            TraceRecord {
+                timestamp_ms: 1_792_929_600_250,
+                trigger: REAL_SHORT,
+                profile: "demo".to_owned(),
+                page: 1,
+                key: slot(2),
+                action: Some(Action::Chord {
+                    keys: Chord::parse("ctrl+shift+g").unwrap()
+                }),
+                result: Outcome::Pending,
+            }
+        );
+    }
+
+    #[test]
+    fn a_long_press_runs_the_key_action_too() {
+        let trigger = Trigger {
+            press: PressKind::Long,
+            simulated: false,
+        };
+        let record = press::resolve(&demo(), 1, slot(1), trigger, at());
+        assert_eq!(
+            record.action,
+            Some(Action::Exec {
+                cmd: "cargo build".to_owned()
+            })
+        );
+        assert_eq!(record.trigger.press, PressKind::Long);
+        assert_eq!(record.result, Outcome::Pending);
+    }
+
+    #[test]
+    fn a_simulated_press_resolves_but_executes_nothing() {
+        let trigger = Trigger {
+            press: PressKind::Short,
+            simulated: true,
+        };
+        let record = press::resolve(&demo(), 1, slot(5), trigger, at());
+        assert!(record.action.is_some());
+        assert_eq!(record.result, Outcome::DryRun);
+    }
+
+    #[test]
+    fn a_key_without_an_action_is_unbound() {
+        for (page, key) in [(1, 7), (1, 8), (2, 5), (3, 1), (0, 1)] {
+            let record = press::resolve(&demo(), page, slot(key), REAL_SHORT, at());
+            assert_eq!(record.action, None, "page {page} key {key}");
+            assert_eq!(record.result, Outcome::Unbound, "page {page} key {key}");
+        }
+    }
+
+    #[test]
+    fn outcomes_tell_an_error_from_a_success() {
+        let table = [
+            (Outcome::Pending, false, false),
+            (Outcome::DryRun, false, false),
+            (Outcome::Unbound, false, false),
+            (Outcome::Sent { events: vec![] }, true, false),
+            (
+                Outcome::Exited {
+                    code: Some(0),
+                    duration_ms: 5,
+                },
+                true,
+                false,
+            ),
+            (
+                Outcome::Exited {
+                    code: Some(1),
+                    duration_ms: 5,
+                },
+                false,
+                true,
+            ),
+            (
+                Outcome::Exited {
+                    code: None,
+                    duration_ms: 5,
+                },
+                false,
+                true,
+            ),
+            (
+                Outcome::Failed {
+                    error: "timed out".to_owned(),
+                },
+                false,
+                true,
+            ),
+        ];
+        for (outcome, success, error) in table {
+            assert_eq!(outcome.is_success(), success, "{outcome:?}");
+            assert_eq!(outcome.is_error(), error, "{outcome:?}");
+        }
+    }
+
+    #[test]
+    fn records_serialize_as_the_fixture_lines() {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/trace/records.ndjson");
+        let expected = std::fs::read_to_string(&path).unwrap();
+        let profile = demo();
+        let mut chord = press::resolve(&profile, 1, slot(4), REAL_SHORT, at());
+        let events = Chord::parse("ctrl+p").unwrap().events();
+        chord.finish(Outcome::Sent { events });
+        let mut exec = press::resolve(&profile, 1, slot(1), REAL_SHORT, at());
+        exec.finish(Outcome::Exited {
+            code: Some(101),
+            duration_ms: 2318,
+        });
+        let mut failed = press::resolve(&profile, 1, slot(9), REAL_SHORT, at());
+        failed.finish(Outcome::Failed {
+            error: "no such file or directory: gh".to_owned(),
+        });
+        let dry = press::resolve(
+            &profile,
+            1,
+            slot(5),
+            Trigger {
+                press: PressKind::Long,
+                simulated: true,
+            },
+            at(),
+        );
+        let unbound = press::resolve(&profile, 2, slot(1), REAL_SHORT, at());
+        let lines: String = [chord, exec, failed, dry, unbound]
+            .iter()
+            .map(|record| serde_json::to_string(record).unwrap() + "\n")
+            .collect();
+        assert_eq!(lines, expected);
+    }
+}
