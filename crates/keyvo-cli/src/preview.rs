@@ -9,6 +9,7 @@ use anyhow::{Context, bail};
 use keyvo_core::layout;
 use keyvo_core::profile::Profile;
 use keyvo_core::render::{self, Renderer, icon};
+use keyvo_core::stack::Stack;
 use keyvo_hid::display;
 
 /// Renders page `page` (counted from 1) of `profile` to the PNG `output`.
@@ -31,7 +32,7 @@ pub fn preview(
     let profile = find(profile, config_dir)?;
     let panel = display::captured_geometry().panel();
     let keys = u8::try_from(panel.keys.len()).context("too many keys")?;
-    let specs = render::page(&profile, page, keys)?;
+    let specs = render::page(&Stack::alone(&profile, page)?, keys);
     for (number, spec) in (1..).zip(&specs) {
         if let Some(Err(error)) = spec.icon.as_deref().map(icon::lookup) {
             writeln!(err, "key {number}: {error}; drawn as {}", icon::FALLBACK)?;
@@ -117,12 +118,9 @@ mod tests {
         let picture = image::load_from_memory_with_format(&png, image::ImageFormat::Png).unwrap();
         assert_eq!((picture.width(), picture.height()), (480, 480));
 
-        let specs = render::page(
-            &Profile::from_toml(&std::fs::read_to_string(demo()).unwrap(), &demo()).unwrap(),
-            1,
-            9,
-        )
-        .unwrap();
+        let profile =
+            Profile::from_toml(&std::fs::read_to_string(demo()).unwrap(), &demo()).unwrap();
+        let specs = render::page(&Stack::alone(&profile, 1).unwrap(), 9);
         let expected = Renderer::new()
             .panel(&specs, &display::captured_geometry().panel())
             .unwrap()

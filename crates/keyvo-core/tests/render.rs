@@ -6,6 +6,7 @@ use std::path::Path;
 use image::{ImageFormat, Rgb, RgbImage};
 use keyvo_core::profile::{Color, Profile};
 use keyvo_core::render::{self, Canvas, KeyPlace, KeySpec, Panel, Renderer, TileSize};
+use keyvo_core::stack::Stack;
 
 /// The key size the Keypad publishes (spec §5.4).
 const KEY: TileSize = TileSize {
@@ -169,6 +170,11 @@ fn demo() -> Profile {
     Profile::from_toml(&std::fs::read_to_string(&path).unwrap(), &path).unwrap()
 }
 
+/// The nine specs of page `page` of the demo profile alone.
+fn demo_page(page: usize) -> Vec<KeySpec> {
+    render::page(&Stack::alone(&demo(), page).unwrap(), 9)
+}
+
 /// The Keypad's panel as captured (spec §5.4): 480x480, nine 118x118 keys.
 fn captured_panel() -> Panel {
     let origins = [
@@ -197,7 +203,7 @@ fn captured_panel() -> Panel {
 #[test]
 fn a_page_gives_one_spec_per_key_with_the_profile_accent() {
     let accent = Some(Color::rgb(0x4e, 0x8b, 0xd6));
-    let specs = render::page(&demo(), 1, 9).unwrap();
+    let specs = demo_page(1);
     assert_eq!(specs.len(), 9);
     assert_eq!(
         specs[0],
@@ -217,22 +223,22 @@ fn a_page_gives_one_spec_per_key_with_the_profile_accent() {
             ..KeySpec::default()
         }
     );
-    let general = render::page(&demo(), 2, 9).unwrap();
+    let general = demo_page(2);
     assert_eq!(general[4].label.as_deref(), Some("Settings"));
     assert!(general[0].icon.is_none());
 }
 
 #[test]
 fn a_page_past_the_last_is_an_error() {
-    let error = render::page(&demo(), 3, 9).unwrap_err();
+    let error = Stack::alone(&demo(), 3).unwrap_err();
     assert_eq!(error.to_string(), "profile `demo` has no page 3; it has 2");
-    assert!(render::page(&demo(), 0, 9).is_err());
+    assert!(Stack::alone(&demo(), 0).is_err());
 }
 
 #[test]
 fn the_demo_page_renders_on_the_captured_panel() {
     let renderer = Renderer::new();
-    let specs = render::page(&demo(), 1, 9).unwrap();
+    let specs = demo_page(1);
     let panel = renderer.panel(&specs, &captured_panel()).unwrap();
     assert_eq!(
         panel.size(),
@@ -274,7 +280,7 @@ fn pixel(rgb: &[u8], width: usize, x: usize, y: usize) -> [u8; 3] {
 
 /// A canvas of the demo page with every key drawn.
 fn demo_canvas(renderer: &Renderer) -> Canvas {
-    let specs = render::page(&demo(), 1, 9).unwrap();
+    let specs = demo_page(1);
     let mut canvas = renderer
         .canvas(demo().profile.accent, &captured_panel())
         .unwrap();
@@ -313,7 +319,7 @@ fn the_canvas_composites_the_page_and_crops_the_union() {
     assert_eq!(union.size(), UNION.size);
     assert_eq!(sof0(&union.jpeg().unwrap()), Some((435, 434)));
     // The crop is the composite panel the preview shows, cut to the union.
-    let specs = render::page(&demo(), 1, 9).unwrap();
+    let specs = demo_page(1);
     let whole = renderer.panel(&specs, &captured_panel()).unwrap().rgb();
     let crop = union.rgb();
     for (x, y) in [(0, 0), (1, 0), (137, 150), (200, 200), (434, 433)] {
@@ -413,7 +419,7 @@ fn tiles_are_encoded_at_quality_100() {
 #[test]
 fn every_key_tile_is_a_baseline_jpeg_of_the_tile_size() {
     let renderer = Renderer::new();
-    for spec in render::page(&demo(), 1, 9).unwrap() {
+    for spec in demo_page(1) {
         let jpeg = renderer.tile(&spec, KEY).unwrap().jpeg().unwrap();
         assert_eq!(sof0(&jpeg), Some((118, 118)), "{spec:?}");
     }

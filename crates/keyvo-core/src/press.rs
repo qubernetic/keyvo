@@ -8,7 +8,8 @@ use std::time::{Duration, Instant, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
-use crate::profile::{KeySlot, Profile};
+use crate::profile::KeySlot;
+use crate::stack::Stack;
 use crate::trace::{Outcome, TraceRecord, Trigger};
 
 /// How a key was pressed.
@@ -104,29 +105,36 @@ impl<K: Ord + Copy> PressDetector<K> {
     }
 }
 
-/// Resolves a press of `key` on page `page` (counted from 1) of `profile`
-/// at `at` to a trace record. Both press kinds run the key's action; a
-/// simulated press resolves but is [`Outcome::DryRun`], an unbound key
+/// Resolves a press of `key` on `stack`'s page at `at` to a trace record:
+/// the profile's own key, else the global one (spec §6.1), and the layer
+/// it came from. Both press kinds run the key's action; a simulated press
+/// resolves but is [`Outcome::DryRun`], an unbound key
 /// [`Outcome::Unbound`], anything else [`Outcome::Pending`] until the
 /// daemon has run it and calls [`TraceRecord::finish`].
 #[must_use]
-pub fn resolve(
-    profile: &Profile,
+pub fn resolve(stack: &Stack<'_>, key: KeySlot, trigger: Trigger, at: SystemTime) -> TraceRecord {
+    let found = stack.key(key);
+    let mut record = unbound(&stack.profile().profile.id, stack.page(), key, trigger, at);
+    record.layer = found.map(|(_, layer)| layer);
+    record.action = found.and_then(|(bound, _)| bound.action.clone());
+    record.result = match (&record.action, trigger.simulated) {
+        (None, _) => Outcome::Unbound,
+        (Some(_), true) => Outcome::DryRun,
+        (Some(_), false) => Outcome::Pending,
+    };
+    record
+}
+
+/// The record of a press of `key` on page `page` of the profile `profile`
+/// where no layer defines the key, as on a page the profile does not have.
+#[must_use]
+pub fn unbound(
+    profile: &str,
     page: usize,
     key: KeySlot,
     trigger: Trigger,
     at: SystemTime,
 ) -> TraceRecord {
-    let action = page
-        .checked_sub(1)
-        .and_then(|index| profile.pages.get(index))
-        .and_then(|found| found.keys.get(&key))
-        .and_then(|bound| bound.action.clone());
-    let result = match (&action, trigger.simulated) {
-        (None, _) => Outcome::Unbound,
-        (Some(_), true) => Outcome::DryRun,
-        (Some(_), false) => Outcome::Pending,
-    };
     TraceRecord {
         timestamp_ms: at
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -134,10 +142,11 @@ pub fn resolve(
                 u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
             }),
         trigger,
-        profile: profile.profile.id.clone(),
+        profile: profile.to_owned(),
         page,
         key,
-        action,
-        result,
+        layer: None,
+        action: None,
+        result: Outcome::Unbound,
     }
 }

@@ -5,9 +5,10 @@
 
 use std::path::Path;
 
-use keyvo_client::tiles::{self, TileError, Tiles};
+use keyvo_client::tiles::{self, KeySummary, TileError, Tiles};
 use keyvo_core::layout::{self, Profiles};
 use keyvo_core::render::{self, Renderer, TileSize};
+use keyvo_core::stack::{Layer, Stack};
 use keyvo_core::state::{Mode, View};
 
 const SIZE: TileSize = TileSize {
@@ -36,7 +37,7 @@ fn a_page_renders_like_the_daemon_paints_it() {
     for profile in paged {
         let id = &profile.profile.id;
         let tiles = Tiles::new().page(&profiles, &view(id, 1), 9, SIZE).unwrap();
-        let specs = render::page(profile, 1, 9).unwrap();
+        let specs = render::page(&Stack::new(&profiles, profile, 1).unwrap(), 9);
         assert_eq!(tiles.len(), 9, "{id}");
         for (tile, spec) in tiles.iter().zip(&specs) {
             let painted = Renderer::new().tile(spec, SIZE).unwrap();
@@ -56,12 +57,34 @@ fn the_keys_of_a_page_carry_label_and_action_in_key_order() {
         serde_json::json!({
             "label": "Mute",
             "action": {"type": "exec", "cmd": "wpctl set-mute @DEFAULT_SINK@ toggle"},
+            "layer": "global",
         })
     );
     assert_eq!(
         serde_json::to_value(&keys[0]).unwrap(),
         serde_json::json!({})
     );
+}
+
+#[test]
+fn a_key_the_profile_lacks_shows_the_global_key_and_names_its_layer() {
+    let dir =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../keyvo-core/tests/fixtures/dirs/fallback");
+    let profiles = layout::load(&dir).unwrap().profiles;
+    let konsole = view("konsole", 1);
+    let keys = tiles::keys(&profiles, &konsole, 9).unwrap();
+    assert_eq!(
+        (keys[0].label.as_deref(), keys[0].layer),
+        (Some("New tab"), Some(Layer::App))
+    );
+    assert_eq!(
+        (keys[2].label.as_deref(), keys[2].layer),
+        (Some("Type"), Some(Layer::Global))
+    );
+    assert_eq!(keys[3], KeySummary::default());
+    let tiles = Tiles::new().page(&profiles, &konsole, 9, SIZE).unwrap();
+    // Key 3 is drawn, not blank like key 4, which no layer defines.
+    assert_ne!(tiles[2].rgb(), tiles[3].rgb());
 }
 
 #[test]

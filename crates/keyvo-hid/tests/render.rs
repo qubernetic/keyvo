@@ -8,6 +8,7 @@ use std::path::Path;
 
 use keyvo_core::profile::Profile;
 use keyvo_core::render::{self, KeySpec, Renderer, TileSize};
+use keyvo_core::stack::Stack;
 use keyvo_hid::display;
 use keyvo_hid::hidpp::DEVICE_DIRECT;
 use keyvo_hid::image::{self, ImageConfig, Target};
@@ -26,7 +27,11 @@ fn every_rendered_key_passes_the_writer_frame_check() {
     let geometry = display::captured_geometry();
     let panel = geometry.panel();
     let renderer = Renderer::new();
-    let specs = render::page(&demo(), 1, u8::try_from(panel.keys.len()).unwrap()).unwrap();
+    let demo = demo();
+    let specs = render::page(
+        &Stack::alone(&demo, 1).unwrap(),
+        u8::try_from(panel.keys.len()).unwrap(),
+    );
     for (spec, key) in specs.iter().zip(&geometry.keys) {
         let rect = Target::Key(key.index).rect(&geometry).unwrap();
         let size = TileSize {

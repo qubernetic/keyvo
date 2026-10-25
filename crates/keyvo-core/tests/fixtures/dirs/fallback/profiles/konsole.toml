@@ -1,0 +1,23 @@
+# An app profile without key 3 (and without key 9): those keys come from
+# the global profile's context page; key 1 is its own.
+schema_version = 1
+
+[profile]
+id = "konsole"
+name = "Konsole"
+match = { class = ["org.kde.konsole"] }
+accent = "#3fae5a"
+
+[[pages]]
+name = "context"
+[pages.keys.1]
+label = "New tab"
+action = { type = "chord", keys = "ctrl+shift+t" }
+
+[pages.keys.2]
+label = "Find"
+
+[[pages]]
+name = "second"
+[pages.keys.1]
+label = "Split"

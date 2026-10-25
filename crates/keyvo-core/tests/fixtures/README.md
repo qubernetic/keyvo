@@ -15,6 +15,7 @@ capture.
 | `config/invalid/*.toml` | `tests/config.rs` | an unknown `[timing]` key, a negative duration |
 | `dirs/full/` | `tests/layout.rs` | `config.toml`, a `global.toml`, an app profile and a non-TOML file that is ignored |
 | `dirs/focus/` | `tests/state.rs` | profile selection and the page state machine: a global profile with a `context` and a `general` page, app profiles on a reverse-DNS class, a short class with a title rule and a higher priority, a title rule alone, and a profile whose `context` page is not its first |
+| `dirs/fallback/` | `tests/stack.rs`, `keyvo-client` `tests/tiles.rs` | the global layer (spec §6.1): a `konsole` app profile without keys 3 and 9 over a global profile whose `context` page is its second, so a fallback to page 1 would show the wrong key |
 | `dirs/broken/` | `tests/layout.rs` | an invalid `config.toml`, an invalid profile, an id that does not match its file name, and one valid profile; the load reports all three problems |
 
 The committed JSON Schemas these files follow are in `schemas/` at the

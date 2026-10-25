@@ -11,23 +11,27 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use keyvo_core::profile::GLOBAL_ID;
+use keyvo_core::stack::Layer;
 use keyvo_core::trace::{Outcome, TraceRecord};
 use tokio::process::Command;
 
 /// The `KEYVO_*` variables an `exec` started by `record` receives.
+/// `KEYVO_PROFILE` is the active profile, `KEYVO_LAYER` the layer that
+/// supplied the key: `global` for a global key under an app profile.
 #[must_use]
 pub fn env(record: &TraceRecord) -> Vec<(&'static str, String)> {
-    let layer = if record.profile == GLOBAL_ID {
-        "global"
+    // A record without a layer ran no key; the profile's own layer then.
+    let layer = record.layer.unwrap_or(if record.profile == GLOBAL_ID {
+        Layer::Global
     } else {
-        "app"
-    };
+        Layer::App
+    });
     vec![
         ("KEYVO_KEY", record.key.get().to_string()),
         ("KEYVO_PROFILE", record.profile.clone()),
         ("KEYVO_PAGE", record.page.to_string()),
         ("KEYVO_PRESS", record.trigger.press.as_str().to_owned()),
-        ("KEYVO_LAYER", layer.to_owned()),
+        ("KEYVO_LAYER", layer.as_str().to_owned()),
     ]
 }
 
@@ -103,7 +107,7 @@ mod tests {
 
     const LONG: Duration = Duration::from_secs(20);
 
-    fn record(profile: &str, press: PressKind) -> TraceRecord {
+    fn record(profile: &str, layer: Layer, press: PressKind) -> TraceRecord {
         TraceRecord {
             timestamp_ms: 0,
             trigger: Trigger {
@@ -113,6 +117,7 @@ mod tests {
             profile: profile.to_owned(),
             page: 2,
             key: KeySlot::new(7).unwrap(),
+            layer: Some(layer),
             action: Some(Action::Exec { cmd: "true".into() }),
             result: Outcome::Pending,
         }
@@ -120,7 +125,7 @@ mod tests {
 
     #[test]
     fn the_environment_names_key_profile_page_press_and_layer() {
-        let env = env(&record("global", PressKind::Long));
+        let env = env(&record("global", Layer::Global, PressKind::Long));
         assert_eq!(
             env,
             vec![
@@ -131,8 +136,13 @@ mod tests {
                 ("KEYVO_LAYER", "global".to_owned()),
             ]
         );
-        let app = super::env(&record("konsole", PressKind::Short));
+        let app = super::env(&record("konsole", Layer::App, PressKind::Short));
         assert_eq!(app[4], ("KEYVO_LAYER", "app".to_owned()));
+        // A global key under the konsole profile: the active profile, the
+        // layer that supplied the key.
+        let fallen = super::env(&record("konsole", Layer::Global, PressKind::Short));
+        assert_eq!(fallen[1], ("KEYVO_PROFILE", "konsole".to_owned()));
+        assert_eq!(fallen[4], ("KEYVO_LAYER", "global".to_owned()));
     }
 
     #[tokio::test]
@@ -156,7 +166,7 @@ mod tests {
             "printf '%s %s' \"$KEYVO_KEY\" \"$KEYVO_PRESS\" > '{}'",
             out.display()
         );
-        let env = env(&record("global", PressKind::Short));
+        let env = env(&record("global", Layer::Global, PressKind::Short));
         assert!(run(&cmd, &env, LONG).await.is_success());
         assert_eq!(std::fs::read_to_string(out).unwrap(), "7 short");
     }

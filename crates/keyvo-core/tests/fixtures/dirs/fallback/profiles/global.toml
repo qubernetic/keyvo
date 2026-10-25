@@ -1,0 +1,29 @@
+# The global layer under every app profile (spec §6.1): its context page
+# is not its first page, so a fallback that took page 1 would show "Wrong".
+schema_version = 1
+
+[profile]
+id = "global"
+name = "Global"
+accent = "#4e8bd6"
+
+[[pages]]
+name = "general"
+[pages.keys.3]
+label = "Wrong"
+
+[[pages]]
+name = "context"
+[pages.keys.1]
+label = "Build"
+action = { type = "exec", cmd = "true" }
+
+[pages.keys.3]
+icon = "lucide:keyboard"
+label = "Type"
+color = "#202020"
+action = { type = "chord", keys = "shift+k" }
+states.error = { label = "Typo" }
+
+[pages.keys.9]
+label = "Mute"

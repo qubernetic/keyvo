@@ -3,9 +3,9 @@
 //! [`crate::press::resolve`]; the daemon sets the result after executing,
 //! keeps the ring buffer and writes the file.
 //!
-//! Pre-alpha subset: trigger, profile, page, key, resolved action, result.
-//! The context snapshot, layer resolution and `on_fail` branch come with
-//! their issues.
+//! Pre-alpha subset: trigger, profile, page, key, the layer that supplied
+//! the key, resolved action, result. The context snapshot and `on_fail`
+//! branch come with their issues.
 
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
@@ -14,6 +14,7 @@ use serde_json::{Map, Value};
 use crate::chord::KeyEvent;
 use crate::press::PressKind;
 use crate::profile::{Action, KeySlot};
+use crate::stack::Layer;
 
 /// What caused the press.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,6 +40,10 @@ pub struct TraceRecord {
     /// The pressed key.
     #[serde(deserialize_with = "crate::profile::slot_number")]
     pub key: KeySlot,
+    /// The layer that supplied the key (spec §6.1): the active profile's
+    /// own, or the global one under it; `None` when no layer defines it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<Layer>,
     /// The action the press resolved to; `None` for an unbound key.
     #[serde(deserialize_with = "known_action_fields")]
     pub action: Option<Action>,

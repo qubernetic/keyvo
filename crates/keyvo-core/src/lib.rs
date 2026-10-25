@@ -20,6 +20,7 @@ pub mod profile;
 pub mod render;
 pub mod schema;
 pub mod socket;
+pub mod stack;
 pub mod state;
 pub mod store;
 pub mod trace;
