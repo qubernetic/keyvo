@@ -624,7 +624,7 @@ fn page_button_fixture_gives_the_exact_press_release_list() {
 }
 
 #[test]
-fn hcooper_divert_walks_the_controls_and_diverts_both_page_buttons() {
+fn first_light_divert_walks_the_controls_and_diverts_both_page_buttons() {
     let mut hidpp = replay(fixture!("reprog-divert.txt"));
     let mut slept = Vec::new();
     let diverted = reprog::divert_page_buttons(&mut hidpp, &DivertTiming::default(), |pause| {
