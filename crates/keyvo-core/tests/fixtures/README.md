@@ -9,6 +9,7 @@ capture.
 | `profiles/valid/vscode.toml` | `tests/profile.rs` | every field of schema version 1 |
 | `profiles/valid/demo.toml` | `tests/render.rs`, `keyvo-cli` preview tests | the renderer demo: every primitive on page 1 (icon and label, key colors light and dark, icon only, label only, a cut label, a blank key, an unknown icon), a second page; its page 1 is the snapshot `tests/snapshots/render__demo-page-1.snap.png` |
 | `profiles/invalid/*.toml` | `tests/profile.rs` | one problem each; the `INVALID` table lists the expected line, column and message, and a test fails when a file is missing from it |
+| `edit/before.toml`, `edit/<case>.json`, `edit/<case>.toml` | `tests/edit.rs` | round-trip editing: a profile in every style the editor must keep (comments, aligned `=`, inline and sub-table actions, a second page repeating key numbers); each case applies `<case>.json` (page, key, fields) to `before.toml` and must give `<case>.toml` byte for byte, changing only lines of the edited key; the `CASES` table lists them and a test fails when a file is missing from it |
 | `trace/records.ndjson` | `tests/press.rs` | one serialized trace record per line, resolved from presses on `demo.toml`: a sent chord, an exec that exited 101, an exec that failed to start, a simulated long press, an unbound key |
 | `config/valid/partial.toml` | `tests/config.rs` | keys left out keep their default |
 | `config/invalid/*.toml` | `tests/config.rs` | an unknown `[timing]` key, a negative duration |

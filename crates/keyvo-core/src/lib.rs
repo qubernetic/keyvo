@@ -9,6 +9,7 @@ pub mod chord;
 pub mod clock;
 pub mod config;
 pub mod diagnostic;
+pub mod edit;
 pub mod feedback;
 pub mod focus;
 pub mod hid;

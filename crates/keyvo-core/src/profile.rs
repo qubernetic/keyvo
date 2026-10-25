@@ -424,6 +424,12 @@ impl<'de> Deserialize<'de> for Color {
     }
 }
 
+impl Serialize for Color {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
 impl JsonSchema for Color {
     fn schema_name() -> Cow<'static, str> {
         "Color".into()
