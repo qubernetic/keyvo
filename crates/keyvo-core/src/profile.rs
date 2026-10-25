@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::chord::Chord;
 use crate::diagnostic::Diagnostic;
+use crate::focus::WindowContext;
 
 /// The id of the profile that always exists and that app profiles overlay.
 pub const GLOBAL_ID: &str = "global";
@@ -98,6 +99,48 @@ pub struct Match {
     pub class: Vec<String>,
     /// Regular expression on the window title.
     pub title: Option<TitleRegex>,
+}
+
+impl Match {
+    /// Whether `window` satisfies these rules: one of the classes, when
+    /// there are any, and the title regex, when there is one. Rules without
+    /// either never match. A class matches case-insensitively, the whole
+    /// name or its short form: `konsole` matches the window class
+    /// `org.kde.konsole` and the other way round.
+    #[must_use]
+    pub fn matches(&self, window: &WindowContext) -> bool {
+        if self.class.is_empty() && self.title.is_none() {
+            return false;
+        }
+        let class = self.class.is_empty()
+            || self
+                .class
+                .iter()
+                .any(|rule| class_matches(rule, &window.class));
+        class
+            && self
+                .title
+                .as_ref()
+                .is_none_or(|title| title.is_match(&window.title))
+    }
+
+    /// Whether a title regex narrows the rules, which makes them more
+    /// specific than a class alone.
+    #[must_use]
+    pub const fn has_title(&self) -> bool {
+        self.title.is_some()
+    }
+}
+
+/// `rule` and `class` are the same name, or one is the last `.` segment
+/// of the other.
+fn class_matches(rule: &str, class: &str) -> bool {
+    fn short(name: &str) -> &str {
+        name.rsplit('.').next().unwrap_or(name)
+    }
+    rule.eq_ignore_ascii_case(class)
+        || (!rule.contains('.') && rule.eq_ignore_ascii_case(short(class)))
+        || (!class.contains('.') && class.eq_ignore_ascii_case(short(rule)))
 }
 
 /// One `[[pages]]` entry.

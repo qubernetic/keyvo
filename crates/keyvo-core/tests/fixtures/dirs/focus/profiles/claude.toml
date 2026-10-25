@@ -1,0 +1,13 @@
+schema_version = 1
+
+[profile]
+id       = "claude"
+name     = "Claude Code"
+match    = { class = ["konsole"], title = "(?i)claude" }
+priority = 10
+
+[[pages]]
+name = "context"
+
+[pages.keys.1]
+label = "Accept"

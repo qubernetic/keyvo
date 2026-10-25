@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use evdev::uinput::VirtualDevice;
 use evdev::{AttributeSet, EventType};
 use keyvo_core::chord::{KeyCode, KeyEvent};
+use keyvo_core::focus::{FocusSink, WatchError, WindowWatcher};
 use keyvo_core::hid::TransportError;
 use keyvo_core::inject::{InjectError, InputInjector};
 use keyvo_hid::hidraw::HidrawTransport;
@@ -46,10 +47,23 @@ pub async fn serve(
         config_dir,
         HidrawConnector::new(device),
         Injector::open(),
+        NoFocusSource,
         events,
         shutdown,
     )
     .await
+}
+
+/// The focus source until the `KWin` watcher lands (spec §6.2): it never
+/// starts, so the daemon logs that focus switching is off and the page
+/// buttons still work.
+#[derive(Debug, Clone, Copy)]
+pub struct NoFocusSource;
+
+impl WindowWatcher for NoFocusSource {
+    fn start(&mut self, _sink: FocusSink) -> Result<(), WatchError> {
+        Err(WatchError("no focus source in this build".into()))
+    }
 }
 
 /// Opens the given hidraw node, or searches the Keypad's node under sysfs
@@ -163,6 +177,14 @@ mod tests {
     use keyvo_core::chord::Chord;
 
     use super::*;
+
+    #[test]
+    fn there_is_no_focus_source_yet() {
+        assert_eq!(
+            NoFocusSource.start(Box::new(|_| {})),
+            Err(WatchError("no focus source in this build".into()))
+        );
+    }
 
     #[test]
     fn the_connector_finds_the_keypad_node_or_opens_the_given_one() {

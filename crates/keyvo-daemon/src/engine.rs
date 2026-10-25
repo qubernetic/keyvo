@@ -3,39 +3,46 @@
 //! free of I/O; the controller feeds it events and asks it what the keys
 //! should show.
 //!
-//! Pre-alpha: the active profile is the global one on page 1. Focus
-//! switching and the page buttons come with slice 11.
+//! The profile and page come from the context state machine
+//! (`keyvo_core::state`): the focused window and the page buttons. Key
+//! states belong to a key of one profile page, so a running `exec` keeps
+//! its look on its own page and never shows on another profile.
 
 use std::collections::BTreeMap;
 use std::time::{Instant, SystemTime};
 
 use keyvo_core::config::Config;
 use keyvo_core::feedback::{Feedback, Look};
+use keyvo_core::focus::WindowContext;
 use keyvo_core::layout::Loaded;
 use keyvo_core::press;
-use keyvo_core::profile::{GLOBAL_ID, Key, KeySlot, Profile};
+use keyvo_core::profile::{Key, KeySlot, Profile};
 use keyvo_core::render::{self, KeySpec};
-use keyvo_core::trace::{Outcome, TraceRecord, Trigger};
+use keyvo_core::state::{PageButton, State, View};
+use keyvo_core::trace::{TraceRecord, Trigger};
+
+/// A key of one page (counted from 1) of one profile.
+type KeyId = (String, usize, KeySlot);
 
 /// The pad state behind every paint.
 #[derive(Debug, Clone)]
 pub struct Engine {
     loaded: Loaded,
-    profile: String,
-    page: usize,
+    state: State,
     keys: u8,
-    feedback: BTreeMap<KeySlot, Feedback>,
+    feedback: BTreeMap<KeyId, Feedback>,
 }
 
 impl Engine {
-    /// The global profile on page 1 of `loaded`, before any device told
-    /// its key count.
+    /// The global profile's context page in auto mode, before any device
+    /// told its key count. The state machine's `[timing]` values
+    /// (`focus_hysteresis`, `page_grace`, `long_press`) are read here.
     #[must_use]
     pub fn new(loaded: Loaded) -> Self {
+        let state = State::new(&loaded.config.timing, &loaded.profiles);
         Self {
             loaded,
-            profile: GLOBAL_ID.to_owned(),
-            page: 1,
+            state,
             keys: 0,
             feedback: BTreeMap::new(),
         }
@@ -52,39 +59,67 @@ impl Engine {
         self.keys = keys;
     }
 
-    /// Replaces the configuration after a reload. The active profile stays
-    /// when it still exists, else the global one is active; a page past the
-    /// profile's last falls back to page 1. Key states carry over.
+    /// Replaces the configuration after a reload: in auto mode the focused
+    /// window selects its profile again, as the rules may have changed;
+    /// manual mode keeps its profile while it exists. Key states carry
+    /// over.
     pub fn reload(&mut self, loaded: Loaded) {
         self.loaded = loaded;
-        if self.loaded.profiles.get(&self.profile).is_none() {
-            GLOBAL_ID.clone_into(&mut self.profile);
-        }
-        if self.page > self.active().pages.len() {
-            self.page = 1;
-        }
+        self.state.reload(&self.loaded.profiles);
+    }
+
+    /// The profile, page and mode the pad shows.
+    #[must_use]
+    pub fn view(&self) -> View {
+        self.state.view(&self.loaded.profiles)
     }
 
     /// The active profile.
     #[must_use]
     pub fn active(&self) -> &Profile {
+        let view = self.view();
         self.loaded
             .profiles
-            .get(&self.profile)
+            .get(&view.profile)
             .unwrap_or_else(|| self.loaded.profiles.global())
     }
 
     /// The active page, counted from 1.
     #[must_use]
-    pub const fn page(&self) -> usize {
-        self.page
+    pub fn page(&self) -> usize {
+        self.view().page
     }
 
-    fn key(&self, slot: KeySlot) -> Option<&Key> {
-        self.page
-            .checked_sub(1)
+    /// The focus source reports `window` at `now`.
+    pub fn focus(&mut self, window: WindowContext, now: Instant) {
+        self.state.focus(window, now, &self.loaded.profiles);
+    }
+
+    /// A page button went down at `now`.
+    pub fn page_press(&mut self, button: PageButton, now: Instant) {
+        self.state.press(button, now, &self.loaded.profiles);
+    }
+
+    /// A page button came up at `now`.
+    pub fn page_release(&mut self, button: PageButton, now: Instant) {
+        self.state.release(button, now, &self.loaded.profiles);
+    }
+
+    /// Applies a focus change or a page-button long press due at `now`.
+    pub fn poll(&mut self, now: Instant) {
+        self.state.poll(now, &self.loaded.profiles);
+    }
+
+    /// When [`Engine::poll`] has something to do next.
+    #[must_use]
+    pub fn next_deadline(&self) -> Option<Instant> {
+        self.state.next_deadline()
+    }
+
+    fn key(&self, page: usize, slot: KeySlot) -> Option<&Key> {
+        page.checked_sub(1)
             .and_then(|index| self.active().pages.get(index))
-            .and_then(|page| page.keys.get(&slot))
+            .and_then(|found| found.keys.get(&slot))
     }
 
     /// What every key shows at `now`, keys 1 to the device's key count. A
@@ -92,20 +127,22 @@ impl Engine {
     #[must_use]
     pub fn specs(&self, now: Instant) -> Vec<KeySpec> {
         let profile = self.active();
-        let specs = render::page(profile, self.page, self.keys)
+        let page = self.page();
+        let specs = render::page(profile, page, self.keys)
             .unwrap_or_else(|_| vec![KeySpec::default(); usize::from(self.keys)]);
         (1..=self.keys)
             .filter_map(KeySlot::new)
             .zip(specs)
             .map(|(slot, spec)| {
+                let id = (profile.profile.id.clone(), page, slot);
                 let look = self
                     .feedback
-                    .get(&slot)
+                    .get(&id)
                     .map_or(Look::Idle, |feedback| feedback.look(now));
                 if look == Look::Idle {
                     spec
                 } else {
-                    spec.with_look(self.key(slot), look)
+                    spec.with_look(self.key(page, slot), look)
                 }
             })
             .collect()
@@ -121,28 +158,29 @@ impl Engine {
             .min()
     }
 
-    fn feedback(&mut self, slot: KeySlot) -> &mut Feedback {
+    fn feedback(&mut self, record: &TraceRecord) -> &mut Feedback {
         let render = self.loaded.config.render;
         self.feedback
-            .entry(slot)
+            .entry((record.profile.clone(), record.page, record.key))
             .or_insert_with(|| Feedback::new(&render))
     }
 
     /// Resolves a press of `slot` on the active profile and page; an error
     /// or success look of the key ends.
     pub fn press(&mut self, slot: KeySlot, trigger: Trigger, at: SystemTime) -> TraceRecord {
-        self.feedback(slot).pressed();
-        press::resolve(self.active(), self.page, slot, trigger, at)
+        let record = press::resolve(self.active(), self.page(), slot, trigger, at);
+        self.feedback(&record).pressed();
+        record
     }
 
-    /// The action of `slot` started running at `now`.
-    pub fn started(&mut self, slot: KeySlot, now: Instant) {
-        self.feedback(slot).started(now);
+    /// The action of the press `record` started running at `now`.
+    pub fn started(&mut self, record: &TraceRecord, now: Instant) {
+        self.feedback(record).started(now);
     }
 
-    /// The action of `slot` ended at `now` with `outcome`.
-    pub fn finished(&mut self, slot: KeySlot, outcome: &Outcome, now: Instant) {
-        self.feedback(slot).finished(outcome, now);
+    /// The action of the press `record` ended at `now` with its result.
+    pub fn finished(&mut self, record: &TraceRecord, now: Instant) {
+        self.feedback(record).finished(&record.result, now);
     }
 }
 
@@ -154,7 +192,9 @@ mod tests {
 
     use keyvo_core::layout::Profiles;
     use keyvo_core::press::PressKind;
-    use keyvo_core::profile::Action;
+    use keyvo_core::profile::{Action, GLOBAL_ID};
+    use keyvo_core::state::Mode;
+    use keyvo_core::trace::Outcome;
 
     use super::*;
 
@@ -174,14 +214,42 @@ states.error = { label = "Broken" }
 [pages.keys.2]
 label = "Copy"
 action = { type = "chord", keys = "ctrl+c" }
+
+[[pages]]
+name = "general"
+[pages.keys.1]
+label = "Play"
 "##;
 
-    fn loaded(text: &str) -> Loaded {
-        let profile = Profile::from_toml(text, Path::new("global.toml")).unwrap();
+    const CODE: &str = r#"
+schema_version = 1
+[profile]
+id = "code"
+name = "Code"
+match = { class = ["code"] }
+
+[[pages]]
+[pages.keys.1]
+label = "Run"
+action = { type = "exec", cmd = "true" }
+"#;
+
+    fn loaded_with(texts: &[&str]) -> Loaded {
+        let profiles = texts
+            .iter()
+            .map(|text| {
+                let profile = Profile::from_toml(text, Path::new("p.toml")).unwrap();
+                (profile.profile.id.clone(), profile)
+            })
+            .collect();
         Loaded {
             config: Config::default(),
-            profiles: Profiles::new(BTreeMap::from([(profile.profile.id.clone(), profile)])),
+            profiles: Profiles::new(profiles),
         }
+    }
+
+    fn loaded(text: &str) -> Loaded {
+        loaded_with(&[text])
     }
 
     fn slot(n: u8) -> KeySlot {
@@ -193,6 +261,15 @@ action = { type = "chord", keys = "ctrl+c" }
             press: PressKind::Short,
             simulated: false,
         }
+    }
+
+    /// `engine` shows the profile for a `code` window from `now` on.
+    fn focus_code(engine: &mut Engine, now: Instant) {
+        engine.focus(WindowContext::new("code", "main.rs"), now);
+        let at = engine.next_deadline().unwrap();
+        assert_eq!(at, now + engine.config().timing.focus_hysteresis);
+        engine.poll(at);
+        assert_eq!(engine.active().profile.id, "code");
     }
 
     #[test]
@@ -213,20 +290,56 @@ action = { type = "chord", keys = "ctrl+c" }
     }
 
     #[test]
+    fn a_focused_window_and_the_page_buttons_choose_the_specs() {
+        let mut engine = Engine::new(loaded_with(&[GLOBAL, CODE]));
+        engine.set_key_count(9);
+        let now = Instant::now();
+        focus_code(&mut engine, now);
+        assert_eq!(engine.specs(now)[0].label.as_deref(), Some("Run"));
+        engine.page_press(PageButton::Left, now);
+        engine.page_release(PageButton::Left, now);
+        assert_eq!(
+            engine.view(),
+            View {
+                profile: GLOBAL_ID.into(),
+                page: 2,
+                mode: Mode::Auto
+            }
+        );
+        assert_eq!(engine.specs(now)[0].label.as_deref(), Some("Play"));
+    }
+
+    #[test]
+    fn a_key_state_stays_with_the_page_it_was_pressed_on() {
+        let mut engine = Engine::new(loaded_with(&[GLOBAL, CODE]));
+        engine.set_key_count(9);
+        let now = Instant::now();
+        let record = engine.press(slot(1), short(), SystemTime::UNIX_EPOCH);
+        engine.started(&record, now);
+        assert_eq!(engine.specs(now)[0].look, Look::Running);
+        focus_code(&mut engine, now);
+        assert_eq!(engine.specs(now)[0].look, Look::Idle);
+        engine.page_press(PageButton::Left, now);
+        engine.page_release(PageButton::Left, now);
+        // The general page is another page of the global profile.
+        assert_eq!(engine.specs(now)[0].look, Look::Idle);
+    }
+
+    #[test]
     fn a_failed_exec_shows_the_error_look_with_the_key_state() {
         let mut engine = Engine::new(loaded(GLOBAL));
         engine.set_key_count(9);
         let now = Instant::now();
-        let record = engine.press(slot(1), short(), SystemTime::UNIX_EPOCH);
+        let mut record = engine.press(slot(1), short(), SystemTime::UNIX_EPOCH);
         assert_eq!(record.result, Outcome::Pending);
         assert!(matches!(record.action, Some(Action::Exec { .. })));
-        engine.started(slot(1), now);
+        engine.started(&record, now);
         assert_eq!(engine.specs(now)[0].look, Look::Running);
-        let failed = Outcome::Exited {
+        record.finish(Outcome::Exited {
             code: Some(1),
             duration_ms: 5,
-        };
-        engine.finished(slot(1), &failed, now);
+        });
+        engine.finished(&record, now);
         let spec = &engine.specs(now)[0];
         assert_eq!(spec.look, Look::Error);
         assert_eq!(spec.label.as_deref(), Some("Broken"));
@@ -242,16 +355,17 @@ action = { type = "chord", keys = "ctrl+c" }
         engine.set_key_count(9);
         let now = Instant::now();
         let hold = engine.config().render.feedback_hold;
-        engine.started(slot(1), now);
+        let mut record = engine.press(slot(1), short(), SystemTime::UNIX_EPOCH);
+        engine.started(&record, now);
         assert_eq!(
             engine.next_change(now),
             Some(now + engine.config().render.long_run_threshold)
         );
-        let ok = Outcome::Exited {
+        record.finish(Outcome::Exited {
             code: Some(0),
             duration_ms: 5,
-        };
-        engine.finished(slot(1), &ok, now);
+        });
+        engine.finished(&record, now);
         assert_eq!(engine.specs(now)[0].look, Look::Success);
         assert_eq!(engine.next_change(now), Some(now + hold));
         assert_eq!(engine.specs(now + hold)[0].look, Look::Idle);
@@ -273,7 +387,9 @@ action = { type = "chord", keys = "ctrl+c" }
         let mut engine = Engine::new(loaded(GLOBAL));
         engine.set_key_count(9);
         let now = Instant::now();
-        engine.finished(slot(1), &Outcome::Failed { error: "x".into() }, now);
+        let mut record = engine.press(slot(1), short(), SystemTime::UNIX_EPOCH);
+        record.finish(Outcome::Failed { error: "x".into() });
+        engine.finished(&record, now);
         engine.reload(loaded(&GLOBAL.replace("\"Copy\"", "\"Paste\"")));
         let specs = engine.specs(now);
         assert_eq!(specs[1].label.as_deref(), Some("Paste"));
@@ -282,16 +398,16 @@ action = { type = "chord", keys = "ctrl+c" }
     }
 
     #[test]
-    fn a_reload_without_the_active_profile_or_page_falls_back() {
-        let mut engine = Engine::new(loaded(GLOBAL));
-        engine.profile = "gone".into();
-        engine.page = 4;
+    fn a_reload_without_the_active_profile_falls_back() {
+        let mut engine = Engine::new(loaded_with(&[GLOBAL, CODE]));
+        focus_code(&mut engine, Instant::now());
         engine.reload(Loaded {
             config: Config::default(),
             profiles: Profiles::new(BTreeMap::new()),
         });
         assert_eq!(engine.active().profile.id, GLOBAL_ID);
         assert_eq!(engine.page(), 1);
+        assert_eq!(engine.next_deadline(), None);
         assert_eq!(
             engine.next_change(Instant::now() + Duration::from_secs(1)),
             None

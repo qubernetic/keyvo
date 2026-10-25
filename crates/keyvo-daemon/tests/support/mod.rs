@@ -19,6 +19,8 @@ use keyvo_daemon::device::Connector;
 
 /// The display's VLP index in the fixtures.
 pub const DISPLAY: u8 = 2;
+/// The `0x1B04` feature index in the fixtures.
+pub const REPROG: u8 = 0x0b;
 /// Longest a read of an idle pad blocks, so the actor does not spin.
 const IDLE_READ: Duration = Duration::from_millis(2);
 
@@ -118,6 +120,17 @@ impl Pad {
         report.resize(32, 0);
         state.seq = state.seq.wrapping_add(1);
         state.input.push_back(report);
+    }
+
+    /// The page buttons `cids` are held now: a diverted-control
+    /// notification on the `0x1B04` index, as in `page-buttons.txt`.
+    pub fn buttons(&self, cids: &[u16]) {
+        let mut report = vec![0x11, 0xff, REPROG, 0x00];
+        for cid in cids {
+            report.extend_from_slice(&cid.to_be_bytes());
+        }
+        report.resize(20, 0);
+        self.state().input.push_back(report);
     }
 
     /// Every image received so far, in order.

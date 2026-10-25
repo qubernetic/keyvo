@@ -1,0 +1,18 @@
+schema_version = 1
+
+[profile]
+id   = "global"
+name = "Everywhere"
+
+[[pages]]
+name = "context"
+
+[pages.keys.1]
+label = "Global"
+
+[[pages]]
+name = "general"
+
+[pages.keys.1]
+label = "Play"
+action = { type = "chord", keys = "playpause" }

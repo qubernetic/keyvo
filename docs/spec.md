@@ -146,13 +146,22 @@ own report. Without a usable `/dev/uinput` the daemon still paints and runs
 `exec` actions; chord presses fail with the reason in their trace record.
 `FakeInputInjector` records the events in tests.
 
+`WindowWatcher` (`keyvo_core::focus`) reports the focused window as a
+`WindowContext` (`class`, `title`): `start(sink)` hands it a callback that
+it calls from any thread on every focus change until the watcher is
+dropped; a watcher that knows the focused window reports it at once. A
+watcher that cannot start returns the reason, and the daemon logs
+"focus switching off" and runs on with the page buttons. The pre-alpha
+daemon binary has no focus source yet (the KWin watcher is the next
+slice); `FakeWindowWatcher` lets a test report a window by hand.
+
 The daemon as built (pre-alpha, `keyvo-daemon`): one tokio controller task
 owns the profile state and the per-key feedback; one device actor thread
 owns the Keypad's transport (§5.1, §5.5); `exec` actions run as their own
 tasks (§8); an inotify watcher reports changes in the configuration
 directory (§7.2). Its end-to-end tests drive the controller with
-`FakeHidTransport` pads, a `FakeInputInjector` and a configuration
-directory on disk. Run it with `just build`, then `bin/keyvo-daemon
+`FakeHidTransport` pads, a `FakeInputInjector`, a `FakeWindowWatcher` and
+a configuration directory on disk. Run it with `just build`, then `bin/keyvo-daemon
 [--config-dir DIR] [--device PATH]` on the host; logs go to stderr.
 
 Core rendering is the pure function
@@ -514,6 +523,16 @@ while an agent is working. A profile may declare an
 optional `general_hint`: a single key on the general page that mirrors the
 top overlay's state (decided in the grill).
 
+As built (pre-alpha, `keyvo_core::state`, no overlays or project layer
+yet): the state machine starts in auto mode on the global profile's
+context page. A profile's *context page* is its page named `context`,
+else its first page; the *general page* is the global profile's page
+named `general`. The daemon reports every change of profile, page or
+mode as a `Switched` event and in the log, then repaints the keys that
+differ. Key states (`running`, `success`, `error`) belong to a key of one
+page of one profile: an `exec` started on one profile keeps its look
+there and never shows on another.
+
 Defaults, all configurable under `[timing]` in `config.toml`:
 
 | Key | Default | Meaning |
@@ -553,6 +572,20 @@ Defaults, all configurable under `[timing]` in `config.toml`:
   language pages, terminal title → Claude Code), explicit priority, and
   **external hooks** via `notify_context`, which take precedence over
   heuristics.
+- Matching as built (pre-alpha, `Match::matches` and `Profiles::select`):
+  a profile matches a window when one of its `match.class` entries does
+  (if it has any) and its `match.title` regex finds the title (if it has
+  one); a profile with neither never matches. A class entry matches
+  ASCII-case-insensitively as the whole name, and a name without a `.`
+  also matches the last segment of a reverse-DNS name on the other side
+  (`konsole` and `org.kde.konsole`; `org.kde.konsole` and
+  `org.other.konsole` do not). Of the matching app profiles the highest
+  `priority` wins; between equal priorities one with a title rule beats
+  one without, then the first in id order. No match selects the global
+  profile, whose rules are never consulted. A report applies once no
+  other report came for `focus_hysteresis`; a report of the window
+  already applied cancels a pending one. Class globs and regexes come
+  later.
 - **Project context (M2).** Integrations push the working directory with
   `notify_context` (`cwd` field): shell prompt hooks for bash, zsh and fish,
   the VS Code extension, tmux. The daemon binds the directory to the focused
@@ -575,6 +608,20 @@ Defaults, all configurable under `[timing]` in `config.toml`:
   "lock" badge, theme-controlled).
 - Both page buttons held together is reserved as an always-available escape
   chord (return to the global profile, context page, auto mode).
+- As built (pre-alpha, `keyvo_core::state`): a page button acts on its
+  release when it was held shorter than `long_press`, and toggles the mode
+  once `long_press` is reached, without waiting for the release. In auto
+  mode a short press of either button toggles context and general; with
+  no general page it does nothing. Entering manual mode keeps the profile
+  and page the pad shows; there the right button pages forward and the
+  left back, both wrapping around, and focus changes are recorded but not
+  shown. Leaving manual mode shows the context page of the profile the
+  focused window selects. An app switch is a focus change to another
+  window class; a title change in the same app keeps the general page.
+  Every press and release of a page button counts as its use for
+  `page_grace`. The second button held escapes; neither button then acts
+  again until it is pressed anew. Until a later focus change the global
+  profile shows. The visual mark for manual mode comes later.
 
 ---
 
@@ -725,13 +772,18 @@ mouse.dpi            = 1200
   added). After `[timing].reload_settle` without a further change the
   daemon loads the whole directory again (§7.1). A directory that does not
   load keeps the last good profiles and config, logs every problem with
-  file, line and column and paints nothing new. The active profile stays
-  when it still exists, else the global one is active; key states carry
-  over. When the directory does not load at start, the daemon runs with
-  its `config.toml` (when that one is valid) and the built-in global
-  profile. A missing directory turns hot-reload off with a warning. The
-  `[timing]` values of the device (§5) and `long_press` are read at start;
-  the other `[timing]` and `[render]` values apply from the next reload.
+  file, line and column and paints nothing new. In auto mode the focused
+  window selects its profile again, as the rules may have changed (a new
+  profile file for the focused app shows at once); manual mode keeps its
+  profile while it exists, else the global context page shows, and a page
+  that is gone falls back to page 1. A general page that is gone shows
+  the context page. Key states carry over. When the directory does not
+  load at start, the daemon runs with its `config.toml` (when that one is
+  valid) and the built-in global profile. A missing directory turns
+  hot-reload off with a warning. The `[timing]` values of the device
+  (§5), `long_press`, `focus_hysteresis` and `page_grace` are read at
+  start; the other `[timing]` and `[render]` values apply from the next
+  reload.
   The mtime poll fallback, `SIGHUP` and the socket `reload` come later.
 - Desk state is applied by calling `solaar config …` (v1, optional feature,
   M3); never on Windows in plugin mode (Options+ owns the devices).
@@ -1214,6 +1266,15 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, pre-alpha slice 11 (2026-10-25)**: §4.1 the `WindowWatcher`
+  signature and `FakeWindowWatcher`; §6.1 the state machine as built,
+  context and general page, key states per profile page; §6.2 class and
+  title matching, priority and tie-break, the focus hysteresis as built;
+  §6.3 the page buttons as built (short and long press, manual paging,
+  app switch and page grace, the escape); §7.2 a reload selects the
+  profile for the focused window again, `focus_hysteresis` and
+  `page_grace` are read at start.
 
 - **v0.3, pre-alpha slice 10 (2026-10-25)**: §4.1 the `InputInjector`
   signature, the uinput keyboard and the daemon as built; §5.1 the
