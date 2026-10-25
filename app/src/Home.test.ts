@@ -18,11 +18,22 @@ const STATUS = responses()[0] as Status;
 const DRY_RUN = (responses()[3] as { entry: TraceRecord }).entry;
 const PROFILE = "/home/u/.config/keyvo/profiles/terminal.toml";
 
+/** Key 4 is the profile's own, key 3 a global key under it, key 5 has no
+ * layer (as the tiles of a GUI before the layer was reported). */
 function tiles(profile: string, page: number): Tile[] {
   return Array.from({ length: 9 }, (_, index) => ({
     image: `data:image/png;base64,${profile}-${page}-${index + 1}`,
     ...(index === 4 ? { label: "Test", action: { type: "exec" as const, cmd: "cargo test" } } : {}),
-    ...(index === 3 ? { label: "Palette", action: { type: "chord" as const, keys: "ctrl+p" } } : {}),
+    ...(index === 3
+      ? {
+          label: "Palette",
+          action: { type: "chord" as const, keys: "ctrl+p" },
+          layer: profile === "global" ? ("global" as const) : ("app" as const),
+        }
+      : {}),
+    ...(index === 2
+      ? { label: "Type", action: { type: "chord" as const, keys: "shift+k" }, layer: "global" as const }
+      : {}),
   }));
 }
 
@@ -97,7 +108,20 @@ describe("Home mirror", () => {
     );
     expect(key(1).querySelector("img")).toHaveAttribute("alt", "");
     expect(key(1)).toHaveAccessibleName("Key 1: unbound");
-    expect(key(4)).toHaveAccessibleName("Key 4: Palette, chord ctrl+p");
+    expect(key(4)).toHaveAccessibleName("Key 4: Palette, chord ctrl+p, app layer");
+  });
+
+  it("names the layer of each key and marks the global keys under an app profile", async () => {
+    const daemon = await mounted();
+    expect(key(3)).toHaveAccessibleName("Key 3: Type, chord shift+k, global layer");
+    expect(within(key(3)).getByText("global")).toBeInTheDocument();
+    expect(within(key(4)).queryByText("global")).not.toBeInTheDocument();
+    // On the global profile every key is global: no mark.
+    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
+    await waitFor(() =>
+      expect(key(4)).toHaveAccessibleName("Key 4: Palette, chord ctrl+p, global layer"),
+    );
+    expect(within(key(3)).queryByText("global")).not.toBeInTheDocument();
   });
 
   it("follows the view events and fetches the new page", async () => {
@@ -197,10 +221,14 @@ describe("Home event list", () => {
     const items = within(list).getAllByRole("listitem");
     expect(items.map((item) => item.textContent?.trim())).toEqual([
       expect.stringContaining("Key 1: unbound"),
-      expect.stringContaining("Key 5 long, simulated: exec cargo test, dry run, nothing executed"),
-      expect.stringContaining("Key 9: exec gh pr view --web, failed: no such file or directory: gh"),
-      expect.stringContaining("Key 1: exec cargo build, exited 101 after 2318 ms"),
-      expect.stringContaining("Key 4: chord ctrl+p, sent"),
+      expect.stringContaining(
+        "Key 5 long, simulated, app layer: exec cargo test, dry run, nothing executed",
+      ),
+      expect.stringContaining(
+        "Key 9, app layer: exec gh pr view --web, failed: no such file or directory: gh",
+      ),
+      expect.stringContaining("Key 1, app layer: exec cargo build, exited 101 after 2318 ms"),
+      expect.stringContaining("Key 4, app layer: chord ctrl+p, sent"),
     ]);
   });
 
@@ -216,7 +244,7 @@ describe("Home virtual pad", () => {
     await fireEvent.click(key(5));
     expect(daemon.daemon.press).toHaveBeenCalledWith(5, "short");
     expect(await screen.findByRole("status", { name: "Press result" })).toHaveTextContent(
-      "Key 5, simulated: exec cargo test, dry run, nothing executed",
+      "Key 5, simulated, global layer: exec cargo test, dry run, nothing executed",
     );
   });
 

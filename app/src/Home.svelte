@@ -112,7 +112,13 @@
   function name(key: number): string {
     const tile = tiles[key - 1];
     const label = tile?.label === undefined ? "" : `${tile.label}, `;
-    return `Key ${key}: ${label}${action(tile)}`;
+    const layer = tile?.layer === undefined ? "" : `, ${tile.layer} layer`;
+    return `Key ${key}: ${label}${action(tile)}${layer}`;
+  }
+
+  /** A global key under an app profile (spec §6.1), which the mirror marks. */
+  function fallen(key: number): boolean {
+    return tiles[key - 1]?.layer === "global" && home.view?.profile !== "global";
   }
 
   async function press(key: number, kind: PressKind) {
@@ -249,6 +255,9 @@
               >
                 {#if tiles[key - 1]}
                   <img src={tiles[key - 1]?.image} alt="" />
+                  {#if fallen(key)}
+                    <span class="layer" aria-hidden="true">global</span>
+                  {/if}
                 {:else}
                   <span aria-hidden="true">{key}</span>
                 {/if}
@@ -357,10 +366,25 @@
     border-color: var(--kv-fg);
   }
 
+  .key {
+    position: relative;
+  }
+
   .key img {
     display: block;
     width: 100%;
     height: 100%;
+  }
+
+  .key .layer {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    padding: 0 4px;
+    border-radius: var(--kv-radius);
+    background: var(--kv-bg-alt);
+    color: var(--kv-fg);
+    font-size: 0.75em;
   }
 
   .note,

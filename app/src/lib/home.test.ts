@@ -109,23 +109,30 @@ describe("apply", () => {
 describe("summarize", () => {
   it("says what every fixture entry did on one line", () => {
     expect(traces().map(summarize)).toEqual([
-      "Key 4: chord ctrl+p, sent",
-      "Key 1: exec cargo build, exited 101 after 2318 ms",
-      "Key 9: exec gh pr view --web, failed: no such file or directory: gh",
-      "Key 5 long, simulated: exec cargo test, dry run, nothing executed",
+      "Key 4, app layer: chord ctrl+p, sent",
+      "Key 1, app layer: exec cargo build, exited 101 after 2318 ms",
+      "Key 9, app layer: exec gh pr view --web, failed: no such file or directory: gh",
+      "Key 5 long, simulated, app layer: exec cargo test, dry run, nothing executed",
       "Key 1: unbound",
     ]);
   });
 
   it("says when an exec is still running", () => {
     const pending = (responses()[4] as { entry: TraceRecord }).entry;
-    expect(summarize(pending)).toBe("Key 1 long: exec cargo build, running");
+    expect(summarize(pending)).toBe("Key 1 long, global layer: exec cargo build, running");
+  });
+
+  it("names the global layer of a key the app profile lacks", () => {
+    const entry = nth(traces(), 0);
+    expect(summarize({ ...entry, profile: "terminal", layer: "global" })).toBe(
+      "Key 4, global layer: chord ctrl+p, sent",
+    );
   });
 
   it("names a status it does not know", () => {
     const entry = nth(traces(), 0);
     expect(summarize({ ...entry, result: { status: "teleported" } })).toBe(
-      "Key 4: chord ctrl+p, teleported",
+      "Key 4, app layer: chord ctrl+p, teleported",
     );
   });
 });

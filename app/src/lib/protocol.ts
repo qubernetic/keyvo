@@ -78,6 +78,9 @@ export interface Subscribed {
 
 export type Action = { type: "chord"; keys: string } | { type: "exec"; cmd: string };
 
+/** The layer of the stack that supplied a key (spec §6.1). */
+export type Layer = "global" | "app";
+
 /** One trace entry (spec §8). */
 export interface TraceRecord {
   timestamp_ms: number;
@@ -85,6 +88,8 @@ export interface TraceRecord {
   profile: string;
   page: number;
   key: number;
+  /** Absent when no layer defines the key. */
+  layer?: Layer;
   action: Action | null;
   result: { status: string; [field: string]: unknown };
 }

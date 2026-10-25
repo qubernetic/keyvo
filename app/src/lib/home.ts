@@ -106,11 +106,13 @@ function result(entry: TraceRecord): string {
   }
 }
 
-/** One line: the key, how it was pressed, the action and what came of it. */
+/** One line: the key, how it was pressed, the layer that supplied it, the
+ * action and what came of it. */
 export function summarize(entry: TraceRecord): string {
   const how = [
     entry.trigger.press === "long" ? " long" : "",
     entry.trigger.simulated ? ", simulated" : "",
+    entry.layer === undefined ? "" : `, ${entry.layer} layer`,
   ].join("");
   return `Key ${entry.key}${how}: ${action(entry)}${result(entry)}`;
 }

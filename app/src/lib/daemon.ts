@@ -3,7 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-import type { Action, Event, PressKind, Status, TraceRecord, View } from "./protocol";
+import type { Action, Event, Layer, PressKind, Status, TraceRecord, View } from "./protocol";
 
 /** What a subscription hands on, as keyvo_client::Update: the view, every
  * event, then why it ended. */
@@ -18,6 +18,8 @@ export interface Tile {
   image: string;
   label?: string;
   action?: Action;
+  /** The layer that supplied the key; absent when no layer defines it. */
+  layer?: Layer;
 }
 
 export interface Daemon {
