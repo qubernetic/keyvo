@@ -14,8 +14,18 @@ sysfs has.
 | `keypad-without-bulk` | `hidraw2` Keypad (11 13) | refused: no node carries `0x14` |
 | `receiver-only` | `hidraw9` Bolt receiver | not found |
 
-The descriptors are synthetic. The Keypad's follows the five top-level
-collections shensquared decoded on macOS
-(`docs/research/logilinux-and-julusian-analysis.md` §7.1); the real Linux
-topology and descriptor bytes come from the hardware check (plan §5 item 1)
-and replace these files then.
+The Keypad descriptor of `keypad-and-receiver` is the real one: first
+light on 2026-10-25, firmware `U1 66.00.B0017`, `xxd
+/sys/class/hidraw/hidraw6/device/report_descriptor` on the owner's Keypad
+(`00-item1-report-descriptor.hex` of the first-light logs on
+qubernetic/keyvo#40), 140 bytes, five top-level collections. Linux creates
+one USB interface and one hidraw node for `046d:c354`, so this is the
+topology keyvo meets. The node keeps the name `hidraw2` (the node number
+changes between boots and plugs; first light had `hidraw6`); its `uevent`
+carries the `HID_PHYS` path of the first-light report on #40 and is
+otherwise in the kernel's format.
+
+`keypad-split` and `keypad-without-bulk` are hypothetical topologies the
+node search must still handle; their collections are cut from the captured
+descriptor. The Bolt receiver's descriptor (`hidraw9`) is synthetic: a
+short `0x10` and a long `0x11` vendor report; only its VID/PID matters.

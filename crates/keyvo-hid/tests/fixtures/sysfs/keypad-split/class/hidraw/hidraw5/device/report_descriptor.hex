@@ -1,5 +1,7 @@
 # The Keypad's vendor collections on a second hidraw node: reports 0x11,
-# 0x13 and 0x14. Synthetic, as in keypad-and-receiver/.
-06 43 ff 0a 02 1a a1 01 85 11 75 08 95 13 15 00 26 ff 00 09 02 81 00 09 02 91 00 c0
-06 43 ff 0a 08 1a a1 01 85 13 75 08 95 1f 15 00 26 ff 00 09 08 81 00 09 08 91 00 c0
-06 43 ff 0a 10 1a a1 01 85 14 75 08 96 fe 0f 15 00 26 ff 00 09 10 91 00 c0
+# 0x13 and 0x14. A hypothetical topology (first light, 2026-10-25, found one
+# node); the collections are the captured bytes of
+# keypad-and-receiver/.../hidraw2/device/report_descriptor.hex.
+06 43 ff 0a 02 1a a1 01 85 11 95 13 75 08 15 00 26 ff 00 09 02 81 00 09 02 91 00 c0
+06 43 ff 0a 08 1a a1 01 85 13 96 1f 00 75 08 15 00 26 ff 00 09 08 82 02 01 09 08 92 02 01 c0
+06 43 ff 0a 10 1a a1 01 85 14 96 fe 0f 75 08 15 00 26 ff 00 09 10 92 02 01 c0
