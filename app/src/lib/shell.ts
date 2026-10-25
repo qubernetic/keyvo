@@ -2,6 +2,7 @@
 // screens in order with their shortcuts, the widths at which the columns
 // collapse, and what the header's device selector offers.
 import type { MessageKey } from "./i18n";
+import type { IconName } from "./icons";
 import type { DeviceStatus } from "./protocol";
 
 export type ScreenId =
@@ -16,19 +17,20 @@ export type ScreenId =
 export interface Screen {
   id: ScreenId;
   label: MessageKey;
+  icon: IconName;
   /** For a screen not built yet: the sentence naming its roadmap item. */
   soon?: MessageKey;
 }
 
 /** The rail, top to bottom; `Ctrl+1` is the first. */
 export const SCREENS: readonly Screen[] = [
-  { id: "home", label: "rail.home" },
-  { id: "profiles", label: "rail.profiles" },
-  { id: "behaviors", label: "rail.behaviors", soon: "soon.behaviors" },
-  { id: "projects", label: "rail.projects", soon: "soon.projects" },
-  { id: "integrations", label: "rail.integrations", soon: "soon.integrations" },
-  { id: "devices", label: "rail.devices", soon: "soon.devices" },
-  { id: "settings", label: "rail.settings", soon: "soon.settings" },
+  { id: "home", label: "rail.home", icon: "house" },
+  { id: "profiles", label: "rail.profiles", icon: "layers" },
+  { id: "behaviors", label: "rail.behaviors", icon: "workflow", soon: "soon.behaviors" },
+  { id: "projects", label: "rail.projects", icon: "folder-git-2", soon: "soon.projects" },
+  { id: "integrations", label: "rail.integrations", icon: "plug", soon: "soon.integrations" },
+  { id: "devices", label: "rail.devices", icon: "keyboard", soon: "soon.devices" },
+  { id: "settings", label: "rail.settings", icon: "settings", soon: "soon.settings" },
 ];
 
 /** The index into SCREENS that `Ctrl+1` to `Ctrl+7` names, if `event` is one. */
