@@ -97,6 +97,19 @@ app-test: _up
     {{ exec }} npm --prefix app run check
     {{ exec }} npm --prefix app test
 
+# Build the frontend and the Tauri shell (outside the root workspace, needs the
+# dev image's webkit2gtk) and copy keyvo-app to bin/ (profile: dev or release)
+app-build profile="dev": _up
+    {{ exec }} npm --prefix app ci --no-fund --no-audit
+    {{ exec }} npm --prefix app run build
+    {{ exec }} cargo fmt --manifest-path app/src-tauri/Cargo.toml -- --check
+    {{ exec }} cargo clippy --manifest-path app/src-tauri/Cargo.toml --locked --all-targets -- -D warnings
+    {{ exec }} cargo build --manifest-path app/src-tauri/Cargo.toml --locked --profile {{ profile }} --features tauri/custom-protocol
+    @case "{{ profile }}" in dev) dir=debug ;; *) dir="{{ profile }}" ;; esac; \
+    mkdir -p bin; \
+    install -m 755 "app/src-tauri/target/$dir/keyvo-app" bin/; \
+    echo "binary in bin/: keyvo-app ($dir)"
+
 # The exact sequence CI runs (.github/workflows/ci.yml), tests in the nextest ci profile
 ci: fmt-check lint (test "--profile" "ci") deny cov
 
