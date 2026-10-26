@@ -244,6 +244,8 @@ export const messages = {
   "catalogue.title": "Actions",
   "catalogue.search": "Search actions",
   "catalogue.noMatch": "No action matches",
+  "catalogue.assign": "Assign to key {key}, or drag it onto a key.",
+  "catalogue.selectFirst": "Select a key to assign it, or drag it onto a key.",
   "catalogue.general": "General",
   "catalogue.system": "System",
   "catalogue.apps": "Apps",
