@@ -317,12 +317,12 @@ is for `keyvo ctl`, T3 for the app.
       the focus again. The `...` menu's `Keyboard shortcuts` opens the
       keyboard map in the same place (one drawer at a time); `Esc`
       closes it.
-    - Narrow the window: below 1200 px the right column of Profiles
-      collapses to its toggle button, below 1100 px the rail shows icons
-      only, below 1000 px the list column collapses too. The window does
-      not shrink below 960 x 640.
+    - Narrow the window: below 1200 px the Pad's Actions column
+      collapses into the inspector's Action select, below 1100 px the
+      rail shows icons only, below 1000 px the Profiles list moves above
+      the editor. The window does not shrink below 960 x 640.
     - Open the device selector in the header and the Action selector of
-      the key editor, and the `...` menu: every option and entry is
+      the inspector, and the `...` menu: every option and entry is
       readable (light text on a dark background). The menu's entries
       but `Keyboard shortcuts` are greyed with `Coming soon`. Switch the desktop between
       the light and the dark theme (System Settings, Colors and Themes,
@@ -363,14 +363,15 @@ is for `keyvo ctl`, T3 for the app.
 14. **Profiles.** Focus Konsole, then press `Ctrl+2` in the app:
 
     - The list shows Global first, then Konsole and VS Code (all three
-      have priority 0, so by id), each with its accent, id and priority;
-      Konsole is marked `active` and selected. Focus another window and
-      come back: the mark follows the pad.
-    - The header shows id `konsole`, priority `0`, the name and the
-      accent `#3fae5a`, and the file
-      `~/.config/keyvo/profiles/konsole.toml`. Change the name to
-      `Terminal` and press Enter. Expected: the list shows `Terminal`
-      at once, and
+      have priority 0, so by id), each name followed by a small square
+      of its accent; Konsole says `on the pad` and is selected. Focus
+      another window and come back: the mark follows the pad.
+    - The heading row shows `Konsole` and `Open in editor`, the file
+      `~/.config/keyvo/profiles/konsole.toml` under it, once. The form
+      shows the name, the accent `#3fae5a` beside its swatch, priority
+      `0` with `higher wins the window`, and Enabled as a greyed switch
+      reading `On`. Change the name to `Terminal` and press Enter.
+      Expected: the heading and the list show `Terminal` at once, and
 
       ```bash
       diff contrib/profiles/konsole.toml ~/.config/keyvo/profiles/konsole.toml
@@ -379,31 +380,28 @@ is for `keyvo ctl`, T3 for the app.
       shows only the `name` line, alignment intact. Change the accent to
       `#d6884e` and press Enter: the pad's accent bar turns orange within
       about a second and the diff shows the `accent` line too, its
-      `# green` comment kept. Type `teal` as the accent: an alert says it
-      is not `#rrggbb` and nothing is written. Restore the file:
+      `# green` comment kept. Type `teal` as the accent: the line under
+      the field says it is not `#rrggbb` and nothing is written. Restore
+      the file:
       `cp contrib/profiles/konsole.toml ~/.config/keyvo/profiles/`.
     - `Open in editor` opens `konsole.toml` in the desktop's application
       for TOML files.
-    - Match rules show `org.kde.konsole` and `konsole`; `Edit match
-      rules` is greyed with `Coming soon`. Select Global in the list: it
-      says it has no match rules and is under every window.
-    - On Global the tabs are `context`, `general` and `third`. Click
-      `general`, or Tab onto the tabs and press the right arrow: the key
-      grid and the page preview on the right show page 2, while the pad
-      stays where it is.
-    - On Konsole's `context` tab, click key 3 (or press `3` on the key
-      grid): the key editor opens below the grid on key 3 and the
-      `Selected key` card shows `Key 3`, `1, context` and `global
-      layer` (Konsole does not define key 3, so the global key shows,
-      as on the pad). Key 1 says `app layer`. Change key 1's label to
-      `Tab`, press Enter: the pad and both mirrors show `Tab`; click
-      outside the form and press `Ctrl+Z`: `New tab` comes back.
-    - `+` above the list, `Move key` and `Open in Behaviors` are greyed:
-      hovering shows `Coming soon`, Tab onto one adds the sentence with
-      its roadmap item, and a click does nothing.
-    - Unplug the Keypad: the key grid keeps its nine keys, the page
-      preview says it appears once a Keypad has reported its geometry.
-      Plug it back.
+    - Match rules show `Window class` once with `org.kde.konsole` and
+      `konsole` under it; `+ rule` and each row's `Edit` are greyed with
+      `Coming soon`. Select Global in the list: it says the global
+      profile is under every window.
+    - On Global the Pages are three thumbnails, `context`, `general` and
+      `third`, each the page's tiles as the pad would show them. Click
+      `general`, then `Edit keys on the Pad`: the Pad opens with the
+      Profile dropdown on Global and the `general` tab selected, and the
+      line says the pad moved to Konsole; `Follow` returns to it.
+    - `+` above the list opens Empty profile, Copy of the active profile
+      and Starter pack, all greyed: hovering shows `Coming soon`, Tab
+      onto one adds the sentence with its roadmap item, and a click does
+      nothing.
+    - Unplug the Keypad: the thumbnails keep their names and a note says
+      the pictures appear once a Keypad has reported its geometry. Plug
+      it back.
 
 Stop the app and the daemon (Ctrl-C) before section 6; it restarts them
 as each item needs.
@@ -751,6 +749,14 @@ The mock dev server of #113 in a host browser for the first two, then the app wi
 - [ ] #136 `just app-dev` in a window at least 1200 px wide: the Actions column lists the packs of `contrib/recipes/` (System: Brightness down to Volume up; Apps: Calculator, Konsole, Screenshot, Spectacle, VS Code) with Chord and Exec at the end of General. Type `region` into Search actions: only Spectacle is left.
 - [ ] #136 Drag Spectacle onto key 7: the result line says it was written, the tile shows the camera and `Capture`, and the inspector shows `What it does` set to `Full screen` above the Action; choose `Region`: the Command reads `spectacle --region`. Undo takes it back to `Full screen`. Narrow the window below 1200 px: the Action select lists the presets, and choosing `Volume up` there writes it into the selected key.
 - [ ] #136 With the daemon and the Keypad (#119's user tests): Spectacle with `Region` on key 7, then press key 7 on the pad: Spectacle opens the region capture. Drag Volume up onto key 8 and press it: the volume rises and Plasma's volume OSD shows. The profile file round-trips (only the lines of keys 7 and 8 change).
+
+### The profiles screen as the profile manager (#137)
+
+The app with the daemon in the GNOME runtime. Run by the owner in #130.
+
+- [ ] #137 At 1363x798 and at 960 px, light and dark: the list, the header form and the rules with no control under a scroll bar; the thumbnails render the pages.
+- [ ] #137 Section 5 step 14: name and accent edits round-trip (the file byte-identical outside the field); `Edit keys on the Pad` opens the Pad pinned to the profile and the selected page.
+- [ ] #137 Every dropdown opened and read in the light and the dark desktop theme (carried from #52).
 
 ### First-light records (#75)
 

@@ -1712,12 +1712,14 @@ and the columns of `docs/design/gui-ux.md` §2:
   of an error only, a leading word ("Error", "Note"), the body in
   `--kv-fg`; an error is an `alert`. The token test refuses a side
   border over 1 px anywhere and a state-coloured border outside Notice.
-- **Columns.** List column, editor and right column; the right column
-  collapses below 1200 px, the list column below 1000 px, and a toggle at
-  each column's edge shows or hides it until the width crosses its limit
-  again. The Pad has the editor area only. The Pad stays mounted while
-  another screen shows, so the header follows the daemon; its `Ctrl+Z`
-  then does nothing.
+- **Columns.** Each screen lays out its own columns by the window width
+  (`app/src/lib/shell.ts` `layout`): the Pad's catalogue column from
+  1200 px, the Profiles list column beside the editor from 1000 px and
+  above it below. Every scrolling column reserves its scroll bar gutter
+  (`scrollbar-gutter: stable`) and takes the theme's thin scroll bar, so
+  no control sits under it. The Pad stays mounted while another screen
+  shows, so the header follows the daemon; its `Ctrl+Z` then does
+  nothing.
 - **Tokens and controls.** `color-scheme: dark` on `:root` matches the
   dark token set, so the webview's own popups (the option list of a
   `<select>`) are dark. `app/src/styles/controls.css` gives every form
@@ -1851,10 +1853,8 @@ then subscribes with a replay of the newest 20 trace entries;
 
 **As built (pre-alpha inspector).** Beside the drawing, the pinned
 inspector (`app/src/Inspector.svelte`, `app/src/lib/editor.ts`) shows the
-key selected on the grid on the pinned profile and page. Profiles keeps
-the earlier key editor (`app/src/KeyEditor.svelte`, the same rules
-without the header, the tile row and the picker) until its own slice
-(#109).
+key selected on the grid on the pinned profile and page. It is the one
+key editor of the app; the key grid exists once, on the Pad.
 
 - **Header.** `Key <n>: <kind>`, the kind being the key's action (Chord,
   Exec, or No action), and under it `<file> line <n>`, the profile file
@@ -1918,52 +1918,56 @@ without the header, the tile row and the picker) until its own slice
   (§7.2) triggers. `docs/design/gui-ux.md` §4.1 stays the target.
 
 **As built (pre-alpha Profiles).** Profiles (`app/src/Profiles.svelte`,
-`app/src/lib/profiles.ts`) follows `docs/design/gui-ux.md` §3.2 and §4.1
-(d1, d2, d14, ADR-0004) with the three columns of the shell. It reads the
-profiles of the daemon's configuration directory through the shell's
-`profile_list` (`keyvo_client::profiles::list`), again after every reload
-and every write of the screen.
+`app/src/lib/profiles.ts`) is the profile manager of
+`docs/design/gui-ux.md` §3.2 and the pad screen brief §5.3 (d1, d2, d14,
+ADR-0004): a list column and the editor, no key grid, no key editor and
+no right column. It reads the profiles of the daemon's configuration
+directory through the shell's `profile_list`
+(`keyvo_client::profiles::list`), again after every reload and every
+write of the screen.
 
 - **List column.** Every profile: the global one pinned first, then by
   `priority`, highest first (the one that wins a match, §6.2), equal
-  priorities by id. Each row shows the accent, the name, the id and the
-  priority; the profile the pad shows is marked "active". The screen opens
-  on the active profile, else the global one. The "+" button (new profile
-  from a template) is disabled with "Coming soon" (M4a-4). A configuration
-  that does not load shows as an alert with the load errors.
-- **Profile header.** Id and priority as read from the file; name and
-  accent as fields, each written the moment it changes through the shell's
-  `edit_profile` (`keyvo_core::edit::ProfileDocument::set_profile`): a
-  snapshot, then the atomic write of §7.1, every byte outside the edited
-  value kept, an empty accent removed, a new one added at the end of
-  `[profile]`. An empty name or an accent that is not `#rrggbb` is not
-  written; an alert says why. The file path, and "Open in editor", which
-  hands the file to the desktop's application for it (`xdg-open`, shell
+  priorities by id. Each row shows the name, a 12 px accent square after
+  it when the profile has an accent, and "on the pad" on the profile the
+  pad shows; its accessible name adds the id and the priority. The
+  screen opens on the pad's profile, else the global one. Skeleton rows
+  stand in while the first read runs; a configuration that does not
+  load shows as a notice with the load errors, the last list kept. "+"
+  opens the templates (Empty profile, Copy of the active profile, Starter
+  pack), each a disabled control with its M4a-4 sentence.
+- **Heading row.** The profile's name and "Open in editor", which hands
+  the file to the desktop's application for it (`xdg-open`, shell
   command `open_profile`; the path comes from the id, never from the
-  page). For the built-in global profile, which has no file until its
-  first edit, the button is disabled and a note says so. Header writes are
-  not on the key editor's undo stack; the snapshot keeps the file before
-  each one.
-- **Match rules.** The classes and the title regex as written, read-only;
-  "Edit match rules" is disabled with "Coming soon" (M4a-4). The global
-  profile says it has none and is under every window.
-- **Pages as tabs.** One tab per page, named by the page's `name`, else
-  `Page <n>`; the arrows, `Home` and `End` move between them. A newly
-  selected profile starts on page 1.
-- **Key grid.** The keys of the selected page with their numbers and
-  labels, laid out by the device geometry when the daemon reports one,
-  else as the nine key slots of the schema in three rows. A click, `1` to
-  `9` or the arrows select a key, and the key editor above (label, color,
-  icon, action; immediate apply, `Ctrl+Z` and `Ctrl+Shift+Z`) opens on it
-  below the grid. "Move key" (drag and drop, `Ctrl+X` then `Ctrl+V`) and
-  "Open in Behaviors" are disabled with "Coming soon" (M4a-4, M4a-5).
-- **Right column.** The mirror of the selected page, the tiles from the
-  shell's `tiles` at the device's tile size (a click selects the key), and
-  the key card: position, page (number and name) and layer origin, the
-  layer of the stack that supplies the key (§6.1: `app layer`, `global
-  layer`, or none when no layer defines it). Without a reported geometry
-  the mirror is a note and the layer origin says it is known once a Keypad
-  reported its geometry.
+  page); under it the file path, once. For the built-in global profile,
+  which has no file until its first edit, the button is
+  `aria-disabled` and a note says so.
+- **Header form.** At most `48ch` wide. Name, and Accent as a swatch and
+  its `#rrggbb` text, each written the moment it changes through the
+  shell's `edit_profile` (`keyvo_core::edit::ProfileDocument::set_profile`):
+  a snapshot, then the atomic write of §7.1, every byte outside the
+  edited value kept, an empty accent removed, a new one added at the end
+  of `[profile]`. An empty name or an accent that is not `#rrggbb` is not
+  written; the field is marked invalid and the message under it says
+  why. Priority shows as read with "higher wins the window"; Enabled is a
+  disabled switch, shown on, with its M4a-4 sentence (the schema has no
+  `enabled` yet and the editor writes name and accent only). The result
+  line under the form says what was written or opened. Header writes are
+  not on the Pad's undo stack; the snapshot keeps the file before each
+  one.
+- **Match rules.** One list of kind and pattern rows as written, each
+  kind named once (Window class, Title regex); "+ rule" and each row's
+  Edit are disabled with their M4a-4 sentence. A profile without rules
+  says focus never selects it; the global profile says it is under every
+  window.
+- **Pages.** One thumbnail per page, the page's tiles as keyvo-core
+  renders them (the shell's `tiles` at the device's tile size) in the
+  device drawing (`app/src/Device.svelte`), captioned by the page's
+  `name`, else `Page <n>`; without a reported geometry the thumbnails
+  are the names and a note says the pictures wait for a Keypad. A click
+  selects a page, and "Edit keys on the Pad" opens the Pad pinned to the
+  profile and the selected page (`lib/pin.ts`). A newly selected profile
+  starts on page 1; a profile with no pages says so.
 
 **As built (mock dev server).** `just app-dev` (a host recipe) serves the
 app on the Vite dev server at `http://localhost:1420` with
@@ -2156,6 +2160,16 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha slice 7 (2026-10-26)**: §10 Profiles as the profile
+  manager: the list with the 12 px accent square and "on the pad", "+"
+  with the templates as Soon controls; the heading row with the file
+  once and "Open in editor"; the header form at `48ch` with the accent
+  swatch, Priority's hint and Enabled as a Soon switch, an invalid field's
+  message under it; the match rules with each kind named once; the pages
+  as thumbnails; "Edit keys on the Pad" pins the Pad to the profile and
+  page. The key grid, the key editor (`KeyEditor.svelte`), the right
+  column and `Columns.svelte` are gone; every scrolling column reserves
+  its gutter (#109).
 - **v0.3, pre-alpha Pad slice 6 (2026-10-26)**: §10 the actions
   catalogue's presets are the recipe packs of the `recipes` reply (the
   shell's `recipes` command); a dropped or clicked preset writes its

@@ -105,13 +105,15 @@
       <div class="screen">
         <Profiles
           {daemon}
-          {editor}
           {files}
           {columns}
           {view}
           {reloads}
           geometry={device?.geometry}
-          active={active === "profiles"}
+          onedit={(pin) => {
+            pinned = pin;
+            active = "home";
+          }}
         />
       </div>
     {/if}
@@ -138,10 +140,13 @@
     grid-column: 1 / -1;
   }
 
+  /* DESIGN.md "Columns": a reserved gutter and the theme's thin scroll bar. */
   main {
     min-width: 0;
     min-height: 0;
     overflow: auto;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
   }
 
   .screen {

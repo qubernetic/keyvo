@@ -65,8 +65,10 @@ measurements they serve.
 The desktop app has its shell (a navigation rail of Pad, Profiles and
 Behaviors, where Behaviors is greyed out until it is built, a header with
 the device selector, the profile dropdown, Preferences behind a gear and a
-keyboard map in its menu, and collapsible columns) and shows the Pad so
-far: a live mirror of the pad's page in a drawing of the Keypad, the
+keyboard map in its menu), a Profiles screen that manages the profiles
+(the list by priority with the one on the pad marked, name and accent
+written at once, priority, match rules, and page thumbnails with "Edit
+keys on the Pad"), and the Pad: a live mirror of the pad's page in a drawing of the Keypad, the
 pages of the pinned profile as tabs with its accent, a line with Follow
 when the pad moved away from the profile being edited, a broken profile
 shown with file and line, a strip of the recent presses under the
