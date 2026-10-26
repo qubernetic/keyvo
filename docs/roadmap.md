@@ -63,8 +63,9 @@ profile follows the focused KDE window, and a minimal Tauri GUI mirrors and
 edits the pad, so the direction can change before the layers harden.
 
 **DoD.** Every slice below is merged into the epic branch `epic/34-pre-alpha`,
-the owner's two hardware checks (#40, #52) passed, and the epic PR is merged
-into `develop`.
+the owner's two hardware checks (#40, #52) passed, Home and Profiles pass the
+critique of `docs/design/critique-2026-10.md` (#108, #109 re-run it; the
+score to beat is 23/40), and the epic PR is merged into `develop`.
 
 Each slice is a thin cut of the roadmap issue named in **From**; the roadmap
 issue stays open for the rest. The slices form one chain on the epic branch

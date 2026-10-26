@@ -651,16 +651,24 @@ Both items run by the owner on 88bb0b1 (2026-10-26).
 
 No Keypad and no daemon needed; a host browser.
 
-- [ ] #113 `just app-dev`, open `http://localhost:1420`: Home shows the mirror with tiles and a trace entry arrives every two seconds; the profile switches every ten seconds (Konsole, VS Code, Global).
-- [ ] #113 `?theme=breeze-light` renders light, `?theme=adwaita-dark` dark with the GNOME accent.
-- [ ] #113 Profiles lists the three profiles; editing the Global accent changes the preview; a reload resets it.
-- [ ] #113 `?mock-error=unreachable` shows the Home error state.
+- [x] #113 `just app-dev`, open `http://localhost:1420`: Home shows the mirror with tiles and a trace entry arrives every two seconds; the profile switches every ten seconds (Konsole, VS Code, Global).
+- [x] #113 `?theme=breeze-light` renders light, `?theme=adwaita-dark` dark with the GNOME accent.
+- [x] #113 Profiles lists the three profiles; editing the Global accent changes the preview; a reload resets it.
+- [x] #113 `?mock-error=unreachable` shows the Home error state.
 
 ### Plug-in splash in the display claim (#114)
 
 - [ ] #114 Daemon running and painting the global profile (`bin/keyvo-daemon`, `bin/keyvo ctl subscribe` in a second terminal): unplug the Keypad, wait 5 s, plug it back in. The keys come back; the daemon log shows the `hid i/o error` and `cannot open the keypad` lines of the unplug and no `display stayed in mode` line (the splash wait is logged at `debug`, which the daemon does not print yet); `ctl subscribe` shows the `device` event with the error of the unplug and no `device` event with an error after the plug-in.
 - [ ] #114 Daemon stopped, right after a replug: `just run -- fill '#00ff00' --panel --hold 5` paints green instead of failing with `display stayed in mode 0xa4 after setMode(a0)`.
 - [ ] #114 `printf '[timing]\nclaim_splash_retry = 2000\nclaim_splash_timeout = 2000\n' > ~/.config/keyvo/config.toml`, then `bin/keyvo-daemon`: it logs `configuration not loaded:` and `.../config.toml:2:22: `claim_splash_retry` (2000 ms) must be shorter than `claim_splash_timeout` (2000 ms); ...`. Then Ctrl-C and `rm ~/.config/keyvo/config.toml`.
+
+### Design critique (#106)
+
+No Keypad needed; the mock dev server of #113 in a host browser.
+
+- [x] #106 Read `docs/design/critique-2026-10.md`: the score table, the six priority issues and the priorities for slices 4 to 6 match what the Profiles and Home screens show on `just app-dev`; the priorities are approved in the PR.
+- [x] #106 With the browser detector injected as section 2 of the critique describes, the `[Human]` overlay marks the trace rows (cramped padding) on Home in `breeze-dark` and the muted labels (low contrast) on Profiles in `?theme=breeze-light`.
+- [x] #106 On Profiles with no profile picked in the list, wait for the mock's focus cycle (10 s): the editor switches profile on its own; this is the P1 finding the pass fixes in #108.
 
 ### First-light records (#75)
 
