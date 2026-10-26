@@ -84,6 +84,15 @@ pub fn startup() -> String {
     )
 }
 
+/// [`startup`] of a Keypad just plugged in: its claim sees the plug-in
+/// splash (`display-splash.txt`, constructed from the #52 daemon log; no
+/// raw capture of a replug exists) twice before `a0` takes.
+pub fn startup_in_splash() -> String {
+    let claim = fixture("display-claim.txt");
+    let head = claim.split("# 6.").next().unwrap();
+    startup().replace(&claim, &format!("{head}{}", fixture("display-splash.txt")))
+}
+
 /// One image the pad received.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Image {
