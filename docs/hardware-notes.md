@@ -276,6 +276,36 @@ deferred past the pre-alpha.
 - Settles: spec §5.3 and §5.4. The mode after plugging in is `a2`; `a1` is
   the state after a `KEEP_ALIVE` expiry; painting needs no VLP root fn2.
 
+#### 5. Display mode right after a replug: the plug-in splash (2026-10-25)
+
+Not a first-light record: it comes from the owner's end-to-end check
+(#52, finding 2), recorded here next to the `a2` measurement above.
+
+- Device: MX Creative Keypad 046d:c354, firmware `U1 66.00.B0017`
+  (application, active)
+- Method: `bin/keyvo-daemon` built at `e4b37d3`, running and painting the
+  global profile; the Keypad unplugged and plugged back in; the daemon
+  log of the replug. Solaar stopped. No raw capture of the replug exists.
+- Result:
+
+  ```
+  20:48:30.467 WARN keyvo_daemon::device: keypad: hid i/o error: Protocol error (os error 71)
+  20:48:31.467 WARN keyvo_daemon::device: keypad: cannot open the keypad: hid i/o error: no hidraw node for 046d:c354
+  20:48:34.476 WARN keyvo_daemon::device: keypad: display stayed in mode 0xa4 after setMode(a0)
+  20:48:41.145 INFO keyvo_daemon::daemon: showing profile global page 1 in auto mode
+  ```
+
+  About three seconds after the plug-in `getMode` answers `a4`
+  (SplashBright, spec §5.4) after `setMode(a0)`: the switch does not take
+  while the splash runs. After `[timing].reconnect_interval` the next
+  connection claimed the display, and the profile was shown about ten
+  seconds after the failed open. The `a2` above was read about one minute
+  after a replug, when the splash is over.
+- Settles: spec §5.4, the claim waits out `a4` instead of failing; spec
+  §6.1, the defaults of `claim_splash_retry` (500 ms) and
+  `claim_splash_timeout` (10000 ms). The splash length itself is not
+  measured; a `--dump` of a replug would.
+
 #### 6. Geometry (2026-10-25)
 
 - Device: MX Creative Keypad 046d:c354, firmware `U1 66.00.B0017`
