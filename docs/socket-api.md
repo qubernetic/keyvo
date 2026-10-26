@@ -104,7 +104,7 @@ No fields. The result:
 | `config_dir` | string | The configuration directory the daemon loads (`--config-dir` or the default, spec §7.1). A client that edits profiles (the app) edits this tree. |
 | `device` | object | `connected` (bool); `keys` (the key count) and `geometry` when connected; `error` (why not) when the daemon knows. |
 | `view` | object | What the pad shows: `profile` (id), `page` (from 1), `mode` (`auto` or `manual`). |
-| `context` | object, optional | The last focus report: `class`, `title`, `pid` when known, `source` (`watcher` or `notify_context`). Left out before the first report. |
+| `context` | object, optional | The last focus report: `class`, `title`, `pid` when known, `source` (`watcher` or `notify_context`), and `held: true` when the class is in `[focus].hold_classes` (spec §6.1: the view stays that of the window before; absent otherwise). Left out before the first report. |
 | `trace` | integer | The entries in the trace ring buffer. |
 
 `geometry` is the display as the Keypad publishes it (spec §5.4), so a
@@ -194,7 +194,7 @@ with M2-5.
 | `page` | `profile`, `page`, `mode` | Another page shows. |
 | `mode` | `profile`, `page`, `mode` | The mode changed. |
 | `device` | `connected`, `keys` and `geometry`, or `error` | The Keypad was claimed or lost; the fields of `status`'s `device`. |
-| `context` | `class`, `title`, `pid` (optional), `source` | A focus source reported a window. A report does not always switch the profile. |
+| `context` | `class`, `title`, `pid` (optional), `source`, `held` (only when `true`) | A focus source reported a window. A report does not always switch the profile; a `held` one (a class in `[focus].hold_classes`, default the keyvo app) never does, so no `profile`, `page` or `mode` event follows it. |
 | `trace` | `entry` | A press was resolved (dry run, unbound, chord) or an `exec` ended. |
 | `config` | `reloaded`, `error` (when it failed) | The configuration directory was reloaded, or did not load. |
 

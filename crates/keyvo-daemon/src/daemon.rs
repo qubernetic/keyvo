@@ -25,8 +25,8 @@
 //!   in-memory ring buffer of `[trace].ring` entries.
 //!
 //! The `[timing]` values of the device actor, `long_press`,
-//! `focus_hysteresis` and `page_grace` are read at start; the others and
-//! `[trace].ring` apply from the next reload.
+//! `focus_hysteresis`, `page_grace` and `[focus].hold_classes` are read at
+//! start; the others and `[trace].ring` apply from the next reload.
 
 use std::collections::VecDeque;
 use std::future::Future;
