@@ -1,0 +1,3 @@
+# The keyvo app and the Plasma shell never change the context.
+[focus]
+hold_classes = ["keyvo-app", "org.kde.plasmashell"]

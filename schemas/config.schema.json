@@ -21,6 +21,23 @@
       },
       "type": "object"
     },
+    "Focus": {
+      "additionalProperties": false,
+      "description": "The `[focus]` table (spec §6.1): the window classes that hold the\ncontext. While one of them has focus, the pad keeps the context and\nprofile of the last other window, so the keyvo app can configure the\nprofile it was opened from. Read when the daemon starts.",
+      "properties": {
+        "hold_classes": {
+          "default": [
+            "keyvo-app"
+          ],
+          "description": "Window classes, compared without case; an empty list holds nothing.\nDefault `[\"keyvo-app\"]`, the keyvo app's own window.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "Render": {
       "additionalProperties": false,
       "description": "The `[render]` table (spec §9).",
@@ -192,6 +209,15 @@
         "socket_line_bytes": 65536
       },
       "description": "Limits of the daemon's control socket (spec §8)."
+    },
+    "focus": {
+      "$ref": "#/$defs/Focus",
+      "default": {
+        "hold_classes": [
+          "keyvo-app"
+        ]
+      },
+      "description": "Which focused windows switch the context (spec §6.1)."
     },
     "render": {
       "$ref": "#/$defs/Render",
