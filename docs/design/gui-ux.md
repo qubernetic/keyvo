@@ -300,8 +300,9 @@ rewrites the file wholesale to "fix" it.
   go to the copy. Apply merges the copy into the real files through `toml_edit`
   (one snapshot per file first); Discard deletes the copy. Closing the app with
   a live sandbox asks Apply, Discard or Keep (the sandbox survives restarts).
-- **Virtual pad**: clicks are presses; holding or right-clicking is a long
-  press; the Dialpad panel has buttons for `cw`, `ccw` and press.
+- **Virtual pad**: a click selects a key and does not press it; `Space`
+  presses the selected key, `Shift+Space` long (pad screen brief §5.2,
+  #108 open point 2); the Dialpad panel has buttons for `cw`, `ccw` and press.
 - **Dry run**: a simulated press is sent as a socket request with
   `"dry_run": true`; the daemon resolves layers, conditions and the action,
   substitutes variables, writes a trace entry marked `simulated` and returns

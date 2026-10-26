@@ -28,6 +28,15 @@ describe("the mock clients", () => {
     await expect(daemon.status()).rejects.toMatch(/cannot reach the keyvo daemon/);
   });
 
+  it("adds a profile with no pages under ?mock-profiles=empty", async () => {
+    const root = document.createElement("div");
+    const ids = async (search: string) =>
+      (await mockClients(search, root).files.list()).map((profile) => [profile.id, profile.pages]);
+    expect(await ids("")).not.toContainEqual(["empty", []]);
+    expect(await ids("?mock-profiles=empty")).toContainEqual(["empty", []]);
+    expect(await ids("?mock-profiles=other")).not.toContainEqual(["empty", []]);
+  });
+
   it("answers status without ?mock-error", async () => {
     const root = document.createElement("div");
     const { daemon } = mockClients("?mock-error=other", root);

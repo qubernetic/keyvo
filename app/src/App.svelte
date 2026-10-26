@@ -4,11 +4,11 @@
   // selected screen beside it, and at most one drawer (a trace entry,
   // Preferences or the keyboard map) at the right. The shell holds the
   // inspector's pin and the profile list, read again on every reload, for
-  // the header's dropdown. Home, the Pad screen, stays mounted while
+  // the header's dropdown and the Pad's page tabs. The Pad stays mounted while
   // another screen shows, so the header's device selector follows the
   // daemon and the mirror keeps its last frame.
   import Header from "./Header.svelte";
-  import Home from "./Home.svelte";
+  import Pad from "./Pad.svelte";
   import Preferences from "./Preferences.svelte";
   import Profiles from "./Profiles.svelte";
   import Rail from "./Rail.svelte";
@@ -32,7 +32,7 @@
   let active: ScreenId = $state("home");
   let device: DeviceStatus | undefined = $state();
   let chosen: DeviceChoice | undefined = $state();
-  /** What the pad shows and the daemon's reload count, as Home follows them. */
+  /** What the pad shows and the daemon's reload count, as the Pad follows them. */
   let view: View | undefined = $state();
   let reloads = $state(0);
 
@@ -82,12 +82,14 @@
   <Rail {active} labels={columns.railLabels} onnavigate={(id) => (active = id)} />
   <main>
     <div class="screen" hidden={active !== "home"}>
-      <Home
+      <Pad
         {daemon}
         {editor}
         active={active === "home"}
         ondevice={(next) => (device = next)}
-        onnavigate={(id) => (active = id)}
+        {profiles}
+        {pinned}
+        onpin={(next) => (pinned = next)}
         onview={(next, count) => {
           view = next;
           reloads = count;

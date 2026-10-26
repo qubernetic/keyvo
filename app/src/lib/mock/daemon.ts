@@ -1,7 +1,8 @@
 // The daemon over the mock store, answering like the Tauri shell's status,
 // tiles, outline, press and subscribe. The device is the fixture's
-// connected Keypad; the focus moves on a timer through Konsole, VS Code and
-// a window no profile matches, and the trace replays the fixture's entries.
+// connected Keypad; the focus moves on a timer through Konsole, the keyvo
+// app (held, as `[focus].hold_classes` holds it), VS Code and a window no
+// profile matches, and the trace replays the fixture's entries.
 import type { Daemon, Outline, Tile, Update } from "../daemon";
 import type { KeyFields } from "../editor";
 import type { Context, Event, Layer, TraceRecord, View } from "../protocol";
@@ -16,9 +17,12 @@ export const FOCUS_MS = 10_000;
 /** The trace ring buffer's size (the daemon's `[trace].ring` default). */
 const RING = 200;
 
-/** The windows the focus cycles through; the last matches no profile. */
+/** The windows the focus cycles through; the keyvo app is held, so the
+ * view stays the one of the window before it; the last matches no
+ * profile. */
 const FOCUS: readonly Omit<Context, "source">[] = [
   { class: "org.kde.konsole", title: "~ : bash", pid: 4242 },
+  { class: "keyvo-app", title: "keyvo", pid: 4545, held: true },
   { class: "code", title: "main.rs - keyvo - Visual Studio Code", pid: 4343 },
   { class: "org.kde.dolphin", title: "Home - Dolphin", pid: 4444 },
 ];
@@ -49,6 +53,8 @@ export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemo
   const trace = fixtureTrace();
   const ring: TraceRecord[] = [];
   let focus = FOCUS.length - 1;
+  /** The last focused window that is not held: it selects the view. */
+  let selecting = focus;
   let replayed = 0;
 
   function context(): Context {
@@ -58,7 +64,7 @@ export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemo
   /** The profile the focused window selects: the highest priority among
    * the matching ones, else the global profile (spec §6.2). */
   function view(): View {
-    const { class: focused } = context();
+    const focused = FOCUS[selecting]?.class ?? "";
     const matching = store
       .all()
       .filter((profile) => profile.id !== GLOBAL && profile.match.class.includes(focused))
@@ -166,6 +172,9 @@ export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemo
       const focusTimer = setInterval(() => {
         focus = (focus + 1) % FOCUS.length;
         send({ event: "context", ...context() });
+        // A held window leaves the view as it is: no profile event.
+        if (FOCUS[focus]?.held === true) return;
+        selecting = focus;
         send({ event: "profile", ...view() });
       }, FOCUS_MS);
       return Promise.resolve(() => {

@@ -1,4 +1,4 @@
-// What Home shows, folded from the daemon's `status` reply and the updates
+// What the Pad screen shows, folded from the daemon's `status` reply and the updates
 // of a subscription, the way keyvo_client::Mirror folds them on the Rust
 // side; and the one-line summary of a trace entry.
 import type { Update } from "./daemon";
@@ -13,10 +13,10 @@ import type {
   View,
 } from "./protocol";
 
-/** The trace entries Home keeps and asks the daemon to replay. */
-export const HOME_TRACE = 20;
+/** The trace entries the Pad keeps and asks the daemon to replay. */
+export const PAD_TRACE = 20;
 
-export interface HomeState {
+export interface PadState {
   view?: View;
   device?: DeviceStatus;
   /** The last geometry a Keypad reported; it stays when the Keypad goes,
@@ -41,12 +41,12 @@ export interface HomeState {
   seen?: number;
 }
 
-export function initial(): HomeState {
+export function initial(): PadState {
   return { held: [], trace: [], reloads: 0 };
 }
 
 /** The state of the `status` reply received at `now`. */
-export function fromStatus(status: Status, now = Date.now()): HomeState {
+export function fromStatus(status: Status, now = Date.now()): PadState {
   return {
     ...initial(),
     view: status.view,
@@ -96,7 +96,7 @@ export function moved(rows: number[][], key: number, arrow: string): number {
 
 /** `state` after `update`, received at `now`; `state` itself stays as it
  * was. */
-export function apply(state: HomeState, update: Update, now = Date.now()): HomeState {
+export function apply(state: PadState, update: Update, now = Date.now()): PadState {
   switch (update.kind) {
     case "subscribed":
       return { ...state, view: update.view, closed: undefined };
@@ -136,7 +136,7 @@ export function apply(state: HomeState, update: Update, now = Date.now()): HomeS
       return { ...state, context, holding };
     }
     case "trace":
-      return { ...state, trace: [event.entry, ...state.trace].slice(0, HOME_TRACE) };
+      return { ...state, trace: [event.entry, ...state.trace].slice(0, PAD_TRACE) };
     case "config":
       return {
         ...state,
@@ -144,6 +144,15 @@ export function apply(state: HomeState, update: Update, now = Date.now()): HomeS
         reloads: state.reloads + 1,
       };
   }
+}
+
+/** While the focused window is held (`[focus].hold_classes`, the keyvo
+ * app; #117), the line that says so and names the profile the pad keeps;
+ * none otherwise. */
+export function caption(state: PadState): string | undefined {
+  const { context, view } = state;
+  if (context?.held !== true || view === undefined) return undefined;
+  return t("pad.held", { class: context.class, profile: view.profile });
 }
 
 /** Where a configuration file fails to load (docs/design/gui-ux.md §5.2). */

@@ -20,7 +20,7 @@
     placement,
     styles,
   } from "./lib/device";
-  import { grid } from "./lib/home";
+  import { grid } from "./lib/pad";
   import { t } from "./lib/i18n";
   import type { Geometry } from "./lib/protocol";
 

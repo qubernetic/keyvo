@@ -1,7 +1,7 @@
 // The app shell against a fake daemon and editor (docs/design/gui-ux.md
 // §2; pad screen brief §5.1): header, rail, the screen the rail selects,
-// the one drawer open at a time, the pin and the profile list. Home's own
-// states are tested in Home.test.ts and KeyEditor.test.ts.
+// the one drawer open at a time, the pin and the profile list. The Pad's own
+// states are tested in Pad.test.ts and KeyEditor.test.ts.
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -243,7 +243,21 @@ describe("App", () => {
     expect(
       await screen.findByRole("grid", { name: "Keypad mirror: profile terminal, page 1" }),
     ).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Key 1" })).toBeInTheDocument();
+    // Nothing is selected yet: the inspector asks for a key.
+    expect(await screen.findByRole("heading", { name: "Key editor" })).toBeInTheDocument();
+  });
+
+  it("pins the inspector when a key is selected and keeps it when the pad moves", async () => {
+    const { send } = app();
+    await listed();
+    await fireEvent.click(await screen.findByRole("button", { name: /^Key 4\b/ }));
+    expect(await screen.findByRole("heading", { name: "Key 4" })).toBeInTheDocument();
+    await send({ event: "profile", profile: "global", page: 1, mode: "auto" });
+    expect(dropdown().value).toBe("terminal");
+    expect(await screen.findByText("The pad moved to global, page 1")).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole("button", { name: "Follow" }));
+    expect(dropdown().value).toBe("global");
+    expect(screen.queryByText(/The pad moved/)).toBeNull();
   });
 
   it("says when the daemon cannot be reached", async () => {
@@ -280,18 +294,7 @@ describe("App", () => {
     expect(screen.getByRole("grid", { name: /^Keypad mirror/ })).toBeInTheDocument();
   });
 
-  it("opens Profiles from the profile in Home's status strip", async () => {
-    app();
-    await fireEvent.click(
-      await screen.findByRole("button", { name: "Profile terminal, open Profiles" }),
-    );
-    expect(screen.getByRole("button", { name: "Profiles" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-  });
-
-  it("keeps Home's undo to Home", async () => {
+  it("keeps the Pad's undo to the Pad", async () => {
     app();
     await screen.findByRole("grid");
     await fireEvent.click(screen.getByRole("button", { name: "Profiles" }));
@@ -316,7 +319,9 @@ describe("App", () => {
 
   it("gives every control an aria-label", async () => {
     app();
+    await fireEvent.click(await screen.findByRole("button", { name: /^Key 1\b/ }));
     await screen.findByRole("heading", { name: "Key 1" });
+    await screen.findByRole("tablist", { name: "Pages" });
     await fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     const controls = document.querySelectorAll("button, select, input, textarea, [role=menuitem]");
     expect(controls.length).toBeGreaterThan(10);
