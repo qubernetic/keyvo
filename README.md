@@ -64,8 +64,11 @@ measurements they serve.
 
 The desktop app has its shell (a navigation rail, where the screens not
 built yet are greyed out, a header with the device selector, and
-collapsible columns) and shows Home so far: a live mirror of the pad's page, the
-daemon's status, the recent presses, and a virtual pad whose clicks are
+collapsible columns) and shows Home so far: a live mirror of the pad's page
+with a page selector and the profile's accent bar, the daemon's status
+(each fact linking to its screen, a broken profile shown with file and
+line), the recent presses, each opening a trace drawer with what the press
+resolved to and what came of it, and a virtual pad whose clicks are
 dry-run presses (right click for a long press; `1` to `9` and `Space` on
 the grid). Beside the mirror, a key editor changes the selected key's
 label, color, icon and action: each change lands in the profile file at

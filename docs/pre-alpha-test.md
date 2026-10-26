@@ -250,7 +250,7 @@ is for `keyvo ctl`, T3 for the app.
    `trace` event), switch windows (`context` and `profile` events), write
    a profile file again unchanged with
    `cp contrib/profiles/konsole.toml ~/.config/keyvo/profiles/` in T3 (a
-   `config` event; a bare `touch` changes no content and is not seen). Ctrl-C ends it. Leave it running for steps 9 to 12.
+   `config` event; a bare `touch` changes no content and is not seen). Ctrl-C ends it. Leave it running for steps 9 to 13.
 
 9. **GUI mirror.** In T3:
 
@@ -261,17 +261,21 @@ is for `keyvo ctl`, T3 for the app.
    Expected: a window titled `keyvo`, 1200 x 760, with a header (`keyvo`,
    a device selector showing `Keypad`, a `...` menu button), the
    navigation rail on the left with Home selected, and Home beside it:
-   nine tiles matching the pad, a status strip with `Keypad connected`,
-   the profile, page, mode and the focused window. The app window itself
-   matches no profile, so the global profile shows. Switch the page with
-   a page button: the grid and the strip follow.
+   nine tiles matching the pad, above them a `Page shown` selector and
+   the profile's accent bar (blue on the global profile), and a status
+   strip with `Keypad connected, 9 keys`, the profile, page, mode,
+   `Overlay none` and `Context unknown project, <window class>: <title>`.
+   The app window itself matches no profile, so the global profile
+   shows. Switch the page with a page button: the grid, the selector and
+   the strip follow.
 
 10. **Dry-run press and its trace entry.** In the app, click key 2
-    (Fail). Expected: the result line reads `Key 2, simulated: <action>,
-    dry run, nothing executed`, a line appears at the top of Recent
-    events, the pad's key 2 does not change, and the `subscribe` in T2
-    prints a `trace` event whose `trigger` has `"simulated":true` and
-    whose `result` is `{"status":"dry_run"}`. The same from the CLI:
+    (Fail). Expected: the result line reads `Key 2, simulated, global
+    layer: <action>, dry run, nothing executed` followed by `Show the
+    trace entry`, a line appears at the top of Recent events, the pad's
+    key 2 does not change, and the `subscribe` in T2 prints a `trace`
+    event whose `trigger` has `"simulated":true` and whose `result` is
+    `{"status":"dry_run"}`. The same from the CLI:
 
     ```bash
     just run -- ctl press '{"key":4,"dry_run":true}'
@@ -313,6 +317,39 @@ is for `keyvo ctl`, T3 for the app.
       Global Theme) and open them again: still readable in both.
     - Unplug the Keypad: the device selector shows `Simulator` only.
       Plug it back: `Keypad` returns and is selected.
+
+13. **Home states and the trace drawer.** Still in the app, on Home:
+
+    - Click `Show the trace entry` on the result line of step 10. A
+      drawer opens on the right with Trigger (`simulated`), Context
+      snapshot, Resolved action and Block reason `Dry run: resolved,
+      nothing executed.`; `Esc` closes it. Press key 5 (OK) on the pad,
+      then click its line in Recent events: the drawer shows Result with
+      `exited`, `Exit code 0` and the duration. The close button closes
+      it too.
+    - Next to Recent events, `Debug log` is greyed with `Coming soon`;
+      clicking it changes nothing.
+    - In the status strip, click the profile name: the Profiles screen
+      opens (`Ctrl+1` brings Home back). Device, overlay and context are
+      plain text.
+    - With the global profile on the pad (it has three pages), pick
+      page 2 in `Page shown`: the mirror shows page 2 while the pad and
+      the strip stay on page 1; clicking a key says `The pad shows page
+      1; presses simulate that page.` Switch windows: the selector
+      follows the pad again.
+    - Break a profile: put `label = 7` on a key of
+      `~/.config/keyvo/profiles/global.toml`. The strip shows `Schema
+      error in <path of global.toml>, line <n>, column <n>: ...` with
+      `Open Profiles`. Restore the file
+      (`cp contrib/profiles/global.toml ~/.config/keyvo/profiles/`): the
+      error goes.
+    - Unplug the Keypad: Home says `The Keypad is missing; last seen at
+      <time>.` and the mirror keeps its tiles. Plug it back: the note
+      goes.
+    - Stop the daemon (Ctrl-C in T1): Home says `Daemon unreachable`,
+      the mirror keeps its tiles. Start it again and click Retry: for a
+      moment three grey skeleton rows stand in Recent events (no
+      spinner), then the replayed entries.
 
 Stop the app and the daemon (Ctrl-C) before section 6; it restarts them
 as each item needs.
@@ -547,6 +584,12 @@ no-strip expectations stay.
 - [ ] #100 In the light and in the dark desktop theme, open every dropdown of the app (the header's device selector, the key editor's Action selector, the `...` menu) and read every option: no white text on a white background, no dark text on a dark background.
 - [ ] #100 Section 5 step 12: rail order and `Ctrl+1` to `Ctrl+7`, the five "Coming soon" screens with their roadmap sentence on keyboard focus, the column collapse order when narrowing the window, the 960 x 640 minimum.
 - [ ] #100 With the desktop's reduced animations on (System Settings, Animation speed at Instant), nothing in the app animates.
+
+### Home with status strip and trace drawer (#101)
+
+- [ ] #101 Section 5 step 9: the page selector and the accent bar above the mirror, the status strip with `Overlay none` and `unknown project`.
+- [ ] #101 Section 5 step 13: the drawer from the result line and from an event line, `Esc` closes it; Debug log greyed with `Coming soon`; the profile link opens Profiles; a picked page that the pad does not show; the schema error with file and line; the missing Keypad with its last-seen time; the skeleton rows after Retry.
+- [ ] #101 The look of Home in the light and the dark desktop theme: every text readable, the links visible as links.
 
 ### First-light records (#75)
 
