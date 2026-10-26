@@ -28,6 +28,14 @@
   } from "./lib/profiles";
   import type { Geometry, View } from "./lib/protocol";
   import type { Columns as ColumnLayout } from "./lib/shell";
+  // PROTOTYPE (#107): three variants of this screen behind `?variant=a|b|c`
+  // with the floating switcher; no parameter renders the screen as built.
+  // The variants and the switcher go in #108 with the owner's choice.
+  import ProfilesVariantA from "./prototype/ProfilesVariantA.svelte";
+  import ProfilesVariantB from "./prototype/ProfilesVariantB.svelte";
+  import ProfilesVariantC from "./prototype/ProfilesVariantC.svelte";
+  import PrototypeSwitcher from "./prototype/PrototypeSwitcher.svelte";
+  import { variantOf, type ProfilesModel, type VariantKey } from "./prototype/model";
 
   let {
     daemon,
@@ -292,8 +300,106 @@
       ? t("profiles.itemActive", values)
       : t("profiles.item", values);
   }
+
+  // PROTOTYPE (#107): the variant of the page and the model the variants
+  // read; getters over this component's state keep their markup reactive.
+  let variant: VariantKey | undefined = $state(
+    typeof window === "undefined" ? undefined : variantOf(window.location.search),
+  );
+  const model: ProfilesModel = {
+    get daemon() {
+      return daemon;
+    },
+    get editor() {
+      return keys;
+    },
+    get columns() {
+      return columns;
+    },
+    get reloads() {
+      return reloads;
+    },
+    get active() {
+      return active;
+    },
+    get profiles() {
+      return profiles;
+    },
+    get loading() {
+      return loading;
+    },
+    get listError() {
+      return listError;
+    },
+    get selected() {
+      return selected;
+    },
+    get view() {
+      return view;
+    },
+    get geometry() {
+      return geometry;
+    },
+    get pages() {
+      return pages;
+    },
+    get page() {
+      return page;
+    },
+    get key() {
+      return key;
+    },
+    get tiles() {
+      return tiles;
+    },
+    get tilesError() {
+      return tilesError;
+    },
+    get rows() {
+      return rows;
+    },
+    get target() {
+      return target;
+    },
+    get header() {
+      return header;
+    },
+    get form() {
+      return form;
+    },
+    get problem() {
+      return problem;
+    },
+    get invalid() {
+      return invalid;
+    },
+    get note() {
+      return note;
+    },
+    pick,
+    tab,
+    choose,
+    commit,
+    open: () => void open(),
+    keyName,
+    layerOf,
+    itemName,
+    edited: () => edits++,
+  };
 </script>
 
+{#if variant === "a"}
+  <ProfilesVariantA {model} />
+{:else if variant === "b"}
+  <ProfilesVariantB {model} />
+{:else if variant === "c"}
+  <ProfilesVariantC {model} />
+{/if}
+{#if variant !== undefined}
+  <PrototypeSwitcher current={variant} onchange={(next) => (variant = next)} />
+{/if}
+
+{#if variant === undefined}
 <Columns {columns}>
   {#snippet list()}
     <div class="head">
@@ -548,6 +654,7 @@
     {/if}
   {/snippet}
 </Columns>
+{/if}
 
 <style>
   .head {
