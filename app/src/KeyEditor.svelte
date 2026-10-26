@@ -6,6 +6,7 @@
   // and line. The daemon reloads the file and repaints the pad.
   import { untrack } from "svelte";
 
+  import Notice from "./Notice.svelte";
   import {
     afterRedo,
     afterUndo,
@@ -215,7 +216,7 @@
   {:else}
     <h2 id={`kv-editor-${uid}`}>{t("editor.key", { key: target.key })}</h2>
     {#if problem !== undefined}
-      <p role="alert" class="problem">{describe(problem)}</p>
+      <Notice kind="error">{describe(problem)}</Notice>
     {/if}
     {#if view !== undefined}
       <p class="note">{t("editor.file")} <code>{view.path}</code></p>
@@ -273,7 +274,7 @@
         {/if}
       </form>
       {#if invalid !== undefined}
-        <p role="alert" class="problem">{invalid}</p>
+        <Notice kind="error">{invalid}</Notice>
       {/if}
     {/if}
   {/if}
@@ -337,16 +338,6 @@
     margin: 0;
     background: var(--kv-bg);
     color: var(--kv-fg-muted);
-    overflow-wrap: anywhere;
-  }
-
-  .problem {
-    margin: 0;
-    padding: 8px 12px;
-    background: var(--kv-bg-alt);
-    color: var(--kv-fg);
-    border-left: 4px solid var(--kv-state-error);
-    border-radius: var(--kv-radius);
     overflow-wrap: anywhere;
   }
 </style>

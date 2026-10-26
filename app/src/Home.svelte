@@ -7,6 +7,7 @@
   // mirror, the key editor for the selected key.
   import Device from "./Device.svelte";
   import KeyEditor from "./KeyEditor.svelte";
+  import Notice from "./Notice.svelte";
   import TraceDrawer from "./TraceDrawer.svelte";
   import type { Daemon, Outline, Tile } from "./lib/daemon";
   import type { Editor, Target } from "./lib/editor";
@@ -357,12 +358,12 @@
 
 <section class="home">
   {#if unreachable !== undefined}
-    <div role="alert" class="banner error">
+    <Notice kind="error">
       {t("home.unreachable", { reason: unreachable })}
       <button type="button" aria-label={t("home.retry")} onclick={() => void connect()}>
         {t("home.retry")}
       </button>
-    </div>
+    </Notice>
   {/if}
   <section class="strip" aria-label={t("home.status")}>
     <dl>
@@ -388,17 +389,19 @@
       {/each}
     </dl>
     {#if home.configError !== undefined}
-      <p role="alert" class="error">
-        {configMessage}
-        <button
-          type="button"
-          class="link"
-          aria-label={t("home.open", { screen: t("rail.profiles") })}
-          onclick={() => onnavigate?.("profiles")}
-        >
-          {t("home.open", { screen: t("rail.profiles") })}
-        </button>
-      </p>
+      <div class="config">
+        <Notice kind="error">
+          {configMessage}
+          <button
+            type="button"
+            class="link"
+            aria-label={t("home.open", { screen: t("rail.profiles") })}
+            onclick={() => onnavigate?.("profiles")}
+          >
+            {t("home.open", { screen: t("rail.profiles") })}
+          </button>
+        </Notice>
+      </div>
     {/if}
   </section>
 
@@ -536,18 +539,6 @@
     gap: 12px;
   }
 
-  .banner {
-    margin: 0;
-    padding: 8px 12px;
-    background: var(--kv-bg-alt);
-    color: var(--kv-fg);
-    border-radius: var(--kv-radius);
-  }
-
-  .error {
-    border-left: 4px solid var(--kv-state-error);
-  }
-
   .strip dl {
     display: flex;
     flex-wrap: wrap;
@@ -573,18 +564,11 @@
     text-decoration: underline;
   }
 
-  .strip .error {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  .config {
     margin: 8px 0 0;
-    padding: 4px 12px;
-    border-radius: var(--kv-radius);
-    background: var(--kv-bg-alt);
-    color: var(--kv-fg);
   }
 
-  .strip .error .link {
+  .config .link {
     background: var(--kv-bg-alt);
     color: var(--kv-accent);
   }

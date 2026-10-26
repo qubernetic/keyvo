@@ -94,6 +94,9 @@ export const messages = {
   "soon.move":
     "Moving a key by drag and drop, or Ctrl+X then Ctrl+V, arrives with M4a-4 on the roadmap.",
 
+  "notice.error": "Error",
+  "notice.note": "Note",
+
   "device.keypad": "The Keypad",
 
   "home.unreachable": "Daemon unreachable: {reason}",
