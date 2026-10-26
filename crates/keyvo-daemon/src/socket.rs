@@ -409,6 +409,7 @@ async fn answer(
             )
         }
         Answer::Pressed(entry) => Response::ok(id, Reply::Pressed(Pressed { entry })),
+        Answer::Recipes(recipes) => Response::ok(id, Reply::Recipes(recipes)),
         Answer::Reloaded(Ok(())) | Answer::Noted => Response::ok(id, Reply::Done {}),
         Answer::Reloaded(Err(error)) => Response::error(id, ErrorCode::ReloadFailed, &error),
     };

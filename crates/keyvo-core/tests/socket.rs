@@ -42,6 +42,7 @@ fn kind(response: &Response) -> &'static str {
         Ok(Reply::Status(_)) => "status",
         Ok(Reply::Subscribed(_)) => "subscribed",
         Ok(Reply::Pressed(_)) => "pressed",
+        Ok(Reply::Recipes(_)) => "recipes",
         Ok(Reply::Done {}) => "done",
         Err(_) => "error",
     }
@@ -122,6 +123,33 @@ fn an_event_with_unknown_fields_still_parses() {
         let event = ServerMessage::parse(&line).unwrap_or_else(|e| panic!("{line}: {e}"));
         assert_eq!(event, known, "{line}");
     }
+}
+
+/// `recipes.ndjson`: the request, then the answers to it. The file stays
+/// apart from `requests.ndjson` until the app speaks `recipes` (#129).
+#[test]
+fn the_recipes_request_and_its_answers_round_trip() {
+    let mut lines = lines(fixture!("recipes.ndjson"));
+    let request = Request::parse(lines.next().unwrap()).unwrap();
+    assert_eq!(request.command, Command::Recipes {});
+    assert_eq!(
+        json(&request.to_line()),
+        json(r#"{"v":1,"id":9,"cmd":"recipes"}"#)
+    );
+    let mut problems = Vec::new();
+    for line in lines {
+        let response: Response =
+            serde_json::from_str(line).unwrap_or_else(|e| panic!("{line}: {e}"));
+        assert_eq!(json(&response.to_line()), json(line), "{line}");
+        let Ok(Reply::Recipes(recipes)) = &response.result else {
+            panic!("{line}: {response:?}");
+        };
+        assert!(!recipes.recipes.is_empty(), "{line}");
+        problems.extend(recipes.problems.clone());
+        let later: Response = serde_json::from_str(&with_unknown_fields(line)).unwrap();
+        assert_eq!(later, response, "{line}");
+    }
+    assert_eq!(problems.len(), 1, "one answer names a broken pack");
 }
 
 #[test]

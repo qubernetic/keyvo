@@ -5,16 +5,17 @@
 //! streams [`Event`]s to a client that subscribed.
 //!
 //! Pre-alpha subset: `status`, `subscribe`, `press` (with `dry_run`),
-//! `reload` and `notify_context`. A request with an unknown command or
-//! field is rejected, so a typo never turns a dry run into a real press.
-//! The fixtures in `tests/protocol-fixtures/socket/` are shared with the
-//! TypeScript client.
+//! `reload`, `notify_context` and `recipes`. A request with an unknown
+//! command or field is rejected, so a typo never turns a dry run into a
+//! real press. The fixtures in `tests/protocol-fixtures/socket/` are shared
+//! with the TypeScript client.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::press::PressKind;
 use crate::profile::KeySlot;
+use crate::recipe::{Catalogue, Recipe};
 use crate::render::{Panel, TileSize};
 use crate::state::View;
 use crate::trace::TraceRecord;
@@ -65,6 +66,9 @@ pub enum Command {
     },
     /// Reloads the configuration directory now.
     Reload {},
+    /// The recipe packs of the actions catalogue: the bundled ones and the
+    /// user's in `recipes/` of the configuration directory, read now.
+    Recipes {},
     /// An external focus source asserts the focused window.
     NotifyContext {
         /// The window class, reverse-DNS or short.
@@ -221,6 +225,8 @@ pub enum Reply {
     Subscribed(Subscribed),
     /// `press`.
     Pressed(Pressed),
+    /// `recipes`.
+    Recipes(Recipes),
     /// `reload` and `notify_context`: an empty object.
     Done {},
 }
@@ -345,6 +351,26 @@ pub struct Pressed {
     /// The press's trace entry; an `exec` is still `pending`, its result
     /// follows as a `trace` event.
     pub entry: TraceRecord,
+}
+
+/// The `recipes` result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Recipes {
+    /// By group, then name; a user pack replaces the bundled one of its id.
+    pub recipes: Vec<Recipe>,
+    /// One line per pack left out, `file:line:column: message`; absent
+    /// when every pack loaded.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub problems: Vec<String>,
+}
+
+impl From<Catalogue> for Recipes {
+    fn from(catalogue: Catalogue) -> Self {
+        Self {
+            recipes: catalogue.recipes,
+            problems: catalogue.problems.iter().map(ToString::to_string).collect(),
+        }
+    }
 }
 
 /// The Keypad's connection.

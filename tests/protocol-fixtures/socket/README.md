@@ -16,9 +16,12 @@ the event lines to a fake daemon, and the trace drawer's tests
 |---|---|
 | `requests.ndjson` | one request per command, every field written out |
 | `responses.ndjson` | the answers to them: `status` with and without a Keypad (both with `config_dir`, the first with the captured Keypad `geometry`), `subscribe`, a dry-run and a real `press`, `reload` and its failure, `notify_context`, the three request errors, and the `unavailable` refusal of a connection over the cap (`crates/keyvo-daemon/tests/socket.rs` checks the daemon sends it) |
+| `recipes.ndjson` | the `recipes` request, then two answers: the bundled packs of `contrib/recipes/` with the user pack `screenshot` (`crates/keyvo-core/tests/fixtures/recipes/valid/screenshot.toml`), which `crates/keyvo-daemon/tests/socket.rs` checks the daemon sends, and a hand-written answer naming a broken user pack in `problems`. Kept apart from `requests.ndjson` and `responses.ndjson` until the app speaks `recipes` (#129); the app's mock answers with it |
 | `events.ndjson` | every event class; the connected `device` line carries the `geometry`; the last `context` line is the keyvo app holding the context (`held`); the `trace` lines (with their `layer`) are the records of `crates/keyvo-core/tests/fixtures/trace/records.ndjson` |
 
-The lines are written by hand from the protocol, not captured. Key order in
+The lines are written by hand from the protocol, not captured, except the
+first answer in `recipes.ndjson`: the daemon test writes it with
+`KEYVO_BLESS=1 just test recipes` after a pack changes; review the diff. Key order in
 an object carries no meaning; a client compares parsed values, not text.
 
 A client ignores unknown fields in responses and events at any depth, so a
