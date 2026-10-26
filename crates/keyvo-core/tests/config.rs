@@ -41,6 +41,8 @@ fn defaults_match_spec_6_1_and_9() {
             reconnect_interval: ms(1000),
             reload_settle: ms(100),
             accept_backoff: ms(100),
+            claim_splash_retry: ms(500),
+            claim_splash_timeout: ms(10_000),
         }
     );
     assert_eq!(
@@ -184,6 +186,65 @@ fn a_keep_alive_period_not_below_the_timeout_is_refused() {
     );
     // Just below is fine.
     let text = "[timing]\nkeep_alive_period = 2999\n";
+    assert!(Config::from_toml(text, Path::new("config.toml")).is_ok());
+}
+
+#[test]
+fn the_claim_splash_keys_parse() {
+    let text = "[timing]\nclaim_splash_retry = 250\nclaim_splash_timeout = 15000\n";
+    let timing = Config::from_toml(text, Path::new("config.toml"))
+        .unwrap()
+        .timing;
+    assert_eq!(timing.claim_splash_retry, ms(250));
+    assert_eq!(timing.claim_splash_timeout, ms(15_000));
+}
+
+#[test]
+fn a_claim_splash_retry_not_below_the_timeout_is_refused() {
+    let name = "invalid/claim-splash-retry-equal.toml";
+    let diagnostic = parse(name).unwrap_err();
+    assert_eq!(diagnostic.path, fixture(name));
+    // The retry the user set, first.
+    assert_eq!(
+        diagnostic.position,
+        Some(Position {
+            line: 4,
+            column: 22
+        }),
+        "{diagnostic}"
+    );
+    assert!(
+        diagnostic.message.starts_with(
+            "`claim_splash_retry` (2000 ms) must be shorter than `claim_splash_timeout` (2000 ms)"
+        ),
+        "{diagnostic}"
+    );
+    // Above the default timeout, with only the retry set.
+    let text = "[timing]\nclaim_splash_retry = 12000\n";
+    let diagnostic = Config::from_toml(text, Path::new("config.toml")).unwrap_err();
+    assert_eq!(
+        diagnostic.position,
+        Some(Position {
+            line: 2,
+            column: 22
+        })
+    );
+    // A timeout lowered to the default retry points at the timeout.
+    let text = "[timing]\nclaim_splash_timeout = 500\n";
+    let diagnostic = Config::from_toml(text, Path::new("config.toml")).unwrap_err();
+    assert_eq!(
+        diagnostic.position,
+        Some(Position {
+            line: 2,
+            column: 24
+        })
+    );
+    assert!(
+        diagnostic.to_string().contains("config.toml"),
+        "{diagnostic}"
+    );
+    // Just below is fine.
+    let text = "[timing]\nclaim_splash_retry = 9999\n";
     assert!(Config::from_toml(text, Path::new("config.toml")).is_ok());
 }
 
