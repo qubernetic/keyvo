@@ -59,6 +59,8 @@ export const messages = {
   "shortcuts.undo": "Undo the last change to a key",
   "shortcuts.keys.redo": "Ctrl+Shift+Z",
   "shortcuts.redo": "Redo the change",
+  "shortcuts.keys.search": "/",
+  "shortcuts.search": "Search the actions catalogue",
   "shortcuts.keys.escape": "Escape",
   "shortcuts.dismiss": "Close the drawer or the menu",
   "shortcuts.keys.cut": "Ctrl+X",
