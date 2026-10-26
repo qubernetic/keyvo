@@ -114,13 +114,21 @@ export function toHeaderForm(fields: ProfileFields): HeaderForm {
 
 const COLOR = /^#[0-9a-fA-F]{6}$/;
 
+/** Why a header form cannot be written yet, and the field that says so. */
+export interface Invalid {
+  field: keyof HeaderForm;
+  invalid: string;
+}
+
 /** The fields `form` says, or why it cannot be written yet. */
-export function fromHeaderForm(form: HeaderForm): { fields: ProfileFields } | { invalid: string } {
-  if (form.name.trim() === "") return { invalid: t("profiles.noName") };
+export function fromHeaderForm(form: HeaderForm): { fields: ProfileFields } | Invalid {
+  if (form.name.trim() === "") return { field: "name", invalid: t("profiles.noName") };
   const fields: ProfileFields = { name: form.name };
   const accent = form.accent.trim();
   if (accent !== "") {
-    if (!COLOR.test(accent)) return { invalid: t("profiles.badAccent", { accent }) };
+    if (!COLOR.test(accent)) {
+      return { field: "accent", invalid: t("profiles.badAccent", { accent }) };
+    }
     fields.accent = accent.toLowerCase();
   }
   return { fields };

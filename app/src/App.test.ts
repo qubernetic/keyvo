@@ -1,7 +1,8 @@
 // The app shell against a fake daemon and editor (docs/design/gui-ux.md
 // §2; pad screen brief §5.1): header, rail, the screen the rail selects,
 // the one drawer open at a time, the pin and the profile list. The Pad's own
-// states are tested in Pad.test.ts and KeyEditor.test.ts.
+// states are tested in Pad.test.ts and Inspector.test.ts, the Profiles
+// screen's in Profiles.test.ts.
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -289,7 +290,7 @@ describe("App", () => {
     );
     expect(screen.queryByRole("grid", { name: /^Keypad mirror/ })).toBeNull();
     expect(
-      await screen.findByRole("button", { name: "Terminal (terminal), priority 0, active" }),
+      await screen.findByRole("button", { name: "Terminal (terminal), priority 0, on the pad" }),
     ).toHaveAttribute("aria-current", "true");
     await fireEvent.keyDown(window, { key: "1", ctrlKey: true });
     expect(screen.getByRole("grid", { name: /^Keypad mirror/ })).toBeInTheDocument();
@@ -303,19 +304,28 @@ describe("App", () => {
   });
 
   it("lays Profiles out by the window width", async () => {
-    /** The columns that show, by their region names. */
-    const shown = () =>
-      ["List", "Editor", "Preview"].filter(
-        (name) => screen.queryByRole("region", { name }) !== null,
-      );
+    const screenOf = () => document.querySelector(".profiles-screen");
     await resize(1200);
     app();
     await fireEvent.click(screen.getByRole("button", { name: "Profiles" }));
-    expect(shown()).toEqual(["List", "Editor", "Preview"]);
+    expect(screenOf()).not.toHaveClass("stacked");
     expect(screen.getByRole("button", { name: "Pad" })).toHaveTextContent("Pad");
     await resize(960);
-    expect(shown()).toEqual(["Editor"]);
+    expect(screenOf()).toHaveClass("stacked");
     expect(screen.getByRole("button", { name: "Pad" })).toHaveTextContent("");
+  });
+
+  it("opens the Pad pinned to a profile from Profiles", async () => {
+    app();
+    await listed();
+    await fireEvent.keyDown(window, { key: "2", ctrlKey: true });
+    await fireEvent.click(
+      await screen.findByRole("button", { name: "VS Code (vscode), priority 20" }),
+    );
+    await fireEvent.click(await screen.findByRole("button", { name: "Edit keys on the Pad" }));
+    expect(screen.getByRole("button", { name: "Pad" })).toHaveAttribute("aria-current", "page");
+    expect(dropdown().value).toBe("vscode");
+    expect(await screen.findByText("The pad moved to terminal, page 1")).toBeInTheDocument();
   });
 
   it("gives every control an aria-label", async () => {

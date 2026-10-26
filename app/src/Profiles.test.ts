@@ -1,17 +1,18 @@
-// The Profiles screen (docs/design/gui-ux.md §3.2, §4.1) against a fake
-// daemon and fake profile files: the list order, the page tabs, a key
-// selected into the key editor and the key card, the header edits of the
-// shared steps in tests/protocol-fixtures/editor/profile.json (the file a
-// step gives is the file keyvo_client::Editor writes for it,
-// crates/keyvo-client/tests/editor.rs), and the controls not built yet.
+// The Profiles screen as the profile manager (docs/design/gui-ux.md §3.2;
+// pad screen brief §5.3, §6) against a fake daemon and fake profile files:
+// the list by priority with the pad's profile marked, the header form and
+// the shared steps of tests/protocol-fixtures/editor/profile.json (the file
+// a step gives is the file keyvo_client::Editor writes for it,
+// crates/keyvo-client/tests/editor.rs), the match rules, the page
+// thumbnails, "Edit keys on the Pad", and the controls not built yet.
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { isDeepStrictEqual } from "node:util";
 import { describe, expect, it, vi } from "vitest";
 
 import Profiles from "./Profiles.svelte";
 import type { Daemon, Tile } from "./lib/daemon";
-import type { Editor, KeyFields, Target } from "./lib/editor";
 import { editorFile, nth, profileSteps, responses } from "./lib/fixtures";
+import type { Pin } from "./lib/pin";
 import type {
   ProfileEdited,
   ProfileFields,
@@ -43,9 +44,13 @@ function summary(id: string, name: string, priority: number, extra: Partial<Prof
 
 /** In id order, as the shell's `profile_list` answers. */
 const LIST: ProfileSummary[] = [
-  summary("claude", "Claude Code", 10, { match: { class: ["konsole"], title: "(?i)claude" } }),
+  summary("claude", "Claude Code", 10, {
+    accent: "#d97757",
+    match: { class: ["konsole", "org.kde.konsole"], title: "(?i)claude" },
+  }),
   summary("code", "VS Code", 1, { match: { class: ["code"] } }),
   summary("global", "Everywhere", 0, { file: false }),
+  summary("notes", "Notes", 2, { pages: [] }),
   summary(STEPS.profile, "Terminal", 5, {
     accent: "#2ecc71",
     match: { class: ["org.kde.konsole"] },
@@ -53,18 +58,9 @@ const LIST: ProfileSummary[] = [
   }),
 ];
 
-/** Key 2 is the profile's own, key 3 a global key under it, key 5 has no
- * layer; the global profile's keys are global. */
 function tiles(profile: string, page: number, keys: number): Tile[] {
   return Array.from({ length: keys }, (_, index) => ({
     image: `data:image/png;base64,${profile}-${page}-${index + 1}`,
-    ...(index === 1
-      ? {
-          label: `Copy ${page}`,
-          layer: profile === "global" ? ("global" as const) : ("app" as const),
-        }
-      : {}),
-    ...(index === 2 ? { label: "Type", layer: "global" as const } : {}),
   }));
 }
 
@@ -78,21 +74,6 @@ function daemon(): Daemon {
     recipes: () => Promise.resolve({ recipes: [] }),
     press: () => Promise.reject(new Error("not in this test")),
     subscribe: () => Promise.resolve(() => {}),
-  };
-}
-
-function editor(): Editor {
-  return {
-    key: vi.fn((_target: Target) =>
-      Promise.resolve({ path: `${CONFIG}/profiles/terminal.toml`, fields: { label: "Copy" } }),
-    ),
-    editKey: vi.fn((_target: Target, fields: KeyFields) =>
-      Promise.resolve({
-        path: `${CONFIG}/profiles/terminal.toml`,
-        before: { label: "Copy" },
-        fields,
-      }),
-    ),
   };
 }
 
@@ -143,15 +124,20 @@ function files(overrides: Partial<ProfileFiles> = {}) {
 }
 
 function mount(
-  options: { files?: ReturnType<typeof files>; geometry?: Geometry | null; view?: View } = {},
+  options: {
+    files?: ReturnType<typeof files>;
+    geometry?: Geometry | null;
+    view?: View;
+    width?: number;
+  } = {},
 ) {
   const fake = options.files ?? files();
   const props = {
     daemon: daemon(),
-    editor: editor(),
     files: fake.files,
-    columns: layout(1200),
+    columns: layout(options.width ?? 1200),
     view: options.view ?? VIEW,
+    onedit: vi.fn((_pin: Pin) => {}),
     ...(options.geometry === null ? {} : { geometry: options.geometry ?? GEOMETRY }),
   };
   render(Profiles, { props });
@@ -169,6 +155,11 @@ async function listed(): Promise<string[]> {
     .map((button) => button.getAttribute("aria-label") ?? "");
 }
 
+async function pick(name: RegExp) {
+  await listed();
+  await fireEvent.click(within(list()).getByRole("button", { name }));
+}
+
 function field(name: string): HTMLInputElement {
   return screen.getByRole("textbox", { name }) as HTMLInputElement;
 }
@@ -178,27 +169,44 @@ async function type(input: HTMLElement, value: string) {
   await fireEvent.change(input);
 }
 
-function card(): HTMLElement {
-  return screen.getByRole("region", { name: "Selected key" });
+function rules(): HTMLElement {
+  return screen.getByRole("region", { name: "Match rules" });
+}
+
+function thumbnails(): HTMLElement {
+  return screen.getByRole("list", { name: "Pages" });
 }
 
 describe("the list column", () => {
-  it("pins the global profile first, then orders by priority and marks the active one", async () => {
+  it("pins the global profile first, then orders by priority and marks the pad's one", async () => {
     mount();
     expect(await listed()).toEqual([
       "Everywhere (global), priority 0",
       "Claude Code (claude), priority 10",
-      "Terminal (terminal), priority 5, active",
+      "Terminal (terminal), priority 5, on the pad",
+      "Notes (notes), priority 2",
       "VS Code (code), priority 1",
     ]);
-    const active = within(list()).getByRole("button", { name: /, active$/ });
-    expect(active).toHaveTextContent("active");
+    const live = within(list()).getByRole("button", { name: /, on the pad$/ });
+    expect(live).toHaveTextContent("on the pad");
     expect(within(list()).getByRole("button", { name: /^Everywhere/ })).not.toHaveTextContent(
-      "active",
+      "on the pad",
     );
   });
 
-  it("selects the active profile first and another one on a click", async () => {
+  it("puts a square accent swatch after the name of a profile that has an accent", async () => {
+    mount();
+    await listed();
+    const row = within(list()).getByRole("button", { name: /^Claude Code/ });
+    const swatch = row.querySelector(".swatch");
+    expect(swatch).toHaveStyle({ backgroundColor: "#d97757" });
+    expect(swatch?.previousElementSibling).toHaveTextContent("Claude Code");
+    expect(
+      within(list()).getByRole("button", { name: /^VS Code/ }).querySelector(".swatch"),
+    ).toBeNull();
+  });
+
+  it("selects the pad's profile first and another one on a click", async () => {
     const { fake } = mount();
     await listed();
     expect(within(list()).getByRole("button", { name: /^Terminal/ })).toHaveAttribute(
@@ -211,9 +219,9 @@ describe("the list column", () => {
       "aria-current",
       "true",
     );
+    expect(screen.getByRole("heading", { level: 2, name: "VS Code" })).toBeInTheDocument();
     await waitFor(() => expect(field("Name")).toHaveValue("VS Code"));
     expect(fake.files.profile).toHaveBeenLastCalledWith("code");
-    expect(screen.getByText("code", { selector: "dd" })).toBeInTheDocument();
   });
 
   it("selects the global profile when the pad shows none", async () => {
@@ -223,7 +231,17 @@ describe("the list column", () => {
       "aria-current",
       "true",
     );
-    expect(screen.getByText(/The global profile has no match rules/)).toBeInTheDocument();
+    expect(
+      within(rules()).getByText("The global profile is under every window."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows skeleton rows while the first read runs", () => {
+    mount({ files: files({ list: () => new Promise(() => {}) }) });
+    expect(screen.getByRole("list", { name: "Loading the profiles" })).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
   });
 
   it("shows why the profiles did not load", async () => {
@@ -232,142 +250,68 @@ describe("the list column", () => {
       "Profiles not loaded: profiles/x.toml: bad",
     );
   });
-});
 
-describe("the page tabs", () => {
-  it("names each page, its number when it has no name, and starts on page 1", async () => {
-    mount();
-    const tabs = await screen.findAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(["context", "general", "Page 3"]);
-    expect(nth(tabs, 0)).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tabpanel")).toHaveAccessibleName("context");
+  it("keeps the list beside the editor from 1000 px and above it below", async () => {
+    mount({ width: 960 });
+    expect(await listed()).toHaveLength(LIST.length);
+    expect(document.querySelector(".profiles-screen")).toHaveClass("stacked");
   });
 
-  it("switches the key grid and the mirror to the clicked page", async () => {
-    const props = mount();
-    const general = await screen.findByRole("tab", { name: "general" });
-    await fireEvent.click(general);
-    expect(general).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "context" })).toHaveAttribute("aria-selected", "false");
-    expect(screen.getByRole("grid", { name: "Keys of page general" })).toBeInTheDocument();
+  it("offers the templates behind + as controls not built yet", async () => {
+    mount();
+    await listed();
+    const add = screen.getByRole("button", { name: "New profile" });
+    expect(add).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("list", { name: "Templates" })).toBeNull();
+    await fireEvent.click(add);
+    expect(add).toHaveAttribute("aria-expanded", "true");
+    const templates = screen.getByRole("list", { name: "Templates" });
     expect(
-      screen.getByRole("grid", { name: "Page preview: profile terminal, page 2" }),
-    ).toBeInTheDocument();
-    await waitFor(() =>
-      expect(props.daemon.tiles).toHaveBeenLastCalledWith(
-        "terminal",
-        2,
-        GEOMETRY.rects.length,
-        GEOMETRY.tile,
-      ),
-    );
-    expect(await screen.findAllByRole("button", { name: "Key 2: Copy 2" })).toHaveLength(2);
-  });
-
-  it("moves between tabs with the arrow keys, Home and End", async () => {
-    mount();
-    const context = await screen.findByRole("tab", { name: "context" });
-    await fireEvent.keyDown(context, { key: "ArrowRight" });
-    expect(screen.getByRole("tab", { name: "general" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "general" })).toHaveFocus();
-    await fireEvent.keyDown(screen.getByRole("tab", { name: "general" }), { key: "End" });
-    expect(screen.getByRole("tab", { name: "Page 3" })).toHaveAttribute("aria-selected", "true");
-    await fireEvent.keyDown(screen.getByRole("tab", { name: "Page 3" }), { key: "ArrowRight" });
-    expect(context).toHaveAttribute("aria-selected", "true");
-    await fireEvent.keyDown(context, { key: "ArrowLeft" });
-    expect(screen.getByRole("tab", { name: "Page 3" })).toHaveAttribute("aria-selected", "true");
-    await fireEvent.keyDown(screen.getByRole("tab", { name: "Page 3" }), { key: "Home" });
-    expect(context).toHaveAttribute("aria-selected", "true");
-  });
-
-  it("starts a newly selected profile on its first page", async () => {
-    mount();
-    await fireEvent.click(await screen.findByRole("tab", { name: "general" }));
-    await fireEvent.click(within(list()).getByRole("button", { name: /^VS Code/ }));
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent?.trim())).toEqual(["context"]);
-    expect(screen.getByRole("tab", { name: "context" })).toHaveAttribute("aria-selected", "true");
-  });
-});
-
-describe("a selected key", () => {
-  it("opens the key editor on that key of the selected page", async () => {
-    const props = mount();
-    await fireEvent.click(await screen.findByRole("tab", { name: "general" }));
-    expect(screen.queryByRole("heading", { name: "Key 2" })).toBeNull();
-    await fireEvent.click(
-      within(screen.getByRole("grid", { name: "Keys of page general" })).getByRole("button", {
-        name: "Key 2: Copy 2",
-      }),
-    );
-    expect(await screen.findByRole("heading", { name: "Key 2" })).toBeInTheDocument();
-    expect(props.editor.key).toHaveBeenLastCalledWith({ profile: "terminal", page: 2, key: 2 });
-    await waitFor(() => expect(field("Label")).toHaveValue("Copy"));
-    await type(field("Label"), "Paste");
-    await waitFor(() =>
-      expect(props.editor.editKey).toHaveBeenCalledWith(
-        { profile: "terminal", page: 2, key: 2 },
-        { label: "Paste" },
-      ),
-    );
-  });
-
-  it("is selected from the mirror and the keyboard too", async () => {
-    mount();
-    const mirror = await screen.findByRole("grid", { name: "Page preview: profile terminal, page 1" });
-    await fireEvent.click(await within(mirror).findByRole("button", { name: "Key 3: Type" }));
-    expect(await screen.findByRole("heading", { name: "Key 3" })).toBeInTheDocument();
-    const keys = screen.getByRole("grid", { name: "Keys of page context" });
-    await fireEvent.keyDown(keys, { key: "ArrowDown" });
-    expect(await screen.findByRole("heading", { name: "Key 6" })).toBeInTheDocument();
-    await fireEvent.keyDown(keys, { key: "1" });
-    expect(await screen.findByRole("heading", { name: "Key 1" })).toBeInTheDocument();
-    expect(within(keys).getByRole("button", { name: "Key 1" })).toHaveFocus();
-  });
-
-  it("shows the key card with position, page and the layer it comes from", async () => {
-    mount();
-    await screen.findByRole("region", { name: "Selected key" });
-    expect(within(card()).getByText("Select a key to see its card.")).toBeInTheDocument();
-    const keys = await screen.findByRole("grid", { name: "Keys of page context" });
-    await fireEvent.click(await within(keys).findByRole("button", { name: "Key 2: Copy 1" }));
-    expect(within(card()).getByText("Position").nextElementSibling).toHaveTextContent("Key 2");
-    expect(within(card()).getByText("Page").nextElementSibling).toHaveTextContent("1, context");
-    expect(within(card()).getByText("Layer origin").nextElementSibling).toHaveTextContent(
-      "app layer",
-    );
-    await fireEvent.click(within(keys).getByRole("button", { name: "Key 3: Type" }));
-    expect(within(card()).getByText("Layer origin").nextElementSibling).toHaveTextContent(
-      "global layer",
-    );
-    await fireEvent.click(within(keys).getByRole("button", { name: "Key 5" }));
-    expect(within(card()).getByText("Layer origin").nextElementSibling).toHaveTextContent(
-      "none: no layer defines this key",
-    );
-  });
-
-  it("without a geometry keeps the nine key slots and says the mirror waits", async () => {
-    mount({ geometry: null });
-    const keys = await screen.findByRole("grid", { name: "Keys of page context" });
-    expect(within(keys).getAllByRole("row")).toHaveLength(3);
-    expect(within(keys).getAllByRole("button")).toHaveLength(9);
-    expect(
-      screen.getByText("The mirror appears once a Keypad has reported its geometry."),
-    ).toBeInTheDocument();
-    await fireEvent.click(within(keys).getByRole("button", { name: "Key 4" }));
-    expect(within(card()).getByText("Layer origin").nextElementSibling).toHaveTextContent(
-      "known once a Keypad has reported its geometry",
-    );
+      within(templates)
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["Empty profile", "Copy of the active profile", "Starter pack"]);
+    await fireEvent.click(add);
+    expect(screen.queryByRole("list", { name: "Templates" })).toBeNull();
   });
 });
 
 describe("the profile header", () => {
-  it("shows the id, priority and file, and writes the shared steps byte for byte", async () => {
+  it("names the profile, its file once and Open in editor in the heading row", async () => {
+    mount();
+    const heading = await screen.findByRole("heading", { level: 2, name: "Terminal" });
+    const row = heading.parentElement as HTMLElement;
+    expect(within(row).getByRole("button", { name: "Open in editor" })).toBeInTheDocument();
+    await waitFor(() => expect(field("Name")).toHaveValue("Terminal"));
+    expect(screen.getAllByText(`${CONFIG}/${STEPS.path}`)).toHaveLength(1);
+    expect(screen.queryByText("File:")).toBeNull();
+  });
+
+  it("shows the priority with what it means and Enabled as not built yet", async () => {
+    mount();
+    await waitFor(() => expect(field("Name")).toHaveValue("Terminal"));
+    expect(screen.getByText("Priority").nextElementSibling).toHaveTextContent(
+      "5 higher wins the window",
+    );
+    const enabled = screen.getByRole("switch", { name: "Enabled" });
+    expect(enabled).toHaveAttribute("aria-disabled", "true");
+    // Every profile is on until the schema can switch one off.
+    expect(enabled).toHaveAttribute("aria-checked", "true");
+    expect(enabled).toHaveTextContent("On");
+  });
+
+  it("shows the accent as a swatch beside its text", async () => {
+    mount();
+    await waitFor(() => expect(field("Accent")).toHaveValue("#2ecc71"));
+    const swatch = field("Accent").parentElement?.querySelector(".swatch");
+    expect(swatch).toHaveStyle({ backgroundColor: "#2ecc71" });
+  });
+
+  it("writes the shared steps byte for byte and says so under the header", async () => {
     const fake = files();
     mount({ files: fake });
     await waitFor(() => expect(field("Name")).toHaveValue(STEPS.fields.name));
     expect(field("Accent")).toHaveValue(STEPS.fields.accent);
-    expect(screen.getByText("Priority").nextElementSibling).toHaveTextContent("5");
-    expect(screen.getByText(`${CONFIG}/${STEPS.path}`)).toBeInTheDocument();
     for (const step of STEPS.steps) {
       const value = step.field === "name" ? step.fields.name : (step.fields.accent ?? "");
       await type(field(step.field === "name" ? "Name" : "Accent"), value);
@@ -383,17 +327,17 @@ describe("the profile header", () => {
     );
   });
 
-  it("refuses an empty name and a bad accent without writing", async () => {
+  it("puts the message of an invalid field under it and writes nothing", async () => {
     const fake = files();
     mount({ files: fake });
     await waitFor(() => expect(field("Name")).toHaveValue("Terminal"));
     await type(field("Name"), " ");
-    expect(await screen.findByRole("alert")).toHaveTextContent("Enter a name to write it.");
+    expect(field("Name")).toHaveAttribute("aria-invalid", "true");
+    expect(field("Name")).toHaveAccessibleDescription("Enter a name to write it.");
     await type(field("Name"), "Terminal");
+    expect(field("Name")).not.toHaveAttribute("aria-invalid");
     await type(field("Accent"), "teal");
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The accent teal is not written #rrggbb.",
-    );
+    expect(field("Accent")).toHaveAccessibleDescription("The accent teal is not written #rrggbb.");
     expect(fake.files.editProfile).not.toHaveBeenCalled();
   });
 
@@ -427,50 +371,128 @@ describe("the profile header", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("cannot run xdg-open");
   });
 
-  it("disables Open in editor for the built-in global profile", async () => {
-    mount();
-    await listed();
-    await fireEvent.click(within(list()).getByRole("button", { name: /^Everywhere/ }));
-    expect(screen.getByRole("button", { name: "Open in editor" })).toBeDisabled();
+  it("keeps Open in editor from the built-in global profile until its first edit", async () => {
+    const fake = files();
+    mount({ files: fake });
+    await pick(/^Everywhere/);
+    const open = screen.getByRole("button", { name: "Open in editor" });
+    expect(open).toHaveAttribute("aria-disabled", "true");
+    await fireEvent.click(open);
+    expect(fake.files.open).not.toHaveBeenCalled();
     expect(screen.getByText("Built in: the first edit creates this file.")).toBeInTheDocument();
   });
+});
 
-  it("lists the match rules as written", async () => {
+describe("the match rules", () => {
+  it("are one list of kind and pattern rows, each kind named once", async () => {
     mount();
-    await listed();
-    await fireEvent.click(within(list()).getByRole("button", { name: /^Claude Code/ }));
-    const rules = screen.getByRole("region", { name: "Match rules" });
-    expect(within(rules).getByText("konsole")).toBeInTheDocument();
-    expect(within(rules).getByText("(?i)claude")).toBeInTheDocument();
+    await pick(/^Claude Code/);
+    expect(within(rules()).getAllByText("Window class")).toHaveLength(1);
+    expect(within(rules()).getAllByText("Title regex")).toHaveLength(1);
+    for (const pattern of ["konsole", "org.kde.konsole", "(?i)claude"]) {
+      expect(within(rules()).getByText(pattern)).toBeInTheDocument();
+    }
+  });
+
+  it("say when focus never selects the profile", async () => {
+    mount();
+    await pick(/^Notes/);
+    expect(
+      within(rules()).getByText("No match rules: focus never selects this profile."),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("the pages", () => {
+  it("are thumbnails of the pages as keyvo-core renders them, the first one selected", async () => {
+    const props = mount();
+    await waitFor(() => expect(within(thumbnails()).getAllByRole("button")).toHaveLength(3));
+    const pages = within(thumbnails()).getAllByRole("button");
+    expect(pages.map((page) => page.getAttribute("aria-label"))).toEqual([
+      "context",
+      "general",
+      "Page 3",
+    ]);
+    expect(nth(pages, 0)).toHaveAttribute("aria-pressed", "true");
+    expect(nth(pages, 1)).toHaveAttribute("aria-pressed", "false");
+    for (const page of [1, 2, 3]) {
+      expect(props.daemon.tiles).toHaveBeenCalledWith(
+        "terminal",
+        page,
+        GEOMETRY.rects.length,
+        GEOMETRY.tile,
+      );
+    }
+    await waitFor(() =>
+      expect(
+        nth(pages, 1).querySelector(`img[src="data:image/png;base64,terminal-2-1"]`),
+      ).not.toBeNull(),
+    );
+  });
+
+  it("show the page names only until a Keypad reports its geometry", async () => {
+    const props = mount({ geometry: null });
+    await waitFor(() => expect(within(thumbnails()).getAllByRole("button")).toHaveLength(3));
+    expect(thumbnails().querySelector("img")).toBeNull();
+    expect(
+      screen.getByText("The thumbnails appear once a Keypad has reported its geometry."),
+    ).toBeInTheDocument();
+    expect(props.daemon.tiles).not.toHaveBeenCalled();
+  });
+
+  it("say when a profile has no pages", async () => {
+    mount();
+    await pick(/^Notes/);
+    expect(screen.getByText("This profile has no pages.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit keys on the Pad" })).toBeNull();
+  });
+
+  it("open the Pad pinned to the profile and the selected page", async () => {
+    const props = mount();
+    await waitFor(() => expect(within(thumbnails()).getAllByRole("button")).toHaveLength(3));
+    await fireEvent.click(within(thumbnails()).getByRole("button", { name: "general" }));
+    expect(within(thumbnails()).getByRole("button", { name: "general" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await fireEvent.click(screen.getByRole("button", { name: "Edit keys on the Pad" }));
+    expect(props.onedit).toHaveBeenCalledWith({ profile: "terminal", page: 2 });
+  });
+
+  it("start a newly selected profile on its first page", async () => {
+    const props = mount();
+    await waitFor(() => expect(within(thumbnails()).getAllByRole("button")).toHaveLength(3));
+    await fireEvent.click(within(thumbnails()).getByRole("button", { name: "Page 3" }));
+    await pick(/^VS Code/);
+    await fireEvent.click(screen.getByRole("button", { name: "Edit keys on the Pad" }));
+    expect(props.onedit).toHaveBeenCalledWith({ profile: "code", page: 1 });
   });
 });
 
 describe("what is not built yet", () => {
   it.each([
-    ["New profile", /New profiles from a template/],
-    ["Edit match rules", /Editing match rules arrives with M4a-4/],
-    ["Move key", /drag and drop, or Ctrl\+X then Ctrl\+V/],
-    ["Open in Behaviors", /Behaviors are not built yet/],
+    ["Empty profile", /An empty profile arrives with M4a-4/],
+    ["Copy of the active profile", /A copy of the active profile arrives with M4a-4/],
+    ["Starter pack", /A profile from a starter pack arrives with M4a-4/],
+    ["Enabled", /Switching a profile off arrives with M4a-4/],
+    ["Add a rule", /Editing match rules arrives with M4a-4/],
+    ["Edit the rule org.kde.konsole", /Editing match rules arrives with M4a-4/],
   ])("%s is disabled and says why on focus", async (name, sentence) => {
     mount();
-    await screen.findAllByRole("tab");
-    const control = screen.getByRole("button", { name });
+    await waitFor(() => expect(field("Name")).toHaveValue("Terminal"));
+    await fireEvent.click(screen.getByRole("button", { name: "New profile" }));
+    const control = screen.getByRole(name === "Enabled" ? "switch" : "button", { name });
     expect(control).toHaveAttribute("aria-disabled", "true");
     expect(control).toHaveAccessibleDescription("Coming soon");
     await fireEvent.focus(control);
     expect(control).toHaveAccessibleDescription(sentence);
-    const tooltip = document.getElementById(control.getAttribute("aria-describedby") ?? "");
-    await fireEvent.blur(control);
-    expect(tooltip).not.toBeVisible();
-    await fireEvent.mouseEnter(control);
-    expect(tooltip).toBeVisible();
-    expect(tooltip).toHaveTextContent(/^Coming soon$/);
   });
 
-  it("a click on a control not built yet does nothing", async () => {
+  it("a click on a template does nothing", async () => {
     const props = mount();
     await listed();
     await fireEvent.click(screen.getByRole("button", { name: "New profile" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Empty profile" }));
     expect(await listed()).toHaveLength(LIST.length);
     expect(props.fake.files.editProfile).not.toHaveBeenCalled();
   });

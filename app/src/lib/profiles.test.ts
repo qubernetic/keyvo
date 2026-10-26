@@ -71,11 +71,13 @@ describe("the header form", () => {
     });
   });
 
-  it("refuses an empty name and an accent that is not #rrggbb", () => {
+  it("refuses an empty name and an accent that is not #rrggbb, naming the field", () => {
     expect(fromHeaderForm({ name: "  ", accent: "" })).toEqual({
+      field: "name",
       invalid: "Enter a name to write it.",
     });
     expect(fromHeaderForm({ name: "A", accent: "green" })).toEqual({
+      field: "accent",
       invalid: "The accent green is not written #rrggbb.",
     });
   });

@@ -11,6 +11,7 @@
     soon,
     text,
     toggle = false,
+    checked = false,
   }: {
     /** The control's name, shown and announced. */
     label: string;
@@ -18,8 +19,10 @@
     soon: MessageKey;
     /** What the button shows instead of the label; the label stays its name. */
     text?: string;
-    /** A switch, shown off, instead of a button. */
+    /** A switch instead of a button. */
     toggle?: boolean;
+    /** The state the switch shows, as it is today; off by default. */
+    checked?: boolean;
   } = $props();
 
   const id = $props.id();
@@ -31,7 +34,7 @@
   <button
     type="button"
     role={toggle ? "switch" : undefined}
-    aria-checked={toggle ? "false" : undefined}
+    aria-checked={toggle ? checked : undefined}
     aria-label={label}
     aria-disabled="true"
     aria-describedby={`kv-soon-${id}`}
