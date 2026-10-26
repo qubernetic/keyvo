@@ -15,14 +15,14 @@
     describeAction,
     fromStatus,
     grid,
-    HOME_TRACE,
+    PAD_TRACE,
     initial,
     moved,
     phrase,
     schemaError,
     summarize,
-    type HomeState,
-  } from "./lib/home";
+    type PadState,
+  } from "./lib/pad";
   import { t, type MessageKey } from "./lib/i18n";
   import type { DeviceStatus, PressKind, TraceRecord, View } from "./lib/protocol";
   import { SCREENS, type ScreenId } from "./lib/shell";
@@ -55,7 +55,7 @@
   /** The skeleton rows of the event list while Home connects. */
   const SKELETON = [1, 2, 3];
 
-  let home: HomeState = $state(initial());
+  let home: PadState = $state(initial());
   /** The key numbers in rows, as the daemon's geometry lays them out. */
   const rows: number[][] = $derived(home.geometry === undefined ? [] : grid(home.geometry));
   const keyCount = $derived(home.geometry?.rects.length ?? 0);
@@ -88,7 +88,7 @@
       if (mine !== attempt) return;
       home = { ...fromStatus(status), trace: home.trace, reloads: home.reloads };
       unreachable = undefined;
-      const unlisten = await daemon.subscribe(HOME_TRACE, (update) => {
+      const unlisten = await daemon.subscribe(PAD_TRACE, (update) => {
         if (mine !== attempt) return;
         if (update.kind === "subscribed") {
           // The replay that follows is the newest entries again.

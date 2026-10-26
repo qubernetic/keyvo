@@ -11,7 +11,7 @@ import Home from "./Home.svelte";
 import type { Daemon, Tile, Update } from "./lib/daemon";
 import type { Editor, KeyFields, Target } from "./lib/editor";
 import { eventsOf, nth, responses } from "./lib/fixtures";
-import { HOME_TRACE } from "./lib/home";
+import { PAD_TRACE } from "./lib/pad";
 import { t } from "./lib/i18n";
 import type { PressKind, Size, Status, TraceRecord } from "./lib/protocol";
 
@@ -290,7 +290,7 @@ describe("Home mirror", () => {
     const daemon = fake();
     const { unmount } = render(Home, { props: { daemon: daemon.daemon, editor: editor() } });
     await waitFor(() => expect(daemon.listening).toBe(true));
-    expect(daemon.daemon.subscribe).toHaveBeenCalledWith(HOME_TRACE, expect.any(Function));
+    expect(daemon.daemon.subscribe).toHaveBeenCalledWith(PAD_TRACE, expect.any(Function));
     unmount();
     await waitFor(() => expect(daemon.listening).toBe(false));
   });

@@ -1,9 +1,9 @@
-// Home's state against the shared socket fixtures in
+// The Pad's state against the shared socket fixtures in
 // tests/protocol-fixtures/socket/: the status reply, then the updates of a
 // subscription, folded the way crates/keyvo-client/src/mirror.rs folds them.
 import { describe, expect, it } from "vitest";
 
-import { apply, fromStatus, grid, HOME_TRACE, initial, schemaError, summarize, type HomeState } from "./home";
+import { apply, fromStatus, grid, PAD_TRACE, initial, schemaError, summarize, type PadState } from "./pad";
 import type { Event, Status, TraceRecord } from "./protocol";
 import { events, eventsOf, nth, responses } from "./fixtures";
 
@@ -120,7 +120,7 @@ describe("apply", () => {
   it("a held context holds the window reported before it", () => {
     const contexts = eventsOf("context");
     const [konsole, ptyxis, app] = [nth(contexts, 0), nth(contexts, 1), nth(contexts, 2)];
-    const fold = (state: HomeState, event: Event) => apply(state, { kind: "event", event });
+    const fold = (state: PadState, event: Event) => apply(state, { kind: "event", event });
     // Nothing reported before the keyvo app: it holds no known window.
     let state = fold(initial(), app);
     expect(state.holding).toBeUndefined();
@@ -143,14 +143,14 @@ describe("apply", () => {
     expect(apply(held, { kind: "event", event: release }).held).toEqual([]);
   });
 
-  it("trace entries come newest first, at most HOME_TRACE", () => {
+  it("trace entries come newest first, at most PAD_TRACE", () => {
     let state = initial();
-    for (let round = 0; round < HOME_TRACE; round++) {
+    for (let round = 0; round < PAD_TRACE; round++) {
       for (const event of eventsOf("trace")) {
         state = apply(state, { kind: "event", event });
       }
     }
-    expect(state.trace).toHaveLength(HOME_TRACE);
+    expect(state.trace).toHaveLength(PAD_TRACE);
     expect(state.trace[0]).toEqual(traces().at(-1));
     expect(state.trace[1]).toEqual(traces().at(-2));
   });

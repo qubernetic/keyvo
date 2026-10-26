@@ -13,7 +13,7 @@
   import Soon from "./Soon.svelte";
   import type { Daemon, Tile } from "./lib/daemon";
   import { describe, problemOf, type Editor, type Problem, type Target } from "./lib/editor";
-  import { grid, moved } from "./lib/home";
+  import { grid, moved } from "./lib/pad";
   import { t } from "./lib/i18n";
   import {
     fromHeaderForm,
