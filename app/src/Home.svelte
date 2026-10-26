@@ -218,19 +218,15 @@
     }
   }
 
-  /** The entry the trace drawer shows, and the control that opened it. */
+  /** The entry the trace drawer shows; the drawer gives the focus back. */
   let drawn: TraceRecord | undefined = $state();
-  let opener: HTMLElement | undefined;
 
   function draw(entry: TraceRecord) {
-    opener = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
     drawn = entry;
   }
 
   function undraw() {
     drawn = undefined;
-    opener?.focus();
-    opener = undefined;
   }
 
   function select(key: number) {
@@ -499,18 +495,6 @@
   <section class="events">
     <div class="head">
       <h2 id="kv-events">{t("home.events")}</h2>
-      <!-- §3.1: Debug mode adds HID-level events; the daemon sends none yet. -->
-      <button
-        type="button"
-        role="switch"
-        aria-checked="false"
-        aria-disabled="true"
-        aria-label={t("home.debug")}
-        aria-describedby="kv-debug-soon"
-      >
-        {t("home.debug")}
-      </button>
-      <span id="kv-debug-soon" class="note">{t("soon")}</span>
     </div>
     {#if connecting && home.trace.length === 0}
       <!-- §5.2: skeleton rows, no spinner; the mirror keeps its last frame. -->

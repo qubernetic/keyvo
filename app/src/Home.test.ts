@@ -459,14 +459,9 @@ describe("Home event list", () => {
     expect(line).toHaveFocus();
   });
 
-  it("shows the debug log toggle disabled until the daemon sends HID-level events", async () => {
+  it("leaves the debug log switch to the trace drawer", async () => {
     await mounted();
-    const toggle = screen.getByRole("switch", { name: "Debug log" });
-    expect(toggle).toHaveAttribute("aria-disabled", "true");
-    expect(toggle).toHaveAttribute("aria-checked", "false");
-    expect(toggle).toHaveAccessibleDescription("Coming soon");
-    await fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(screen.queryByRole("switch", { name: "Debug log" })).toBeNull();
   });
 
   it("says when nothing happened yet and how to fill the list", async () => {

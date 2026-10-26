@@ -10,6 +10,7 @@
     label,
     soon,
     text,
+    toggle = false,
   }: {
     /** The control's name, shown and announced. */
     label: string;
@@ -17,6 +18,8 @@
     soon: MessageKey;
     /** What the button shows instead of the label; the label stays its name. */
     text?: string;
+    /** A switch, shown off, instead of a button. */
+    toggle?: boolean;
   } = $props();
 
   const id = $props.id();
@@ -27,6 +30,8 @@
 <span class="soon">
   <button
     type="button"
+    role={toggle ? "switch" : undefined}
+    aria-checked={toggle ? "false" : undefined}
     aria-label={label}
     aria-disabled="true"
     aria-describedby={`kv-soon-${id}`}

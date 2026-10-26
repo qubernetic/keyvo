@@ -112,6 +112,39 @@ describe("TraceDrawer", () => {
     expect(value(section(dialog, "Result"), "Status")).toBe("teleported");
   });
 
+  it("is a non-modal dialog", () => {
+    const { dialog } = drawer(nth(ENTRIES, 0));
+    expect(dialog).toHaveAttribute("aria-modal", "false");
+  });
+
+  it("carries the Debug switch in its header, disabled until the daemon sends HID events", () => {
+    const { dialog } = drawer(nth(ENTRIES, 0));
+    const debug = within(dialog).getByRole("switch", { name: "Debug log" });
+    expect(debug.closest("header")).not.toBeNull();
+    expect(debug).toHaveAttribute("aria-checked", "false");
+    expect(debug).toHaveAttribute("aria-disabled", "true");
+    expect(debug).toHaveAccessibleDescription(/Coming soon/);
+  });
+
+  it("gives the focus back to the control that opened it", async () => {
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+    const { unmount } = render(TraceDrawer, { props: { entry: nth(ENTRIES, 0), onclose: vi.fn() } });
+    expect(opener).not.toHaveFocus();
+    unmount();
+    expect(opener).toHaveFocus();
+    opener.remove();
+  });
+
+  it("leaves an Escape another control handled alone", async () => {
+    const { onclose } = drawer(nth(ENTRIES, 0));
+    const event = new KeyboardEvent("keydown", { key: "Escape", cancelable: true });
+    event.preventDefault();
+    window.dispatchEvent(event);
+    expect(onclose).not.toHaveBeenCalled();
+  });
+
   it("takes the focus and closes on Esc and on its close button", async () => {
     const { dialog, onclose } = drawer(nth(ENTRIES, 0));
     const close = within(dialog).getByRole("button", { name: "Close the trace entry" });

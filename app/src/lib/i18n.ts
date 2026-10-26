@@ -140,7 +140,6 @@ export const messages = {
   "home.resultHint": "Click a key for a dry-run press, right click for a long one.",
   "home.pressFailed": "Press failed: {reason}",
   "home.events": "Recent events",
-  "home.debug": "Debug log",
   "home.openEntry": "{line}, open the trace entry",
   "home.showEntry": "Show the trace entry",
   "home.noEvents":
@@ -159,6 +158,8 @@ export const messages = {
   "trace.exited": "exited {code} after {ms} ms",
   "trace.failed": "failed: {error}",
 
+  "drawer.debug": "Debug log",
+  "soon.debug": "The debug log shows HID-level events once the daemon sends them.",
   "drawer.title": "Trace entry",
   "drawer.close": "Close the trace entry",
   "drawer.closeShort": "Close",
