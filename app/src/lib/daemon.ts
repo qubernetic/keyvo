@@ -3,7 +3,17 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-import type { Action, Event, Layer, PressKind, Size, Status, TraceRecord, View } from "./protocol";
+import type {
+  Action,
+  Event,
+  Layer,
+  PressKind,
+  Recipes,
+  Size,
+  Status,
+  TraceRecord,
+  View,
+} from "./protocol";
 
 /** What a subscription hands on, as keyvo_client::Update: the view, every
  * event, then why it ended. */
@@ -41,6 +51,9 @@ export interface Daemon {
   /** The page count and accent of `profile` from the daemon's
    * configuration directory; rejects when it has no such profile. */
   outline(profile: string): Promise<Outline>;
+  /** The recipe packs of the actions catalogue, the bundled and the
+   * user's, read when asked; rejects when the daemon cannot be reached. */
+  recipes(): Promise<Recipes>;
   /** A dry-run press: the daemon resolves and traces it, executes nothing. */
   press(key: number, kind: PressKind): Promise<TraceRecord>;
   /** Follows a subscription that replays the newest `replay` trace entries;
@@ -57,6 +70,7 @@ export const tauriDaemon: Daemon = {
   status: () => invoke<Status>("status"),
   tiles: (profile, page, keys, tile) => invoke<Tile[]>("tiles", { profile, page, keys, tile }),
   outline: (profile) => invoke<Outline>("outline", { profile }),
+  recipes: () => invoke<Recipes>("recipes"),
   press: (key, kind) => invoke<TraceRecord>("press", { key, kind }),
   async subscribe(replay, listener) {
     const unlisten = await listen<Update>(UPDATE_EVENT, (message) => listener(message.payload));

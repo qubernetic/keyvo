@@ -18,7 +18,7 @@ import Pad from "./Pad.svelte";
 import { DRAG_TYPE } from "./lib/catalogue";
 import type { Daemon, Tile, Update } from "./lib/daemon";
 import type { Editor, KeyFields, Target } from "./lib/editor";
-import { eventsOf, nth, responses } from "./lib/fixtures";
+import { eventsOf, nth, recipeReplies, responses } from "./lib/fixtures";
 import { t } from "./lib/i18n";
 import { PAD_TRACE, STRIP_LINE } from "./lib/pad";
 import type { Pinned } from "./lib/pin";
@@ -78,6 +78,7 @@ function fake(overrides: Partial<Daemon> = {}) {
       Promise.resolve(tiles(profile, page, keys)),
     ),
     outline: vi.fn(() => Promise.reject(new Error("the Pad reads no outline"))),
+    recipes: vi.fn(() => Promise.resolve(nth(recipeReplies(), 0))),
     press: vi.fn((key: number, kind: PressKind) =>
       Promise.resolve({ ...DRY_RUN, key, trigger: { press: kind, simulated: true } }),
     ),

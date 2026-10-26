@@ -2,6 +2,9 @@
 // (parseServerMessage reads each), its tiles and presses come from the
 // contrib profiles over the global layer, and its subscription moves: a
 // fixture trace entry every two seconds, a focus change every ten.
+import { readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Update } from "../daemon";
@@ -26,6 +29,8 @@ function asEvent(event: Event): Event {
 
 const TILE = { width: 118, height: 118 };
 
+const RECIPES = join(dirname(fileURLToPath(import.meta.url)), "../../../../contrib/recipes");
+
 describe("the mock daemon", () => {
   beforeEach(() => {
     vi.useFakeTimers({ now: 1_800_000_000_000 });
@@ -49,6 +54,20 @@ describe("the mock daemon", () => {
   it("rejects status when told the daemon is unreachable", async () => {
     const daemon = mockDaemon(new Store(contribProfiles()), { unreachable: true });
     await expect(daemon.status()).rejects.toMatch(/^cannot reach the keyvo daemon at /);
+  });
+
+  it("lists the recipe packs of contrib/recipes/ and the fixture's user pack", async () => {
+    const reply = await mockDaemon(new Store(contribProfiles())).recipes();
+    expect(asResponse(reply)).toEqual(reply);
+    const bundled = reply.recipes.filter((recipe) => recipe.source === "bundled");
+    const files = readdirSync(RECIPES)
+      .filter((file) => file.endsWith(".toml"))
+      .map((file) => file.slice(0, -".toml".length));
+    expect(bundled.map((recipe) => recipe.id).sort()).toEqual(files.sort());
+    expect(reply.recipes.filter((recipe) => recipe.source === "user").map((recipe) => recipe.id)).toEqual([
+      "screenshot",
+    ]);
+    expect(reply.problems).toBeUndefined();
   });
 
   it("outlines a profile from its file", async () => {

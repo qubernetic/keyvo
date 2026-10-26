@@ -44,7 +44,8 @@ export type Command =
   | { cmd: "subscribe"; events?: EventClass[]; replay?: number }
   | { cmd: "press"; key: number; kind?: PressKind; dry_run?: boolean }
   | { cmd: "reload" }
-  | { cmd: "notify_context"; class: string; title?: string };
+  | { cmd: "notify_context"; class: string; title?: string }
+  | { cmd: "recipes" };
 
 /** A command with the id its response echoes. */
 export type Request = Command & { id?: unknown };
@@ -126,7 +127,43 @@ export interface Pressed {
   entry: TraceRecord;
 }
 
-export type Reply = Status | Subscribed | Pressed | Record<string, never>;
+/** A catalogue group (spec §7.5). */
+export type RecipeGroup = "general" | "system" | "apps";
+
+/** One "What it does" of a recipe pack. */
+export interface RecipeVariant {
+  /** Unique in the pack. */
+  id: string;
+  name: string;
+  action: Action;
+}
+
+/** A recipe pack of the actions catalogue (socket-api.md, `recipes`). */
+export interface Recipe {
+  /** The pack's file name without `.toml`. */
+  id: string;
+  source: "bundled" | "user";
+  group: RecipeGroup;
+  /** The entry's name in the catalogue. */
+  name: string;
+  /** The icon written into a key, `lucide:<name>`. */
+  icon: string;
+  /** The label written into a key. */
+  label: string;
+  /** At least one; the first is the default. */
+  variants: RecipeVariant[];
+}
+
+/** The `recipes` reply. */
+export interface Recipes {
+  /** By group, then name, then id. */
+  recipes: Recipe[];
+  /** One `file:line:column: message` per user pack left out; absent when
+   * every pack loaded. */
+  problems?: string[];
+}
+
+export type Reply = Status | Subscribed | Pressed | Recipes | Record<string, never>;
 
 export interface ErrorBody {
   code: string;
@@ -192,7 +229,7 @@ function envelope(line: string): Fields {
   return fields;
 }
 
-const COMMANDS = new Set(["status", "subscribe", "press", "reload", "notify_context"]);
+const COMMANDS = new Set(["status", "subscribe", "press", "reload", "notify_context", "recipes"]);
 
 /** Parses one request line, as the daemon reads it. */
 export function parseRequest(line: string): Request {

@@ -1,12 +1,13 @@
 // The daemon over the mock store, answering like the Tauri shell's status,
-// tiles, outline, press and subscribe. The device is the fixture's
+// tiles, outline, recipes, press and subscribe. The recipe packs are the
+// fixture's answer, the packs of contrib/recipes/. The device is the fixture's
 // connected Keypad; the focus moves on a timer through Konsole, the keyvo
 // app (held, as `[focus].hold_classes` holds it), VS Code and a window no
 // profile matches, and the trace replays the fixture's entries.
 import type { Daemon, Outline, Tile, Update } from "../daemon";
 import type { KeyFields } from "../editor";
 import type { Context, Event, Layer, TraceRecord, View } from "../protocol";
-import { fixtureStatus, fixtureTrace, SNAPSHOTS } from "./data";
+import { fixtureRecipes, fixtureStatus, fixtureTrace, SNAPSHOTS } from "./data";
 import { attempt } from "./profiles";
 import type { MockProfile, Store } from "./store";
 
@@ -51,6 +52,7 @@ function snapshot(fields: KeyFields | undefined): string {
 export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemon {
   const status = fixtureStatus();
   const trace = fixtureTrace();
+  const recipes = fixtureRecipes();
   const ring: TraceRecord[] = [];
   let focus = FOCUS.length - 1;
   /** The last focused window that is not held: it selects the view. */
@@ -138,6 +140,7 @@ export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemo
           };
         });
       }),
+    recipes: () => attempt(() => structuredClone(recipes)),
     press: (key, kind) =>
       attempt(() => {
         const { profile, page } = view();

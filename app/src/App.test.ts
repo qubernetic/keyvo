@@ -56,6 +56,7 @@ function props(
     status,
     tiles: () => Promise.resolve([]),
     outline: () => Promise.resolve({ pages: 1 }),
+    recipes: () => Promise.resolve({ recipes: [] }),
     press: () => Promise.reject(new Error("not in this test")),
     subscribe: (_replay, next) => {
       listener = next;
