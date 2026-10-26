@@ -7,13 +7,9 @@ export const messages = {
   "app.name": "keyvo",
 
   "rail.label": "Screens",
-  "rail.home": "Home",
+  "rail.pad": "Pad",
   "rail.profiles": "Profiles",
   "rail.behaviors": "Behaviors",
-  "rail.projects": "Projects",
-  "rail.integrations": "Integrations",
-  "rail.devices": "Devices",
-  "rail.settings": "Settings",
   "soon": "Coming soon",
   "soon.behaviors": "Behaviors are not built yet; they arrive with M4a-5 on the roadmap.",
   "soon.projects": "Projects are not built yet; they arrive with M4a-6 on the roadmap.",
@@ -30,7 +26,13 @@ export const messages = {
   "menu.import": "Import",
   "menu.config": "Open config folder",
   "menu.setup": "Re-run setup step",
+  "menu.shortcuts": "Keyboard shortcuts",
   "menu.about": "About",
+
+  "preferences.general": "General",
+  "preferences.devices": "Devices",
+  "preferences.integrations": "Integrations",
+  "preferences.projects": "Projects",
 
   "columns.list": "List",
   "columns.editor": "Editor",

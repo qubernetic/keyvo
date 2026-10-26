@@ -78,9 +78,9 @@ describe("App", () => {
     expect(screen.getByRole("list", { name: "Connecting to the daemon" })).toBeInTheDocument();
   });
 
-  it("opens on Home with the view the daemon reports", async () => {
+  it("opens on the Pad with the view the daemon reports", async () => {
     app();
-    expect(screen.getByRole("button", { name: "Home" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: "Pad" })).toHaveAttribute("aria-current", "page");
     expect(
       await screen.findByRole("grid", { name: "Keypad mirror: profile terminal, page 1" }),
     ).toBeInTheDocument();
@@ -105,7 +105,7 @@ describe("App", () => {
     expect(selector).toHaveValue("simulator");
   });
 
-  it("switches to Profiles with Ctrl+2 and back to Home with Ctrl+1", async () => {
+  it("switches to Profiles with Ctrl+2 and back to the Pad with Ctrl+1", async () => {
     app();
     await screen.findByRole("grid");
     await fireEvent.keyDown(window, { key: "2", ctrlKey: true });
@@ -149,10 +149,10 @@ describe("App", () => {
     app();
     await fireEvent.click(screen.getByRole("button", { name: "Profiles" }));
     expect(shown()).toEqual(["List", "Editor", "Preview"]);
-    expect(screen.getByRole("button", { name: "Home" })).toHaveTextContent("Home");
+    expect(screen.getByRole("button", { name: "Pad" })).toHaveTextContent("Pad");
     await resize(960);
     expect(shown()).toEqual(["Editor"]);
-    expect(screen.getByRole("button", { name: "Home" })).toHaveTextContent("");
+    expect(screen.getByRole("button", { name: "Pad" })).toHaveTextContent("");
   });
 
   it("gives every control an aria-label", async () => {

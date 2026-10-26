@@ -1,6 +1,7 @@
 <script lang="ts">
-  // The navigation rail (docs/design/gui-ux.md §2, d8; §6, d15): the
-  // screens in order, Ctrl+1 to Ctrl+7, icons with labels or icons only in
+  // The navigation rail (docs/design/gui-ux.md §2, d8; §6, d15; pad screen
+  // brief §5.1): Pad, Profiles, Behaviors in order, Ctrl+1 to Ctrl+3,
+  // icons with labels or icons only in
   // a narrow window. A screen not built yet stays in the tab order with
   // aria-disabled; hovering says "Coming soon", focus adds the sentence
   // naming its roadmap item, and neither a click nor its shortcut

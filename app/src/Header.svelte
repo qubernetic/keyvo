@@ -6,19 +6,39 @@
   import Icon from "./Icon.svelte";
   import { t, type MessageKey } from "./lib/i18n";
   import type { DeviceStatus } from "./lib/protocol";
-  import { chosenDevice, deviceChoices, MENU, type DeviceChoice } from "./lib/shell";
+  import {
+    chosenDevice,
+    deviceChoices,
+    MENU,
+    type DeviceChoice,
+    type MenuId,
+  } from "./lib/shell";
 
   let {
     device,
     chosen,
     onchoose,
+    onshortcuts,
   }: {
     /** What the daemon reports; none while it cannot be reached. */
     device?: DeviceStatus;
     /** The user's last choice, if any. */
     chosen?: DeviceChoice;
     onchoose: (choice: DeviceChoice) => void;
+    /** Opens the keyboard map, the menu's "Keyboard shortcuts". */
+    onshortcuts?: () => void;
   } = $props();
+
+  const ACTIONS: Partial<Record<MenuId, () => void>> = {
+    shortcuts: () => onshortcuts?.(),
+  };
+
+  function choose(id: MenuId) {
+    const action = ACTIONS[id];
+    if (action === undefined) return;
+    close(false);
+    action();
+  }
 
   const NAMES: Record<DeviceChoice, MessageKey> = {
     keypad: "header.keypad",
@@ -104,7 +124,7 @@
         aria-label={t("header.menu")}
         onkeydown={menuKeys}
       >
-        {#each MENU as entry, index (entry.label)}
+        {#each MENU as entry, index (entry.id)}
           <li role="none">
             <button
               bind:this={items[index]}
@@ -114,6 +134,9 @@
               aria-label={t(entry.label)}
               aria-disabled={entry.enabled ? undefined : "true"}
               aria-describedby={entry.enabled ? undefined : `kv-menu-soon-${index}`}
+              onclick={() => {
+                if (entry.enabled) choose(entry.id);
+              }}
             >
               <span>{t(entry.label)}</span>
               {#if !entry.enabled}

@@ -283,11 +283,14 @@
   }
 
   /** `screen` when it is built, so a fact can link to it. */
-  function built(screen: ScreenId): ScreenId | undefined {
-    return SCREENS.find((entry) => entry.id === screen)?.soon === undefined ? screen : undefined;
+  function built(screen: ScreenId | undefined): ScreenId | undefined {
+    const entry = SCREENS.find((entry) => entry.id === screen);
+    return entry !== undefined && entry.soon === undefined ? entry.id : undefined;
   }
 
-  function fact(id: string, label: MessageKey, value: string, owner: ScreenId): Fact {
+  /** A fact; `owner` is the rail screen it links to, none for a fact whose
+   * owner lives in Preferences. */
+  function fact(id: string, label: MessageKey, value: string, owner?: ScreenId): Fact {
     const link = built(owner);
     const screen = SCREENS.find((entry) => entry.id === owner);
     return {
@@ -317,23 +320,16 @@
       : t("home.holding", { class: context.class, holding: home.holding.class });
   }
 
-  // Design detail: the screen that owns each fact (§3.1). Overlays come
-  // from plugins and integrations, the context's project from Projects.
+  // Design detail: the screen that owns each fact (§3.1). Devices,
+  // overlays (from plugins and integrations) and the context's project
+  // belong to Preferences tabs, so they link nowhere.
   const facts: Fact[] = $derived([
-    fact("device", "home.device", device(), "devices"),
+    fact("device", "home.device", device()),
     fact("profile", "home.profile", home.view?.profile ?? t("home.unknown"), "profiles"),
     fact("page", "home.page", String(home.view?.page ?? t("home.unknown")), "profiles"),
     fact("mode", "home.mode", home.view?.mode ?? t("home.unknown"), "profiles"),
-    fact("overlay", "home.overlay", t("home.noOverlay"), "integrations"),
-    fact(
-      "context",
-      "home.context",
-      phrase([
-        t("home.unknownProject"),
-        focused(),
-      ]),
-      "projects",
-    ),
+    fact("overlay", "home.overlay", t("home.noOverlay")),
+    fact("context", "home.context", phrase([t("home.unknownProject"), focused()])),
   ]);
 
   const configMessage = $derived.by(() => {

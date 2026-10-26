@@ -8,12 +8,22 @@ import Header from "./Header.svelte";
 import type { DeviceChoice } from "./lib/shell";
 import type { DeviceStatus } from "./lib/protocol";
 
-const MENU = ["Export", "Import", "Open config folder", "Re-run setup step", "About"];
+const MENU = [
+  "Export",
+  "Import",
+  "Open config folder",
+  "Re-run setup step",
+  "Keyboard shortcuts",
+  "About",
+];
 
 function header(device?: DeviceStatus, chosen?: DeviceChoice) {
-  const onchoose = vi.fn<(choice: DeviceChoice) => void>();
-  render(Header, { props: { device, chosen, onchoose } });
-  return onchoose;
+  const handlers = {
+    onchoose: vi.fn<(choice: DeviceChoice) => void>(),
+    onshortcuts: vi.fn<() => void>(),
+  };
+  render(Header, { props: { device, chosen, ...handlers } });
+  return handlers;
 }
 
 function selector(): HTMLSelectElement {
@@ -43,12 +53,12 @@ describe("Header", () => {
   });
 
   it("hands the user's choice on", async () => {
-    const onchoose = header({ connected: true });
+    const { onchoose } = header({ connected: true });
     await fireEvent.change(selector(), { target: { value: "simulator" } });
     expect(onchoose).toHaveBeenCalledWith("simulator");
   });
 
-  it("opens the overflow menu with every entry disabled until it exists", async () => {
+  it("opens the overflow menu with every entry but the shortcuts disabled", async () => {
     header();
     const button = screen.getByRole("button", { name: "More actions" });
     expect(button).toHaveAttribute("aria-haspopup", "menu");
@@ -59,11 +69,23 @@ describe("Header", () => {
     expect(button).toHaveAttribute("aria-expanded", "true");
     const items = screen.getAllByRole("menuitem");
     expect(items.map((item) => item.getAttribute("aria-label"))).toEqual(MENU);
-    for (const item of items) {
+    const soon = items.filter((item) => item.getAttribute("aria-label") !== "Keyboard shortcuts");
+    for (const item of soon) {
       expect(item).toHaveAttribute("aria-disabled", "true");
       expect(item).toHaveAccessibleDescription("Coming soon");
     }
+    const shortcuts = screen.getByRole("menuitem", { name: "Keyboard shortcuts" });
+    expect(shortcuts).not.toHaveAttribute("aria-disabled");
+    expect(shortcuts).not.toHaveAccessibleDescription();
     expect(items[0]).toHaveFocus();
+  });
+
+  it("opens the keyboard shortcuts from the menu and closes the menu", async () => {
+    const { onshortcuts } = header();
+    await fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Keyboard shortcuts" }));
+    expect(onshortcuts).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
   it("moves through the menu with the arrows and closes it on Escape", async () => {

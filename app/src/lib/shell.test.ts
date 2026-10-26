@@ -3,44 +3,46 @@
 import { describe, expect, it } from "vitest";
 
 import { t } from "./i18n";
-import { chosenDevice, deviceChoices, layout, SCREENS, shortcut } from "./shell";
+import {
+  chosenDevice,
+  deviceChoices,
+  layout,
+  MENU,
+  PREFERENCES,
+  SCREENS,
+  shortcut,
+} from "./shell";
 
 function key(key: string, modifiers: Partial<KeyboardEventInit> = {}): KeyboardEvent {
   return new KeyboardEvent("keydown", { key, ctrlKey: true, ...modifiers });
 }
 
 describe("SCREENS", () => {
-  it("lists the rail's screens in the design's order", () => {
-    expect(SCREENS.map((screen) => t(screen.label))).toEqual([
-      "Home",
-      "Profiles",
-      "Behaviors",
-      "Projects",
-      "Integrations",
-      "Devices",
-      "Settings",
-    ]);
+  it("lists the rail's three screens in the design's order", () => {
+    expect(SCREENS.map((screen) => t(screen.label))).toEqual(["Pad", "Profiles", "Behaviors"]);
   });
 
-  it("builds Home and Profiles; the others name their roadmap milestone", () => {
+  it("keeps the screen id home for the Pad", () => {
+    expect(SCREENS.map((screen) => screen.id)).toEqual(["home", "profiles", "behaviors"]);
+  });
+
+  it("builds Pad and Profiles; Behaviors names its roadmap milestone", () => {
     expect(SCREENS.filter((screen) => screen.soon === undefined).map((s) => s.id)).toEqual([
       "home",
       "profiles",
     ]);
     const soon = SCREENS.flatMap((screen) => (screen.soon === undefined ? [] : [t(screen.soon)]));
-    expect(soon).toHaveLength(5);
-    for (const sentence of soon) expect(sentence).toMatch(/M4a-\d/);
+    expect(soon).toEqual(["Behaviors are not built yet; they arrive with M4a-5 on the roadmap."]);
   });
 });
 
 describe("shortcut", () => {
-  it("maps Ctrl+1 to Ctrl+7 to the screens in order", () => {
-    expect(["1", "2", "3", "4", "5", "6", "7"].map((digit) => shortcut(key(digit)))).toEqual([
-      0, 1, 2, 3, 4, 5, 6,
-    ]);
+  it("maps Ctrl+1 to Ctrl+3 to the screens in order", () => {
+    expect(["1", "2", "3"].map((digit) => shortcut(key(digit)))).toEqual([0, 1, 2]);
   });
 
   it("ignores other digits, plain digits and other modifiers", () => {
+    expect(shortcut(key("4"))).toBeUndefined();
     expect(shortcut(key("8"))).toBeUndefined();
     expect(shortcut(key("0"))).toBeUndefined();
     expect(shortcut(key("1", { ctrlKey: false }))).toBeUndefined();
@@ -59,10 +61,12 @@ describe("layout", () => {
   });
 
   it("drops the rail labels below 1100 px", () => {
+    expect(layout(1100)).toEqual({ railLabels: true, list: true, right: false });
     expect(layout(1099)).toEqual({ railLabels: false, list: true, right: false });
   });
 
   it("collapses the list column next", () => {
+    expect(layout(1000)).toEqual({ railLabels: false, list: true, right: false });
     expect(layout(999)).toEqual({ railLabels: false, list: false, right: false });
     expect(layout(960)).toEqual({ railLabels: false, list: false, right: false });
   });
@@ -72,6 +76,35 @@ describe("layout", () => {
       const columns = layout(width);
       expect(!columns.right || columns.list, String(width)).toBe(true);
     }
+  });
+});
+
+describe("MENU", () => {
+  it("enables Keyboard shortcuts as its one entry that exists", () => {
+    expect(MENU.filter((entry) => entry.enabled).map((entry) => t(entry.label))).toEqual([
+      "Keyboard shortcuts",
+    ]);
+    expect(MENU.map((entry) => t(entry.label))).toContain("About");
+  });
+});
+
+describe("PREFERENCES", () => {
+  it("lists the tabs General, Devices, Integrations, Projects", () => {
+    expect(PREFERENCES.map((tab) => t(tab.label))).toEqual([
+      "General",
+      "Devices",
+      "Integrations",
+      "Projects",
+    ]);
+  });
+
+  it("gives every tab the sentence of its roadmap item", () => {
+    expect(PREFERENCES.map((tab) => t(tab.soon))).toEqual([
+      "Settings are not built yet; they arrive with M4a-8 on the roadmap.",
+      "Devices are not built yet; they arrive with M4a-8 on the roadmap.",
+      "Integrations are not built yet; they arrive with M4a-8 on the roadmap.",
+      "Projects are not built yet; they arrive with M4a-6 on the roadmap.",
+    ]);
   });
 });
 
