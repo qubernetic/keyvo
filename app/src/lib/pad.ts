@@ -16,6 +16,19 @@ import type {
 /** The trace entries the Pad keeps and asks the daemon to replay. */
 export const PAD_TRACE = 20;
 
+/** The entries the collapsed trace strip shows on its one line. */
+export const STRIP_LINE = 3;
+
+/** The time of day of `ms` since the epoch, 24 h with seconds. */
+export function clock(ms: number): string {
+  return new Date(ms).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+}
+
 export interface PadState {
   view?: View;
   device?: DeviceStatus;

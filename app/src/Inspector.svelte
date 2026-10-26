@@ -39,6 +39,7 @@
     type Target,
   } from "./lib/editor";
   import { t, type MessageKey } from "./lib/i18n";
+  import { clock } from "./lib/pad";
 
   let {
     editor,
@@ -110,13 +111,8 @@
   };
 
   /** The time of a result, 24 h. */
-  function clock(): string {
-    return new Date(Date.now()).toLocaleTimeString(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hourCycle: "h23",
-    });
+  function now(): string {
+    return clock(Date.now());
   }
 
   /** Writes run one after the other, each against the last one's result. */
@@ -226,7 +222,7 @@
     const edited = await write(at, fields, show);
     if (edited === undefined) return;
     history = recorded(history, { target: at, before: edited.before, after: edited.fields });
-    note = t("inspector.wroteAt", { key: at.key, path: edited.path, time: clock() });
+    note = t("inspector.wroteAt", { key: at.key, path: edited.path, time: now() });
   }
 
   function commit() {
@@ -281,7 +277,7 @@
     const change = history.done.at(-1);
     replay(change, (c) => c.before, () => {
       history = afterUndo(history);
-      note = t("inspector.undidAt", { key: String(change?.target.key), time: clock() });
+      note = t("inspector.undidAt", { key: String(change?.target.key), time: now() });
     });
   }
 
@@ -289,7 +285,7 @@
     const change = history.undone.at(-1);
     replay(change, (c) => c.after, () => {
       history = afterRedo(history);
-      note = t("inspector.redidAt", { key: String(change?.target.key), time: clock() });
+      note = t("inspector.redidAt", { key: String(change?.target.key), time: now() });
     });
   }
 
