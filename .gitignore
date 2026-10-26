@@ -61,6 +61,3 @@ AUDIT.md
 
 # Host-runnable binaries copied by `just build`
 /bin/
-
-# impeccable design skill: live-mode state and the design sidecar
-.impeccable/
