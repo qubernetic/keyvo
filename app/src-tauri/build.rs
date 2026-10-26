@@ -13,6 +13,10 @@ fn main() {
         "subscribe",
         "key",
         "edit_key",
+        "profile",
+        "edit_profile",
+        "open_profile",
+        "profile_list",
     ]);
     let attributes = tauri_build::Attributes::new().app_manifest(manifest);
     if let Err(error) = tauri_build::try_build(attributes) {

@@ -1,11 +1,13 @@
 // Test helper: the shared socket fixtures in tests/protocol-fixtures/socket/
 // as parsed messages, and the key editor steps in
-// tests/protocol-fixtures/editor/. Only the tests import it.
+// tests/protocol-fixtures/editor/ (keys and the profile header). Only the
+// tests import it.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { KeyFields } from "./editor";
+import type { ProfileFields } from "./profiles";
 import { parseServerMessage, type Event, type Reply } from "./protocol";
 
 const FIXTURES = join(
@@ -68,6 +70,31 @@ export interface EditorSteps {
 
 export function editorSteps(): EditorSteps {
   return JSON.parse(readFileSync(join(EDITOR, "steps.json"), "utf8")) as EditorSteps;
+}
+
+/** One step of tests/protocol-fixtures/editor/profile.json. */
+export interface ProfileStep {
+  /** The header field the step changes. */
+  field: "name" | "accent";
+  fields: ProfileFields;
+  /** The file the step gives. */
+  file: string;
+}
+
+/** tests/protocol-fixtures/editor/profile.json. */
+export interface ProfileSteps {
+  profile: string;
+  /** The file before the steps. */
+  file: string;
+  /** The file's path inside the configuration directory. */
+  path: string;
+  /** The header's fields before the steps. */
+  fields: ProfileFields;
+  steps: ProfileStep[];
+}
+
+export function profileSteps(): ProfileSteps {
+  return JSON.parse(readFileSync(join(EDITOR, "profile.json"), "utf8")) as ProfileSteps;
 }
 
 /** The text of an editor fixture file. */

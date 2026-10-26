@@ -15,13 +15,14 @@
     grid,
     HOME_TRACE,
     initial,
+    moved,
     phrase,
     schemaError,
     summarize,
     type HomeState,
   } from "./lib/home";
   import { t, type MessageKey } from "./lib/i18n";
-  import type { DeviceStatus, PressKind, TraceRecord } from "./lib/protocol";
+  import type { DeviceStatus, PressKind, TraceRecord, View } from "./lib/protocol";
   import { SCREENS, type ScreenId } from "./lib/shell";
 
   let {
@@ -29,6 +30,7 @@
     editor,
     active = true,
     ondevice,
+    onview,
     onnavigate,
   }: {
     daemon: Daemon;
@@ -40,6 +42,9 @@
     ondevice?: (device: DeviceStatus | undefined) => void;
     /** Opens a screen; a status fact links to the screen that owns it. */
     onnavigate?: (screen: ScreenId) => void;
+    /** What the pad shows, none until the daemon reports it, and the count
+     * of configuration reloads, for the Profiles screen. */
+    onview?: (view: View | undefined, reloads: number) => void;
   } = $props();
 
   /** The skeleton rows of the event list while Home connects. */
@@ -110,6 +115,10 @@
 
   $effect(() => {
     ondevice?.(unreachable === undefined ? home.device : undefined);
+  });
+
+  $effect(() => {
+    onview?.(home.view, home.reloads);
   });
 
   /** Writes of the key editor, so the tiles follow them without a daemon. */
@@ -227,23 +236,6 @@
     buttons[key - 1]?.focus();
   }
 
-  /** The key the arrow `arrow` moves to from `key`, inside the grid. */
-  function moved(key: number, arrow: string): number {
-    const row = rows.findIndex((keys) => keys.includes(key));
-    if (row < 0) return key;
-    const column = rows[row]?.indexOf(key) ?? 0;
-    const [r, c] =
-      arrow === "ArrowUp"
-        ? [Math.max(row - 1, 0), column]
-        : arrow === "ArrowDown"
-          ? [Math.min(row + 1, rows.length - 1), column]
-          : arrow === "ArrowLeft"
-            ? [row, Math.max(column - 1, 0)]
-            : [row, column + 1];
-    const target = rows[r] ?? [];
-    return target[Math.min(c, target.length - 1)] ?? key;
-  }
-
   function keydown(event: KeyboardEvent) {
     if (/^[1-9]$/.test(event.key) && Number(event.key) <= keyCount) {
       event.preventDefault();
@@ -253,7 +245,7 @@
       void press(selected, event.shiftKey ? "long" : "short");
     } else if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
       event.preventDefault();
-      select(moved(selected, event.key));
+      select(moved(rows, selected, event.key));
     }
   }
 

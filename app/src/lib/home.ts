@@ -73,6 +73,24 @@ export function grid(geometry: Geometry): number[][] {
   return rows.map((row) => row.keys.sort((a, b) => a.rect.x - b.rect.x).map((entry) => entry.key));
 }
 
+/** The key the arrow key `arrow` moves to from `key` in `rows` (as `grid`
+ * gives them), staying inside the grid. */
+export function moved(rows: number[][], key: number, arrow: string): number {
+  const row = rows.findIndex((keys) => keys.includes(key));
+  if (row < 0) return key;
+  const column = rows[row]?.indexOf(key) ?? 0;
+  const [r, c] =
+    arrow === "ArrowUp"
+      ? [Math.max(row - 1, 0), column]
+      : arrow === "ArrowDown"
+        ? [Math.min(row + 1, rows.length - 1), column]
+        : arrow === "ArrowLeft"
+          ? [row, Math.max(column - 1, 0)]
+          : [row, column + 1];
+  const target = rows[r] ?? [];
+  return target[Math.min(c, target.length - 1)] ?? key;
+}
+
 /** `state` after `update`, received at `now`; `state` itself stays as it
  * was. */
 export function apply(state: HomeState, update: Update, now = Date.now()): HomeState {

@@ -47,6 +47,8 @@
     onedited?: () => void;
   } = $props();
 
+  /** Home and Profiles each hold a key editor; their heading ids differ. */
+  const uid = $props.id();
   let view: KeyView | undefined = $state.raw();
   let form: Form = $state(toForm({}));
   /** Why the key cannot be read or the last write failed. */
@@ -205,12 +207,12 @@
 
 <svelte:window onkeydown={keydown} />
 
-<section class="editor" aria-labelledby="kv-editor">
+<section class="editor" aria-labelledby={`kv-editor-${uid}`}>
   {#if target === undefined}
-    <h2 id="kv-editor">{t("editor.title")}</h2>
+    <h2 id={`kv-editor-${uid}`}>{t("editor.title")}</h2>
     <p class="note">{t("editor.select")}</p>
   {:else}
-    <h2 id="kv-editor">{t("editor.key", { key: target.key })}</h2>
+    <h2 id={`kv-editor-${uid}`}>{t("editor.key", { key: target.key })}</h2>
     {#if problem !== undefined}
       <p role="alert" class="problem">{describe(problem)}</p>
     {/if}

@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import App from "./App.svelte";
 import type { Daemon } from "./lib/daemon";
 import type { Editor } from "./lib/editor";
+import type { ProfileFiles } from "./lib/profiles";
 import { responses } from "./lib/fixtures";
 import type { Status } from "./lib/protocol";
 
@@ -17,9 +18,33 @@ const EDITOR: Editor = {
   editKey: () => Promise.reject(new Error("not in this test")),
 };
 
+const FILES: ProfileFiles = {
+  list: () =>
+    Promise.resolve([
+      {
+        id: "terminal",
+        name: "Terminal",
+        priority: 0,
+        match: { class: ["org.kde.konsole"] },
+        pages: ["context"],
+        path: "/c/profiles/terminal.toml",
+        file: true,
+      },
+    ]),
+  profile: () =>
+    Promise.resolve({ path: "/c/profiles/terminal.toml", fields: { name: "Terminal" } }),
+  editProfile: () => Promise.reject(new Error("not in this test")),
+  open: () => Promise.reject(new Error("not in this test")),
+};
+
 /** The App's props with a daemon whose `status` is `status`. */
-function props(status: () => Promise<Status>): { daemon: Daemon; editor: Editor } {
+function props(status: () => Promise<Status>): {
+  daemon: Daemon;
+  editor: Editor;
+  files: ProfileFiles;
+} {
   return {
+    files: FILES,
     daemon: {
       status,
       tiles: () => Promise.resolve([]),
@@ -88,12 +113,12 @@ describe("App", () => {
       "aria-current",
       "page",
     );
-    expect(screen.queryByRole("grid")).toBeNull();
-    expect(screen.getByRole("region", { name: "Editor" })).toHaveTextContent(
-      "The profile editor is not built yet",
-    );
+    expect(screen.queryByRole("grid", { name: /^Keypad mirror/ })).toBeNull();
+    expect(
+      await screen.findByRole("button", { name: "Terminal (terminal), priority 0, active" }),
+    ).toHaveAttribute("aria-current", "true");
     await fireEvent.keyDown(window, { key: "1", ctrlKey: true });
-    expect(screen.getByRole("grid")).toBeInTheDocument();
+    expect(screen.getByRole("grid", { name: /^Keypad mirror/ })).toBeInTheDocument();
   });
 
   it("opens Profiles from the profile in Home's status strip", async () => {
@@ -115,17 +140,18 @@ describe("App", () => {
   });
 
   it("lays Profiles out by the window width", async () => {
+    /** The columns that show, by their region names. */
+    const shown = () =>
+      ["List", "Editor", "Preview"].filter(
+        (name) => screen.queryByRole("region", { name }) !== null,
+      );
     await resize(1200);
     app();
     await fireEvent.click(screen.getByRole("button", { name: "Profiles" }));
-    expect(screen.getAllByRole("region").map((region) => region.getAttribute("aria-label"))).toEqual(
-      ["List", "Editor", "Preview"],
-    );
+    expect(shown()).toEqual(["List", "Editor", "Preview"]);
     expect(screen.getByRole("button", { name: "Home" })).toHaveTextContent("Home");
     await resize(960);
-    expect(screen.getAllByRole("region").map((region) => region.getAttribute("aria-label"))).toEqual(
-      ["Editor"],
-    );
+    expect(shown()).toEqual(["Editor"]);
     expect(screen.getByRole("button", { name: "Home" })).toHaveTextContent("");
   });
 
