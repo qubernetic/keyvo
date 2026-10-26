@@ -173,6 +173,11 @@ then from detectors (files at the project root), then from a two-step
 mini-wizard whose answer is stored in `.keyvo/local.toml`. Recipes are TOML
 files in the bundle, `~/.config/keyvo/recipes/` and `.keyvo/recipes/`.
 
+**Recipe pack**: One TOML file under `contrib/recipes/` (bundled) or
+`~/.config/keyvo/recipes/` that is one entry of the GUI's actions catalogue:
+group, name, icon, label and its variants. Applying it writes plain fields
+into a key; the profile does not reference it.
+
 **Render coalescing**: The window (default 50 ms, `[timing].render_coalesce`)
 in which several state changes are merged into one repaint of the nine keys, so
 that bursts of socket messages do not flood the device.
@@ -217,6 +222,9 @@ the file in the daemon.
 actions, bound in `~/.config/keyvo/trust.toml` to the content hash of its
 three files and re-asked whenever they change (direnv style). Granted with
 `keyvo project trust` or the GUI prompt.
+
+**Variant**: One "What it does" choice of a recipe pack, an action of the
+profile schema; the first is the default.
 
 **View**: What the pad shows: the profile id, the page (counted from 1) and the
 mode (`keyvo_core::state::View`). The state machine computes it, the daemon
