@@ -172,6 +172,10 @@ export const messages = {
   "action.exec": "exec {cmd}",
   "layer": "{layer} layer",
 
+  "trace.strip": "Recent events",
+  "trace.open": "{time} {line}, open the trace entry",
+  "trace.expand": "Show more events",
+  "trace.collapse": "Show fewer events",
   "trace.line": "{head}: {body}",
   "trace.key": "Key {key}",
   "trace.keyLong": "Key {key} long",
