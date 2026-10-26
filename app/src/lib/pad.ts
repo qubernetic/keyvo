@@ -146,6 +146,15 @@ export function apply(state: PadState, update: Update, now = Date.now()): PadSta
   }
 }
 
+/** While the focused window is held (`[focus].hold_classes`, the keyvo
+ * app; #117), the line that says so and names the profile the pad keeps;
+ * none otherwise. */
+export function caption(state: PadState): string | undefined {
+  const { context, view } = state;
+  if (context?.held !== true || view === undefined) return undefined;
+  return t("pad.held", { class: context.class, profile: view.profile });
+}
+
 /** Where a configuration file fails to load (docs/design/gui-ux.md §5.2). */
 export interface SchemaError {
   /** Relative to the configuration directory. */

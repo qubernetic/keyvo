@@ -131,6 +131,7 @@ export const messages = {
 
   "device.keypad": "The Keypad",
 
+  "pad.held": "{class} focused, holding {profile}",
   "pad.pages": "Pages",
   "pad.add": "+",
   "pad.addPage": "Add a page",

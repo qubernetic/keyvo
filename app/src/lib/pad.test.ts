@@ -3,7 +3,7 @@
 // subscription, folded the way crates/keyvo-client/src/mirror.rs folds them.
 import { describe, expect, it } from "vitest";
 
-import { apply, fromStatus, grid, PAD_TRACE, initial, schemaError, summarize, type PadState } from "./pad";
+import { apply, caption, fromStatus, grid, PAD_TRACE, initial, schemaError, summarize, type PadState } from "./pad";
 import type { Event, Status, TraceRecord } from "./protocol";
 import { events, eventsOf, nth, responses } from "./fixtures";
 
@@ -179,6 +179,24 @@ describe("apply", () => {
       apply(state, { kind: "event", event });
     }
     expect(state).toEqual(copy);
+  });
+});
+
+describe("caption", () => {
+  it("names the held window and the profile the pad holds after a held context", () => {
+    const app = nth(eventsOf("context"), 2);
+    const state = apply(fromStatus(STATUS), { kind: "event", event: app });
+    expect(caption(state)).toBe("keyvo-app focused, holding terminal");
+  });
+
+  it("says nothing while the focused window is not held", () => {
+    expect(caption(fromStatus(STATUS))).toBeUndefined();
+    expect(caption(initial())).toBeUndefined();
+  });
+
+  it("says nothing before the pad reports a view", () => {
+    const app = nth(eventsOf("context"), 2);
+    expect(caption(apply(initial(), { kind: "event", event: app }))).toBeUndefined();
   });
 });
 
