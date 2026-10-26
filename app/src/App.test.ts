@@ -192,6 +192,30 @@ describe("the pin", () => {
     expect(await listed()).toEqual(["Global, on the pad", "VS Code", "Terminal"]);
   });
 
+  it("keeps the dropdown disabled while the list cannot be read", async () => {
+    const { files } = app(undefined, () => Promise.reject(new Error("no config dir")));
+    await waitFor(() => expect(files.list).toHaveBeenCalled());
+    await tick();
+    expect(dropdown()).toBeDisabled();
+  });
+
+  it("keeps the newest list when two reads answer out of order", async () => {
+    const answers: ((list: ProfileSummary[]) => void)[] = [];
+    const { files, send } = app(
+      undefined,
+      () => new Promise<ProfileSummary[]>((resolve) => answers.push(resolve)),
+    );
+    await waitFor(() => expect(files.list).toHaveBeenCalledTimes(1));
+    await send({ event: "config", reloaded: true });
+    await waitFor(() => expect(files.list).toHaveBeenCalledTimes(2));
+    answers[1]?.(PROFILES);
+    await waitFor(() => expect(dropdown().options.length).toBe(3));
+    answers[0]?.([summary("global", "Global", 0)]);
+    await tick();
+    await Promise.resolve();
+    expect(dropdown().options.length).toBe(3);
+  });
+
   it("reads the profile list again after a reload and unpins a profile that is gone", async () => {
     let answer = PROFILES;
     const { files, send } = app(undefined, () => Promise.resolve(answer));

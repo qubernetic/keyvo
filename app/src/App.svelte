@@ -41,10 +41,15 @@
   /** Every profile, read again on each reload; empty until the first read. */
   let profiles: ProfileSummary[] = $state([]);
 
+  /** Bumped by every read, so a late answer of an earlier one is dropped. */
+  let reads = 0;
+
   $effect(() => {
     void reloads;
+    const mine = ++reads;
     void files.list().then(
       (list) => {
+        if (mine !== reads) return;
         profiles = list;
         pinned = kept(pinned, list);
       },
