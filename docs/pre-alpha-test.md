@@ -651,10 +651,10 @@ Both items run by the owner on 88bb0b1 (2026-10-26).
 
 No Keypad and no daemon needed; a host browser.
 
-- [ ] #113 `just app-dev`, open `http://localhost:1420`: Home shows the mirror with tiles and a trace entry arrives every two seconds; the profile switches every ten seconds (Konsole, VS Code, Global).
-- [ ] #113 `?theme=breeze-light` renders light, `?theme=adwaita-dark` dark with the GNOME accent.
-- [ ] #113 Profiles lists the three profiles; editing the Global accent changes the preview; a reload resets it.
-- [ ] #113 `?mock-error=unreachable` shows the Home error state.
+- [x] #113 `just app-dev`, open `http://localhost:1420`: Home shows the mirror with tiles and a trace entry arrives every two seconds; the profile switches every ten seconds (Konsole, VS Code, Global).
+- [x] #113 `?theme=breeze-light` renders light, `?theme=adwaita-dark` dark with the GNOME accent.
+- [x] #113 Profiles lists the three profiles; editing the Global accent changes the preview; a reload resets it.
+- [x] #113 `?mock-error=unreachable` shows the Home error state.
 
 ### Plug-in splash in the display claim (#114)
 
@@ -666,9 +666,9 @@ No Keypad and no daemon needed; a host browser.
 
 No Keypad needed; the mock dev server of #113 in a host browser.
 
-- [ ] #106 Read `docs/design/critique-2026-10.md`: the score table, the six priority issues and the priorities for slices 4 to 6 match what the Profiles and Home screens show on `just app-dev`; the priorities are approved in the PR.
-- [ ] #106 With the browser detector injected as section 2 of the critique describes, the `[Human]` overlay marks the trace rows (cramped padding) on Home in `breeze-dark` and the muted labels (low contrast) on Profiles in `?theme=breeze-light`.
-- [ ] #106 On Profiles with no profile picked in the list, wait for the mock's focus cycle (10 s): the editor switches profile on its own; this is the P1 finding the pass fixes in #108.
+- [x] #106 Read `docs/design/critique-2026-10.md`: the score table, the six priority issues and the priorities for slices 4 to 6 match what the Profiles and Home screens show on `just app-dev`; the priorities are approved in the PR.
+- [x] #106 With the browser detector injected as section 2 of the critique describes, the `[Human]` overlay marks the trace rows (cramped padding) on Home in `breeze-dark` and the muted labels (low contrast) on Profiles in `?theme=breeze-light`.
+- [x] #106 On Profiles with no profile picked in the list, wait for the mock's focus cycle (10 s): the editor switches profile on its own; this is the P1 finding the pass fixes in #108.
 
 ### First-light records (#75)
 
