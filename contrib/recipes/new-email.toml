@@ -1,0 +1,14 @@
+# keyvo recipe pack: write a new email in the default mail client
+# (KMail on KDE Plasma, Evolution or Geary on GNOME, Thunderbird when set).
+schema_version = 1
+
+[recipe]
+group = "general"
+name  = "New email"
+icon  = "lucide:mail"
+label = "Email"
+
+[[variants]]
+id     = "compose"
+name   = "Compose"
+action = { type = "exec", cmd = "xdg-open mailto:" }

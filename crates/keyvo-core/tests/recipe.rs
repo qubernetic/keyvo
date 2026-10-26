@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use keyvo_core::chord::Chord;
 use keyvo_core::diagnostic::Diagnostic;
 use keyvo_core::profile::Action;
-use keyvo_core::recipe::{Group, Recipe, Source, Variant};
+use keyvo_core::recipe::{self, Group, Recipe, Source, Variant};
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -121,6 +121,121 @@ fn every_invalid_pack_names_its_line() {
         assert_eq!(error.position.map(|p| p.line), *line, "{error}\n{text}");
         assert!(error.message.contains(message), "{error}\n{text}");
     }
+}
+
+/// A configuration directory with `recipes/` holding `files`.
+fn config_dir(files: &[(&str, &str)]) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let recipes = dir.path().join(recipe::RECIPES);
+    std::fs::create_dir(&recipes).unwrap();
+    for (name, text) in files {
+        std::fs::write(recipes.join(name), text).unwrap();
+    }
+    dir
+}
+
+fn screenshot() -> String {
+    std::fs::read_to_string(fixture("valid/screenshot.toml")).unwrap()
+}
+
+#[test]
+fn the_catalogue_is_the_bundled_packs_without_a_user_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let catalogue = recipe::catalogue(dir.path());
+    assert!(catalogue.problems.is_empty(), "{:?}", catalogue.problems);
+    assert_eq!(catalogue.recipes, recipe::bundled().recipes);
+    assert!(
+        catalogue
+            .recipes
+            .iter()
+            .all(|r| r.source == Source::Bundled)
+    );
+}
+
+#[test]
+fn a_user_pack_joins_the_catalogue_in_group_and_name_order() {
+    let dir = config_dir(&[("screenshot.toml", &screenshot()), ("notes.txt", "x")]);
+    let catalogue = recipe::catalogue(dir.path());
+    assert!(catalogue.problems.is_empty(), "{:?}", catalogue.problems);
+    let ids: Vec<_> = catalogue
+        .recipes
+        .iter()
+        .filter(|r| r.group == Group::Apps)
+        .map(|r| (r.id.as_str(), r.source))
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            ("calculator", Source::Bundled),
+            ("konsole", Source::Bundled),
+            ("screenshot", Source::User),
+            ("spectacle", Source::Bundled),
+            ("vscode", Source::Bundled),
+        ]
+    );
+    let groups: Vec<_> = catalogue.recipes.iter().map(|r| r.group).collect();
+    assert!(groups.is_sorted(), "{groups:?}");
+}
+
+#[test]
+fn a_user_pack_replaces_the_bundled_one_of_its_id() {
+    let dir = config_dir(&[("spectacle.toml", &screenshot())]);
+    let catalogue = recipe::catalogue(dir.path());
+    let spectacle: Vec<_> = catalogue
+        .recipes
+        .iter()
+        .filter(|r| r.id == "spectacle")
+        .collect();
+    assert_eq!(spectacle.len(), 1);
+    assert_eq!(spectacle[0].source, Source::User);
+    assert_eq!(spectacle[0].name, "Screenshot");
+}
+
+#[test]
+fn a_broken_user_pack_is_a_problem_and_the_others_stay() {
+    let broken = std::fs::read_to_string(fixture("invalid/unknown-action.toml")).unwrap();
+    let dir = config_dir(&[("screenshot.toml", &screenshot()), ("volume.toml", &broken)]);
+    let catalogue = recipe::catalogue(dir.path());
+    assert!(catalogue.recipes.iter().any(|r| r.id == "screenshot"));
+    assert!(!catalogue.recipes.iter().any(|r| r.id == "volume"));
+    let [problem] = catalogue.problems.as_slice() else {
+        panic!("{:?}", catalogue.problems);
+    };
+    assert!(problem.path.ends_with("recipes/volume.toml"), "{problem}");
+    assert_eq!(problem.position.map(|p| p.line), Some(12), "{problem}");
+}
+
+#[test]
+fn a_user_pack_over_the_size_cap_is_not_read() {
+    let big = format!("{}#{}\n", screenshot(), "x".repeat(recipe::PACK_BYTES));
+    let dir = config_dir(&[("big.toml", &big)]);
+    let catalogue = recipe::catalogue(dir.path());
+    assert!(!catalogue.recipes.iter().any(|r| r.id == "big"));
+    let [problem] = catalogue.problems.as_slice() else {
+        panic!("{:?}", catalogue.problems);
+    };
+    assert!(problem.message.contains("larger than"), "{problem}");
+}
+
+#[test]
+fn user_packs_past_the_count_cap_are_left_out_with_one_problem() {
+    let text = screenshot();
+    let names: Vec<String> = (0..=recipe::USER_PACKS)
+        .map(|i| format!("pack-{i:03}.toml"))
+        .collect();
+    let files: Vec<(&str, &str)> = names.iter().map(|n| (n.as_str(), text.as_str())).collect();
+    let dir = config_dir(&files);
+    let catalogue = recipe::catalogue(dir.path());
+    let users = catalogue
+        .recipes
+        .iter()
+        .filter(|r| r.source == Source::User)
+        .count();
+    assert_eq!(users, recipe::USER_PACKS);
+    let [problem] = catalogue.problems.as_slice() else {
+        panic!("{:?}", catalogue.problems);
+    };
+    assert!(problem.message.contains("pack-064.toml"), "{problem}");
 }
 
 #[test]

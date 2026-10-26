@@ -1,0 +1,41 @@
+# keyvo recipe pack: open a page of the desktop's settings.
+# KDE Plasma 6 System Settings opens on the module named after it. On GNOME
+# the same pages are `gnome-control-center sound`, `display`, `bluetooth`,
+# `network`, `power` and `keyboard`.
+schema_version = 1
+
+[recipe]
+group = "system"
+name  = "Open a settings page"
+icon  = "lucide:settings"
+label = "Settings"
+
+[[variants]]
+id     = "sound"
+name   = "Sound"
+action = { type = "exec", cmd = "systemsettings kcm_pulseaudio" }
+
+[[variants]]
+id     = "display"
+name   = "Display"
+action = { type = "exec", cmd = "systemsettings kcm_kscreen" }
+
+[[variants]]
+id     = "bluetooth"
+name   = "Bluetooth"
+action = { type = "exec", cmd = "systemsettings kcm_bluetooth" }
+
+[[variants]]
+id     = "network"
+name   = "Wi-Fi and networking"
+action = { type = "exec", cmd = "systemsettings kcm_networkmanagement" }
+
+[[variants]]
+id     = "power"
+name   = "Power management"
+action = { type = "exec", cmd = "systemsettings kcm_powerdevilprofilesconfig" }
+
+[[variants]]
+id     = "keyboard"
+name   = "Keyboard"
+action = { type = "exec", cmd = "systemsettings kcm_keyboard" }

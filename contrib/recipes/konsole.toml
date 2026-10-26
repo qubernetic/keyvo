@@ -1,0 +1,20 @@
+# keyvo recipe pack: Konsole's default shortcuts. A chord goes to the
+# focused window, so these keys belong on the Konsole profile's pages. GNOME
+# Terminal uses the same two chords.
+schema_version = 1
+
+[recipe]
+group = "apps"
+name  = "Konsole"
+icon  = "lucide:terminal"
+label = "Konsole"
+
+[[variants]]
+id     = "new-tab"
+name   = "New tab"
+action = { type = "chord", keys = "ctrl+shift+t" }
+
+[[variants]]
+id     = "find"
+name   = "Find"
+action = { type = "chord", keys = "ctrl+shift+f" }

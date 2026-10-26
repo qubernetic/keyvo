@@ -186,6 +186,193 @@ impl Recipe {
     }
 }
 
+/// The directory of the user's packs in the configuration directory.
+pub const RECIPES: &str = "recipes";
+
+/// The largest pack file read, in bytes; a bigger one is a problem. With
+/// [`USER_PACKS`] it keeps a `recipes` answer under the client's line
+/// limit (1 MiB).
+pub const PACK_BYTES: usize = 8 * 1024;
+
+/// The most user packs read, in file name order; the rest are one problem.
+pub const USER_PACKS: usize = 64;
+
+/// The packs in `contrib/recipes/`, built into keyvo; a test keeps the list
+/// equal to the directory.
+const BUNDLED: &[(&str, &str)] = &[
+    (
+        "brightness-down.toml",
+        include_str!("../../../contrib/recipes/brightness-down.toml"),
+    ),
+    (
+        "brightness-up.toml",
+        include_str!("../../../contrib/recipes/brightness-up.toml"),
+    ),
+    (
+        "calculator.toml",
+        include_str!("../../../contrib/recipes/calculator.toml"),
+    ),
+    (
+        "konsole.toml",
+        include_str!("../../../contrib/recipes/konsole.toml"),
+    ),
+    (
+        "lock.toml",
+        include_str!("../../../contrib/recipes/lock.toml"),
+    ),
+    (
+        "mute.toml",
+        include_str!("../../../contrib/recipes/mute.toml"),
+    ),
+    (
+        "new-email.toml",
+        include_str!("../../../contrib/recipes/new-email.toml"),
+    ),
+    (
+        "open-folder.toml",
+        include_str!("../../../contrib/recipes/open-folder.toml"),
+    ),
+    (
+        "open-website.toml",
+        include_str!("../../../contrib/recipes/open-website.toml"),
+    ),
+    (
+        "settings-page.toml",
+        include_str!("../../../contrib/recipes/settings-page.toml"),
+    ),
+    (
+        "spectacle.toml",
+        include_str!("../../../contrib/recipes/spectacle.toml"),
+    ),
+    (
+        "volume-down.toml",
+        include_str!("../../../contrib/recipes/volume-down.toml"),
+    ),
+    (
+        "volume-up.toml",
+        include_str!("../../../contrib/recipes/volume-up.toml"),
+    ),
+    (
+        "vscode.toml",
+        include_str!("../../../contrib/recipes/vscode.toml"),
+    ),
+];
+
+/// Recipes and the packs that did not load.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Catalogue {
+    /// By group, then name, then id.
+    pub recipes: Vec<Recipe>,
+    /// One per pack left out.
+    pub problems: Vec<Diagnostic>,
+}
+
+impl Catalogue {
+    fn sort(&mut self) {
+        self.recipes
+            .sort_by(|a, b| (a.group, &a.name, &a.id).cmp(&(b.group, &b.name, &b.id)));
+    }
+}
+
+/// The packs keyvo ships.
+#[must_use]
+pub fn bundled() -> Catalogue {
+    let mut catalogue = Catalogue::default();
+    for (name, text) in BUNDLED {
+        let path = Path::new("contrib").join(RECIPES).join(name);
+        match Recipe::from_toml(text, &path, Source::Bundled) {
+            Ok(recipe) => catalogue.recipes.push(recipe),
+            Err(problem) => catalogue.problems.push(problem),
+        }
+    }
+    catalogue.sort();
+    catalogue
+}
+
+/// The packs in `dir`: every `*.toml` file, at most [`USER_PACKS`] in file
+/// name order, each at most [`PACK_BYTES`] long. A missing directory has
+/// none; other files and subdirectories are ignored. Reading runs nothing.
+#[must_use]
+pub fn load_dir(dir: &Path, source: Source) -> Catalogue {
+    let mut catalogue = Catalogue::default();
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return catalogue,
+        Err(e) => {
+            catalogue.problems.push(problem(dir, e.to_string()));
+            return catalogue;
+        }
+    };
+    let mut files: Vec<_> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "toml") && path.is_file())
+        .collect();
+    files.sort();
+    if files.len() > USER_PACKS {
+        let left_out: Vec<_> = files[USER_PACKS..]
+            .iter()
+            .filter_map(|path| path.file_name())
+            .map(|name| name.to_string_lossy().into_owned())
+            .collect();
+        catalogue.problems.push(problem(
+            dir,
+            format!(
+                "more than {USER_PACKS} recipe packs; left out: {}",
+                left_out.join(", ")
+            ),
+        ));
+        files.truncate(USER_PACKS);
+    }
+    for path in files {
+        match read(&path).and_then(|text| Recipe::from_toml(&text, &path, source)) {
+            Ok(recipe) => catalogue.recipes.push(recipe),
+            Err(problem) => catalogue.problems.push(problem),
+        }
+    }
+    catalogue.sort();
+    catalogue
+}
+
+/// The bundled packs and the user's in `config_dir/recipes/`; a user pack
+/// replaces the bundled one of its id.
+#[must_use]
+pub fn catalogue(config_dir: &Path) -> Catalogue {
+    let mut catalogue = bundled();
+    let user = load_dir(&config_dir.join(RECIPES), Source::User);
+    catalogue
+        .recipes
+        .retain(|bundled| !user.recipes.iter().any(|mine| mine.id == bundled.id));
+    catalogue.recipes.extend(user.recipes);
+    catalogue.problems.extend(user.problems);
+    catalogue.sort();
+    catalogue
+}
+
+fn problem(path: &Path, message: String) -> Diagnostic {
+    Diagnostic::at(path, "", None, message)
+}
+
+/// The text of the pack at `path`, refused past [`PACK_BYTES`] without
+/// reading the rest.
+fn read(path: &Path) -> Result<String, Diagnostic> {
+    use std::io::Read as _;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .and_then(|file| {
+            file.take(u64::try_from(PACK_BYTES).unwrap_or(u64::MAX) + 1)
+                .read_to_end(&mut bytes)
+        })
+        .map_err(|e| problem(path, e.to_string()))?;
+    if bytes.len() > PACK_BYTES {
+        return Err(problem(
+            path,
+            format!("a recipe pack is never larger than {PACK_BYTES} bytes"),
+        ));
+    }
+    String::from_utf8(bytes).map_err(|_| problem(path, "a recipe pack is UTF-8 text".to_owned()))
+}
+
 /// The schema of a pack file, for [`crate::schema::recipe`].
 pub(crate) fn render_schema() -> String {
     crate::schema::render::<Pack>()
