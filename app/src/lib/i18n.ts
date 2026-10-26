@@ -162,8 +162,6 @@ export const messages = {
   "home.tilesError": "Tiles not rendered: {error}",
   "home.result": "Press result",
   "home.pressFailed": "Press failed: {reason}",
-  "home.events": "Recent events",
-  "home.openEntry": "{line}, open the trace entry",
   "home.showEntry": "Show the trace entry",
   "home.noEvents":
     "No presses yet. Press a key on the pad, or select one in the mirror and press Space for a dry run.",
