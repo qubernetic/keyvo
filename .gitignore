@@ -61,3 +61,6 @@ AUDIT.md
 
 # Host-runnable binaries copied by `just build`
 /bin/
+
+# Private session handoffs of the owner, never committed
+docs/superpowers/

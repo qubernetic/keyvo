@@ -13,15 +13,15 @@
 
 *Implements d1, d3; P2, P3.*
 
-The app is a live copy of the pad. Home shows the nine keys exactly as the
+The app is a live copy of the pad. The Pad screen shows the nine keys exactly as the
 Keypad shows them: the GUI subscribes to the daemon (`subscribe`), receives the
 same render inputs, and runs the same renderer as the daemon, so a tile on screen
 is bit-identical to the tile on the LCD. The user never has to guess whether the
 GUI and the device agree.
 
-Editing happens on the same mirror. Selecting a key on Home or on a Profiles
-page opens its editor; the preview in the right column is the mirror again, not
-a second drawing. There is no separate "design canvas".
+Editing happens on the same mirror. Selecting a key on the Pad opens its
+inspector under the drawing; the page thumbnails of Profiles are the mirror
+again, not a second drawing. There is no separate "design canvas".
 
 Three sources can feed the mirror:
 
@@ -31,104 +31,153 @@ Three sources can feed the mirror:
 | Simulator, sandboxed | the user flips the sandbox switch | a working copy; Apply merges, Discard drops (§4.2) |
 | Simulator, direct | no device connected at start, or no daemon | the real profile files |
 
-The header shows which source is live. The sandbox switch is on Home and in the
-Profiles editor; it is not a mode the user can forget, because the header turns
+The header shows which source is live. The sandbox switch is in the header on
+every screen; it is not a mode the user can forget, because the header turns
 to the sandbox colour token and the Apply and Discard pair stays visible until
 one of them is pressed.
 
 ## 2. Shell and navigation
 
-*Implements d8, d13; P1, P3. Layout reference: `docs/ui-concepts/v3/`, third
-image (see `docs/ui-concepts/README.md`); the sketch is a reference for the
-column arrangement only.*
+*Implements d8, d13; P1, P3. Layout idiom: the Elgato Stream Deck desktop
+app adapted to keyvo's content (owner's decision of 2026-10-26,
+`docs/research/2026-10-26-keypad-app-layouts.md`,
+`docs/plans/2026-10-26-pad-screen-brief.md`); its visual style stays an
+anti-reference. The sketch of `docs/ui-concepts/v3/` is superseded.*
 
 ```
 +---------------------------------------------------------------------------+
-| keyvo                     [ Device selector v ]   [sandbox]   [...] - [] x |
-+-----------+---------------------------+---------------------------------+
-| Home      | List column               | Editor                          |
-| Profiles  |   (profiles, behaviors,   |   title, enabled switch         |
-| Behaviors |    projects, ...)         |   Trigger (one row per kind)    |
-| Projects  |                           |   Conditions                    |
-| Integr.   |                           |   Actions                       |
-| Devices   |                           |   Feedback                      |
-| Settings  |                           |   Test this behavior            |
-|           |                           +---------------------------------+
-|           |                           | Keypad preview  [page v]        |
-|           |                           |   3 x 3 mirror                  |
-|           |                           | Selected key card               |
-|           |                           | (Dialpad panel, collapsible)    |
-+-----------+---------------------------+---------------------------------+
+| keyvo   [ Device v ]  [ Profile v ]   [sandbox] Apply Discard   (gear) [...]|
++-----------+------------------------------------------------+--------------+
+| Pad       |   device drawing with the live mirror in it    | Actions      |
+| Profiles  |   Pages [context] [git] [+]      Accent [sw]   |  [search]    |
+| Behaviors |   The pad moved to vscode, page 1   (Follow)   |  v General   |
+|           |------------------------------------------------|  v System    |
+|           |   Key 5: Exec  file line 42    [Press] [Clear] |  v Apps      |
+|           |   [tile] Label, Icon, Colour; Action, fields   |              |
+|           |------------------------------------------------|              |
+|           |   Trace v  newest entries, one line            |              |
++-----------+------------------------------------------------+--------------+
 ```
 
-- **Navigation rail** (left): Home, Profiles, Behaviors, Projects, Integrations,
-  Devices, Settings, in that order, `Ctrl+1` to `Ctrl+7`. Icons with labels; the
-  rail collapses to icons below 1100 px width (*design detail*). The rail shows
-  no device status: that lives in the header selector (P3).
-- **Header**: app name, device selector (every device the daemon reports plus
-  "Simulator"), the sandbox indicator when active, overflow menu (Export,
-  Import, Open config folder, Re-run setup step, About). Changing the selected
-  device changes which device the preview and the key card focus; it never hides
-  a panel (d13).
-- **List column**: the screen's primary list (profiles, behaviors, projects,
-  integrations, devices). Searchable where the list can grow (Behaviors,
-  Projects). Collapsible.
-- **Editor**: the selected item's form. Sections are stacked cards: Trigger,
-  Conditions, Actions, Feedback, then "Test this behavior" at the bottom. No
-  global simulation dock exists; simulation is always attached to the thing
-  being tested.
-- **Right column**: Keypad preview with a page selector, the selected key card
-  (position, page, layer origin: global, app profile, project layer or overlay),
-  and the collapsible Dialpad panel (§3.3). The card shows only what the editor
-  does not already show (P3).
-- **Window**: default 1200 x 760, minimum 960 x 640. Columns collapse in the
-  order right column, list column. Modals are used only for confirmations
-  (Discard sandbox, Delete profile, Restore snapshot) and the trust prompt
-  (§4.5).
-- **Hint bar**: one dismissable bar on Home after first run (§4.4); no tutorial
-  overlay anywhere (P2).
+- **Navigation rail** (left): Pad, Profiles, Behaviors, in that order,
+  `Ctrl+1` to `Ctrl+3`; the product map, nothing else. Behaviors is
+  disabled with its roadmap sentence until M4a-5. Icons with labels; the
+  rail collapses to icons below 1100 px width (*design detail*). The rail
+  shows no device status: that lives in the header selector (P3).
+- **Header**: app name, device selector (every device the daemon reports
+  plus "Simulator"), the profile dropdown on the Pad (the profiles by
+  priority, the global one first, the one on the pad marked; choosing one
+  pins the inspector, §3.1), the sandbox switch with the Apply and Discard
+  pair while the sandbox is on, a gear that opens Preferences, and the
+  overflow menu (Export, Import, Open config folder, Re-run setup step,
+  Keyboard shortcuts, About). Changing the selected device changes which
+  device the drawing and the inspector focus; it never hides a panel (d13).
+- **Preferences**: a window (or a screen in the same shell) with the tabs
+  General, Devices (the device colour; the Dialpad panel of §3.3 and §4.2 moves here),
+  Integrations, Projects. A tab not built yet shows one roadmap sentence
+  there; "Coming soon" never sits in the rail.
+- **Actions catalogue** (right column of the Pad): a search field and
+  collapsible groups, General, System, Apps in v1, Dialpad and Behaviors
+  later (§3.1). Collapses into the inspector's Action select below
+  1200 px.
+- **Window**: default 1200 x 760, minimum 960 x 640. Below 1200 px the
+  catalogue collapses, below 1100 px the rail drops its labels, below
+  1000 px the list column of Profiles collapses. Modals are used only for
+  confirmations (Discard sandbox, Delete profile, Restore snapshot) and
+  the trust prompt (§4.5).
+- **Hint bar**: one dismissable bar on the Pad after first run (§4.4); no
+  tutorial overlay anywhere (P2).
 
 ## 3. Screens
 
 Each screen is described as: what the list column holds, what the editor
 holds, what is special in the right column.
 
-### 3.1 Home
+### 3.1 Pad
 
-*Implements d1, d9, d11; P4.*
+*Implements d1, d9, d11; P4. The screen id stays `home`; the label is Pad.*
 
-- No list column. The mirror fills the centre: the live 3 x 3 grid of the active
-  profile and page, the page selector, the accent bar of the active profile.
-- Status strip above the grid, one fact each: device, active profile, page,
-  mode, top overlay, context (project name or "unknown project" with the reason,
-  d7). Each fact is a link to the screen that owns it.
-- Event list below the grid: the most recent trace entries (§8), one line each,
-  newest first; clicking opens the trace drawer.
-- Debug log toggle in the event list header (Debug mode adds HID-level events).
-- Sandbox switch and the Apply and Discard pair when the sandbox is active.
-- Hint bar (dismissable) after first run.
+- No list column. The device fills the centre: a stylised SVG of the
+  Keypad (rounded body, the 3 x 3 key cutouts, the two page buttons, no
+  vendor mark), coloured from `--kv-device` (§7; graphite by default, the
+  pale grey and white editions selectable in Preferences > Devices), the
+  key rims and the page buttons as shades derived from it. The mirror
+  tiles rendered by keyvo-core sit in the cutouts at the geometry rects
+  and scale with the drawing: `width: 100%`, `max-width` the panel's
+  pixel width, the device aspect ratio, never above 1:1, never clipped.
+  The Dialpad gets its own drawing with the Dialpad slice (the panel of
+  §3.3 and §4.2, then a Devices tab of Preferences).
+- The mirror shows the pad: the active profile and page, live. A key that
+  falls through from the global layer is dimmed with a corner mark; the
+  selected key has the accent outline; key feedback (§5.1) draws on the
+  tile with an icon or a word.
+- Under the drawing: the pages as named tabs (`context` first, "+" adds a
+  page) and the accent swatch with its label. The hardware page buttons
+  page the pad only; the app's page selection stays where the user put it.
+- **Pinned inspector**: the header's profile dropdown and the page tab pin
+  the inspector; the mirror keeps following the pad. When the two differ,
+  one line under the tabs says "The pad moved to vscode, page 1" with a
+  Follow control. The daemon holds the context while the keyvo window has
+  focus (`[focus].hold_classes`, #117), so the line is rare; the status
+  area then reads "keyvo-app focused, holding org.kde.konsole".
+- **Inspector** (below the drawing, full width of the column): the header
+  "Key 5: Exec" with the file path and line as the subtitle ("from global"
+  for a fall-through key, with an "Override here" action), Press (dry run)
+  and Clear at the right; one row with the tile, Label, Icon (picker with
+  search over the bundled lucide names) and Colour (swatch and text); then
+  the Action select and the kind's fields, or a preset's "What it does"
+  select above them. Forms capped at 48ch. Every change writes through
+  `toml_edit` immediately (§4.1), the result line with a time stamp under
+  the fields. Empty: "Select a key to edit it."
+- **Actions catalogue** (right): drag an entry onto a tile to assign it,
+  click to assign it to the selected tile. v1 groups: General (Open
+  folder, Open website, New email, then the raw tools Chord and Exec),
+  System (Lock the desktop, Volume, Brightness, Open a settings page),
+  Apps (one entry per app, Spectacle, Calculator, VS Code, Konsole and so
+  on; dropped on a tile the inspector asks "What it does"). Later: Dialpad
+  (a key selects what the dial adjusts: volume, brightness, a Home
+  Assistant light) and Behaviors. The entries are the recipes of §4.3.
+  Moving a key between tiles stays `Ctrl+X` and `Ctrl+V` and "Move key"
+  (d15).
+- **Trace strip** (bottom): the newest trace entries (§8), one line each,
+  newest first; the chevron opens the trace drawer. Debug log toggle in
+  the drawer header (Debug mode adds HID-level events).
+- Status facts (device, profile, page, mode, top overlay, context with the
+  project name or "unknown project" with the reason, d7) live in the
+  header and the drawing's caption, each once; they are no longer a strip
+  of links.
 
 ### 3.2 Profiles
 
-*Implements d1, d2, d14; ADR-0004.*
+*Implements d1, d2, d14; ADR-0004. The profile manager, the Preferences >
+Profiles dialog of Stream Deck as a screen, because keyvo profiles carry
+priority and match rules.*
 
-- List column: profiles by priority, the global profile pinned at the top, the
-  active one marked. "+" creates a profile from a template (empty, copy of the
-  active, starter pack).
-- Editor: profile header (id, name, accent, priority, enabled), match rules as
-  editable rows (class, title regex), pages as tabs, and the key grid for the
-  selected page. Clicking a key selects it; `Enter` opens the key's behavior
-  in the Behaviors editor with the Profiles screen remembered for `Esc`.
-- Drag and drop between keys moves a key definition; the keyboard pair is
-  `Ctrl+X` on a key followed by `Ctrl+V` on another (d15).
-- Every change writes through `toml_edit` immediately (§4.1). The editor shows
-  the file path and a "Open in editor" button for the whole file.
-- Right column: the mirror of the selected page; the key card shows position,
-  page and layer origin.
+- List column: profiles by priority, the global profile pinned at the top,
+  a 12 px accent square after the name, "on the pad" on the live one. "+"
+  creates a profile from a template (empty, copy of the active, starter
+  pack).
+- Editor: the profile header (name, accent as a swatch and `#rrggbb` text,
+  priority with "higher wins the window", enabled), the file path and
+  "Open in editor" in the heading row, the match rules as one list of kind
+  and pattern rows (class, title regex) with inline validation (editing
+  the rows arrives with M4a-4), the pages as small thumbnails rendered by
+  keyvo-core, and "Edit keys on the Pad", which opens the Pad pinned to
+  this profile and page.
+- No key grid, no key editor, no right column: the key grid exists once,
+  on the Pad. Every change writes through `toml_edit` immediately (§4.1).
 
 ### 3.3 Behaviors
 
 *Implements d4, d9, d12, d13, d16.*
+
+*Sections 3.3 to 3.7 still describe the pre-2026-10-26 shell (rail screens
+with list columns, the key card, the Home status strip). Under §2 as
+rewritten, Behaviors stays a rail screen and Projects, Integrations, Devices
+and Settings become tabs of Preferences; these sections are rewritten with
+#108 and #109 and the slices that build them. Until then, read "Home" as the
+Pad, "status strip" as the header and the drawing's caption, "key card" as
+the inspector's subtitle.*
 
 "Behavior" is the GUI's word for one key binding: a key (or Dialpad control, or
 MX device control) on a page of a profile, with its triggers, conditions, actions
@@ -352,9 +401,9 @@ by printing `KEYVO_STATE=<name>` on stdout.
   the last frame it had.
 - **Daemon unreachable**: header badge, the mirror switches to the in-process
   simulator (§4.2), Devices shows the `doctor` entry for the service.
-- **Device missing**: the device selector shows "Simulator"; Home says which
+- **Device missing**: the device selector shows "Simulator"; the Pad says which
   device is missing and the last time it was seen.
-- **Schema error in a file**: the profile row and the Home status strip show the
+- **Schema error in a file**: the profile row and the Pad's header show the
   error with file and line; the editor is read-only for that file until the
   file parses again.
 
@@ -364,7 +413,7 @@ by printing `KEYVO_STATE=<name>` on stdout.
 
 | Keys | Action |
 |---|---|
-| `Ctrl+1` to `Ctrl+7` | rail screens in order |
+| `Ctrl+1` to `Ctrl+3` | rail screens in order (Pad, Profiles, Behaviors) |
 | `Ctrl+K` | command palette (screens, profiles, behaviors, projects, actions such as "Trust current project") |
 | `1` to `9`, arrows | select a key on the focused grid |
 | `Enter` | edit the selected key |
@@ -406,6 +455,7 @@ desktop changes.
 | `--kv-radius` | corner radius | fixed per desktop (*design detail*) | | |
 | `--kv-contrast` | `normal` or `high` | `[General] ColorScheme` name contains "HighContrast", or `kdeglobals` `[KDE] contrast` | `high-contrast` | `UISettings` high contrast |
 | `--kv-motion` | `full` or `reduced` | `kdeglobals` `[KDE] AnimationDurationFactor` = 0 | `enable-animations` | `UISettings` animations |
+| `--kv-device` | the body colour of the device drawing (§3.1), the rims and page buttons derived from it in the component | fixed per edition, chosen in Preferences > Devices: graphite `#2f3133` (default), pale grey `#b9bcc0`, white `#f1f1f1` (*design detail*, confirmed with the owner's SVG in #118) | same | same |
 
 - Sources are read once at start and then followed: KDE through the
   `kdeglobals` file watcher and the `org.kde.KGlobalSettings` D-Bus signal,
@@ -439,6 +489,7 @@ layout is judged in light and dark. Measured on 2026-10-26.
 | `--kv-state-running`, `-success`, `-error` | `#f08c00`, `#2f9e44`, `#e03131` | same | same | same |
 | `--kv-contrast` | `normal` | `normal` | `normal` | `normal` |
 | `--kv-motion` | the system's `prefers-reduced-motion` | same | same | same |
+| `--kv-device` | `#2f3133` | same | same | same |
 
 Sources:
 
@@ -481,8 +532,8 @@ the measured values.
 
 *Implements d9; P4.*
 
-One trace entry per press, real or simulated. The drawer opens from the Home
-event list, from the "Test this behavior" result line, and from a key's error
+One trace entry per press, real or simulated. The drawer opens from the Pad's
+trace strip, from the "Test this behavior" result line, and from a key's error
 badge. It renders the entry as sections in resolution order:
 
 1. Trigger: timestamp, device, key or control, press kind, real or simulated.
@@ -514,7 +565,7 @@ card as "Run with key environment".
 
 | Direction | Message | Used for |
 |---|---|---|
-| in | `subscribe` (`events`: key, profile, page, mode, device, context, trace, config) | the mirror, status strip, event list |
+| in | `subscribe` (`events`: key, profile, page, mode, device, context, trace, config) | the mirror, the header facts, the trace strip |
 | in | `status` | first paint, reconnect |
 | in | `press` with `dry_run: true` | Test this behavior, virtual pad |
 | in | `set_key`, `push_overlay`, `pop_overlay` | reference plugins only; the GUI does not call them for editing |
@@ -556,7 +607,7 @@ marketplace. Unchanged: `.lp5` import (spec §7.3).
 |---|---|
 | P1 native theme | 2, 6, 7 |
 | P2 guided | 2 (hint bar), 4.4, 5.2 |
-| P3 no redundancy | 2 (rail, header, key card) |
+| P3 no redundancy | 2 (rail, header), 3.1 (inspector subtitle) |
 | P4 debuggable | 3.1, 3.6, 4.2, 8 |
 | d1 device mirror | 1, 3.1 |
 | d2 immediate apply | 3.2, 4.1 |

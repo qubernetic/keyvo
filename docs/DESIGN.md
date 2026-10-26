@@ -123,10 +123,16 @@ not from more boxes.
 The system has no palette of its own. Every colour, the font and the corner
 radius come from the host desktop through the `--kv-*` custom properties
 (gui-ux.md §7); the values in this file's frontmatter are only the pre-alpha
-defaults the bridge will replace. That is why the system is flat and quiet:
+defaults the bridge will replace. One exception, by design: `--kv-device`,
+the body colour of the device drawing on the Pad, is fixed per edition of
+the hardware (graphite, pale grey, white) and chosen in Preferences, because
+the pad is a physical object on the screen, not a panel of the app. That is why the system is flat and quiet:
 it has to look right inside Breeze and Adwaita, light and dark, without
 knowing in advance which. It explicitly rejects the marketing gloss of Logi
-Options+, the crowded drag-and-drop puzzle of the Stream Deck software, the
+Options+, the visual style of the Stream Deck software (its fixed dark
+chrome, glossy tiles and marketplace clutter; its layout hierarchy, device
+canvas, pages, inspector, actions catalogue with drag and drop, is adopted
+since 2026-10-26, see gui-ux.md §2), the
 generic SaaS dashboard (card grids, big numbers, gradients, glass) and the
 Electron dark developer-tool cliché (black, neon, monospace everywhere, an own
 dark look). It also rejects the pre-alpha Profiles screen of 2026-10-26: a
