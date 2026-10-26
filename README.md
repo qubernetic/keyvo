@@ -71,8 +71,9 @@ pages of the pinned profile as tabs with its accent, a line with Follow
 when the pad moved away from the profile being edited, a broken profile
 shown with file and line, a strip of the recent presses under the
 inspector, each opening a trace drawer with what the press resolved to and
-what came of it, an actions catalogue to drag Chord or Exec onto a key
-(the presets follow), and a virtual pad
+what came of it, an actions catalogue to drag a preset (Spectacle,
+Volume up, VS Code and the rest of the recipe packs, with a "What it does"
+choice in the inspector) or Chord or Exec onto a key, and a virtual pad
 (a click selects a key, `1` to `9` and the arrows too; `Space` is a
 dry-run press, `Shift+Space` a long one). Beside the mirror, the inspector names the selected key, its
 file and line, and changes its label, icon (picked from the bundled icons), color and action, or

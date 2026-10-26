@@ -134,9 +134,10 @@ holds, what is special in the right column.
   (`/`, "Search actions", empty: "No action matches"), then the groups,
   each collapsible on its heading. Drag an entry onto a tile to assign it,
   click to assign it to the selected tile; a raw tool sets the action
-  type with an empty field, written once the field is entered. The
-  presets stay "Coming soon" until the recipe packs reach the app
-  (#119, #129). v1 groups: General (Open
+  type with an empty field, written once the field is entered; a preset
+  writes its default "What it does" with its label and icon at once
+  (§4.3). The search covers group, name and variant names. v1 groups:
+  General (Open
   folder, Open website, New email, then the raw tools Chord and Exec),
   System (Lock the desktop, Volume, Brightness, Open a settings page),
   Apps (one entry per app, Spectacle, Calculator, VS Code, Konsole and so
@@ -338,6 +339,20 @@ GUI is closed):
 The answer is written to `.keyvo/local.toml` under `[recipes.<id>]`; the next
 press resolves without the prompt. "Expand to a concrete action" rewrites the
 key's action to plain `exec` with the resolved command.
+
+**As built (pre-alpha, catalogue v1, #119, #129).** Ahead of the `recipe`
+action type and its mini-wizard, a recipe is a pack of `contrib/recipes/`
+or the user's `recipes/` (spec §7.5): a group, a name, an icon, a label and
+one or more variants ("What it does"), each a plain `chord` or `exec`
+action. The daemon lists the packs on the `recipes` request; the Pad's
+actions catalogue shows them in their groups, and a dropped or clicked
+pack writes its first variant with its label and icon into the key as
+plain fields, through the round-trip editor. Nothing resolves at press
+time and the profile never names the pack: the inspector recognises a key
+that carries one by its icon and an action of its variants, and offers
+the "What it does" select above the Action, which rewrites the action to
+the chosen variant. No detector, project parameter or wizard step runs
+yet.
 
 ### 4.4 First run
 
