@@ -66,13 +66,13 @@ The desktop app has its shell (a navigation rail of Pad, Profiles and
 Behaviors, where Behaviors is greyed out until it is built, a header with
 the device selector, the profile dropdown, Preferences behind a gear and a
 keyboard map in its menu, and collapsible columns) and shows the Pad so
-far: a live mirror of the pad's page
-with a page selector and the profile's accent bar, the daemon's status
-(each fact linking to its screen, a broken profile shown with file and
-line), the recent presses, each opening a trace drawer with what the press
-resolved to and what came of it, and a virtual pad whose clicks are
-dry-run presses (right click for a long press; `1` to `9` and `Space` on
-the grid). Beside the mirror, a key editor changes the selected key's
+far: a live mirror of the pad's page in a drawing of the Keypad, the
+pages of the pinned profile as tabs with its accent, a line with Follow
+when the pad moved away from the profile being edited, a broken profile
+shown with file and line, the recent presses, each opening a trace drawer
+with what the press resolved to and what came of it, and a virtual pad
+(a click selects a key, `1` to `9` and the arrows too; `Space` is a
+dry-run press, `Shift+Space` a long one). Beside the mirror, a key editor changes the selected key's
 label, color, icon and action: each change lands in the profile file at
 once (comments and formatting kept, a snapshot under
 `~/.local/state/keyvo/snapshots/` first), the daemon repaints the pad, and

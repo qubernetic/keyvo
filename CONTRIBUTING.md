@@ -102,7 +102,9 @@ shell, fed by `tests/protocol-fixtures/socket/`, `contrib/profiles/` and the
 renderer snapshots, so a change shows in a host browser in seconds without a
 container build, a daemon or a Keypad. `?theme=breeze-dark|breeze-light|adwaita-dark|adwaita-light`
 switches between the measured token sets of `docs/design/gui-ux.md` §7,
-`?mock-error=unreachable` shows Home's error state. Edits stay in memory until
+`?mock-error=unreachable` shows the Pad's error state, `?mock-profiles=empty`
+adds a profile with no pages, and every fourth focus step is the keyvo app,
+which holds the context the way `[focus].hold_classes` does. Edits stay in memory until
 a reload. The mock never reaches a build without the variable, and it is not
 the final check: WebKitGTK renders differently, so a layout change is still
 verified in the Tauri shell (the GNOME runtime) before its User test.
@@ -344,7 +346,7 @@ Where the tests live:
 | `keyvo-daemon` | Integration tests with a fake D-Bus / X11 and the fake transport | none |
 | `keyvo-cli` | Snapshot tests of output; `--json` output is schema-checked | none |
 | `keyvo-client` | The client against the socket fixtures in `tests/protocol-fixtures/socket/`; tiles compared with the daemon's renderer output; the key editor on a configuration directory on disk against the steps in `tests/protocol-fixtures/editor/` | none |
-| `app/` frontend | vitest with jsdom (`just app-test`): the TypeScript protocol module and the Home state against the same fixtures, component tests with a fake daemon fed the fixture events and a fake editor holding the editor steps' files (`app/src/lib/fixtures.ts`) | none |
+| `app/` frontend | vitest with jsdom (`just app-test`): the TypeScript protocol module and the Pad state against the same fixtures, component tests with a fake daemon fed the fixture events and a fake editor holding the editor steps' files (`app/src/lib/fixtures.ts`) | none |
 | `app/src-tauri` | No tests of its own: thin glue over `keyvo-client`, proven by the CI `app` build | none |
 | Renderer | [insta](https://insta.rs/) snapshot tests of rendered key images | none |
 | `just test-hw` | Hardware suite on the host: probe, paint, keep-alive, brightness, input | Keypad / Dialpad |

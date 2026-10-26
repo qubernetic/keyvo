@@ -1672,7 +1672,7 @@ shell into `bin/keyvo-app`.
 to 960 x 640 (`tauri.conf.json`). It has the header, the navigation rail
 and the columns of `docs/design/gui-ux.md` §2:
 
-- **Rail.** Pad (screen id `home`, today's Home content), Profiles,
+- **Rail.** Pad (screen id `home`), Profiles,
   Behaviors, on `Ctrl+1` to `Ctrl+3` (pad screen brief §5.1), lucide icons
   (`app/src/assets/lucide`, the pad's lucide release) with labels, icons
   only below 1100 px. Pad and Profiles are built. Behaviors carries
@@ -1690,7 +1690,7 @@ and the columns of `docs/design/gui-ux.md` §2:
   pinned profile, else the pad's, and pins the choice (`app/src/lib/pin.ts`:
   undefined follows the pad, a pinned profile starts on page 1, a view
   event never moves the pin, a profile gone from a re-read list unpins;
-  the Pad's inspector reads the pin from the next slice on); the Sandbox
+  the Pad's inspector and page tabs read it); the Sandbox
   switch, disabled with its M4a-4 sentence, Apply and Discard not shown;
   the gear, which opens Preferences; and the overflow menu with Export,
   Import, Open config folder, Re-run setup step and About, disabled with
@@ -1715,9 +1715,9 @@ and the columns of `docs/design/gui-ux.md` §2:
 - **Columns.** List column, editor and right column; the right column
   collapses below 1200 px, the list column below 1000 px, and a toggle at
   each column's edge shows or hides it until the width crosses its limit
-  again. Home has the editor area only. Home stays mounted while another
-  screen shows, so the header follows the daemon; its `Ctrl+Z` then does
-  nothing.
+  again. The Pad has the editor area only. The Pad stays mounted while
+  another screen shows, so the header follows the daemon; its `Ctrl+Z`
+  then does nothing.
 - **Tokens and controls.** `color-scheme: dark` on `:root` matches the
   dark token set, so the webview's own popups (the option list of a
   `<select>`) are dark. `app/src/styles/controls.css` gives every form
@@ -1733,44 +1733,47 @@ and the columns of `docs/design/gui-ux.md` §2:
   keeps literal words out of the markup of every component under
   `app/src/`, in folders too.
 
-**As built (pre-alpha Home).** Home follows `docs/design/gui-ux.md` §3.1,
-§5.2 and §8 (d1, d7, d9, P4); it has no list column. On start Home asks
-`status`, then subscribes with a replay of the newest 20 trace entries;
-`app/src/lib/home.ts` folds the updates the way `Mirror` does.
+**As built (pre-alpha Pad).** The Pad (`app/src/Pad.svelte`, screen id
+`home`) follows the pad screen brief §5.2 and §6 and `docs/design/gui-ux.md`
+§3.1, §5.2 and §8; it has no list column. On start the Pad asks `status`,
+then subscribes with a replay of the newest 20 trace entries;
+`app/src/lib/pad.ts` folds the updates the way `Mirror` does.
 
-- **Mirror.** A `grid` of the tiles of the active profile and the shown
-  page, fetched again when the view changes and after every reload. Above
-  it, the page selector (the pages of the active profile, from the shell's
-  `outline`) and the profile's accent bar (none when the profile has no
-  accent). The selector shows the pad's page and follows it; a page picked
-  there stays until the pad's next view, the key editor then edits that
-  page, and a press on it only selects the key, with a result line saying
-  that presses simulate the page the pad shows (the daemon resolves a
-  press on its own page). Rows, key
-  count and tile size come from the `geometry` the daemon reports for the
-  Keypad (`status` and the `device` event, §8); the app hard-codes none of
-  them. A key starts a new row when its top edge is below the middle of
-  the row's first key. The tiles sit in the key cutouts of the Keypad
-  drawing (`app/src/Device.svelte`, gui-ux §3.1), coloured from
-  `--kv-device`, and scale with it: the column's width, at most the
-  panel's pixel width, so never above 1:1. A geometry whose key count
-  differs from the drawing's cutouts puts the tiles on a plain panel at
-  the reported rects instead. The last geometry stays when the Keypad
-  goes; before any Keypad reported one, a note replaces the grid. A key the active app
-  profile does not define shows the global key (§6.1) with a "global"
-  mark. A key held on the device is outlined. A page the daemon's
-  configuration cannot render shows why.
-- **Status strip.** One fact each: device, profile, page, mode, top
-  overlay (`none`: the daemon has no overlays yet) and context
-  (`unknown project`, as the daemon sends no project yet, and the focused
-  window; a held window, §6.1, reads `keyvo-app focused, holding
-  org.kde.konsole`, or `holding the context` when the app saw no window
-  before it). Profile, page and mode link to Profiles; device, overlay and
-  context belong to tabs of Preferences, which are not built, so they
-  are plain text. A failed reload shows as an error notice in the
-  strip: `Schema error in <file>, line <n>, column <n>: <message>` when the
-  error names a place (`<file>:<line>[:<column>]: <message>`), else the
-  error as it is, with a link to Profiles, until a reload succeeds.
+- **Mirror** (`app/src/Mirror.svelte`). A `grid` of the tiles of the page
+  the pad shows, fetched again when the view changes and after every
+  reload and write. Rows, key count and tile size come from the
+  `geometry` the daemon reports for the Keypad (`status` and the `device`
+  event, §8); the app hard-codes none of them. A key starts a new row when
+  its top edge is below the middle of the row's first key. The tiles sit
+  in the key cutouts of the Keypad drawing (`app/src/Device.svelte`,
+  gui-ux §3.1), coloured from `--kv-device`, each cell placed by the
+  percent rect of its cutout, and scale with it: the column's width, at
+  most the panel's pixel width, so never above 1:1. A geometry whose key
+  count differs from the drawing's cutouts puts the tiles on a plain
+  panel at the reported rects instead. The last geometry stays when the
+  Keypad goes; before any Keypad reported one, a note replaces the grid.
+  A key the active app profile does not define shows the global key
+  (§6.1), dimmed, with a "global" mark in its corner. The selected key has
+  the accent outline, a key held on the device a dashed mark. A page the
+  daemon's configuration cannot render shows why.
+- **Selection and the pin.** Nothing is selected at first; the inspector
+  asks for a key. A click on a tile, or `1` to `9` (up to the key count)
+  and the arrows on the grid, select a key; a click never presses. The
+  first selection pins the inspector to the profile and page the pad
+  shows (`pinOnSelect` of `app/src/lib/pin.ts`), so a later view event
+  moves the drawing and never the inspector. While the pin and the pad
+  differ, a line under the page tabs says `The pad moved to <profile>,
+  page <page>` with Follow, which unpins and keeps the key number.
+- **Page tabs** (`app/src/PageTabs.svelte`). The pinned profile's pages,
+  else the pad's, as a tablist by name (`Page <n>` for an unnamed one),
+  arrows wrapping, `Home` and `End`; a tab pins its page. A profile with
+  no pages shows no tab. "+" (add a page) is disabled with its M4a-4
+  sentence. At the right, the profile's accent as a 12 px swatch with the
+  label "Accent" and its `#rrggbb`; none when the profile has no accent.
+  The hardware page buttons page the pad only.
+- **Held caption.** While the focused window is held (§6.1,
+  `[focus].hold_classes`), a `status` line reads `keyvo-app focused,
+  holding <profile>`, the profile the pad keeps.
 - **Event list.** The trace entries, newest first, one line each: the key,
   the press kind, whether it was simulated, the layer that supplied the
   key (`app layer` or `global layer`), the action and its result. Each
@@ -1787,27 +1790,36 @@ and the columns of `docs/design/gui-ux.md` §2:
   code or signal and duration, a failure's error) or Block reason (dry
   run, or no layer binds the key). Conditions, variables and the window
   context come with the daemon fields that carry them.
-- **Virtual pad.** A click is a short dry-run press, a right click a long
-  one; the one-line result shows under the grid. On the grid, `1` to `9`
-  (up to the key count) and the arrows select a key, `Space` presses it
-  short and `Shift+Space` long.
+- **Virtual pad.** On the grid, `Space` presses the selected key short and
+  `Shift+Space` long, as dry runs on the page the pad shows; the
+  one-line result shows under the drawing. The right-click press is gone.
 - **Accessibility.** Each key's `aria-label` names the key, its label, its
   action and its layer; the grid has rows and cells, the selected cell is
-  `aria-selected`, and the result line is a `status` region.
-- **Screen states** (design §5.2). Empty: the event list says how to fill
-  it (press a key on the pad, or click one in the mirror). Loading: three
-  skeleton rows in the event list (`aria-busy`), no spinner; the mirror
-  keeps its last frame. Device missing: a note names the Keypad and the
-  time it was last seen connected, or that it was not seen since the app
-  started; the mirror keeps the last geometry. Schema error: in the status
-  strip, above. Daemon unreachable: when `status` fails or the
-  subscription ends, an alert says why, the mirror keeps its last frame,
-  and Retry connects again. The in-process simulator of §4.2 of the
-  design and the header badge come later.
+  `aria-selected`, and the result line and the held caption are `status`
+  regions.
+- **Screen states** (design §5.2, brief §6), each notice through `Notice`.
+  Empty: the event list says how to fill it (press a key on the pad, or
+  select one in the mirror and press `Space`). Loading: nine skeleton
+  tiles in the drawing (`aria-busy`), no spinner; on a reconnect the
+  mirror keeps its last frame instead. Device missing: a note names the
+  Keypad and the time it was last seen connected, or that it was not seen
+  since the app started; the mirror keeps the last geometry. Schema
+  error: an error notice, `Schema error in <file>, line <n>, column <n>:
+  <message>` when the error names a place (`<file>:<line>[:<column>]:
+  <message>`), else the error as it is, until a reload succeeds. Daemon
+  unreachable: when `status` fails or the subscription ends, an error
+  notice says why (the socket path and the OS error as the shell reports
+  them) and "Start it with `keyvo-daemon`", the mirror keeps its last
+  frame, and Retry connects again. The status strip of the earlier Home,
+  its links and its page selector are gone; every fact shows once. The
+  in-process simulator of §4.2 of the design and the header badge come
+  later.
 
-**As built (pre-alpha key editor).** Beside the mirror, the key editor
+**As built (pre-alpha key editor).** Beside the mirror, in the place of
+the inspector until its slice, the key editor
 (`app/src/KeyEditor.svelte`, `app/src/lib/editor.ts`) shows the key
-selected on the grid: its profile file, and its label, color (`#rrggbb`),
+selected on the grid on the pinned profile and page: its profile file,
+and its label, color (`#rrggbb`),
 icon and action (none, a chord's keys or an `exec` command).
 
 - **Immediate apply.** A field is written the moment it changes (the
@@ -2076,6 +2088,17 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha Pad slice 2 (2026-10-26)**: §10 the Pad as built:
+  Home becomes the Pad (`Pad.svelte`, `lib/pad.ts`); the mirror in the
+  device drawing selects on a click and presses only on `Space` and
+  `Shift+Space`, dims a global fall-through key with a corner mark and
+  outlines the selected key in the accent; selecting a key pins the
+  inspector to the pad's profile and page, and a "pad moved" line with
+  Follow appears while they differ; page tabs of the pinned profile with
+  "+" as a Soon control (M4a-4) and the accent swatch; the held caption
+  `<class> focused, holding <profile>`; the status strip, its links, the
+  page selector, the accent bar and the right-click press are gone, every
+  notice goes through `Notice` (#126).
 - **v0.3, pre-alpha Pad slice 1 (2026-10-26)**: §10 the shell of three
   screens: the rail is Pad (screen id `home`), Profiles, Behaviors on
   `Ctrl+1` to `Ctrl+3`; the header gains the Profile dropdown that pins

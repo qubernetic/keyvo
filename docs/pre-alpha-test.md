@@ -260,17 +260,18 @@ is for `keyvo ctl`, T3 for the app.
 
    Expected: a window titled `keyvo`, 1200 x 760, with a header (`keyvo`,
    a device selector showing `Keypad`, a `...` menu button), the
-   navigation rail on the left with Home selected, and Home beside it:
-   nine tiles matching the pad, above them a `Page shown` selector and
-   the profile's accent bar (blue on the global profile), and a status
-   strip with `Keypad connected, 9 keys`, the profile, page, mode,
-   `Overlay none` and `Context unknown project, <window class>: <title>`.
-   The app window itself matches no profile, so the global profile
-   shows. Switch the page with a page button: the grid, the selector and
-   the strip follow.
+   navigation rail on the left with Pad selected, and the Pad beside it:
+   the Keypad drawing with nine tiles matching the pad in its cutouts,
+   under it the page tabs of the profile (`context`, `general`, `third`
+   on the global profile, the pad's page selected) and `Accent` with a
+   blue swatch and its `#rrggbb`. The app window itself is held
+   (`[focus].hold_classes`, #121), so the profile of the window before it
+   stays and a line reads `keyvo-app focused, holding <profile>`. Switch
+   the page with a page button: the drawing and the selected tab follow.
 
 10. **Dry-run press and its trace entry.** In the app, click key 2
-    (Fail). Expected: the result line reads `Key 2, simulated, global
+    (Fail): it gets the accent outline and nothing is pressed. Press
+    `Space`. Expected: the result line reads `Key 2, simulated, global
     layer: <action>, dry run, nothing executed` followed by `Show the
     trace entry`, a line appears at the top of Recent events, the pad's
     key 2 does not change, and the `subscribe` in T2 prints a `trace`
@@ -325,7 +326,7 @@ is for `keyvo ctl`, T3 for the app.
     - Unplug the Keypad: the device selector shows `Simulator` only.
       Plug it back: `Keypad` returns and is selected.
 
-13. **Home states and the trace drawer.** Still in the app, on Home:
+13. **Pad states and the trace drawer.** Still in the app, on the Pad:
 
     - Click `Show the trace entry` on the result line of step 10. A
       drawer opens on the right with Trigger (`simulated`), Context
@@ -336,27 +337,24 @@ is for `keyvo ctl`, T3 for the app.
       it too.
     - In the drawer's header, `Debug log` is a greyed switch with
       `Coming soon`; clicking it changes nothing.
-    - In the status strip, click the profile name: the Profiles screen
-      opens (`Ctrl+1` brings the Pad back). Device, overlay and context are
-      plain text.
-    - With the global profile on the pad (it has three pages), pick
-      page 2 in `Page shown`: the mirror shows page 2 while the pad and
-      the strip stay on page 1; clicking a key says `The pad shows page
-      1; presses simulate that page.` Switch windows: the selector
-      follows the pad again.
+    - With the global profile on the pad (it has three pages), select
+      key 5, then click the `general` tab: the key editor edits key 5 of
+      page 2 while the drawing stays on the pad's page 1, and a line
+      says `The pad moved to global, page 1` with `Follow`. Click
+      `Follow`: the line goes and the editor is on key 5 of page 1.
     - Break a profile: put `label = 7` on a key of
-      `~/.config/keyvo/profiles/global.toml`. The strip shows `Schema
-      error in <path of global.toml>, line <n>, column <n>: ...` with
-      `Open Profiles`. Restore the file
+      `~/.config/keyvo/profiles/global.toml`. An error notice shows
+      `Schema error in <path of global.toml>, line <n>, column <n>: ...`.
+      Restore the file
       (`cp contrib/profiles/global.toml ~/.config/keyvo/profiles/`): the
       error goes.
-    - Unplug the Keypad: Home says `The Keypad is missing; last seen at
+    - Unplug the Keypad: a note says `The Keypad is missing; last seen at
       <time>.` and the mirror keeps its tiles. Plug it back: the note
       goes.
-    - Stop the daemon (Ctrl-C in T1): Home says `Daemon unreachable`,
-      the mirror keeps its tiles. Start it again and click Retry: for a
-      moment three grey skeleton rows stand in Recent events (no
-      spinner), then the replayed entries.
+    - Stop the daemon (Ctrl-C in T1): an error notice says `Daemon
+      unreachable` with the socket path and `Start it with
+      keyvo-daemon.`, the mirror keeps its tiles. Start it again and
+      click Retry: the replayed entries return.
 
 14. **Profiles.** Focus Konsole, then press `Ctrl+2` in the app:
 
@@ -714,6 +712,15 @@ No Keypad needed; the mock dev server of #113 in a host browser, then the app. R
 - [ ] #132 Section 5 step 12: the rail of Pad, Profiles, Behaviors on `Ctrl+1` to `Ctrl+3`; the gear opens Preferences with its four tabs and `Esc` gives the focus back to the gear; `Keyboard shortcuts` in the `...` menu opens the keyboard map, one drawer at a time.
 - [ ] #132 `just app-dev` with `?theme=breeze-light` and `?theme=breeze-dark`: open the Profile dropdown; Global first, the pad's profile marked `on the pad`, every option readable; pick VS Code: the dropdown keeps it while the mock's focus cycle moves the pad, and the `on the pad` mark moves.
 - [ ] #132 `?mock-error=unreachable`: the notice has a full 1 px border in the error colour and starts with `Error`; no coloured stripe on its left.
+
+### The pad screen with the mirror and the page tabs (#133)
+
+No Keypad needed for the first three; the mock dev server of #113 in a host browser, then the app on the GNOME runtime. Run by the owner in #130.
+
+- [ ] #133 `just app-dev` at 1363x798 and at 960 px wide, with `?theme=breeze-light` and `?theme=breeze-dark`: the Keypad drawing scales with the window, never above its 1:1 size and never clipped; the tiles sit in the cutouts; the page tabs and the accent swatch are readable; no element under a scroll bar.
+- [ ] #133 Wait for the mock's focus cycle to reach `keyvo-app` (after Konsole): a line reads `keyvo-app focused, holding konsole` and the drawing stays on Konsole; the next step (VS Code) removes the line.
+- [ ] #133 Click a tile (it gets the accent outline, nothing is pressed), then wait for the focus cycle to move the pad: the key editor stays on the key, the drawing follows the pad, and `The pad moved to <profile>, page <n>` appears with `Follow`; `Follow` removes it and the editor shows the same key number on the pad's profile. `?mock-profiles=empty` and `Empty` in the header's dropdown: no tabs, only the greyed `+`.
+- [ ] #133 With the daemon and the Keypad: section 5 steps 9, 10 and 13.
 
 ### First-light records (#75)
 
