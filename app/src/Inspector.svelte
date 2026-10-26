@@ -331,14 +331,29 @@
       {/if}
       <div class="buttons">
         {#if fallen}
-          <button type="button" disabled={below === undefined} onclick={override}>
+          <button
+            type="button"
+            aria-label={t("inspector.override")}
+            disabled={below === undefined}
+            onclick={override}
+          >
             {t("inspector.override")}
           </button>
         {/if}
-        <button type="button" disabled={onpress === undefined} onclick={() => onpress?.()}>
+        <button
+          type="button"
+          aria-label={t("inspector.press")}
+          disabled={onpress === undefined}
+          onclick={() => onpress?.()}
+        >
           {t("inspector.press")}
         </button>
-        <button type="button" disabled={view === undefined} onclick={clear}>
+        <button
+          type="button"
+          aria-label={t("inspector.clear")}
+          disabled={view === undefined}
+          onclick={clear}
+        >
           {t("inspector.clear")}
         </button>
       </div>
@@ -427,6 +442,7 @@
   <div class="buttons">
     <button
       type="button"
+      aria-label={t("editor.undo")}
       aria-keyshortcuts="Control+Z"
       disabled={history.done.length === 0}
       onclick={undo}
@@ -435,6 +451,7 @@
     </button>
     <button
       type="button"
+      aria-label={t("editor.redo")}
       aria-keyshortcuts="Control+Shift+Z"
       disabled={history.undone.length === 0}
       onclick={redo}

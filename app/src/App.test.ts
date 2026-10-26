@@ -244,14 +244,14 @@ describe("App", () => {
       await screen.findByRole("grid", { name: "Keypad mirror: profile terminal, page 1" }),
     ).toBeInTheDocument();
     // Nothing is selected yet: the inspector asks for a key.
-    expect(await screen.findByRole("heading", { name: "Key editor" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Inspector" })).toBeInTheDocument();
   });
 
   it("pins the inspector when a key is selected and keeps it when the pad moves", async () => {
     const { send } = app();
     await listed();
     await fireEvent.click(await screen.findByRole("button", { name: /^Key 4\b/ }));
-    expect(await screen.findByRole("heading", { name: "Key 4" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^Key 4: / })).toBeInTheDocument();
     await send({ event: "profile", profile: "global", page: 1, mode: "auto" });
     expect(dropdown().value).toBe("terminal");
     expect(await screen.findByText("The pad moved to global, page 1")).toBeInTheDocument();
@@ -320,7 +320,7 @@ describe("App", () => {
   it("gives every control an aria-label", async () => {
     app();
     await fireEvent.click(await screen.findByRole("button", { name: /^Key 1\b/ }));
-    await screen.findByRole("heading", { name: "Key 1" });
+    await screen.findByRole("heading", { name: /^Key 1: / });
     await screen.findByRole("tablist", { name: "Pages" });
     await fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     const controls = document.querySelectorAll("button, select, input, textarea, [role=menuitem]");
