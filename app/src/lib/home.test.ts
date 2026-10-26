@@ -3,7 +3,7 @@
 // subscription, folded the way crates/keyvo-client/src/mirror.rs folds them.
 import { describe, expect, it } from "vitest";
 
-import { apply, fromStatus, grid, HOME_TRACE, initial, summarize } from "./home";
+import { apply, fromStatus, grid, HOME_TRACE, initial, schemaError, summarize } from "./home";
 import type { Status, TraceRecord } from "./protocol";
 import { events, eventsOf, nth, responses } from "./fixtures";
 
@@ -83,6 +83,19 @@ describe("apply", () => {
     const unplugged = apply(state, { kind: "event", event: lost });
     expect(unplugged.device?.connected).toBe(false);
     expect(unplugged.geometry).toEqual(state.geometry);
+  });
+
+  it("remembers when the Keypad was last seen connected", () => {
+    const [connected, lost] = [nth(eventsOf("device"), 0), nth(eventsOf("device"), 1)];
+    expect(fromStatus(STATUS, 1000).seen).toBe(1000);
+    const missing = fromStatus(responses()[1] as Status, 1000);
+    expect(missing.seen).toBeUndefined();
+    const plugged = apply(missing, { kind: "event", event: connected }, 2000);
+    expect(plugged.seen).toBe(2000);
+    // A lost Keypad keeps the time it was last seen.
+    expect(apply(plugged, { kind: "event", event: lost }, 3000).seen).toBe(2000);
+    // Other updates while connected do not move it.
+    expect(apply(plugged, { kind: "event", event: nth(eventsOf("mode"), 0) }, 4000).seen).toBe(2000);
   });
 
   it("device and context events replace the last report", () => {
@@ -173,5 +186,29 @@ describe("summarize", () => {
     expect(summarize({ ...entry, result: { status: "teleported" } })).toBe(
       "Key 4, app layer: chord ctrl+p, teleported",
     );
+  });
+});
+
+describe("schemaError", () => {
+  it("takes file, line and column from the daemon's reload error", () => {
+    const failed = nth(eventsOf("config"), 1);
+    expect(schemaError(failed.error ?? "")).toEqual({
+      file: "profiles/global.toml",
+      line: 8,
+      column: 9,
+      message: "invalid type: integer `7`, expected a string",
+    });
+  });
+
+  it("takes a line without a column", () => {
+    expect(schemaError("config.toml:3: unknown key `x`")).toEqual({
+      file: "config.toml",
+      line: 3,
+      message: "unknown key `x`",
+    });
+  });
+
+  it("has nothing for an error without a place", () => {
+    expect(schemaError("cannot read the configuration directory")).toBeUndefined();
   });
 });

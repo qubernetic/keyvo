@@ -15,17 +15,20 @@
     HOME_TRACE,
     initial,
     phrase,
+    schemaError,
     summarize,
     type HomeState,
   } from "./lib/home";
-  import { t } from "./lib/i18n";
+  import { t, type MessageKey } from "./lib/i18n";
   import type { DeviceStatus, PressKind, TraceRecord } from "./lib/protocol";
+  import { SCREENS, type ScreenId } from "./lib/shell";
 
   let {
     daemon,
     editor,
     active = true,
     ondevice,
+    onnavigate,
   }: {
     daemon: Daemon;
     editor: Editor;
@@ -34,6 +37,8 @@
     active?: boolean;
     /** The device the daemon reports, none while it cannot be reached. */
     ondevice?: (device: DeviceStatus | undefined) => void;
+    /** Opens a screen; a status fact links to the screen that owns it. */
+    onnavigate?: (screen: ScreenId) => void;
   } = $props();
 
   let home: HomeState = $state(initial());
@@ -251,6 +256,75 @@
     return new Date(entry.timestamp_ms).toLocaleTimeString();
   }
 
+  /** One fact of the status strip, a link when its screen is built. */
+  interface Fact {
+    id: string;
+    label: MessageKey;
+    value: string;
+    link?: ScreenId;
+    linkLabel?: string;
+  }
+
+  /** `screen` when it is built, so a fact can link to it. */
+  function built(screen: ScreenId): ScreenId | undefined {
+    return SCREENS.find((entry) => entry.id === screen)?.soon === undefined ? screen : undefined;
+  }
+
+  function fact(id: string, label: MessageKey, value: string, owner: ScreenId): Fact {
+    const link = built(owner);
+    const screen = SCREENS.find((entry) => entry.id === owner);
+    return {
+      id,
+      label,
+      value,
+      ...(link === undefined || screen === undefined
+        ? {}
+        : {
+            link,
+            linkLabel: t("home.link", {
+              fact: t("home.fact", { label: t(label), value }),
+              screen: t(screen.label),
+            }),
+          }),
+    };
+  }
+
+  // Design detail: the screen that owns each fact (§3.1). Overlays come
+  // from plugins and integrations, the context's project from Projects.
+  const facts: Fact[] = $derived([
+    fact("device", "home.device", device(), "devices"),
+    fact("profile", "home.profile", home.view?.profile ?? t("home.unknown"), "profiles"),
+    fact("page", "home.page", String(home.view?.page ?? t("home.unknown")), "profiles"),
+    fact("mode", "home.mode", home.view?.mode ?? t("home.unknown"), "profiles"),
+    fact("overlay", "home.overlay", t("home.noOverlay"), "integrations"),
+    fact(
+      "context",
+      "home.context",
+      phrase([
+        t("home.unknownProject"),
+        home.context === undefined
+          ? t("home.noWindow")
+          : t("home.window", { class: home.context.class, title: home.context.title }),
+      ]),
+      "projects",
+    ),
+  ]);
+
+  const configMessage = $derived.by(() => {
+    const error = home.configError;
+    if (error === undefined) return undefined;
+    const place = schemaError(error);
+    if (place === undefined) return t("home.configError", { error });
+    return place.column === undefined
+      ? t("home.schemaErrorLine", { file: place.file, line: place.line, message: place.message })
+      : t("home.schemaError", {
+          file: place.file,
+          line: place.line,
+          column: place.column,
+          message: place.message,
+        });
+  });
+
   const target: Target | undefined = $derived(
     home.view === undefined || shown === undefined
       ? undefined
@@ -274,40 +348,51 @@
   {:else if connecting && home.view === undefined}
     <p class="banner">{t("home.connecting")}</p>
   {/if}
-  {#if home.configError !== undefined}
-    <div role="alert" class="banner error">
-      {t("home.configError", { error: home.configError })}
-    </div>
-  {/if}
-
   <section class="strip" aria-label={t("home.status")}>
     <dl>
-      <div>
-        <dt id="kv-device">{t("home.device")}</dt>
-        <dd aria-labelledby="kv-device">{device()}</dd>
-      </div>
-      <div>
-        <dt id="kv-profile">{t("home.profile")}</dt>
-        <dd aria-labelledby="kv-profile">{home.view?.profile ?? t("home.unknown")}</dd>
-      </div>
-      <div>
-        <dt id="kv-page">{t("home.page")}</dt>
-        <dd aria-labelledby="kv-page">{home.view?.page ?? t("home.unknown")}</dd>
-      </div>
-      <div>
-        <dt id="kv-mode">{t("home.mode")}</dt>
-        <dd aria-labelledby="kv-mode">{home.view?.mode ?? t("home.unknown")}</dd>
-      </div>
-      <div>
-        <dt id="kv-context">{t("home.context")}</dt>
-        <dd aria-labelledby="kv-context">
-          {home.context === undefined
-            ? t("home.noWindow")
-            : t("home.window", { class: home.context.class, title: home.context.title })}
-        </dd>
-      </div>
+      {#each facts as fact (fact.id)}
+        <div>
+          <dt id={`kv-${fact.id}`}>{t(fact.label)}</dt>
+          <dd aria-labelledby={`kv-${fact.id}`}>
+            {#if fact.link !== undefined}
+              {@const link = fact.link}
+              <button
+                type="button"
+                class="link"
+                aria-label={fact.linkLabel}
+                onclick={() => onnavigate?.(link)}
+              >
+                {fact.value}
+              </button>
+            {:else}
+              {fact.value}
+            {/if}
+          </dd>
+        </div>
+      {/each}
     </dl>
+    {#if home.configError !== undefined}
+      <p role="alert" class="error">
+        {configMessage}
+        <button
+          type="button"
+          class="link"
+          aria-label={t("home.open", { screen: t("rail.profiles") })}
+          onclick={() => onnavigate?.("profiles")}
+        >
+          {t("home.open", { screen: t("rail.profiles") })}
+        </button>
+      </p>
+    {/if}
   </section>
+
+  {#if home.device?.connected === false}
+    <p class="note">
+      {home.seen === undefined
+        ? t("home.missingNever")
+        : t("home.missing", { time: new Date(home.seen).toLocaleTimeString() })}
+    </p>
+  {/if}
 
   <div class="workspace">
     {#if home.geometry === undefined}
@@ -429,6 +514,30 @@
 
   .strip dd {
     margin: 0;
+  }
+
+  .link {
+    padding: 0 4px;
+    border-color: transparent;
+    background: var(--kv-bg);
+    color: var(--kv-accent);
+    text-decoration: underline;
+  }
+
+  .strip .error {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0 0;
+    padding: 4px 12px;
+    border-radius: var(--kv-radius);
+    background: var(--kv-bg-alt);
+    color: var(--kv-fg);
+  }
+
+  .strip .error .link {
+    background: var(--kv-bg-alt);
+    color: var(--kv-accent);
   }
 
   .workspace {

@@ -198,7 +198,7 @@ describe("Home mirror", () => {
     await daemon.send({ kind: "event", event: bad });
     await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenCalledTimes(2));
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "Configuration not loaded: profiles/global.toml:8:9",
+      "Schema error in profiles/global.toml, line 8, column 9",
     );
     await daemon.send({ kind: "event", event: good });
     await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenCalledTimes(3));
@@ -273,14 +273,58 @@ describe("Home mirror", () => {
 });
 
 describe("Home status strip", () => {
-  it("shows device, profile, page, mode and context", async () => {
+  it("shows device, profile, page, mode, top overlay and context", async () => {
     await mounted();
     const strip = screen.getByRole("region", { name: "Status" });
     expect(within(strip).getByLabelText("Device")).toHaveTextContent("Keypad connected, 9 keys");
     expect(within(strip).getByLabelText("Profile")).toHaveTextContent("terminal");
     expect(within(strip).getByLabelText("Page")).toHaveTextContent("1");
     expect(within(strip).getByLabelText("Mode")).toHaveTextContent("auto");
-    expect(within(strip).getByLabelText("Context")).toHaveTextContent("org.kde.konsole: ~ : bash");
+    // The daemon has no overlays and sends no project yet (§3.1, d7).
+    expect(within(strip).getByLabelText("Overlay")).toHaveTextContent("none");
+    expect(within(strip).getByLabelText("Context")).toHaveTextContent(
+      "unknown project, org.kde.konsole: ~ : bash",
+    );
+  });
+
+  it("links each fact to its screen; facts of screens not built yet are inert", async () => {
+    const onnavigate = vi.fn();
+    render(Home, { props: { daemon: fake().daemon, editor: editor(), onnavigate } });
+    const strip = await screen.findByRole("region", { name: "Status" });
+    await waitFor(() => expect(within(strip).getByLabelText("Profile")).toHaveTextContent("terminal"));
+    const links = within(strip).getAllByRole("button");
+    expect(links.map((link) => link.getAttribute("aria-label"))).toEqual([
+      "Profile terminal, open Profiles",
+      "Page 1, open Profiles",
+      "Mode auto, open Profiles",
+    ]);
+    await fireEvent.click(within(strip).getByRole("button", { name: "Page 1, open Profiles" }));
+    expect(onnavigate).toHaveBeenCalledWith("profiles");
+    for (const fact of ["Device", "Overlay", "Context"]) {
+      expect(within(within(strip).getByLabelText(fact)).queryByRole("button")).toBeNull();
+    }
+  });
+
+  it("shows a schema error with file and line until a reload succeeds", async () => {
+    const onnavigate = vi.fn();
+    const daemon = fake();
+    render(Home, { props: { daemon: daemon.daemon, editor: editor(), onnavigate } });
+    await daemon.send({ kind: "event", event: nth(eventsOf("config"), 1) });
+    const strip = screen.getByRole("region", { name: "Status" });
+    const error = within(strip).getByRole("alert");
+    expect(error).toHaveTextContent(
+      "Schema error in profiles/global.toml, line 8, column 9: invalid type: integer `7`, expected a string",
+    );
+    await fireEvent.click(within(error).getByRole("button", { name: "Open Profiles" }));
+    expect(onnavigate).toHaveBeenCalledWith("profiles");
+    await daemon.send({ kind: "event", event: nth(eventsOf("config"), 0) });
+    expect(within(strip).queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows a reload error that names no place as it is", async () => {
+    const daemon = await mounted();
+    await daemon.send({ kind: "event", event: { event: "config", reloaded: false, error: "no config dir" } });
+    expect(screen.getByRole("alert")).toHaveTextContent("Configuration not loaded: no config dir");
   });
 
   it("follows device, mode and context events", async () => {
@@ -293,7 +337,27 @@ describe("Home status strip", () => {
     const strip = screen.getByRole("region", { name: "Status" });
     expect(within(strip).getByLabelText("Device")).toHaveTextContent("No Keypad: device disconnected");
     expect(within(strip).getByLabelText("Mode")).toHaveTextContent("manual");
-    expect(within(strip).getByLabelText("Context")).toHaveTextContent("org.gnome.Ptyxis: vim");
+    expect(within(strip).getByLabelText("Context")).toHaveTextContent(
+      "unknown project, org.gnome.Ptyxis: vim",
+    );
+  });
+
+  it("says which device is missing and when it was last seen", async () => {
+    const seen = new Date(2026, 9, 26, 9, 30, 15).getTime();
+    const now = vi.spyOn(Date, "now").mockReturnValue(seen);
+    try {
+      const daemon = await mounted();
+      expect(screen.queryByText(/is missing/)).not.toBeInTheDocument();
+      now.mockReturnValue(seen + 60_000);
+      await daemon.send({ kind: "event", event: nth(eventsOf("device"), 1) });
+      expect(screen.getByText(/is missing/)).toHaveTextContent(
+        `The Keypad is missing; last seen at ${new Date(seen).toLocaleTimeString()}.`,
+      );
+      // The mirror keeps the last frame.
+      expect(key(5)).toHaveAccessibleName("Key 5: Test, exec cargo test");
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it("says when no window was reported yet", async () => {
@@ -301,11 +365,16 @@ describe("Home status strip", () => {
     render(Home, { props: { daemon: daemon.daemon, editor: editor() } });
     const strip = await screen.findByRole("region", { name: "Status" });
     await waitFor(() =>
-      expect(within(strip).getByLabelText("Context")).toHaveTextContent("no window reported"),
+      expect(within(strip).getByLabelText("Context")).toHaveTextContent(
+        "unknown project, no window reported",
+      ),
     );
     expect(within(strip).getByLabelText("Device")).toHaveTextContent(
       "No Keypad: no hidraw node for 046d:c354",
     );
+    expect(
+      screen.getByText("The Keypad is missing; not seen since the app started."),
+    ).toBeInTheDocument();
   });
 });
 

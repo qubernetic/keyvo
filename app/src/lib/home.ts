@@ -33,19 +33,24 @@ export interface HomeState {
   reloads: number;
   /** Why the subscription ended; the rest is the last frame. */
   closed?: string;
+  /** When the Keypad was last seen connected, in ms since the epoch; none
+   * while it has not been seen since the app started. */
+  seen?: number;
 }
 
 export function initial(): HomeState {
   return { held: [], trace: [], reloads: 0 };
 }
 
-export function fromStatus(status: Status): HomeState {
+/** The state of the `status` reply received at `now`. */
+export function fromStatus(status: Status, now = Date.now()): HomeState {
   return {
     ...initial(),
     view: status.view,
     device: status.device,
     geometry: status.device.geometry,
     context: status.context,
+    seen: status.device.connected ? now : undefined,
   };
 }
 
@@ -68,8 +73,9 @@ export function grid(geometry: Geometry): number[][] {
   return rows.map((row) => row.keys.sort((a, b) => a.rect.x - b.rect.x).map((entry) => entry.key));
 }
 
-/** `state` after `update`; `state` itself stays as it was. */
-export function apply(state: HomeState, update: Update): HomeState {
+/** `state` after `update`, received at `now`; `state` itself stays as it
+ * was. */
+export function apply(state: HomeState, update: Update, now = Date.now()): HomeState {
   switch (update.kind) {
     case "subscribed":
       return { ...state, view: update.view, closed: undefined };
@@ -94,7 +100,12 @@ export function apply(state: HomeState, update: Update): HomeState {
       return { ...state, view: { profile: event.profile, page: event.page, mode: event.mode } };
     case "device": {
       const { event: _, ...device } = event;
-      return { ...state, device, geometry: device.geometry ?? state.geometry };
+      return {
+        ...state,
+        device,
+        geometry: device.geometry ?? state.geometry,
+        seen: device.connected ? now : state.seen,
+      };
     }
     case "context": {
       const { event: _, ...context } = event;
@@ -109,6 +120,29 @@ export function apply(state: HomeState, update: Update): HomeState {
         reloads: state.reloads + 1,
       };
   }
+}
+
+/** Where a configuration file fails to load (docs/design/gui-ux.md §5.2). */
+export interface SchemaError {
+  /** Relative to the configuration directory. */
+  file: string;
+  line: number;
+  column?: number;
+  message: string;
+}
+
+/** The place in a reload error (`<file>:<line>[:<column>]: <message>`, as
+ * the daemon writes a diagnostic); none when it names no place. */
+export function schemaError(error: string): SchemaError | undefined {
+  const match = /^([^:\n]+):(\d+)(?::(\d+))?: (.*)$/s.exec(error);
+  if (match === null) return undefined;
+  const [, file = "", line = "", column, message = ""] = match;
+  return {
+    file,
+    line: Number(line),
+    ...(column === undefined ? {} : { column: Number(column) }),
+    message,
+  };
 }
 
 /** What `action` does, in a few words; none for an unbound key. */

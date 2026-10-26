@@ -96,6 +96,17 @@ describe("App", () => {
     expect(screen.getByRole("grid")).toBeInTheDocument();
   });
 
+  it("opens Profiles from the profile in Home's status strip", async () => {
+    app();
+    await fireEvent.click(
+      await screen.findByRole("button", { name: "Profile terminal, open Profiles" }),
+    );
+    expect(screen.getByRole("button", { name: "Profiles" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
   it("keeps Home's undo to Home", async () => {
     app();
     await screen.findByRole("grid");
