@@ -61,9 +61,21 @@ Kowalski skill is for a later motion pass), the Dialpad.
 | 1 ([#104](https://github.com/qubernetic/keyvo/issues/104)) | `fix(client): tolerate pid 0 in the socket peer check` | sandbox, `bug` | agents | |
 | 2 ([#105](https://github.com/qubernetic/keyvo/issues/105)) | `feat(app): mock daemon and themes for the Vite dev server` | sandbox, `enhancement` | agents | |
 | 3 ([#106](https://github.com/qubernetic/keyvo/issues/106)) | `docs(design): PRODUCT.md, DESIGN.md and the first critique` | `documentation` | owner's session | 2 |
-| 4 ([#107](https://github.com/qubernetic/keyvo/issues/107)) | `feat(app): three profiles screen variants behind ?variant=` | `enhancement`, User test by eye | owner's session | 3 |
-| 5 ([#108](https://github.com/qubernetic/keyvo/issues/108)) | `feat(app): rebuild the profiles screen after the chosen variant` | `enhancement`, User test in the GNOME runtime | owner's session | 4 |
-| 6 ([#109](https://github.com/qubernetic/keyvo/issues/109)) | `feat(app): home screen after the profiles language` | `enhancement`, User test in the GNOME runtime | owner's session | 5 |
+| 4 ([#107](https://github.com/qubernetic/keyvo/issues/107)) | `docs(design): pad screen brief and the spec on the stream deck idiom` | `documentation` | owner's session | 3 |
+| 4b ([#117](https://github.com/qubernetic/keyvo/issues/117)) | `feat(daemon): hold the context while a held window class has focus` | sandbox, `enhancement` | agents | |
+| 4c ([#118](https://github.com/qubernetic/keyvo/issues/118)) | `feat(app): the keypad drawing as a component` | sandbox, `enhancement`, the owner's SVG | agents | 4 |
+| 5 ([#108](https://github.com/qubernetic/keyvo/issues/108)) | `feat(app): the pad screen on the stream deck idiom` | `enhancement`, User test in the GNOME runtime | owner's session | 4, 4c |
+| 5b ([#119](https://github.com/qubernetic/keyvo/issues/119)) | `feat(app): the actions catalogue v1 with general, system and apps` | sandbox, `enhancement` | agents | 5 |
+| 6 ([#109](https://github.com/qubernetic/keyvo/issues/109)) | `feat(app): the profiles screen as the profile manager` | `enhancement`, User test in the GNOME runtime | owner's session | 5 |
+
+Amended on 2026-10-26 after the first slice 4: the three Profiles variants
+(draft PR #116, branch `feature/107-profiles-variants`, kept as the
+primary source, never merged) were rejected by the owner as chaotic, and
+the owner ruled that the Stream Deck desktop app's layout is the analogy
+to adapt. The prior-art study
+`docs/research/2026-10-26-keypad-app-layouts.md` and the brief
+`docs/plans/2026-10-26-pad-screen-brief.md` (eleven grill decisions)
+replace the variant choice; slices 4 to 6 below are the amended ones.
 
 ### Slice 1: pid 0 in the peer check
 
@@ -138,39 +150,68 @@ for slices 4 to 6. The pre-alpha definition of done line in
 `docs/roadmap.md` and `docs/pre-alpha-test.md` section 6 gain the critique
 item. Acceptance: the owner approves the priorities in the PR.
 
-### Slice 4: three Profiles variants
+### Slice 4: the brief and the spec (#107)
 
-The prototype skill's sub-shape A: `Profiles.svelte` renders `VariantA`,
-`VariantB`, `VariantC` on the existing screen behind `?variant=`, with the
-floating switcher, in the real shell with the mock. Variants are
-structurally different (information hierarchy, where the key editor lives,
-how the preview scales). The owner picks in the browser; the decision and
-its reasons go into `docs/design/gui-ux.md` §3 (Profiles). User test: the
-owner's choice, recorded in the PR.
+The prior-art study committed; the shape brief
+`docs/plans/2026-10-26-pad-screen-brief.md` with the eleven decisions of
+the grill; `docs/design/gui-ux.md` §2 and §3.1 to §3.2 rewritten to the
+idiom (rail of three, Preferences, the Pad with the device drawing, the
+pinned inspector, the catalogue and the trace strip; Profiles as the
+manager); this plan amended. Draft PR #116 closed, its branch kept. User
+test: the owner approves the brief in the PR.
 
-### Slice 5: Profiles after the chosen variant
+### Slice 4b: the context hold (#117)
 
-The chosen variant becomes the screen, the others and the switcher are
-deleted. The preview scales to its column (CSS transform of the 480x480
-panel or tiles sized from the column width, never clipped, device
-proportions kept); the scroll bars of every scrolling column get a reserved
-gutter and the theme's thin style; the key editor's place follows the
-variant. `/impeccable polish` and `/impeccable harden` at the end. Proof:
-`just app-test` green with updated component tests. User test in the GNOME
-runtime at 1363x798 and at the smallest width the shell supports: no
-clipped preview, no control under a scroll bar, light and dark.
+Daemon-side: `[focus].hold_classes = ["keyvo-app"]`; a held window never
+changes the context; `context` events and `status` carry `held`. Agents;
+sandbox-complete with the owner's hardware test in the issue.
 
-### Slice 6: Home after the Profiles language
+### Slice 4c: the Keypad drawing (#118)
 
-The same round for Home (status strip, mirror, key editor, trace drawer),
-keeping the two screens consistent. Same proof and User test shape.
+The owner's stylised SVG of the Keypad as a Svelte component: coloured
+from `--kv-device` (§7 token with its default), the key cutouts and the
+page buttons as named groups, the mirror tiles positioned by the geometry
+rects inside the drawing, scaled with it, never above 1:1; a fallback to
+the plain panel when the cutout count and the geometry differ. Agents,
+once the owner delivers the SVG (origin and licence recorded in
+`crates/keyvo-core/assets/README.md` or the app's assets README).
+
+### Slice 5: the Pad screen (#108)
+
+Home becomes the Pad of the brief §5.2: the shell changes (rail of three,
+the gear and Preferences with the Coming soon tabs, the profile dropdown
+and the sandbox pair in the header), the drawing with the live mirror,
+named page tabs and the accent swatch, the pinned inspector with the "pad
+moved" line, the inspector with Press, Clear, the tile row, the Action
+select and the kind's fields, the catalogue column with its groups and
+the raw tools and drag and drop onto tiles, the trace strip. Closes the
+critique's P0, the Pad half of the P1 items, the duplicated facts and the
+side stripes on this screen. `/impeccable polish` and `harden` at the end.
+Proof: `just app-test` green with the component tests rewritten. User
+test in the GNOME runtime at 1363x798 and at 960 px, light and dark.
+
+### Slice 5b: the catalogue v1 (#119)
+
+The presets of the three groups as recipe packs under `contrib/recipes/`
+(General, System, Apps with their "What it does" variants), loaded by the
+catalogue, the inspector's "What it does" select; the recipe format of
+§4.3 as built. Agents, after #108.
+
+### Slice 6: the Profiles screen (#109)
+
+Profiles becomes the manager of the brief §5.3: list with the accent
+square and "on the pad", header form at 48ch, match rules as a list, page
+thumbnails, "Edit keys on the Pad". The key grid and the key editor leave
+the screen. Closes the critique's Profiles items. Same proof and User test
+shape as slice 5. The critique re-run after this slice closes the pass.
 
 ## 5. Acceptance criteria
 
 - [ ] The Flatpak-sandboxed app reaches the host daemon (slice 1 User test).
 - [ ] `just app-dev` serves the app with mock data and four themes (slice 2 User test).
 - [ ] `docs/PRODUCT.md`, `docs/DESIGN.md`, `docs/design/critique-2026-10.md` exist and the owner approved the priorities.
-- [ ] Profiles and Home rebuilt, the two findings of 2026-10-26 closed, no token outside §7.
+- [ ] The Pad and Profiles screens built on the brief, the two findings of 2026-10-26 closed, no token outside §7.
+- [ ] The critique re-run after slice 6 scores above 23/40 with no P0 or P1 left.
 - [ ] No prototype code, no `.impeccable/` content, no injected script tag in the repository.
 - [ ] No em-dash, no emoji in the changed files.
 
