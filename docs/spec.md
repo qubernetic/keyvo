@@ -1314,8 +1314,8 @@ As built (pre-alpha, `keyvo_core::socket` and `keyvo_daemon::socket`):
   send nothing before three checks pass: the user's uid is mapped in
   the client's user namespace (a client running as the overflow uid is
   refused), the socket's directory is private to the user (a `0755`
-  directory is refused) and the listening process runs as the user (`SO_PEERCRED`, uid only; a sandboxed client sees the
-  daemon as pid 0).
+  directory is refused) and the listening process runs as the user
+  (`SO_PEERCRED`, uid only; a sandboxed client sees the daemon as pid 0).
 - `keyvo ctl <command> [json]` prints the response line and exits 1 on an
   error. `keyvo ctl subscribe` prints every later line. The socket is
   `--socket`, else `$KEYVO_SOCKET`, else the default.
