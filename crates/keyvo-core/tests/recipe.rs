@@ -219,6 +219,34 @@ fn a_user_pack_over_the_size_cap_is_not_read() {
 }
 
 #[test]
+fn a_user_pack_that_is_not_utf8_is_a_problem() {
+    let dir = config_dir(&[]);
+    std::fs::write(
+        dir.path().join("recipes/latin1.toml"),
+        b"name = \"caf\xe9\"\n",
+    )
+    .unwrap();
+    let catalogue = recipe::catalogue(dir.path());
+    let [problem] = catalogue.problems.as_slice() else {
+        panic!("{:?}", catalogue.problems);
+    };
+    assert!(problem.message.contains("UTF-8"), "{problem}");
+    assert_eq!(catalogue.recipes, recipe::bundled().recipes);
+}
+
+#[test]
+fn a_recipes_path_that_is_no_directory_is_one_problem() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join(recipe::RECIPES), "").unwrap();
+    let catalogue = recipe::catalogue(dir.path());
+    let [problem] = catalogue.problems.as_slice() else {
+        panic!("{:?}", catalogue.problems);
+    };
+    assert!(problem.path.ends_with(recipe::RECIPES), "{problem}");
+    assert_eq!(catalogue.recipes, recipe::bundled().recipes);
+}
+
+#[test]
 fn user_packs_past_the_count_cap_are_left_out_with_one_problem() {
     let text = screenshot();
     let names: Vec<String> = (0..=recipe::USER_PACKS)
