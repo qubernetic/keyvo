@@ -1,0 +1,155 @@
+{
+  "$defs": {
+    "Action": {
+      "description": "What a key press does (pre-alpha: `chord` and `exec`).",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Send a key combination, for example `ctrl+shift+g`.",
+          "properties": {
+            "keys": {
+              "$ref": "#/$defs/Chord",
+              "description": "The chord."
+            },
+            "type": {
+              "const": "chord",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "keys"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Run a command without blocking, with `KEYVO_*` in its environment.",
+          "properties": {
+            "cmd": {
+              "description": "The command line.",
+              "type": "string"
+            },
+            "type": {
+              "const": "exec",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "cmd"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Chord": {
+      "description": "Modifiers and a key joined with `+`, steps separated by `,`: `ctrl+shift+g`, `ctrl+?`, `KEY_F13`, `ctrl+k, ctrl+s`.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "Group": {
+      "description": "The catalogue group of a recipe, in catalogue order.",
+      "oneOf": [
+        {
+          "const": "general",
+          "description": "Everyday actions: open a folder, a website, a new email.",
+          "type": "string"
+        },
+        {
+          "const": "system",
+          "description": "The desktop's controls: lock, volume, brightness, settings.",
+          "type": "string"
+        },
+        {
+          "const": "apps",
+          "description": "One entry per application.",
+          "type": "string"
+        }
+      ]
+    },
+    "RecipeInfo": {
+      "additionalProperties": false,
+      "description": "The `[recipe]` table.",
+      "properties": {
+        "group": {
+          "$ref": "#/$defs/Group",
+          "description": "The catalogue group."
+        },
+        "icon": {
+          "description": "Icon reference written into the key, for example `lucide:camera`.",
+          "type": "string"
+        },
+        "label": {
+          "description": "Label written into the key.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The entry's name in the catalogue.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group",
+        "name",
+        "icon",
+        "label"
+      ],
+      "type": "object"
+    },
+    "Variant": {
+      "additionalProperties": false,
+      "description": "One `[[variants]]` entry.",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/Action",
+          "description": "The action written into the key."
+        },
+        "id": {
+          "description": "Unique within the pack: lowercase letters, digits, `.`, `_` and `-`.",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "type": "string"
+        },
+        "name": {
+          "description": "The choice's name.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "action"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A whole recipe pack file.",
+  "properties": {
+    "recipe": {
+      "$ref": "#/$defs/RecipeInfo",
+      "description": "The catalogue entry."
+    },
+    "schema_version": {
+      "const": 1,
+      "description": "Version of the pack format; this build reads `1`.",
+      "type": "integer"
+    },
+    "variants": {
+      "description": "What it does; the first is the default.",
+      "items": {
+        "$ref": "#/$defs/Variant"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "recipe",
+    "variants"
+  ],
+  "title": "keyvo recipe pack",
+  "type": "object"
+}

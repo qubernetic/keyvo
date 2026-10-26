@@ -22,7 +22,13 @@ pub fn config() -> String {
     render::<Config>()
 }
 
-fn render<T: JsonSchema>() -> String {
+/// The schema of `recipes/<id>.toml`, pretty JSON with a final newline.
+#[must_use]
+pub fn recipe() -> String {
+    crate::recipe::render_schema()
+}
+
+pub(crate) fn render<T: JsonSchema>() -> String {
     let generator = SchemaSettings::draft2020_12()
         .with_transform(RecursiveTransform(drop_null))
         .into_generator();

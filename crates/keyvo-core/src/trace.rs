@@ -60,13 +60,21 @@ const ACTION_FIELDS: [&str; 3] = ["type", "keys", "cmd"];
 fn known_action_fields<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<Action>, D::Error> {
-    let Some(mut fields) = Option::<Map<String, Value>>::deserialize(deserializer)? else {
+    let Some(fields) = Option::<Map<String, Value>>::deserialize(deserializer)? else {
         return Ok(None);
     };
+    known(fields).map(Some).map_err(de::Error::custom)
+}
+
+/// Reads an action of a socket message the same way: unknown fields are
+/// dropped, so a v1 client reads the actions of a later daemon.
+pub(crate) fn known_action<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Action, D::Error> {
+    known(Map::deserialize(deserializer)?).map_err(de::Error::custom)
+}
+
+fn known(mut fields: Map<String, Value>) -> Result<Action, serde_json::Error> {
     fields.retain(|name, _| ACTION_FIELDS.contains(&name.as_str()));
     Action::deserialize(Value::Object(fields))
-        .map(Some)
-        .map_err(de::Error::custom)
 }
 
 impl TraceRecord {
