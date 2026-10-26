@@ -5,7 +5,7 @@
   // a click is a short dry-run press, a right click a long one. Beside the
   // mirror, the key editor for the selected key.
   import KeyEditor from "./KeyEditor.svelte";
-  import type { Daemon, Tile } from "./lib/daemon";
+  import type { Daemon, Outline, Tile } from "./lib/daemon";
   import type { Editor, Target } from "./lib/editor";
   import {
     apply,
@@ -104,16 +104,52 @@
   /** Writes of the key editor, so the tiles follow them without a daemon. */
   let edits = $state(0);
 
-  // The tiles of the page the pad shows, again after every reload and edit.
+  /** The page the user picked in the page selector; the pad's next view
+   * drops it. */
+  let picked: number | undefined = $state();
+  $effect(() => {
+    void home.view;
+    picked = undefined;
+  });
+  /** The page the mirror shows: the picked one, else the pad's. */
+  const shown = $derived(picked ?? home.view?.page);
+
+  // The page count and accent of the pad's profile, again after a reload.
+  let outline: Outline | undefined = $state();
+  let outlined = 0;
+  $effect(() => {
+    const profile = home.view?.profile;
+    void home.reloads;
+    if (profile === undefined) return;
+    const mine = ++outlined;
+    daemon.outline(profile).then(
+      (got) => {
+        if (mine === outlined) outline = got;
+      },
+      () => {
+        if (mine === outlined) outline = undefined;
+      },
+    );
+  });
+  /** The pages the selector offers; at least up to the pad's page. */
+  const pages = $derived(
+    Array.from(
+      { length: Math.max(outline?.pages ?? 0, home.view?.page ?? 0) },
+      (_, index) => index + 1,
+    ),
+  );
+
+  // The tiles of the page the mirror shows, again after every reload and edit.
   let fetched = 0;
   $effect(() => {
-    const view = home.view;
+    const profile = home.view?.profile;
+    const page = shown;
     const geometry = home.geometry;
     void home.reloads;
     void edits;
-    if (view === undefined || geometry === undefined) return;
+    if (profile === undefined || page === undefined || geometry === undefined) return;
     const mine = ++fetched;
-    daemon.tiles(view.profile, view.page, geometry.rects.length, geometry.tile).then(
+    daemon.tiles(profile, page, geometry.rects.length, geometry.tile).then(
       (got) => {
         if (mine !== fetched) return;
         tiles = got;
@@ -144,6 +180,12 @@
 
   async function press(key: number, kind: PressKind) {
     selected = key;
+    const pad = home.view?.page;
+    if (pad !== undefined && shown !== pad) {
+      // The daemon resolves a press on the page the pad shows.
+      result = t("home.otherPage", { page: pad });
+      return;
+    }
     try {
       const entry: TraceRecord = await daemon.press(key, kind);
       result = summarize(entry);
@@ -210,14 +252,14 @@
   }
 
   const target: Target | undefined = $derived(
-    home.view === undefined
+    home.view === undefined || shown === undefined
       ? undefined
-      : { profile: home.view.profile, page: home.view.page, key: selected },
+      : { profile: home.view.profile, page: shown, key: selected },
   );
   const gridName = $derived(
-    home.view === undefined
+    home.view === undefined || shown === undefined
       ? t("home.mirror")
-      : t("home.mirrorView", { profile: home.view.profile, page: home.view.page }),
+      : t("home.mirrorView", { profile: home.view.profile, page: shown }),
   );
 </script>
 
@@ -273,6 +315,29 @@
         <p class="note">{t("home.noGeometry")}</p>
       {/if}
     {:else}
+    <div class="mirror">
+    <div class="pages">
+      <label>
+        {t("home.pageShown")}
+        <select
+          aria-label={t("home.pageShown")}
+          value={String(shown)}
+          onchange={(event) => (picked = Number(event.currentTarget.value))}
+        >
+          {#each pages as page (page)}
+            <option value={String(page)}>{t("home.pageOption", { page })}</option>
+          {/each}
+        </select>
+      </label>
+      {#if outline?.accent !== undefined && home.view !== undefined}
+        <div
+          role="img"
+          class="accent"
+          aria-label={t("home.accent", { profile: home.view.profile })}
+          style:background-color={outline.accent}
+        ></div>
+      {/if}
+    </div>
     <div role="grid" tabindex="-1" aria-label={gridName} class="grid" onkeydown={keydown}>
       {#each rows as row, index (index)}
         <div role="row" class="row">
@@ -303,6 +368,7 @@
           {/each}
         </div>
       {/each}
+    </div>
     </div>
     {/if}
     <KeyEditor {editor} {target} {active} revision={home.reloads} onedited={() => edits++} />
@@ -370,6 +436,31 @@
     flex-wrap: wrap;
     gap: 24px;
     align-items: flex-start;
+  }
+
+  .mirror {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .pages {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .pages label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .accent {
+    flex: 1;
+    min-width: 48px;
+    height: 6px;
+    border-radius: var(--kv-radius);
   }
 
   .grid {

@@ -46,6 +46,9 @@ function fake(overrides: Partial<Daemon> = {}) {
     tiles: vi.fn((profile: string, page: number, keys: number, _tile: Size) =>
       Promise.resolve(tiles(profile, page, keys)),
     ),
+    outline: vi.fn((profile: string) =>
+      Promise.resolve(profile === "terminal" ? { pages: 3, accent: "#2ecc71" } : { pages: 2 }),
+    ),
     press: vi.fn((key: number, kind: PressKind) =>
       Promise.resolve({ ...DRY_RUN, key, trigger: { press: kind, simulated: true } }),
     ),
@@ -138,6 +141,54 @@ describe("Home mirror", () => {
     expect(
       screen.getByRole("grid", { name: "Keypad mirror: profile global, page 2" }),
     ).toBeInTheDocument();
+  });
+
+  it("offers the profile's pages and shows its accent bar", async () => {
+    const daemon = await mounted();
+    const pages = screen.getByRole("combobox", { name: "Page shown" });
+    expect(within(pages).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Page 1",
+      "Page 2",
+      "Page 3",
+    ]);
+    expect(pages).toHaveValue("1");
+    expect(daemon.daemon.outline).toHaveBeenCalledWith("terminal");
+    expect(screen.getByRole("img", { name: "Accent of profile terminal" })).toHaveStyle({
+      backgroundColor: "#2ecc71",
+    });
+    // The global profile has no accent: no bar.
+    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
+    await waitFor(() => expect(within(pages).getAllByRole("option")).toHaveLength(2));
+    expect(screen.queryByRole("img", { name: /^Accent/ })).not.toBeInTheDocument();
+  });
+
+  it("shows the page the selector picks until the pad changes its view", async () => {
+    const keys = editor();
+    const daemon = await mounted(fake(), keys);
+    await fireEvent.change(screen.getByRole("combobox", { name: "Page shown" }), {
+      target: { value: "3" },
+    });
+    await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenLastCalledWith("terminal", 3, 9, TILE));
+    expect(
+      screen.getByRole("grid", { name: "Keypad mirror: profile terminal, page 3" }),
+    ).toBeInTheDocument();
+    // The strip keeps saying what the pad shows; the editor edits the shown page.
+    const strip = screen.getByRole("region", { name: "Status" });
+    expect(within(strip).getByLabelText("Page")).toHaveTextContent("1");
+    await waitFor(() => expect(keys.key).toHaveBeenLastCalledWith({ profile: "terminal", page: 3, key: 1 }));
+    // A press simulates the pad's page, so a key of another page only selects.
+    await fireEvent.click(key(2));
+    expect(daemon.daemon.press).not.toHaveBeenCalled();
+    expect(screen.getByRole("status", { name: "Press result" })).toHaveTextContent(
+      "The pad shows page 1; presses simulate that page.",
+    );
+    expect(key(2)).toHaveAttribute("tabindex", "0");
+    // The pad's next view brings the selector back to it.
+    await daemon.send({ kind: "event", event: nth(eventsOf("profile"), 0) });
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Page shown" })).toHaveValue("1"),
+    );
+    await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenLastCalledWith("terminal", 1, 9, TILE));
   });
 
   it("fetches the tiles again after a reload and shows a failed one", async () => {

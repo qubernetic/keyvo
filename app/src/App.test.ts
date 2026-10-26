@@ -23,6 +23,7 @@ function props(status: () => Promise<Status>): { daemon: Daemon; editor: Editor 
     daemon: {
       status,
       tiles: () => Promise.resolve([]),
+      outline: () => Promise.resolve({ pages: 1 }),
       press: () => Promise.reject(new Error("not in this test")),
       subscribe: () => Promise.resolve(() => {}),
     },
