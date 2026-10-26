@@ -101,7 +101,10 @@ fn every_fixture_event_lands_in_the_mirror() {
     let device = mirror.device().unwrap();
     assert!(!device.connected);
     assert_eq!(device.error.as_deref(), Some("device disconnected"));
-    assert_eq!(mirror.context().unwrap().class, "org.gnome.Ptyxis");
+    // The last context is the keyvo app's, holding the window before it.
+    let context = mirror.context().unwrap();
+    assert_eq!((context.class.as_str(), context.held), ("keyvo-app", true));
+    assert_eq!(mirror.holding().unwrap().class, "org.gnome.Ptyxis");
     let trace_events = events
         .iter()
         .filter(|e| matches!(e, Event::Trace { .. }))
@@ -114,6 +117,41 @@ fn every_fixture_event_lands_in_the_mirror() {
             .unwrap()
             .starts_with("profiles/global.toml:8:9")
     );
+}
+
+#[test]
+fn a_held_context_holds_the_window_reported_before_it() {
+    let mut mirror = Mirror::new(10);
+    let events = events();
+    let context = |class: &str| {
+        events
+            .iter()
+            .find(|e| matches!(e, Event::Context(c) if c.class == class))
+            .unwrap()
+    };
+    let app = context("keyvo-app");
+    // Nothing reported before the keyvo app: it holds no known window.
+    assert!(mirror.apply(app));
+    assert_eq!(mirror.holding(), None);
+    assert!(mirror.apply(context("org.kde.konsole")));
+    assert_eq!(mirror.holding(), None);
+    assert!(mirror.apply(app));
+    assert_eq!(mirror.holding().unwrap().class, "org.kde.konsole");
+    // A status during the hold keeps the window held over.
+    mirror.answer(&reply(0));
+    assert_eq!(mirror.holding(), None, "the status context is not held");
+    assert!(mirror.apply(app));
+    let Reply::Status(mut status) = reply(0) else {
+        panic!("not a status")
+    };
+    status.context = Some(match app {
+        Event::Context(c) => c.clone(),
+        _ => unreachable!(),
+    });
+    mirror.answer(&Reply::Status(status));
+    assert_eq!(mirror.holding().unwrap().class, "org.kde.konsole");
+    assert!(mirror.apply(context("org.gnome.Ptyxis")));
+    assert_eq!(mirror.holding(), None);
 }
 
 #[test]

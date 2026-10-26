@@ -83,6 +83,9 @@ export interface Context {
   title: string;
   pid?: number;
   source: "watcher" | "notify_context";
+  /** The class is in `[focus].hold_classes`: the context and the view stay
+   * those of the window before. Absent when false. */
+  held?: boolean;
 }
 
 export interface Status {

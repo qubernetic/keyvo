@@ -23,6 +23,9 @@ export interface HomeState {
    * as the daemon keeps painting for it. */
   geometry?: Geometry;
   context?: Context;
+  /** While `context` is held, the window reported before it, whose context
+   * stays; none when this state saw no such report. */
+  holding?: Context;
   /** The keys held down on the device, in key order. */
   held: number[];
   /** The newest trace entries, newest first. */
@@ -127,7 +130,10 @@ export function apply(state: HomeState, update: Update, now = Date.now()): HomeS
     }
     case "context": {
       const { event: _, ...context } = event;
-      return { ...state, context };
+      const before = state.context;
+      const holding =
+        context.held !== true ? undefined : before !== undefined && before.held !== true ? before : state.holding;
+      return { ...state, context, holding };
     }
     case "trace":
       return { ...state, trace: [event.entry, ...state.trace].slice(0, HOME_TRACE) };
