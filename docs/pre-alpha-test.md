@@ -647,6 +647,15 @@ Both items run by the owner on 88bb0b1 (2026-10-26).
 - [x] #104 Daemon on the host (`bin/keyvo-daemon`): `bin/keyvo ctl status` inside `flatpak run --filesystem=host --filesystem=xdg-run/keyvo --command=sh org.gnome.Platform//51` prints the status reply against the host daemon, not `socket: Unknown error -1000`.
 - [x] #104 Daemon on the host, app started with the GNOME runtime wrapper (`~/keyvo-prealpha-2026-10-25/keyvo-app-flatpak.sh`): Home shows the device connected, the mirror and the key editor.
 
+### Mock dev server and themes (#113)
+
+No Keypad and no daemon needed; a host browser.
+
+- [ ] #113 `just app-dev`, open `http://localhost:1420`: Home shows the mirror with tiles and a trace entry arrives every two seconds; the profile switches every ten seconds (Konsole, VS Code, Global).
+- [ ] #113 `?theme=breeze-light` renders light, `?theme=adwaita-dark` dark with the GNOME accent.
+- [ ] #113 Profiles lists the three profiles; editing the Global accent changes the preview; a reload resets it.
+- [ ] #113 `?mock-error=unreachable` shows the Home error state.
+
 ### First-light records (#75)
 
 - [ ] #75 Read `docs/hardware-notes.md`, "Measurements", against the first-light report on #40 and its logs: every number and log citation matches.

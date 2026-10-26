@@ -1763,6 +1763,20 @@ and every write of the screen.
   the mirror is a note and the layer origin says it is known once a Keypad
   reported its geometry.
 
+**As built (mock dev server).** `just app-dev` (a host recipe) serves the
+app on the Vite dev server at `http://localhost:1420` with
+`VITE_KEYVO_MOCK=1`, for a host browser: `app/src/main.ts` then mounts
+the app with the in-memory clients of `app/src/lib/mock/` instead of the
+Tauri shell's. The mock reads its data in place: the connected `status`
+reply and the `trace` events of `tests/protocol-fixtures/socket/`, the
+three profiles of `contrib/profiles/` (edits stay in memory until a
+reload), and the PNG snapshots of `crates/keyvo-core/tests/snapshots/` as
+tiles. Its focus cycles Konsole, VS Code and a window no profile matches
+every ten seconds, and its subscription sends a fixture trace entry every
+two seconds. `?theme=` picks one of the four measured token sets of
+`docs/design/gui-ux.md` §7, `?mock-error=unreachable` makes `status`
+fail. A build without the variable contains no mock module.
+
 ---
 
 ## 11. Windows plugin (`plugins/logi/`, M5)
@@ -1939,6 +1953,11 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha GUI design pass slice 2 (2026-10-26)**: §10 the mock
+  dev server as built: `just app-dev` serves the app against an in-memory
+  mock of the daemon fed by the socket fixtures, the example profiles and
+  the renderer snapshots, with four token sets measured from Breeze and
+  libadwaita (`docs/design/gui-ux.md` §7) (#105).
 - **v0.3, pre-alpha GUI design pass slice 1 (2026-10-26)**: §8 the
   client's peer check reads the raw `ucred` and decides on the uid alone,
   so a client in a Flatpak sandbox, which sees the daemon as pid 0,
