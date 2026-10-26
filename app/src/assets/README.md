@@ -22,6 +22,8 @@ be inlined on one page, two stray paths and three empty groups removed,
 the two page buttons made the same size, and every colour as a CSS custom
 property with the original value as the fallback (`--kv-device-light`,
 `-shade`, `-button`, `-metal`, `-well`, `-rim`, `-edge`, `-glyph`; the LED
-is `--kv-state-success`). The component of #118 derives these from the
-`--kv-device` token of `docs/design/gui-ux.md` section 7 and puts the
-mirror tiles into the `key-N` cutouts.
+is `--kv-state-success`). `src/Device.svelte` (#118) derives these from
+the `--kv-device` token of `docs/design/gui-ux.md` section 7 with
+`color-mix` (`src/lib/device.ts`), puts the mirror tiles into the `key-N`
+cutouts, and inlines the drawing with every id and `url(#...)` reference
+prefixed per instance, so it can appear on a page any number of times.

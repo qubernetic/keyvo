@@ -1,6 +1,7 @@
 <script lang="ts">
   // Home (docs/design/gui-ux.md §3.1): the mirror of the page the pad
-  // shows, laid out and sized by the geometry the daemon reports, the
+  // shows, laid out by the geometry the daemon reports in the cutouts of
+  // the Keypad drawing (Device.svelte), the
   // status strip, the recent trace entries, and the virtual pad:
   // a click is a short dry-run press, a right click a long one. Beside the
   // mirror, the key editor for the selected key.
