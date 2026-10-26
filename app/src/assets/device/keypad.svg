@@ -1,0 +1,38 @@
+<!-- The MX Creative Keypad, stylised. Drawn by the owner (Csaba Attila Biro, 2026-10-26, ChatGPT-assisted), licence Apache-2.0 as the repository; see README.md. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 610" class="kv-device kv-keypad">
+  <defs>
+    <linearGradient id="kp-body" x1="0" x2="0.8" y1="0" y2="1">
+      <stop style="stop-color: var(--kv-device-light, #414348)"/>
+      <stop offset="1" style="stop-color: var(--kv-device-shade, #25272b)"/>
+    </linearGradient>
+    <linearGradient id="kp-btn" x1="0" x2="0" y1="0" y2="1">
+      <stop style="stop-color: var(--kv-device-button, #42454a)"/>
+      <stop offset="1" style="stop-color: var(--kv-device-shade, #292b30)"/>
+    </linearGradient>
+  </defs>
+  <g id="body">
+    <rect x="9" y="5.6" width="494" height="599" rx="72" fill="url(#kp-body)" style="stroke: var(--kv-device-edge, #16181b)" stroke-width="8"/>
+    <rect x="16" y="12.3" width="480" height="585.2" rx="66" fill="none" style="stroke: var(--kv-device-rim, #74777c)" stroke-opacity=".25" stroke-width="2"/>
+  </g>
+  <g id="keys" style="fill: var(--kv-device-well, #17181c); stroke: var(--kv-device-rim, #676970)" stroke-width="2">
+    <rect id="key-1" x="57" y="60" width="117" height="117" rx="23"/>
+    <rect id="key-2" x="194" y="60" width="117" height="117" rx="23"/>
+    <rect id="key-3" x="331" y="60" width="117" height="117" rx="23"/>
+    <rect id="key-4" x="57" y="197" width="117" height="117" rx="23"/>
+    <rect id="key-5" x="194" y="197" width="117" height="117" rx="23"/>
+    <rect id="key-6" x="331" y="197" width="117" height="117" rx="23"/>
+    <rect id="key-7" x="57" y="334" width="117" height="117" rx="23"/>
+    <rect id="key-8" x="194" y="334" width="117" height="117" rx="23"/>
+    <rect id="key-9" x="331" y="334" width="117" height="117" rx="23"/>
+  </g>
+  <g id="page-buttons" style="stroke: var(--kv-device-edge, #16181b)" stroke-width="3">
+    <g id="page-prev">
+      <rect x="59" y="473" width="112" height="56" rx="17" fill="url(#kp-btn)"/>
+      <path d="M120 491 L110 501 L120 511" fill="none" style="stroke: var(--kv-device-glyph, #82858b)" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g id="page-next">
+      <rect x="199" y="473" width="112" height="56" rx="17" fill="url(#kp-btn)"/>
+      <path d="M250 491 L260 501 L250 511" fill="none" style="stroke: var(--kv-device-glyph, #82858b)" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>
