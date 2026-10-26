@@ -314,6 +314,76 @@ async fn every_fixture_request_gets_its_answer() {
     running.stop().await;
 }
 
+/// `recipes.ndjson`: its request, sent with the user pack of
+/// `keyvo-core`'s fixtures in `recipes/`, gets its second line: the bundled
+/// packs and the user's. After a deliberate pack change, rewrite that line
+/// with `KEYVO_BLESS=1 just test recipes` and review the diff.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_recipes_request_answers_the_bundled_and_the_user_packs() {
+    let running = Running::start().await;
+    let recipes = running.config_dir.join("recipes");
+    std::fs::create_dir(&recipes).unwrap();
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../keyvo-core/tests/fixtures/recipes/valid/screenshot.toml"),
+        recipes.join("screenshot.toml"),
+    )
+    .unwrap();
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/protocol-fixtures/socket/recipes.ndjson");
+    let fixture = std::fs::read_to_string(&path).unwrap();
+    let mut lines: Vec<&str> = fixture.lines().collect();
+
+    let mut client = running.client().await;
+    let answer = client.ask(lines[0]).await;
+    running.stop().await;
+
+    if std::env::var_os("KEYVO_BLESS").is_some() {
+        let blessed = answer.to_string();
+        lines[1] = &blessed;
+        std::fs::write(&path, format!("{}\n", lines.join("\n"))).unwrap();
+        return;
+    }
+    let expected: Value = serde_json::from_str(lines[1]).unwrap();
+    assert!(
+        answer == expected,
+        "{} is stale; run `KEYVO_BLESS=1 just test recipes` and review the diff",
+        path.display()
+    );
+    let sources: Vec<_> = answer["result"]["recipes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| (r["id"].as_str().unwrap(), r["source"].as_str().unwrap()))
+        .collect();
+    assert!(sources.contains(&("screenshot", "user")), "{sources:?}");
+    assert!(sources.contains(&("spectacle", "bundled")), "{sources:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_broken_user_pack_is_a_problem_in_the_recipes_answer() {
+    let running = Running::start().await;
+    let recipes = running.config_dir.join("recipes");
+    std::fs::create_dir(&recipes).unwrap();
+    std::fs::write(
+        recipes.join("broken.toml"),
+        "schema_version = 1\n[recipe]\n",
+    )
+    .unwrap();
+    let mut client = running.client().await;
+    let answer = client.ask(r#"{"v":1,"id":1,"cmd":"recipes"}"#).await;
+    running.stop().await;
+    let problems = answer["result"]["problems"].as_array().unwrap();
+    assert_eq!(problems.len(), 1, "{answer}");
+    assert!(
+        problems[0]
+            .as_str()
+            .unwrap()
+            .contains("recipes/broken.toml:"),
+        "{answer}"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_dry_run_press_returns_a_simulated_entry_and_runs_nothing() {
     let running = Running::start().await;

@@ -1288,6 +1288,26 @@ profile bundles (§7.3) built from recipes; they are copied into the user's
 profiles through the trust gate and never referenced. "Make this a keyvo
 action" from shell history yields a plain `exec` key.
 
+**As built (pre-alpha, catalogue v1, #119).** The actions catalogue's
+entries are recipe packs ahead of the `recipe` action type: one TOML file
+per entry, its id the file name, with `schema_version = 1`, a `[recipe]`
+table (`group` = `general`, `system` or `apps`; `name`; `icon`; `label`)
+and one or more `[[variants]]` ("What it does": `id`, `name`, and an
+`action` of the profile schema, `chord` or `exec`; the first is the
+default). keyvo bundles `contrib/recipes/` into the daemon (General: Open
+folder, Open website, New email; System: Lock the desktop, Volume up and
+down, Mute, Brightness up and down, Open a settings page; Apps: Spectacle,
+Calculator, VS Code, Konsole), commands for KDE Plasma first with the
+GNOME and X11 differences in each pack's comments, and reads the user's
+`recipes/*.toml` (a `.toml` file of at most 8 KiB, at most 64 files; a user
+pack replaces the bundled one of its id). The schema is
+`schemas/recipe.schema.json`; a bad pack is a diagnostic with file, line
+and column and is left out. Applying a recipe writes the variant's action
+and the pack's label and icon into the key as plain fields through the
+round-trip editor (the color stays); the profile never references the
+pack, and no detector or parameter resolves at press time. The socket's
+`recipes` request lists the packs (§8).
+
 ---
 
 ## 8. Scripting and control API
@@ -1347,8 +1367,10 @@ As built (pre-alpha, `keyvo_core::socket` and `keyvo_daemon::socket`):
 - The commands are `status`, `subscribe` (classes `key`, `profile`, `page`,
   `mode`, `device`, `context`, `trace`, `config`, with an optional replay
   of the newest trace entries), `press` (`key`, `kind`, `dry_run`),
-  `reload`, and `notify_context` (`class`, `title`). Any other command and
-  any unknown field is rejected as `invalid_request`.
+  `reload`, `notify_context` (`class`, `title`), and `recipes` (the bundled
+  and the user's recipe packs with their variants, `problems` naming each
+  pack left out, §7.5). Any other command and any unknown field is
+  rejected as `invalid_request`.
 - A focus report of a class in `[focus].hold_classes` (§6.1) goes out as
   a `context` event with `held: true` and is the `context` of `status`;
   the view does not change, so no `profile`, `page` or `mode` event
@@ -2025,6 +2047,12 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha slice 5 of the GUI epic (2026-10-26)**: §7.5 recipe
+  packs as built: `contrib/recipes/` v1 (General, System, Apps), the pack
+  schema `schemas/recipe.schema.json`, the user's `recipes/` with a size
+  and count cap, a user pack replacing the bundled one of its id, applying
+  a variant to a key as plain fields through the editor; §8 the `recipes`
+  socket request (#119).
 - **v0.3, pre-alpha GUI design pass follow-up (2026-10-26)**: §10 the
   shell's `key` and `edit_key` answer the line of the key's table in its
   profile file (`ProfileDocument::key_line`), for the Pad inspector's

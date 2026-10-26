@@ -72,12 +72,13 @@ keyvo/
 ├── app/                # Tauri 2 + Svelte 5 GUI (M4a); src-tauri/ outside the root workspace
 ├── integrations/       # planned: claude-code/ (plugin: hooks, commands, MCP), vscode/, tmux/, nvim/ ...
 ├── plugins/logi/       # planned: C# Logi Actions SDK plugin (M5), built in the Windows VM
-├── contrib/            # kwin/ focus script; profiles/ are the example profiles of docs/pre-alpha-test.md
-│                       #   (test: keyvo-core contrib.rs); planned: udev rule, systemd unit, Flatpak manifest
+├── contrib/            # kwin/ focus script; profiles/ are the example profiles of docs/pre-alpha-test.md;
+│                       #   recipes/ are the bundled recipe packs of the actions catalogue (test: keyvo-core
+│                       #   contrib.rs); planned: udev rule, systemd unit, Flatpak manifest
 ├── captures/           # README + derived fixtures; raw pcapng external (release assets)
 ├── tools/windows-vm/   # planned: libvirt VM scripts
 ├── tools/keycodes/     # generator of the evdev key code table in keyvo-core's chord parser
-├── schemas/            # generated JSON Schemas of profiles and config.toml; a keyvo-core test keeps them current
+├── schemas/            # generated JSON Schemas of profiles, recipe packs and config.toml; a keyvo-core test keeps them current
 ├── tests/protocol-fixtures/  # shared fixtures for Rust/TS clients: socket/ NDJSON, editor/, hid/ golden HID++ scripts
 └── docs/               # spec.md, roadmap.md, socket-api.md, adr/, design/, research/, plans/,
                         #   hardware-notes.md, pre-alpha-test.md; planned: diagrams/

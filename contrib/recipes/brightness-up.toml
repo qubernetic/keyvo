@@ -1,0 +1,22 @@
+# keyvo recipe pack: raise the screen brightness.
+# The first variant invokes KDE Plasma's PowerDevil shortcut through
+# kglobalaccel, so the brightness OSD shows. The media key variant sends the
+# keyboard's brightness key, which GNOME and X11 desktops handle too.
+# External monitors follow only where the desktop drives them over DDC/CI.
+schema_version = 1
+
+[recipe]
+group = "system"
+name  = "Brightness up"
+icon  = "lucide:sun"
+label = "Bright +"
+
+[[variants]]
+id     = "plasma"
+name   = "Plasma brightness shortcut"
+action = { type = "exec", cmd = "gdbus call --session --dest org.kde.kglobalaccel --object-path /component/org_kde_powerdevil --method org.kde.kglobalaccel.Component.invokeShortcut 'Increase Screen Brightness'" }
+
+[[variants]]
+id     = "key"
+name   = "Brightness media key"
+action = { type = "chord", keys = "brightnessup" }

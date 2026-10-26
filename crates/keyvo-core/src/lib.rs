@@ -17,6 +17,7 @@ pub mod inject;
 pub mod layout;
 pub mod press;
 pub mod profile;
+pub mod recipe;
 pub mod render;
 pub mod schema;
 pub mod socket;

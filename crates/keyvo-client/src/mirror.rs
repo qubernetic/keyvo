@@ -43,7 +43,7 @@ impl Mirror {
             }
             Reply::Subscribed(subscribed) => self.view = Some(subscribed.view.clone()),
             Reply::Pressed(pressed) => self.push_trace(pressed.entry.clone()),
-            Reply::Done {} => {}
+            Reply::Recipes(_) | Reply::Done {} => {}
         }
     }
 

@@ -7,8 +7,8 @@ integrations speak it. This page is the wire contract. The Rust types are
 [`tests/protocol-fixtures/socket/`](../tests/protocol-fixtures/socket/) are
 shared by every client.
 
-Pre-alpha subset: `status`, `subscribe`, `press` (with `dry_run`), `reload`
-and `notify_context`. The other v1 commands of spec §8 (`set_key`,
+Pre-alpha subset: `status`, `subscribe`, `press` (with `dry_run`), `reload`,
+`notify_context` and `recipes`. The other v1 commands of spec §8 (`set_key`,
 `set_badge`, `set_state`, `push_overlay`, `pop_overlay`, `switch_profile`,
 `set_mode`, `set_page`, `trace`, `project`, `setup`, `doctor`) come with
 their roadmap issues. Until then they are rejected as `invalid_request`.
@@ -181,6 +181,40 @@ rules. The result is `{}`. Pre-alpha: the report does not take precedence
 over the watcher (the last report wins), and the `cwd` and pid fields come
 with M2-5.
 
+### `recipes`
+
+No fields. The recipe packs of the GUI's actions catalogue
+(`docs/design/gui-ux.md` §4.3): the ones keyvo bundles
+(`contrib/recipes/`, built into the daemon) and the user's
+(`recipes/*.toml` in the configuration directory), read when the request
+arrives, so an edited pack shows without a `reload`. A user pack replaces
+the bundled one of the same id.
+
+```json
+{"v":1,"id":9,"cmd":"recipes"}
+{"v":1,"id":9,"ok":true,"result":{"recipes":[{"id":"spectacle","source":"bundled","group":"apps","name":"Spectacle","icon":"lucide:camera","label":"Capture","variants":[{"id":"region","name":"Region","action":{"type":"exec","cmd":"spectacle --region"}}]}]}}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `recipes` | array | By group (`general`, `system`, `apps`), then name, then id. |
+| `recipes[].id` | string | The pack's file name without `.toml`. |
+| `recipes[].source` | `bundled` or `user` | Where the pack was read from. |
+| `recipes[].group` | `general`, `system` or `apps` | The catalogue group. |
+| `recipes[].name` | string | The entry's name in the catalogue. |
+| `recipes[].icon` | string | The icon written into a key, `lucide:<name>`. |
+| `recipes[].label` | string | The label written into a key. |
+| `recipes[].variants` | array, at least one | "What it does": `id` (unique in the pack), `name`, and `action`, an action of the profile schema (`chord` or `exec`). The first is the default. |
+| `problems` | array of strings, optional | One `file:line:column: message` per user pack left out; absent when every pack loaded. |
+
+Reading a pack runs nothing. Applying a recipe to a key is a profile edit
+on the client's side (`keyvo_client::Editor::apply_recipe`): the variant's
+action and the pack's label and icon are written into the key through the
+round-trip editor, and the action runs only when the key is pressed. A
+user pack is read only when it is a `.toml` file of at most 8 KiB, and at
+most 64 user packs are read, in file name order; the rest are `problems`.
+The schema of a pack file is `schemas/recipe.schema.json`.
+
 ## Events
 
 ```json
@@ -229,6 +263,7 @@ trace|tail` come with M1-8.
 keyvo ctl status
 keyvo ctl press '{"key":5,"dry_run":true}'
 keyvo ctl notify_context '{"class":"org.kde.konsole","title":"~"}'
+keyvo ctl recipes
 keyvo ctl subscribe '{"events":["trace","profile"],"replay":10}'
 ```
 

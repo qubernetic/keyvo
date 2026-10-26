@@ -1,5 +1,6 @@
 //! The example profiles under `contrib/profiles/`, which
-//! `docs/pre-alpha-test.md` installs into `~/.config/keyvo/profiles/`.
+//! `docs/pre-alpha-test.md` installs into `~/.config/keyvo/profiles/`, and
+//! the recipe packs under `contrib/recipes/`, which keyvo bundles.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -7,6 +8,7 @@ use std::path::{Path, PathBuf};
 use keyvo_core::focus::WindowContext;
 use keyvo_core::layout::{Loaded, load};
 use keyvo_core::profile::{Action, Key, Profile};
+use keyvo_core::recipe::{self, Group, Recipe, Source};
 use keyvo_core::render::icon;
 
 /// `contrib/`, laid out like a configuration directory: `profiles/*.toml`
@@ -103,6 +105,85 @@ fn the_global_profile_has_a_context_a_general_and_a_third_page() {
         .map(|p| p.name.as_deref())
         .collect();
     assert_eq!(pages, [Some("context"), Some("general"), Some("third")]);
+}
+
+/// The recipe packs under `contrib/recipes/`, which the daemon serves as
+/// the bundled ones.
+fn packs() -> Vec<Recipe> {
+    let catalogue = recipe::load_dir(&contrib().join("recipes"), Source::Bundled);
+    assert!(catalogue.problems.is_empty(), "{:?}", catalogue.problems);
+    catalogue.recipes
+}
+
+#[test]
+fn every_recipe_pack_validates_and_is_the_bundled_one() {
+    let packs = packs();
+    let bundled = recipe::bundled();
+    assert!(bundled.problems.is_empty(), "{:?}", bundled.problems);
+    assert_eq!(bundled.recipes, packs, "recipe::BUNDLED lists every pack");
+}
+
+#[test]
+fn the_v1_catalogue_has_its_entries_in_their_groups() {
+    let names = |group: Group| -> Vec<String> {
+        packs()
+            .into_iter()
+            .filter(|r| r.group == group)
+            .map(|r| r.name)
+            .collect()
+    };
+    assert_eq!(
+        names(Group::General),
+        ["New email", "Open folder", "Open website"]
+    );
+    assert_eq!(
+        names(Group::System),
+        [
+            "Brightness down",
+            "Brightness up",
+            "Lock the desktop",
+            "Mute",
+            "Open a settings page",
+            "Volume down",
+            "Volume up"
+        ]
+    );
+    assert_eq!(
+        names(Group::Apps),
+        ["Calculator", "Konsole", "Spectacle", "VS Code"]
+    );
+}
+
+#[test]
+fn the_app_recipes_offer_what_they_do() {
+    let variants = |id: &str| -> Vec<String> {
+        let pack = packs().into_iter().find(|r| r.id == id).unwrap();
+        pack.variants.into_iter().map(|v| v.id).collect()
+    };
+    assert_eq!(variants("spectacle"), ["fullscreen", "region", "recording"]);
+    assert_eq!(variants("vscode"), ["palette", "build", "run"]);
+    assert_eq!(variants("konsole"), ["new-tab", "find"]);
+}
+
+#[test]
+fn every_recipe_has_a_bundled_icon_and_a_label() {
+    for pack in packs() {
+        assert!(
+            icon::lookup(&pack.icon).is_ok(),
+            "{}: {}",
+            pack.id,
+            pack.icon
+        );
+        assert!(!pack.label.trim().is_empty(), "{}", pack.id);
+    }
+}
+
+/// The user test of #119 presses "Volume up" and expects the success look,
+/// which only an `exec` shows.
+#[test]
+fn the_default_volume_variant_shows_feedback() {
+    let volume = packs().into_iter().find(|r| r.id == "volume-up").unwrap();
+    assert!(volume.variants[0].action.has_feedback());
 }
 
 #[test]

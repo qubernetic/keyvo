@@ -1,0 +1,25 @@
+# keyvo recipe pack: open a folder in the file manager.
+# xdg-open hands the folder to the desktop's default file manager (Dolphin
+# on KDE Plasma, Files on GNOME), on Wayland and X11 alike.
+schema_version = 1
+
+[recipe]
+group = "general"
+name  = "Open folder"
+icon  = "lucide:folder-open"
+label = "Folder"
+
+[[variants]]
+id     = "home"
+name   = "Home folder"
+action = { type = "exec", cmd = "xdg-open \"$HOME\"" }
+
+[[variants]]
+id     = "downloads"
+name   = "Downloads"
+action = { type = "exec", cmd = "xdg-open \"$(xdg-user-dir DOWNLOAD)\"" }
+
+[[variants]]
+id     = "documents"
+name   = "Documents"
+action = { type = "exec", cmd = "xdg-open \"$(xdg-user-dir DOCUMENTS)\"" }

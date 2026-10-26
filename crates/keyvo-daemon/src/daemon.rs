@@ -41,8 +41,10 @@ use keyvo_core::inject::InputInjector;
 use keyvo_core::layout::{self, Loaded, Profiles};
 use keyvo_core::press::{PressDetector, PressKind};
 use keyvo_core::profile::{Action, KeySlot};
+use keyvo_core::recipe;
 use keyvo_core::socket::{
-    Command as Wire, Context, ContextSource, DeviceStatus, Edge as KeyEdge, Geometry, Status,
+    Command as Wire, Context, ContextSource, DeviceStatus, Edge as KeyEdge, Geometry, Recipes,
+    Status,
 };
 use keyvo_core::state::{PageButton, View};
 use keyvo_core::trace::{Outcome, TraceRecord, Trigger};
@@ -125,6 +127,8 @@ pub enum Answer {
     Pressed(TraceRecord),
     /// `reload`: whether the directory loaded, else every problem.
     Reloaded(Result<(), String>),
+    /// `recipes`: the catalogue as read now.
+    Recipes(Recipes),
     /// `notify_context`: taken.
     Noted,
 }
@@ -553,6 +557,18 @@ impl<I: InputInjector> Controller<'_, I> {
         }
     }
 
+    /// The bundled recipe packs and the user's, read on every request (a
+    /// few small files) so an edited pack shows without a reload. Reading
+    /// runs nothing; a pack's command runs only from a key it was applied
+    /// to.
+    fn recipes(&self) -> Recipes {
+        let catalogue = recipe::catalogue(self.config_dir);
+        for problem in &catalogue.problems {
+            tracing::warn!("recipe pack left out: {problem}");
+        }
+        catalogue.into()
+    }
+
     fn request(&mut self, request: Request) {
         let answer = match request.command {
             Wire::Status {} => Answer::Status(Status {
@@ -581,6 +597,7 @@ impl<I: InputInjector> Controller<'_, I> {
                 },
             )),
             Wire::Reload {} => Answer::Reloaded(self.reload()),
+            Wire::Recipes {} => Answer::Recipes(self.recipes()),
             Wire::NotifyContext { class, title } => {
                 self.focus(
                     WindowContext::new(&class, &title),

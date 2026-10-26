@@ -37,6 +37,27 @@ fn schema_config_snapshot_is_current() {
 }
 
 #[test]
+fn schema_recipe_snapshot_is_current() {
+    check("recipe.schema.json", &schema::recipe());
+}
+
+#[test]
+fn schema_recipe_constrains_groups_variants_and_actions() {
+    let recipe: serde_json::Value = serde_json::from_str(&schema::recipe()).unwrap();
+    let text = recipe.to_string();
+    assert_eq!(recipe["properties"]["schema_version"]["const"], 1);
+    assert_eq!(recipe["properties"]["variants"]["minItems"], 1);
+    for group in ["general", "system", "apps"] {
+        assert!(text.contains(&format!(r#""const":"{group}""#)), "{text}");
+    }
+    assert!(text.contains(r#""const":"exec""#), "{text}");
+    assert_eq!(
+        recipe["required"],
+        serde_json::json!(["schema_version", "recipe", "variants"])
+    );
+}
+
+#[test]
 fn schema_profile_constrains_versions_keys_and_actions() {
     let profile: serde_json::Value = serde_json::from_str(&schema::profile()).unwrap();
     let text = profile.to_string();

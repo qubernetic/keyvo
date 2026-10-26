@@ -11,6 +11,7 @@ use std::time::{Duration, SystemTime};
 use keyvo_client::editor::{Editor, EditorError, Problem};
 use keyvo_core::edit::{BUILTIN_GLOBAL, EditError, KeyFields, ProfileFields};
 use keyvo_core::profile::KeySlot;
+use keyvo_core::recipe::{self, Recipe};
 use serde::Deserialize;
 
 fn fixtures() -> PathBuf {
@@ -145,6 +146,90 @@ fn the_shared_steps_write_their_files_and_undo_restores_them() {
         assert_eq!(dirs.profile(&steps.profile), fixture(&expected), "undo {n}");
     }
     assert_eq!(dirs.snapshots().len(), 2 * steps.steps.len());
+}
+
+/// `recipe.json`: a bundled recipe applied to a key of `terminal.toml`.
+#[derive(Deserialize)]
+struct RecipeFixture {
+    profile: String,
+    page: usize,
+    key: u8,
+    file: String,
+    path: PathBuf,
+    recipe: String,
+    variant: String,
+    before: KeyFields,
+    fields: KeyFields,
+    expected: String,
+    line: usize,
+}
+
+fn recipe_fixture() -> RecipeFixture {
+    serde_json::from_str(&fixture("recipe.json")).unwrap()
+}
+
+fn bundled(id: &str) -> Recipe {
+    recipe::bundled()
+        .recipes
+        .into_iter()
+        .find(|r| r.id == id)
+        .unwrap()
+}
+
+#[test]
+fn applying_the_shared_recipe_writes_its_file_and_undo_restores_it() {
+    let f = recipe_fixture();
+    let dirs = Dirs::new(&[(&f.profile, &fixture(&f.file))]);
+    let editor = dirs.editor();
+    let recipe = bundled(&f.recipe);
+
+    let edited = editor
+        .apply_recipe(&f.profile, f.page, slot(f.key), &recipe, &f.variant, at(1))
+        .unwrap();
+    assert_eq!(edited.path, dirs.config().join(&f.path));
+    assert_eq!(edited.before, f.before);
+    assert_eq!(edited.fields, f.fields);
+    assert_eq!(edited.line, Some(f.line));
+    assert_eq!(dirs.profile(&f.profile), fixture(&f.expected));
+    assert_eq!(
+        std::fs::read_to_string(edited.snapshot.unwrap()).unwrap(),
+        fixture(&f.file)
+    );
+
+    // Undo writes `before` back; the key's emptied table stays, as after
+    // any edit that clears every field.
+    editor
+        .set_key(&f.profile, f.page, slot(f.key), &edited.before, at(2))
+        .unwrap();
+    let view = editor.key(&f.profile, f.page, slot(f.key)).unwrap();
+    assert_eq!(view.fields, f.before);
+}
+
+#[test]
+fn an_unknown_variant_writes_nothing() {
+    let f = recipe_fixture();
+    let dirs = Dirs::new(&[(&f.profile, &fixture(&f.file))]);
+    let error = dirs
+        .editor()
+        .apply_recipe(
+            &f.profile,
+            f.page,
+            slot(f.key),
+            &bundled(&f.recipe),
+            "nope",
+            at(1),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(&error, EditorError::NoVariant { recipe, variant } if recipe == "spectacle" && variant == "nope"),
+        "{error:?}"
+    );
+    assert_eq!(
+        error.to_string(),
+        "recipe `spectacle` has no variant `nope`"
+    );
+    assert_eq!(dirs.profile(&f.profile), fixture(&f.file));
+    assert!(dirs.snapshots().is_empty());
 }
 
 #[test]
