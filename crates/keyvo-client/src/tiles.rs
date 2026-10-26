@@ -37,6 +37,32 @@ pub struct KeySummary {
     pub layer: Option<Layer>,
 }
 
+/// What the mirror shows around a profile's keys: how many pages its page
+/// selector offers and the colour of its accent bar.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Outline {
+    /// The profile's pages; page numbers count from 1.
+    pub pages: usize,
+    /// The profile's accent as `#rrggbb`; none when it has no accent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accent: Option<String>,
+}
+
+/// The [`Outline`] of the profile `id`.
+///
+/// # Errors
+///
+/// [`TileError::UnknownProfile`] when `profiles` has no profile `id`.
+pub fn outline(profiles: &Profiles, id: &str) -> Result<Outline, TileError> {
+    let profile = profiles
+        .get(id)
+        .ok_or_else(|| TileError::UnknownProfile(id.to_owned()))?;
+    Ok(Outline {
+        pages: profile.pages.len(),
+        accent: profile.profile.accent.map(|color| color.to_string()),
+    })
+}
+
 /// The page `view` shows over the global layer.
 fn stack<'a>(profiles: &'a Profiles, view: &View) -> Result<Stack<'a>, TileError> {
     let profile = profiles
