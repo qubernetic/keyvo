@@ -1,13 +1,16 @@
 // The actions catalogue (pad screen brief §5.2, decisions Q3 and Q8): the
-// v1 entries in the groups General, System and Apps, the search over them,
-// what a tool does to the inspector's form, and the data a drag carries to
-// a tile. The raw tools Chord and Exec work today; the presets are the
-// recipe packs of #119 and stay "Coming soon" until the catalogue reads
-// them from the daemon.
-import type { Form } from "./editor";
+// entries in the groups General, System and Apps, the search over them,
+// what an entry does to the inspector's form, and the data a drag carries
+// to a tile. The presets are the recipe packs of the daemon's `recipes`
+// reply (spec §7.5); the raw tools Chord and Exec close General. A key
+// never names its pack, so the recipe a key carries is found from its icon
+// and action.
+import type { Form, KeyFields } from "./editor";
 import { t, type MessageKey } from "./i18n";
+import type { Action, Recipe, RecipeGroup } from "./protocol";
+import { tileIconValue } from "./tileIcons";
 
-export type GroupId = "general" | "system" | "apps";
+export type GroupId = RecipeGroup;
 
 /** The groups, top to bottom. */
 export const GROUPS: readonly { id: GroupId; label: MessageKey }[] = [
@@ -17,72 +20,131 @@ export const GROUPS: readonly { id: GroupId; label: MessageKey }[] = [
 ];
 
 export interface CatalogueEntry {
+  /** `<kind>:<id>`, unique in the catalogue: what a drag carries and a
+   * click assigns. */
+  key: string;
   id: string;
   group: GroupId;
-  label: MessageKey;
+  /** The name the catalogue shows. */
+  name: string;
   /** A tile icon name (lib/tileIcons.ts). */
   icon: string;
   /** A raw tool sets the action type; a recipe is a preset pack. */
   kind: "tool" | "recipe";
-  /** For an entry not built yet: the sentence naming its roadmap item. */
-  soon?: MessageKey;
+  /** The pack of a recipe entry. */
+  recipe?: Recipe;
 }
 
-function recipe(id: string, group: GroupId, label: MessageKey, icon: string): CatalogueEntry {
-  return { id, group, label, icon, kind: "recipe", soon: "soon.presets" };
+function tool(id: "chord" | "exec", label: MessageKey, icon: string): CatalogueEntry {
+  return { key: `tool:${id}`, id, group: "general", name: t(label), icon, kind: "tool" };
 }
 
-/** The v1 entries in group order. */
-export const CATALOGUE: readonly CatalogueEntry[] = [
-  recipe("open-folder", "general", "catalogue.openFolder", "folder-open"),
-  recipe("open-website", "general", "catalogue.openWebsite", "globe"),
-  recipe("new-email", "general", "catalogue.newEmail", "mail"),
-  { id: "chord", group: "general", label: "catalogue.chord", icon: "square", kind: "tool" },
-  { id: "exec", group: "general", label: "catalogue.exec", icon: "terminal", kind: "tool" },
-  recipe("lock", "system", "catalogue.lock", "lock"),
-  recipe("volume", "system", "catalogue.volume", "volume-2"),
-  recipe("brightness", "system", "catalogue.brightness", "sun"),
-  recipe("settings-page", "system", "catalogue.settingsPage", "settings"),
-  recipe("spectacle", "apps", "catalogue.spectacle", "camera"),
-  recipe("calculator", "apps", "catalogue.calculator", "calculator"),
-  recipe("vscode", "apps", "catalogue.vscode", "code"),
-  recipe("konsole", "apps", "catalogue.konsole", "terminal"),
+/** The raw tools, at the end of General. */
+export const TOOLS: readonly CatalogueEntry[] = [
+  tool("chord", "catalogue.chord", "square"),
+  tool("exec", "catalogue.exec", "terminal"),
 ];
+
+/** The entries of `recipes` (in the reply's order) in group order, the raw
+ * tools at the end of General. */
+export function catalogueOf(recipes: readonly Recipe[]): CatalogueEntry[] {
+  const presets = recipes.map(
+    (recipe): CatalogueEntry => ({
+      key: `recipe:${recipe.id}`,
+      id: recipe.id,
+      group: recipe.group,
+      name: recipe.name,
+      icon: tileIconValue.read(recipe.icon) ?? "",
+      kind: "recipe",
+      recipe,
+    }),
+  );
+  return GROUPS.flatMap((group) => [
+    ...presets.filter((entry) => entry.group === group.id),
+    ...TOOLS.filter((entry) => entry.group === group.id),
+  ]);
+}
 
 function groupLabel(group: GroupId): string {
   const found = GROUPS.find((candidate) => candidate.id === group);
   return found === undefined ? "" : t(found.label);
 }
 
-/** The entries whose label or group name contains `text`, case-insensitive;
- * every entry for a blank text. */
+/** The entries whose name, group name or a variant's name contains
+ * `text`, case-insensitive; every entry for a blank text. */
 export function search(entries: readonly CatalogueEntry[], text: string): CatalogueEntry[] {
   const wanted = text.trim().toLowerCase();
   if (wanted === "") return [...entries];
   return entries.filter((entry) =>
-    [t(entry.label), groupLabel(entry.group)].some((name) => name.toLowerCase().includes(wanted)),
+    [entry.name, groupLabel(entry.group), ...(entry.recipe?.variants.map((v) => v.name) ?? [])].some(
+      (name) => name.toLowerCase().includes(wanted),
+    ),
   );
+}
+
+function actionForm(action: Action): Pick<Form, "actionType" | "action"> {
+  return action.type === "chord"
+    ? { actionType: "chord", action: action.keys }
+    : { actionType: "exec", action: action.cmd };
+}
+
+/** `form` with variant `variant` of `recipe`: its action, the pack's label
+ * and icon, the colour kept (keyvo_client::Editor::apply_recipe); `form`
+ * itself for a variant the pack does not have. */
+export function withVariant(recipe: Recipe, variant: string, form: Form): Form {
+  const found = recipe.variants.find((candidate) => candidate.id === variant);
+  if (found === undefined) return form;
+  return { ...form, label: recipe.label, icon: recipe.icon, ...actionForm(found.action) };
 }
 
 /** `form` with `entry` applied: a tool sets its action type with an empty
  * field, so nothing is written until the field is entered (the editor's
- * rule); a preset leaves the form until #119 fills in its variant. */
+ * rule); a preset writes its default variant. */
 export function applied(entry: CatalogueEntry, form: Form): Form {
-  if (entry.kind !== "tool" || (entry.id !== "chord" && entry.id !== "exec")) return form;
+  if (entry.recipe !== undefined) {
+    const first = entry.recipe.variants[0];
+    return first === undefined ? form : withVariant(entry.recipe, first.id, form);
+  }
+  if (entry.id !== "chord" && entry.id !== "exec") return form;
   return { ...form, actionType: entry.id, action: "" };
 }
 
 /** The `DataTransfer` type a dragged entry is carried under. */
 export const DRAG_TYPE = "application/x-keyvo-action";
 
-/** What a drag of `entry` carries: `<kind>:<id>`. */
+/** What a drag of `entry` carries: its key, `<kind>:<id>`. */
 export function dragData(entry: CatalogueEntry): string {
-  return `${entry.kind}:${entry.id}`;
+  return entry.key;
 }
 
-/** The id of the tool a drop carries; undefined for a preset, an unknown
- * entry or data from elsewhere. */
+const RECIPE_KEY = /^recipe:[A-Za-z0-9._-]+$/;
+
+/** The entry key a drop carries: a raw tool's or a recipe's; undefined for
+ * an unknown tool or data from elsewhere. */
 export function dropped(data: string): string | undefined {
-  const id = data.startsWith("tool:") ? data.slice("tool:".length) : undefined;
-  return CATALOGUE.some((entry) => entry.kind === "tool" && entry.id === id) ? id : undefined;
+  if (TOOLS.some((entry) => entry.key === data)) return data;
+  return RECIPE_KEY.test(data) ? data : undefined;
+}
+
+function sameAction(a: Action, b: Action): boolean {
+  return a.type === "chord"
+    ? b.type === "chord" && a.keys === b.keys
+    : b.type === "exec" && a.cmd === b.cmd;
+}
+
+/** The recipe a key carries and the variant it runs: a pack with the key's
+ * icon and a variant with its action, the one with the key's label first,
+ * else the first in catalogue order; undefined for any other key. */
+export function recipeOf(
+  recipes: readonly Recipe[],
+  fields: KeyFields,
+): { recipe: Recipe; variant: string } | undefined {
+  const action = fields.action;
+  if (action === undefined) return undefined;
+  const found = recipes.flatMap((recipe) => {
+    if (recipe.icon !== fields.icon) return [];
+    const variant = recipe.variants.find((candidate) => sameAction(candidate.action, action));
+    return variant === undefined ? [] : [{ recipe, variant: variant.id }];
+  });
+  return found.find((candidate) => candidate.recipe.label === fields.label) ?? found[0];
 }

@@ -11,6 +11,7 @@ import {
   parseRequest,
   parseServerMessage,
   requestLine,
+  type Recipes,
   type ServerMessage,
   type Status,
 } from "./protocol";
@@ -97,6 +98,26 @@ describe("server messages", () => {
     expect(connected?.device.geometry?.rects).toHaveLength(connected?.device.keys ?? 0);
     expect(connected?.device.geometry?.rects[1]).toEqual({ x: 182, y: 7, width: 118, height: 118 });
     expect(missing?.device.geometry).toBeUndefined();
+  });
+
+  it("the recipes request and its answers round-trip", () => {
+    const [request, ...answers] = fixture("recipes.ndjson");
+    expect(parseRequest(request ?? "")).toEqual({ id: 9, cmd: "recipes" });
+    const replies = answers.map((line) => {
+      const message = parseServerMessage(line);
+      expect(json(serverLine(message)), line).toEqual(json(line));
+      return message.kind === "response" && message.response.ok
+        ? (message.response.result as Recipes)
+        : undefined;
+    });
+    const [bundled, user] = replies;
+    expect(bundled?.recipes.find((recipe) => recipe.id === "spectacle")?.variants[1]).toEqual({
+      id: "region",
+      name: "Region",
+      action: { type: "exec", cmd: "spectacle --region" },
+    });
+    expect(bundled?.problems).toBeUndefined();
+    expect(user?.problems).toHaveLength(1);
   });
 
   it("an unknown field from a later daemon is kept, not refused", () => {

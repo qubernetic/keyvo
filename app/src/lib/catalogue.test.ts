@@ -1,20 +1,29 @@
-// The actions catalogue's pure side (pad screen brief §5.2): the v1 list,
-// the search over group and label, what a tool does to the form, and the
-// drag data a tile reads.
+// The actions catalogue's pure side (pad screen brief §5.2): the entries
+// from a `recipes` reply with the raw tools, the search over group, name
+// and variant names, what an entry does to the form, the drag data a tile
+// reads, and the recipe a key carries.
 import { describe, expect, it } from "vitest";
 
 import {
   applied,
-  CATALOGUE,
+  catalogueOf,
   dragData,
   dropped,
   GROUPS,
+  recipeOf,
   search,
+  TOOLS,
+  withVariant,
   type CatalogueEntry,
 } from "./catalogue";
 import { toForm } from "./editor";
+import { nth, recipeReplies } from "./fixtures";
 import { t } from "./i18n";
+import type { Recipe } from "./protocol";
 import { TILE_ICONS } from "./tileIcons";
+
+const RECIPES = nth(recipeReplies(), 0).recipes;
+const CATALOGUE = catalogueOf(RECIPES);
 
 function entry(id: string): CatalogueEntry {
   const found = CATALOGUE.find((candidate) => candidate.id === id);
@@ -22,43 +31,63 @@ function entry(id: string): CatalogueEntry {
   return found;
 }
 
-describe("the v1 list", () => {
-  it("has the groups General, System and Apps, the raw tools at the end of General", () => {
+function recipe(id: string): Recipe {
+  const found = RECIPES.find((candidate) => candidate.id === id);
+  if (found === undefined) throw new Error(`no recipe ${id}`);
+  return found;
+}
+
+describe("the entries", () => {
+  it("are the groups General, System and Apps from the reply, the raw tools at the end of General", () => {
     expect(GROUPS.map((group) => t(group.label))).toEqual(["General", "System", "Apps"]);
-    const labels = (group: string) =>
-      CATALOGUE.filter((candidate) => candidate.group === group).map((candidate) => t(candidate.label));
-    expect(labels("general")).toEqual(["Open folder", "Open website", "New email", "Chord", "Exec"]);
-    expect(labels("system")).toEqual(["Lock the desktop", "Volume", "Brightness", "Open a settings page"]);
-    expect(labels("apps")).toEqual(["Spectacle", "Calculator", "VS Code", "Konsole"]);
-  });
-
-  it("makes Chord and Exec tools and every other entry a preset that is not built yet", () => {
-    expect(CATALOGUE.filter((candidate) => candidate.kind === "tool").map((c) => c.id)).toEqual([
-      "chord",
-      "exec",
+    const names = (group: string) =>
+      CATALOGUE.filter((candidate) => candidate.group === group).map((candidate) => candidate.name);
+    expect(names("general")).toEqual(["New email", "Open folder", "Open website", "Chord", "Exec"]);
+    expect(names("system")).toEqual([
+      "Brightness down",
+      "Brightness up",
+      "Lock the desktop",
+      "Mute",
+      "Open a settings page",
+      "Volume down",
+      "Volume up",
     ]);
-    for (const candidate of CATALOGUE.filter((c) => c.kind === "recipe")) {
-      expect(candidate.soon).toBe("soon.presets");
-    }
+    expect(names("apps")).toEqual(["Calculator", "Konsole", "Screenshot", "Spectacle", "VS Code"]);
   });
 
-  it("draws every entry with a bundled tile icon", () => {
+  it("are the raw tools alone without recipes", () => {
+    expect(catalogueOf([])).toEqual(TOOLS);
+    expect(TOOLS.map((tool) => [tool.key, tool.name])).toEqual([
+      ["tool:chord", "Chord"],
+      ["tool:exec", "Exec"],
+    ]);
+  });
+
+  it("carry the recipe and draw it with its tile icon", () => {
+    expect(entry("spectacle")).toMatchObject({ key: "recipe:spectacle", kind: "recipe", icon: "camera" });
+    expect(entry("spectacle").recipe).toBe(recipe("spectacle"));
     for (const candidate of CATALOGUE) expect(TILE_ICONS).toContain(candidate.icon);
   });
 });
 
 describe("search", () => {
-  it("narrows over the label, case-insensitive", () => {
+  it("narrows over the name, case-insensitive", () => {
     expect(search(CATALOGUE, "eXe").map((c) => c.id)).toEqual(["exec"]);
   });
 
   it("matches the group's name", () => {
     expect(search(CATALOGUE, "apps").map((c) => c.id)).toEqual([
-      "spectacle",
       "calculator",
-      "vscode",
       "konsole",
+      "screenshot",
+      "spectacle",
+      "vscode",
     ]);
+  });
+
+  it("matches a variant's name", () => {
+    expect(search(CATALOGUE, "region").map((c) => c.id)).toEqual(["spectacle"]);
+    expect(search(CATALOGUE, "command palette").map((c) => c.id)).toEqual(["vscode"]);
   });
 
   it("keeps every entry for an empty or blank text and none for a text nothing has", () => {
@@ -68,27 +97,84 @@ describe("search", () => {
 });
 
 describe("applied", () => {
-  const form = toForm({ label: "Build", action: { type: "chord", keys: "ctrl+b" } });
+  const form = toForm({
+    label: "Build",
+    color: "#ff0000",
+    action: { type: "chord", keys: "ctrl+b" },
+  });
 
   it("sets the action type of Chord and Exec with an empty field and keeps the rest", () => {
     expect(applied(entry("exec"), form)).toEqual({ ...form, actionType: "exec", action: "" });
     expect(applied(entry("chord"), toForm({}))).toEqual({ ...toForm({}), actionType: "chord", action: "" });
   });
 
-  it("leaves the form alone for a preset", () => {
-    expect(applied(entry("spectacle"), form)).toBe(form);
+  it("writes a preset's default variant with its label and icon, the colour kept", () => {
+    expect(applied(entry("spectacle"), form)).toEqual({
+      label: "Capture",
+      icon: "lucide:camera",
+      color: "#ff0000",
+      actionType: "exec",
+      action: "spectacle --fullscreen",
+    });
+  });
+
+  it("rewrites the action for another variant, across action types", () => {
+    const capture = applied(entry("spectacle"), form);
+    expect(withVariant(recipe("spectacle"), "region", capture)).toEqual({
+      ...capture,
+      action: "spectacle --region",
+    });
+    const volume = applied(entry("volume-up"), form);
+    expect(withVariant(recipe("volume-up"), "key", volume)).toEqual({
+      ...volume,
+      actionType: "chord",
+      action: "volumeup",
+    });
+    expect(withVariant(recipe("volume-up"), "nope", volume)).toBe(volume);
   });
 });
 
 describe("the drag data", () => {
-  it("carries a tool's id, which a drop reads back", () => {
+  it("carries an entry's key, which a drop reads back", () => {
     expect(dragData(entry("exec"))).toBe("tool:exec");
-    expect(dropped("tool:exec")).toBe("exec");
+    expect(dropped("tool:exec")).toBe("tool:exec");
+    expect(dragData(entry("spectacle"))).toBe("recipe:spectacle");
+    expect(dropped("recipe:spectacle")).toBe("recipe:spectacle");
   });
 
-  it("drops nothing for a preset, an unknown tool or foreign data", () => {
-    expect(dropped("recipe:spectacle")).toBeUndefined();
+  it("drops nothing for an unknown tool, an empty recipe id or foreign data", () => {
     expect(dropped("tool:nope")).toBeUndefined();
+    expect(dropped("recipe:")).toBeUndefined();
+    expect(dropped("recipe:a b")).toBeUndefined();
     expect(dropped("https://example.org")).toBeUndefined();
+  });
+});
+
+describe("recipeOf", () => {
+  it("names the recipe and variant of a key with its icon and one of its actions", () => {
+    const fields = {
+      icon: "lucide:camera",
+      label: "Capture",
+      action: { type: "exec" as const, cmd: "spectacle --region" },
+    };
+    expect(recipeOf(RECIPES, fields)).toEqual({ recipe: recipe("spectacle"), variant: "region" });
+  });
+
+  it("prefers the pack whose label the key shows when two packs share icon and action", () => {
+    const action = { type: "exec" as const, cmd: "spectacle --fullscreen" };
+    expect(recipeOf(RECIPES, { icon: "lucide:camera", label: "Shot", action })).toEqual({
+      recipe: recipe("screenshot"),
+      variant: "full",
+    });
+    expect(recipeOf(RECIPES, { icon: "lucide:camera", label: "Snap", action })?.recipe.id).toBe(
+      "screenshot",
+    );
+  });
+
+  it("names none for another icon, another action or no action", () => {
+    const action = { type: "exec" as const, cmd: "spectacle --region" };
+    expect(recipeOf(RECIPES, { icon: "lucide:code", action })).toBeUndefined();
+    expect(recipeOf(RECIPES, { icon: "lucide:camera", action: { ...action, cmd: "spectacle" } })).toBeUndefined();
+    expect(recipeOf(RECIPES, { icon: "lucide:camera" })).toBeUndefined();
   });
 });

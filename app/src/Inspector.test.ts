@@ -12,11 +12,13 @@ import { isDeepStrictEqual } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import Inspector from "./Inspector.svelte";
-import { CATALOGUE } from "./lib/catalogue";
+import { catalogueOf } from "./lib/catalogue";
 import type { Tile } from "./lib/daemon";
 import type { Edited, Editor, KeyFields, KeyView, Target } from "./lib/editor";
-import { editorFile, editorSteps, nth } from "./lib/fixtures";
+import { editorFile, editorSteps, nth, recipeReplies, recipeStep } from "./lib/fixtures";
 
+const RECIPES = nth(recipeReplies(), 0).recipes;
+const CATALOGUE = catalogueOf(RECIPES);
 const STEPS = editorSteps();
 const TARGET: Target = { profile: STEPS.profile, page: STEPS.page, key: STEPS.key };
 const PATH = `/home/u/.config/keyvo/${STEPS.path}`;
@@ -415,7 +417,7 @@ describe("Inspector", () => {
 describe("the actions catalogue", () => {
   it("applies an assigned tool: the action type set, the field empty, nothing written", async () => {
     const editor = await mounted(accepting());
-    await editor.view.rerender({ assign: { entry: "exec", target: TARGET, seq: 1 } });
+    await editor.view.rerender({ assign: { entry: "tool:exec", target: TARGET, seq: 1 } });
     await waitFor(() => expect(action()).toHaveValue("exec"));
     expect(field("Command")).toHaveValue("");
     expect(field("Command")).not.toHaveAccessibleDescription();
@@ -433,7 +435,7 @@ describe("the actions catalogue", () => {
   it("applies an assignment for another key once that key is read, and only once", async () => {
     const other = { ...TARGET, key: 7 };
     const editor = await mounted();
-    const assign = { entry: "exec", target: other, seq: 1 };
+    const assign = { entry: "tool:exec", target: other, seq: 1 };
     await editor.view.rerender({ target: other, assign });
     await waitFor(() => expect(editor.editor.key).toHaveBeenLastCalledWith(other));
     await waitFor(() => expect(action()).toHaveValue("exec"));
@@ -450,16 +452,106 @@ describe("the actions catalogue", () => {
   it("carries the catalogue's entries in the Action select while the column is collapsed", async () => {
     const editor = await mounted();
     expect(screen.queryAllByRole("group")).toEqual([]);
-    await editor.view.rerender({ entries: CATALOGUE });
+    await editor.view.rerender({ entries: CATALOGUE, recipes: RECIPES });
     const groups = screen.getAllByRole("group");
     expect(groups.map((group) => group.getAttribute("label"))).toEqual(["General", "System", "Apps"]);
     const exec = screen.getByRole("option", { name: "Exec" }) as HTMLOptionElement;
     expect(exec).toHaveValue("exec");
     expect(exec).toBeEnabled();
-    const spectacle = screen.getByRole("option", { name: "Spectacle (coming soon)" });
-    expect(spectacle).toBeDisabled();
+    expect(screen.getByRole("option", { name: "Spectacle" })).toBeEnabled();
     await fireEvent.change(action(), { target: { value: "exec" } });
     expect(field("Command")).toHaveValue("");
     expect(editor.editor.editKey).not.toHaveBeenCalled();
+  });
+});
+
+describe("a preset", () => {
+  const STEP = recipeStep();
+  const KEY7: Target = { profile: STEP.profile, page: STEP.page, key: STEP.key };
+  const DEFAULT: KeyFields = {
+    icon: "lucide:camera",
+    label: "Capture",
+    action: { type: "exec", cmd: "spectacle --fullscreen" },
+  };
+
+  /** Key 7 of the recipe fixture: blank, then whatever was written last. */
+  function blank() {
+    let fields = STEP.before;
+    const editor = {
+      key: vi.fn((_target: Target): Promise<KeyView> => Promise.resolve({ path: PATH, fields })),
+      editKey: vi.fn((_target: Target, written: KeyFields): Promise<Edited> => {
+        const before = fields;
+        fields = written;
+        return Promise.resolve({ path: PATH, before, fields: written, line: STEP.line });
+      }),
+    };
+    return editor satisfies Editor;
+  }
+
+  function whatItDoes(): HTMLSelectElement {
+    return screen.getByRole("combobox", { name: "What it does" }) as HTMLSelectElement;
+  }
+
+  async function assigned(entry: string) {
+    const editor = blank();
+    const view = render(Inspector, { props: { editor, target: KEY7, recipes: RECIPES } });
+    await waitFor(() => expect(editor.key).toHaveBeenCalled());
+    expect(screen.queryByRole("combobox", { name: "What it does" })).toBeNull();
+    await view.rerender({ assign: { entry, target: KEY7, seq: 1 } });
+    return { editor, view };
+  }
+
+  it("is written with its default variant, label and icon when assigned", async () => {
+    const { editor } = await assigned("recipe:spectacle");
+    await waitFor(() => expect(editor.editKey).toHaveBeenCalledWith(KEY7, DEFAULT));
+    expect(field("Label")).toHaveValue("Capture");
+    expect(field("Command")).toHaveValue("spectacle --fullscreen");
+    await waitFor(() => expect(whatItDoes()).toHaveValue("fullscreen"));
+  });
+
+  it("What it does lists the variants and rewrites the action, as apply_recipe writes it", async () => {
+    const { editor } = await assigned("recipe:spectacle");
+    await waitFor(() => expect(whatItDoes()).toHaveValue("fullscreen"));
+    const select = whatItDoes();
+    expect([...select.options].map((option) => option.text)).toEqual([
+      "Full screen",
+      "Region",
+      "Recording",
+    ]);
+    await fireEvent.change(select, { target: { value: STEP.variant } });
+    await waitFor(() => expect(editor.editKey).toHaveBeenLastCalledWith(KEY7, STEP.fields));
+    expect(field("Command")).toHaveValue("spectacle --region");
+    expect(whatItDoes()).toHaveValue("region");
+    // The written key reads back as the preset's, so the select stays.
+    expect(editor.editKey).toHaveBeenCalledTimes(2);
+  });
+
+  it("What it does switches the action type for a variant of another kind", async () => {
+    const { editor } = await assigned("recipe:volume-up");
+    await waitFor(() => expect(whatItDoes()).toHaveValue("plasma"));
+    await fireEvent.change(whatItDoes(), { target: { value: "key" } });
+    await waitFor(() =>
+      expect(editor.editKey).toHaveBeenLastCalledWith(KEY7, {
+        icon: "lucide:volume-2",
+        label: "Vol +",
+        action: { type: "chord", keys: "volumeup" },
+      }),
+    );
+    expect(action()).toHaveValue("chord");
+  });
+
+  it("is applied from the Action select while the column is collapsed", async () => {
+    const editor = blank();
+    render(Inspector, { props: { editor, target: KEY7, recipes: RECIPES, entries: CATALOGUE } });
+    await waitFor(() => expect(editor.key).toHaveBeenCalled());
+    await fireEvent.change(action(), { target: { value: "recipe:spectacle" } });
+    await waitFor(() => expect(editor.editKey).toHaveBeenCalledWith(KEY7, DEFAULT));
+    expect(action()).toHaveValue("exec");
+  });
+
+  it("an unknown recipe assigns nothing", async () => {
+    const { editor } = await assigned("recipe:nope");
+    await waitFor(() => expect(field("Label")).toHaveValue(""));
+    expect(editor.editKey).not.toHaveBeenCalled();
   });
 });

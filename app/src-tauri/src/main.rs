@@ -18,7 +18,7 @@ use keyvo_core::edit::{KeyFields, ProfileFields};
 use keyvo_core::press::PressKind;
 use keyvo_core::profile::KeySlot;
 use keyvo_core::render::TileSize;
-use keyvo_core::socket::{Command, Reply, Status};
+use keyvo_core::socket::{Command, Recipes, Reply, Status};
 use keyvo_core::state::View;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter as _, Manager as _};
@@ -53,6 +53,14 @@ fn press(key: u8, kind: PressKind) -> Result<Value, String> {
         .and_then(|mut client| client.dry_run(key, kind))
         .map_err(|error| error.to_string())?;
     serde_json::to_value(entry).map_err(|error| error.to_string())
+}
+
+/// The daemon's `recipes` reply: the recipe packs of the actions catalogue.
+#[tauri::command]
+fn recipes() -> Result<Recipes, String> {
+    Client::connect(&socket())
+        .and_then(|mut client| client.recipes())
+        .map_err(|error| error.to_string())
 }
 
 /// The event every subscription update is emitted on (`UPDATE_EVENT` in
@@ -246,6 +254,7 @@ fn main() {
             status,
             tiles,
             outline,
+            recipes,
             press,
             subscribe,
             key,

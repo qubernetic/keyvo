@@ -12,8 +12,15 @@ import iconLabelPng from "../../../../crates/keyvo-core/tests/snapshots/render__
 import iconPng from "../../../../crates/keyvo-core/tests/snapshots/render__icon.snap.png?url";
 import labelPng from "../../../../crates/keyvo-core/tests/snapshots/render__label.snap.png?url";
 import eventsNdjson from "../../../../tests/protocol-fixtures/socket/events.ndjson?raw";
+import recipesNdjson from "../../../../tests/protocol-fixtures/socket/recipes.ndjson?raw";
 import responsesNdjson from "../../../../tests/protocol-fixtures/socket/responses.ndjson?raw";
-import { parseServerMessage, type Event, type Status, type TraceRecord } from "../protocol";
+import {
+  parseServerMessage,
+  type Event,
+  type Recipes,
+  type Status,
+  type TraceRecord,
+} from "../protocol";
 
 function messages(text: string) {
   return text
@@ -34,6 +41,23 @@ export function fixtureStatus(): Status {
     if (isStatus(result) && result.device.connected) return structuredClone(result);
   }
   throw new Error("responses.ndjson has no connected status reply");
+}
+
+function isRecipes(result: object): result is Recipes {
+  return "recipes" in result;
+}
+
+/** The first `recipes` answer of recipes.ndjson: the packs of
+ * contrib/recipes/ as the daemon lists them (its socket test writes the
+ * line from the files), with one user pack. */
+export function fixtureRecipes(): Recipes {
+  const [, ...answers] = recipesNdjson.split("\n").filter((line) => line.trim() !== "");
+  for (const message of messages(answers.join("\n"))) {
+    if (message.kind !== "response" || !message.response.ok) continue;
+    const result = message.response.result;
+    if (isRecipes(result)) return structuredClone(result);
+  }
+  throw new Error("recipes.ndjson has no recipes reply");
 }
 
 /** The configuration directory of the fixture's status reply; the mock's

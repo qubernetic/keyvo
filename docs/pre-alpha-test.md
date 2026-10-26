@@ -744,6 +744,14 @@ The mock dev server of #113 in a host browser for the first three, then the app.
 - [ ] #135 Narrow the window below 1200 px: the column goes, and the Action select lists the three groups with the presets as `(coming soon)` options. Once the mock has sent a few trace entries, the trace strip under the inspector shows the three newest with their 24 h times, the chevron expands it to every entry and back, and an entry opens the drawer on itself.
 - [ ] #135 With the daemon and the Keypad, at 1363x798 and at 960 px: drag Exec onto key 7 and set the command: the file round-trips (only key 7's lines change) and the pad repaints.
 
+### The catalogue entries from the recipe packs (#136)
+
+The mock dev server of #113 in a host browser for the first two, then the app with the daemon and the Keypad. Run by the owner in #130.
+
+- [ ] #136 `just app-dev` in a window at least 1200 px wide: the Actions column lists the packs of `contrib/recipes/` (System: Brightness down to Volume up; Apps: Calculator, Konsole, Screenshot, Spectacle, VS Code) with Chord and Exec at the end of General. Type `region` into Search actions: only Spectacle is left.
+- [ ] #136 Drag Spectacle onto key 7: the result line says it was written, the tile shows the camera and `Capture`, and the inspector shows `What it does` set to `Full screen` above the Action; choose `Region`: the Command reads `spectacle --region`. Undo takes it back to `Full screen`. Narrow the window below 1200 px: the Action select lists the presets, and choosing `Volume up` there writes it into the selected key.
+- [ ] #136 With the daemon and the Keypad (#119's user tests): Spectacle with `Region` on key 7, then press key 7 on the pad: Spectacle opens the region capture. Drag Volume up onto key 8 and press it: the volume rises and Plasma's volume OSD shows. The profile file round-trips (only the lines of keys 7 and 8 change).
+
 ### First-light records (#75)
 
 - [ ] #75 Read `docs/hardware-notes.md`, "Measurements", against the first-light report on #40 and its logs: every number and log citation matches.

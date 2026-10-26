@@ -1784,22 +1784,34 @@ then subscribes with a replay of the newest 20 trace entries;
 - **Actions catalogue** (`app/src/Catalogue.svelte`,
   `app/src/lib/catalogue.ts`). From a 1200 px window on, the right
   column: "Search actions" (`/` focuses it outside a field) narrows the
-  entries by label or group name, case-insensitive, and says "No action
-  matches" when none is left; then the groups General (Open folder, Open
-  website, New email, Chord, Exec), System (Lock the desktop, Volume,
-  Brightness, Open a settings page) and Apps (Spectacle, Calculator, VS
-  Code, Konsole), each collapsible on its heading (`aria-expanded`; a
-  search shows the matches of a collapsed group). The raw tools Chord and
-  Exec are dragged onto a tile of the mirror (the drag carries
-  `tool:<id>` as `application/x-keyvo-action`; every cell is a drop
-  target) or clicked to assign them to the selected tile. Either way the
-  tile is selected (and pinned, as a click would), and the inspector sets
-  the action type with an empty field: nothing is written until the keys
-  or the command are entered. The presets are disabled with "Coming soon"
-  and the sentence naming the recipe packs of #119, until the catalogue
-  reads them from the daemon. Below 1200 px the column goes and the
-  inspector's Action select carries the entries in the three groups, the
-  presets as disabled options.
+  entries by name, group name or the name of a variant ("Region" finds
+  Spectacle), case-insensitive, and says "No action matches" when none is
+  left; then the groups General, System and Apps, each collapsible on its
+  heading (`aria-expanded`; a search shows the matches of a collapsed
+  group). The presets are the recipe packs of the daemon's `recipes`
+  reply (§7.5, §8; the shell's `recipes` command, `daemon.recipes()`), in
+  the reply's order, read when the Pad connects and again after every
+  reload; the raw tools Chord and Exec close General. When the packs
+  cannot be read the column says why under the entries and keeps the
+  tools; each user pack the daemon left out is listed under "Recipe packs
+  left out" with its `file:line:column: message`. Every entry is dragged
+  onto a tile of the mirror (the drag carries `tool:<id>` or
+  `recipe:<id>` as `application/x-keyvo-action`; every cell is a drop
+  target) or clicked to assign it to the selected tile. Either way the
+  tile is selected (and pinned, as a click would). A tool sets the action
+  type with an empty field: nothing is written until the keys or the
+  command are entered. A preset is written at once through the editor
+  (`edit_key`, so undo takes it back) with its first variant's action and
+  the pack's label and icon, the colour kept, as
+  `keyvo_client::Editor::apply_recipe` writes it. A key carries a preset
+  when a pack has its icon and a variant with its action (the pack with
+  its label first, else the first in catalogue order; the profile never
+  names the pack): the inspector then shows "What it does" with the
+  pack's variants above the Action select, and another variant rewrites
+  the action (and the label and icon to the pack's). Below 1200 px the
+  column goes and the inspector's Action select carries the entries in
+  the three groups; a preset chosen there is applied like an assigned
+  one.
 - **Trace drawer** (`app/src/TraceDrawer.svelte` on `Drawer`). Opens from
   an entry of the trace strip and from the result line of a dry-run press, takes the
   focus, and closes on `Esc` or its close button, giving the focus back.
@@ -2144,6 +2156,13 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha Pad slice 6 (2026-10-26)**: §10 the actions
+  catalogue's presets are the recipe packs of the `recipes` reply (the
+  shell's `recipes` command); a dropped or clicked preset writes its
+  default variant, label and icon through the editor; the inspector's
+  "What it does" select for a key that carries a preset rewrites the
+  action; the search covers variant names; the packs the daemon left out
+  are listed under the entries (#129).
 - **v0.3, pre-alpha Pad slice 4 (2026-10-26)**: §10 the actions
   catalogue as built (`Catalogue.svelte`, `lib/catalogue.ts`): the right
   column from 1200 px with "Search actions" (`/`), the groups General,

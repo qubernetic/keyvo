@@ -9,6 +9,7 @@ fn main() {
         "status",
         "tiles",
         "outline",
+        "recipes",
         "press",
         "subscribe",
         "key",

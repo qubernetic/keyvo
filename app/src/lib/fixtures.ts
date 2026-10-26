@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import type { KeyFields } from "./editor";
 import type { ProfileFields } from "./profiles";
-import { parseServerMessage, type Event, type Reply } from "./protocol";
+import { parseServerMessage, type Event, type Recipes, type Reply } from "./protocol";
 
 const FIXTURES = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -101,9 +101,47 @@ export function profileSteps(): ProfileSteps {
   return JSON.parse(readFileSync(join(EDITOR, "profile.json"), "utf8")) as ProfileSteps;
 }
 
+/** tests/protocol-fixtures/editor/recipe.json: variant `variant` of recipe
+ * `recipe` applied to a key, as keyvo_client::Editor::apply_recipe writes
+ * it. */
+export interface RecipeStep {
+  profile: string;
+  page: number;
+  key: number;
+  /** The file before and the file's path inside the configuration directory. */
+  file: string;
+  path: string;
+  recipe: string;
+  variant: string;
+  before: KeyFields;
+  fields: KeyFields;
+  /** The file the step gives and the line of the key's table in it. */
+  expected: string;
+  line: number;
+}
+
+export function recipeStep(): RecipeStep {
+  return JSON.parse(readFileSync(join(EDITOR, "recipe.json"), "utf8")) as RecipeStep;
+}
+
 /** The text of an editor fixture file. */
 export function editorFile(name: string): string {
   return readFileSync(join(EDITOR, name), "utf8");
+}
+
+/** The answers of recipes.ndjson after its request line: the packs of
+ * contrib/recipes/ with the user pack `screenshot`, then an answer naming
+ * a broken user pack in `problems`. */
+export function recipeReplies(): Recipes[] {
+  const [, ...answers] = readFileSync(join(FIXTURES, "recipes.ndjson"), "utf8")
+    .split("\n")
+    .filter((line) => line.trim() !== "");
+  return answers.flatMap((line) => {
+    const message = parseServerMessage(line);
+    return message.kind === "response" && message.response.ok
+      ? [message.response.result as Recipes]
+      : [];
+  });
 }
 
 /** The result of every ok line of responses.ndjson, in file order. */

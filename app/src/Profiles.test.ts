@@ -75,6 +75,7 @@ function daemon(): Daemon {
       Promise.resolve(tiles(profile, page, keys)),
     ),
     outline: () => Promise.resolve({ pages: 3 }),
+    recipes: () => Promise.resolve({ recipes: [] }),
     press: () => Promise.reject(new Error("not in this test")),
     subscribe: () => Promise.resolve(() => {}),
   };

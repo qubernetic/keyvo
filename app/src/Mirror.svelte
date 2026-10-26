@@ -7,7 +7,7 @@
   // Shift+Space long, as dry runs. The selected tile has the accent
   // outline, a key held down on the device its mark, and a key that falls
   // through from the global layer is dimmed with a corner mark. Every cell
-  // is a drop target for a tool dragged from the actions catalogue.
+  // is a drop target for an entry dragged from the actions catalogue.
   import { tick } from "svelte";
 
   import Device from "./Device.svelte";
@@ -43,7 +43,7 @@
     onselect: (key: number) => void;
     /** A dry-run press of `key`. */
     onpress: (key: number, kind: PressKind) => void;
-    /** A catalogue tool, by its entry id, dropped on `key`. */
+    /** A catalogue entry, by its key, dropped on `key`. */
     ondrop?: (key: number, entry: string) => void;
   } = $props();
 

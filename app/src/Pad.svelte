@@ -10,8 +10,10 @@
   // unreachable, no-device and configuration notices go through Notice.
   // The trace strip sits under the inspector; the actions catalogue is the
   // right column from 1200 px and collapses into the inspector's Action
-  // select below it. A tool dropped on a tile, or clicked in the catalogue
-  // with a tile selected, selects that tile and sets its action type.
+  // select below it; its presets are the daemon's recipe packs. An entry
+  // dropped on a tile, or clicked in the catalogue with a tile selected,
+  // selects that tile and hands it to the inspector: a tool sets the action
+  // type, a preset writes its default variant.
   import { untrack } from "svelte";
 
   import Catalogue from "./Catalogue.svelte";
@@ -20,7 +22,7 @@
   import Notice from "./Notice.svelte";
   import PageTabs from "./PageTabs.svelte";
   import TraceStrip from "./TraceStrip.svelte";
-  import { CATALOGUE } from "./lib/catalogue";
+  import { catalogueOf } from "./lib/catalogue";
   import type { Daemon, Tile } from "./lib/daemon";
   import { t } from "./lib/i18n";
   import {
@@ -36,7 +38,7 @@
   import type { Editor, Target } from "./lib/editor";
   import { difference, follow, pinOnSelect, pinPage, target, type Pinned } from "./lib/pin";
   import { contextPage, GLOBAL, type ProfileSummary } from "./lib/profiles";
-  import type { DeviceStatus, PressKind, TraceRecord, View } from "./lib/protocol";
+  import type { DeviceStatus, PressKind, Recipes, TraceRecord, View } from "./lib/protocol";
   import { layout, RIGHT_FROM, type Columns } from "./lib/shell";
 
   let {
@@ -174,6 +176,30 @@
     );
   });
 
+  /** The daemon's recipe packs, the user packs it left out, and why they
+   * could not be read; read again after every reload and reconnect. */
+  let recipes: Recipes = $state.raw({ recipes: [] });
+  let recipesError: string | undefined = $state();
+  const reachable = $derived(unreachable === undefined);
+  const reloads = $derived(pad.reloads);
+  let fetchedRecipes = 0;
+  $effect(() => {
+    void reloads;
+    if (!reachable) return;
+    const mine = ++fetchedRecipes;
+    untrack(() => daemon.recipes()).then(
+      (got) => {
+        if (mine !== fetchedRecipes) return;
+        recipes = got;
+        recipesError = undefined;
+      },
+      (error: unknown) => {
+        if (mine === fetchedRecipes) recipesError = reason(error);
+      },
+    );
+  });
+  const catalogue = $derived(catalogueOf(recipes.recipes));
+
   /** The profile and page the inspector and the tabs show: the pin, else
    * the pad's. */
   const shown = $derived(
@@ -215,7 +241,8 @@
   /** The catalogue entry the inspector applies to its key. */
   let assign: { entry: string; target: Target; seq: number } | undefined = $state();
 
-  /** Selects `key` and hands the inspector the tool `entry` for it. */
+  /** Selects `key` and hands the inspector the catalogue entry with key
+   * `entry` for it. */
   function assignTo(key: number, entry: string) {
     const at = target(pinned, pad.view, key);
     if (at === undefined) return;
@@ -364,13 +391,17 @@
         onpress={selected === undefined ? undefined : () => void press(selected ?? 0, "short")}
         onedited={() => edits++}
         {assign}
-        entries={columns.right ? undefined : CATALOGUE}
+        entries={columns.right ? undefined : catalogue}
+        recipes={recipes.recipes}
       />
       <TraceStrip entries={pad.trace} {connecting} onopen={(entry) => ontrace?.(entry)} />
     </div>
     {#if columns.right}
       <div class="catalogue">
         <Catalogue
+          entries={catalogue}
+          problems={recipes.problems}
+          unread={recipesError}
           {selected}
           {active}
           onassign={(entry) => {

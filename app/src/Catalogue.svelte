@@ -1,27 +1,34 @@
 <script lang="ts">
   // The actions catalogue column of the Pad (pad screen brief §5.2, §6,
   // decisions Q3 and Q8): the search field (`/` focuses it), then the
-  // groups General, System and Apps, each collapsible on its heading. A
-  // tool (Chord, Exec) is dragged onto a tile of the mirror or clicked to
-  // assign it to the selected tile; a preset is "Coming soon" naming #119
-  // until the catalogue reads the recipe packs.
-  import Soon from "./Soon.svelte";
-  import { CATALOGUE, dragData, DRAG_TYPE, GROUPS, search, type CatalogueEntry, type GroupId } from "./lib/catalogue";
+  // groups General, System and Apps, each collapsible on its heading. An
+  // entry, a preset of the daemon's recipe packs or a raw tool (Chord,
+  // Exec), is dragged onto a tile of the mirror or clicked to assign it to
+  // the selected tile. The search covers group, name and variant names.
+  // Under the entries: why the presets could not be read, and each user
+  // pack the daemon left out.
+  import { dragData, DRAG_TYPE, GROUPS, search, type CatalogueEntry, type GroupId } from "./lib/catalogue";
   import { t } from "./lib/i18n";
   import { tileIcon } from "./lib/tileIcons";
 
   let {
-    entries = CATALOGUE,
+    entries,
     selected,
     active = true,
+    problems = [],
+    unread,
     onassign,
   }: {
-    entries?: readonly CatalogueEntry[];
+    entries: readonly CatalogueEntry[];
     /** The selected tile a click assigns to; none until the user selects one. */
     selected?: number;
     /** False while another screen shows: `/` is not ours. */
     active?: boolean;
-    /** Assigns the tool `entry` to the selected tile. */
+    /** One `file:line:column: message` per user pack the daemon left out. */
+    problems?: readonly string[];
+    /** Why the recipe packs could not be read. */
+    unread?: string;
+    /** Assigns the entry with key `entry` to the selected tile. */
     onassign: (entry: string) => void;
   } = $props();
 
@@ -50,7 +57,7 @@
   }
 
   function assign(entry: CatalogueEntry) {
-    if (selected !== undefined) onassign(entry.id);
+    if (selected !== undefined) onassign(entry.key);
   }
 
   /** `/` to the search, unless a field has the focus: there it is typed. */
@@ -103,34 +110,40 @@
       </h3>
       {#if open}
         <ul aria-label={t(group.label)}>
-          {#each shown as entry (entry.id)}
+          {#each shown as entry (entry.key)}
             {@const svg = tileIcon(entry.icon)}
             <li>
               <span class="icon" aria-hidden="true">
                 {#if svg !== undefined}{@html svg}{/if}
               </span>
-              {#if entry.soon !== undefined}
-                <Soon label={t(entry.label)} soon={entry.soon} />
-              {:else}
-                <button
-                  type="button"
-                  class="entry"
-                  draggable="true"
-                  aria-label={t(entry.label)}
-                  aria-describedby={ids.hint}
-                  aria-disabled={selected === undefined ? "true" : undefined}
-                  ondragstart={(event) => dragstart(event, entry)}
-                  onclick={() => assign(entry)}
-                >
-                  {t(entry.label)}
-                </button>
-              {/if}
+              <button
+                type="button"
+                class="entry"
+                draggable="true"
+                aria-label={entry.name}
+                aria-describedby={ids.hint}
+                aria-disabled={selected === undefined ? "true" : undefined}
+                ondragstart={(event) => dragstart(event, entry)}
+                onclick={() => assign(entry)}
+              >
+                {entry.name}
+              </button>
             </li>
           {/each}
         </ul>
       {/if}
     {/if}
   {/each}
+  {#if unread !== undefined}
+    <p class="note">{t("catalogue.unread", { error: unread })}</p>
+  {/if}
+  {#if problems.length > 0}
+    <ul class="problems" aria-label={t("catalogue.problems")}>
+      {#each problems as problem, index (index)}
+        <li class="note">{problem}</li>
+      {/each}
+    </ul>
+  {/if}
 </section>
 
 <style>
@@ -202,6 +215,10 @@
 
   .entry {
     cursor: grab;
+  }
+
+  .problems .note {
+    overflow-wrap: anywhere;
   }
 
   .hint,
