@@ -185,6 +185,27 @@ describe("the rules", () => {
     expect(bad).toEqual([]);
   });
 
+  it("no rule draws a side stripe (DESIGN.md Don'ts: no side border over 1 px)", () => {
+    const bad = all.flatMap((rule) =>
+      [...rule.declarations]
+        .filter(([name]) => /^border-(left|right|inline-start|inline-end)(-width)?$/.test(name))
+        .filter(([, value]) => !/^(0|1px)\b/.test(value))
+        .map(([name, value]) => `${rule.file}: ${rule.selector}: ${name}: ${value}`),
+    );
+    expect(bad).toEqual([]);
+  });
+
+  it("only Notice colours a border with a state token", () => {
+    const bad = all
+      .filter((rule) => rule.file !== "Notice.svelte")
+      .flatMap((rule) =>
+        [...rule.declarations]
+          .filter(([name, value]) => name.startsWith("border") && value.includes("--kv-state-"))
+          .map(([name, value]) => `${rule.file}: ${rule.selector}: ${name}: ${value}`),
+      );
+    expect(bad).toEqual([]);
+  });
+
   it("no rule outside :root writes a literal colour", () => {
     const literal = /#[0-9a-fA-F]{3,8}\b|\b(rgba?|hsla?)\(|\b(white|black|red|green|blue|gray|grey)\b/;
     const bad = all

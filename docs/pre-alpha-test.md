@@ -298,20 +298,28 @@ is for `keyvo ctl`, T3 for the app.
 
 12. **Shell and readable dropdowns.** Still in the app:
 
-    - The rail lists Home, Profiles, Behaviors, Projects, Integrations,
-      Devices, Settings. `Ctrl+2` shows Profiles (step 14), `Ctrl+1`
-      brings Home back with the mirror as it was. Behaviors to Settings are greyed:
-      hovering one shows `Coming soon`; `Ctrl+3` to `Ctrl+7` or Tab onto
-      one shows `Coming soon` and the sentence naming its roadmap item
-      (M4a-5, M4a-6 or M4a-8), and the screen does not change.
+    - The rail lists Pad, Profiles, Behaviors. `Ctrl+2` shows Profiles
+      (step 14), `Ctrl+1` brings the Pad back with the mirror as it was.
+      Behaviors is greyed: hovering it shows `Coming soon`; `Ctrl+3` or
+      Tab onto it shows `Coming soon` and the sentence naming M4a-5, and
+      the screen does not change. `Ctrl+4` does nothing.
+    - The header's Profile dropdown lists Global first, then the
+      profiles by priority, the one on the pad as `<name>, on the pad`.
+      `Sandbox` is a greyed switch whose focus names M4a-4. The gear
+      opens Preferences on the right with the tabs General, Devices,
+      Integrations, Projects, each one sentence naming its roadmap item;
+      the arrows move between the tabs, `Esc` closes it and the gear has
+      the focus again. The `...` menu's `Keyboard shortcuts` opens the
+      keyboard map in the same place (one drawer at a time); `Esc`
+      closes it.
     - Narrow the window: below 1200 px the right column of Profiles
       collapses to its toggle button, below 1100 px the rail shows icons
       only, below 1000 px the list column collapses too. The window does
       not shrink below 960 x 640.
     - Open the device selector in the header and the Action selector of
       the key editor, and the `...` menu: every option and entry is
-      readable (light text on a dark background). The menu's five
-      entries are greyed with `Coming soon`. Switch the desktop between
+      readable (light text on a dark background). The menu's entries
+      but `Keyboard shortcuts` are greyed with `Coming soon`. Switch the desktop between
       the light and the dark theme (System Settings, Colors and Themes,
       Global Theme) and open them again: still readable in both.
     - Unplug the Keypad: the device selector shows `Simulator` only.
@@ -326,10 +334,10 @@ is for `keyvo ctl`, T3 for the app.
       then click its line in Recent events: the drawer shows Result with
       `exited`, `Exit code 0` and the duration. The close button closes
       it too.
-    - Next to Recent events, `Debug log` is greyed with `Coming soon`;
-      clicking it changes nothing.
+    - In the drawer's header, `Debug log` is a greyed switch with
+      `Coming soon`; clicking it changes nothing.
     - In the status strip, click the profile name: the Profiles screen
-      opens (`Ctrl+1` brings Home back). Device, overlay and context are
+      opens (`Ctrl+1` brings the Pad back). Device, overlay and context are
       plain text.
     - With the global profile on the pad (it has three pages), pick
       page 2 in `Page shown`: the mirror shows page 2 while the pad and
@@ -698,6 +706,14 @@ The daemon running; no app needed. The drag-and-drop user test of #119 runs in #
 - [ ] #131 `just run -- ctl recipes` prints one line with the fourteen bundled packs (`"source":"bundled"`), General, System and Apps in that order, and no `problems`.
 - [ ] #131 `mkdir -p ~/.config/keyvo/recipes && cp contrib/recipes/spectacle.toml ~/.config/keyvo/recipes/` and change its `label` to `Shot`: `just run -- ctl recipes` lists `spectacle` once, with `"source":"user"` and the label `Shot`. Write `x = 1` into a second file `~/.config/keyvo/recipes/bad.toml`: the answer carries a `problems` line naming `bad.toml:1:1`. Remove both files afterwards.
 - [ ] #131 Copy the `exec` of `contrib/recipes/volume-up.toml` (variant `plasma`) and run it in a terminal: the volume rises and the Plasma OSD shows. The same for `brightness-up.toml` and `lock.toml` (variant `screensaver`); note on #119 any command that fails on Plasma 6.
+
+### The shell of three screens (#132)
+
+No Keypad needed; the mock dev server of #113 in a host browser, then the app. Run by the owner in #130.
+
+- [ ] #132 Section 5 step 12: the rail of Pad, Profiles, Behaviors on `Ctrl+1` to `Ctrl+3`; the gear opens Preferences with its four tabs and `Esc` gives the focus back to the gear; `Keyboard shortcuts` in the `...` menu opens the keyboard map, one drawer at a time.
+- [ ] #132 `just app-dev` with `?theme=breeze-light` and `?theme=breeze-dark`: open the Profile dropdown; Global first, the pad's profile marked `on the pad`, every option readable; pick VS Code: the dropdown keeps it while the mock's focus cycle moves the pad, and the `on the pad` mark moves.
+- [ ] #132 `?mock-error=unreachable`: the notice has a full 1 px border in the error colour and starts with `Error`; no coloured stripe on its left.
 
 ### First-light records (#75)
 

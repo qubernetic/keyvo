@@ -1,18 +1,13 @@
-// The shell's rules (docs/design/gui-ux.md §2, §5.2, §6): the rail's
-// screens in order with their shortcuts, the widths at which the columns
-// collapse, and what the header's device selector offers.
+// The shell's rules (docs/design/gui-ux.md §2, §5.2, §6; pad screen brief
+// §5.1): the rail's screens in order with their shortcuts, the widths at
+// which the columns collapse, the header's overflow menu and Preferences
+// tabs, and what the header's device selector offers.
 import type { MessageKey } from "./i18n";
 import type { IconName } from "./icons";
 import type { DeviceStatus } from "./protocol";
 
-export type ScreenId =
-  | "home"
-  | "profiles"
-  | "behaviors"
-  | "projects"
-  | "integrations"
-  | "devices"
-  | "settings";
+/** The Pad keeps the screen id `home`. */
+export type ScreenId = "home" | "profiles" | "behaviors";
 
 export interface Screen {
   id: ScreenId;
@@ -24,16 +19,12 @@ export interface Screen {
 
 /** The rail, top to bottom; `Ctrl+1` is the first. */
 export const SCREENS: readonly Screen[] = [
-  { id: "home", label: "rail.home", icon: "house" },
+  { id: "home", label: "rail.pad", icon: "keyboard" },
   { id: "profiles", label: "rail.profiles", icon: "layers" },
   { id: "behaviors", label: "rail.behaviors", icon: "workflow", soon: "soon.behaviors" },
-  { id: "projects", label: "rail.projects", icon: "folder-git-2", soon: "soon.projects" },
-  { id: "integrations", label: "rail.integrations", icon: "plug", soon: "soon.integrations" },
-  { id: "devices", label: "rail.devices", icon: "keyboard", soon: "soon.devices" },
-  { id: "settings", label: "rail.settings", icon: "settings", soon: "soon.settings" },
 ];
 
-/** The index into SCREENS that `Ctrl+1` to `Ctrl+7` names, if `event` is one. */
+/** The index into SCREENS that `Ctrl+1` to `Ctrl+3` names, if `event` is one. */
 export function shortcut(event: KeyboardEvent): number | undefined {
   if (!event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return undefined;
   if (!/^[1-9]$/.test(event.key)) return undefined;
@@ -67,15 +58,29 @@ export function layout(width: number): Columns {
   };
 }
 
-/** The header's overflow menu (§2); an entry is enabled once it exists,
- * and none does in the pre-alpha (export and import are M1 CLI commands,
- * the others come with the screens of M4a). */
-export const MENU: readonly { label: MessageKey; enabled: boolean }[] = [
-  { label: "menu.export", enabled: false },
-  { label: "menu.import", enabled: false },
-  { label: "menu.config", enabled: false },
-  { label: "menu.setup", enabled: false },
-  { label: "menu.about", enabled: false },
+export type MenuId = "export" | "import" | "config" | "setup" | "shortcuts" | "about";
+
+/** The header's overflow menu (§2); an entry is enabled once it exists.
+ * In the pre-alpha only the keyboard map does (export and import are M1
+ * CLI commands, the others come with the screens of M4a). */
+export const MENU: readonly { id: MenuId; label: MessageKey; enabled: boolean }[] = [
+  { id: "export", label: "menu.export", enabled: false },
+  { id: "import", label: "menu.import", enabled: false },
+  { id: "config", label: "menu.config", enabled: false },
+  { id: "setup", label: "menu.setup", enabled: false },
+  { id: "shortcuts", label: "menu.shortcuts", enabled: true },
+  { id: "about", label: "menu.about", enabled: false },
+];
+
+export type PreferenceId = "general" | "devices" | "integrations" | "projects";
+
+/** The tabs of Preferences, which the header's gear opens (brief §5.1);
+ * none is built yet, so each names its roadmap item. */
+export const PREFERENCES: readonly { id: PreferenceId; label: MessageKey; soon: MessageKey }[] = [
+  { id: "general", label: "preferences.general", soon: "soon.settings" },
+  { id: "devices", label: "preferences.devices", soon: "soon.devices" },
+  { id: "integrations", label: "preferences.integrations", soon: "soon.integrations" },
+  { id: "projects", label: "preferences.projects", soon: "soon.projects" },
 ];
 
 export type DeviceChoice = "keypad" | "simulator";

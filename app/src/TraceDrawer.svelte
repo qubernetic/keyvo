@@ -4,7 +4,11 @@
   // records today (spec §8): the trigger, the context snapshot (profile
   // and page), the resolved action with the layer that supplied it, and
   // the execution result or the block reason. Conditions, variables and
-  // the window context arrive with later slices.
+  // the window context arrive with later slices. The frame is Drawer's;
+  // its header carries the Debug switch, off until the daemon sends
+  // HID-level events.
+  import Drawer from "./Drawer.svelte";
+  import Soon from "./Soon.svelte";
   import { t, type MessageKey } from "./lib/i18n";
   import type { TraceRecord } from "./lib/protocol";
 
@@ -112,34 +116,13 @@
   }
 
   const sections: Section[] = $derived([trigger(entry), context(entry), action(entry), outcome(entry)]);
-
-  let close: HTMLButtonElement | undefined = $state();
-  $effect(() => {
-    close?.focus();
-  });
-
-  function keydown(event: KeyboardEvent) {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onclose();
-    }
-  }
 </script>
 
-<svelte:window onkeydown={keydown} />
-
-<div class="drawer" role="dialog" aria-modal="false" aria-labelledby="kv-trace-title">
-  <header>
-    <h2 id="kv-trace-title">{t("drawer.title")}</h2>
-    <button
-      bind:this={close}
-      type="button"
-      aria-label={t("drawer.close")}
-      onclick={() => onclose()}
-    >
-      {t("drawer.closeShort")}
-    </button>
-  </header>
+<Drawer title={t("drawer.title")} close={t("drawer.close")} {onclose}>
+  {#snippet actions()}
+    <!-- §3.1: Debug mode adds HID-level events; the daemon sends none yet. -->
+    <Soon label={t("drawer.debug")} soon="soon.debug" toggle />
+  {/snippet}
   {#each sections as section, index (index)}
     <section aria-labelledby={`kv-trace-${index}`}>
       <h3 id={`kv-trace-${index}`}>{t(section.title)}</h3>
@@ -156,36 +139,9 @@
       {/if}
     </section>
   {/each}
-</div>
+</Drawer>
 
 <style>
-  .drawer {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    box-sizing: border-box;
-    width: 360px;
-    max-width: 100%;
-    padding: 16px;
-    overflow: auto;
-    border-left: 1px solid var(--kv-fg-muted);
-    background: var(--kv-bg-alt);
-    color: var(--kv-fg);
-  }
-
-  header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-
-  h2 {
-    margin: 0;
-    font-size: 1.1em;
-  }
-
   h3 {
     margin: 16px 0 4px;
     font-size: 1em;

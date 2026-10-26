@@ -9,6 +9,7 @@
   // shown disabled (Soon.svelte).
   import Columns from "./Columns.svelte";
   import KeyEditor from "./KeyEditor.svelte";
+  import Notice from "./Notice.svelte";
   import Soon from "./Soon.svelte";
   import type { Daemon, Tile } from "./lib/daemon";
   import { describe, problemOf, type Editor, type Problem, type Target } from "./lib/editor";
@@ -304,7 +305,7 @@
       <p class="note" aria-busy="true">{t("profiles.loading")}</p>
     {/if}
     {#if listError !== undefined}
-      <p role="alert" class="problem">{t("profiles.listError", { error: listError })}</p>
+      <Notice kind="error">{t("profiles.listError", { error: listError })}</Notice>
     {/if}
     <ul class="profiles" aria-labelledby={`kv-profiles-${uid}`}>
       {#each profiles as profile (profile.id)}
@@ -337,7 +338,7 @@
       <section class="card" aria-labelledby={`kv-header-${uid}`}>
         <h2 id={`kv-header-${uid}`}>{t("profiles.header")}</h2>
         {#if problem !== undefined}
-          <p role="alert" class="problem">{describe(problem)}</p>
+          <Notice kind="error">{describe(problem)}</Notice>
         {/if}
         <dl class="facts">
           <div>
@@ -372,7 +373,7 @@
             </label>
           </form>
           {#if invalid !== undefined}
-            <p role="alert" class="problem">{invalid}</p>
+            <Notice kind="error">{invalid}</Notice>
           {/if}
         {/if}
         <p class="note">{t("profiles.file")} <code>{selected.path}</code></p>
@@ -720,16 +721,6 @@
     margin: 0;
     background: var(--kv-bg);
     color: var(--kv-fg-muted);
-    overflow-wrap: anywhere;
-  }
-
-  .problem {
-    margin: 0;
-    padding: 8px 12px;
-    background: var(--kv-bg-alt);
-    color: var(--kv-fg);
-    border-left: 4px solid var(--kv-state-error);
-    border-radius: var(--kv-radius);
     overflow-wrap: anywhere;
   }
 </style>

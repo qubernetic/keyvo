@@ -7,7 +7,7 @@
   // mirror, the key editor for the selected key.
   import Device from "./Device.svelte";
   import KeyEditor from "./KeyEditor.svelte";
-  import TraceDrawer from "./TraceDrawer.svelte";
+  import Notice from "./Notice.svelte";
   import type { Daemon, Outline, Tile } from "./lib/daemon";
   import type { Editor, Target } from "./lib/editor";
   import {
@@ -34,6 +34,7 @@
     ondevice,
     onview,
     onnavigate,
+    ontrace,
   }: {
     daemon: Daemon;
     editor: Editor;
@@ -47,6 +48,8 @@
     /** What the pad shows, none until the daemon reports it, and the count
      * of configuration reloads, for the Profiles screen. */
     onview?: (view: View | undefined, reloads: number) => void;
+    /** Opens a trace entry in the drawer, which the shell shows. */
+    ontrace?: (entry: TraceRecord) => void;
   } = $props();
 
   /** The skeleton rows of the event list while Home connects. */
@@ -218,19 +221,9 @@
     }
   }
 
-  /** The entry the trace drawer shows, and the control that opened it. */
-  let drawn: TraceRecord | undefined = $state();
-  let opener: HTMLElement | undefined;
-
+  /** Opens `entry` in the shell's trace drawer. */
   function draw(entry: TraceRecord) {
-    opener = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
-    drawn = entry;
-  }
-
-  function undraw() {
-    drawn = undefined;
-    opener?.focus();
-    opener = undefined;
+    ontrace?.(entry);
   }
 
   function select(key: number) {
@@ -283,11 +276,14 @@
   }
 
   /** `screen` when it is built, so a fact can link to it. */
-  function built(screen: ScreenId): ScreenId | undefined {
-    return SCREENS.find((entry) => entry.id === screen)?.soon === undefined ? screen : undefined;
+  function built(screen: ScreenId | undefined): ScreenId | undefined {
+    const entry = SCREENS.find((entry) => entry.id === screen);
+    return entry !== undefined && entry.soon === undefined ? entry.id : undefined;
   }
 
-  function fact(id: string, label: MessageKey, value: string, owner: ScreenId): Fact {
+  /** A fact; `owner` is the rail screen it links to, none for a fact whose
+   * owner lives in Preferences. */
+  function fact(id: string, label: MessageKey, value: string, owner?: ScreenId): Fact {
     const link = built(owner);
     const screen = SCREENS.find((entry) => entry.id === owner);
     return {
@@ -317,23 +313,16 @@
       : t("home.holding", { class: context.class, holding: home.holding.class });
   }
 
-  // Design detail: the screen that owns each fact (§3.1). Overlays come
-  // from plugins and integrations, the context's project from Projects.
+  // Design detail: the screen that owns each fact (§3.1). Devices,
+  // overlays (from plugins and integrations) and the context's project
+  // belong to Preferences tabs, so they link nowhere.
   const facts: Fact[] = $derived([
-    fact("device", "home.device", device(), "devices"),
+    fact("device", "home.device", device()),
     fact("profile", "home.profile", home.view?.profile ?? t("home.unknown"), "profiles"),
     fact("page", "home.page", String(home.view?.page ?? t("home.unknown")), "profiles"),
     fact("mode", "home.mode", home.view?.mode ?? t("home.unknown"), "profiles"),
-    fact("overlay", "home.overlay", t("home.noOverlay"), "integrations"),
-    fact(
-      "context",
-      "home.context",
-      phrase([
-        t("home.unknownProject"),
-        focused(),
-      ]),
-      "projects",
-    ),
+    fact("overlay", "home.overlay", t("home.noOverlay")),
+    fact("context", "home.context", phrase([t("home.unknownProject"), focused()])),
   ]);
 
   const configMessage = $derived.by(() => {
@@ -365,12 +354,12 @@
 
 <section class="home">
   {#if unreachable !== undefined}
-    <div role="alert" class="banner error">
+    <Notice kind="error">
       {t("home.unreachable", { reason: unreachable })}
       <button type="button" aria-label={t("home.retry")} onclick={() => void connect()}>
         {t("home.retry")}
       </button>
-    </div>
+    </Notice>
   {/if}
   <section class="strip" aria-label={t("home.status")}>
     <dl>
@@ -396,17 +385,19 @@
       {/each}
     </dl>
     {#if home.configError !== undefined}
-      <p role="alert" class="error">
-        {configMessage}
-        <button
-          type="button"
-          class="link"
-          aria-label={t("home.open", { screen: t("rail.profiles") })}
-          onclick={() => onnavigate?.("profiles")}
-        >
-          {t("home.open", { screen: t("rail.profiles") })}
-        </button>
-      </p>
+      <div class="config">
+        <Notice kind="error">
+          {configMessage}
+          <button
+            type="button"
+            class="link"
+            aria-label={t("home.open", { screen: t("rail.profiles") })}
+            onclick={() => onnavigate?.("profiles")}
+          >
+            {t("home.open", { screen: t("rail.profiles") })}
+          </button>
+        </Notice>
+      </div>
     {/if}
   </section>
 
@@ -503,18 +494,6 @@
   <section class="events">
     <div class="head">
       <h2 id="kv-events">{t("home.events")}</h2>
-      <!-- §3.1: Debug mode adds HID-level events; the daemon sends none yet. -->
-      <button
-        type="button"
-        role="switch"
-        aria-checked="false"
-        aria-disabled="true"
-        aria-label={t("home.debug")}
-        aria-describedby="kv-debug-soon"
-      >
-        {t("home.debug")}
-      </button>
-      <span id="kv-debug-soon" class="note">{t("soon")}</span>
     </div>
     {#if connecting && home.trace.length === 0}
       <!-- §5.2: skeleton rows, no spinner; the mirror keeps its last frame. -->
@@ -545,27 +524,11 @@
   </section>
 </section>
 
-{#if drawn !== undefined && active}
-  <TraceDrawer entry={drawn} onclose={undraw} />
-{/if}
-
 <style>
   .home {
     display: flex;
     flex-direction: column;
     gap: 12px;
-  }
-
-  .banner {
-    margin: 0;
-    padding: 8px 12px;
-    background: var(--kv-bg-alt);
-    color: var(--kv-fg);
-    border-radius: var(--kv-radius);
-  }
-
-  .error {
-    border-left: 4px solid var(--kv-state-error);
   }
 
   .strip dl {
@@ -593,18 +556,11 @@
     text-decoration: underline;
   }
 
-  .strip .error {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  .config {
     margin: 8px 0 0;
-    padding: 4px 12px;
-    border-radius: var(--kv-radius);
-    background: var(--kv-bg-alt);
-    color: var(--kv-fg);
   }
 
-  .strip .error .link {
+  .config .link {
     background: var(--kv-bg-alt);
     color: var(--kv-accent);
   }

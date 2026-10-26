@@ -442,31 +442,24 @@ describe("Home event list", () => {
     ]);
   });
 
-  it("opens an entry in the trace drawer; Esc closes it and gives the focus back", async () => {
-    const daemon = await mounted();
-    await daemon.send(...eventsOf("trace").map((event): Update => ({ kind: "event", event })));
-    const line = screen.getByRole("button", {
-      name: "Key 9, app layer: exec gh pr view --web, failed: no such file or directory: gh, open the trace entry",
-    });
-    line.focus();
-    await fireEvent.click(line);
-    const drawer = screen.getByRole("dialog", { name: "Trace entry" });
-    expect(within(drawer).getByRole("region", { name: "Result" })).toHaveTextContent(
-      "no such file or directory: gh",
+  it("hands an entry to the shell's trace drawer", async () => {
+    const daemon = fake();
+    const ontrace = vi.fn<(entry: TraceRecord) => void>();
+    render(Home, { props: { daemon: daemon.daemon, editor: editor(), ontrace } });
+    const entries = eventsOf("trace");
+    await daemon.send(...entries.map((event): Update => ({ kind: "event", event })));
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: "Key 9, app layer: exec gh pr view --web, failed: no such file or directory: gh, open the trace entry",
+      }),
     );
-    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(ontrace).toHaveBeenCalledWith(nth(entries, 2).entry);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(line).toHaveFocus();
   });
 
-  it("shows the debug log toggle disabled until the daemon sends HID-level events", async () => {
+  it("leaves the debug log switch to the trace drawer", async () => {
     await mounted();
-    const toggle = screen.getByRole("switch", { name: "Debug log" });
-    expect(toggle).toHaveAttribute("aria-disabled", "true");
-    expect(toggle).toHaveAttribute("aria-checked", "false");
-    expect(toggle).toHaveAccessibleDescription("Coming soon");
-    await fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(screen.queryByRole("switch", { name: "Debug log" })).toBeNull();
   });
 
   it("says when nothing happened yet and how to fill the list", async () => {
@@ -490,18 +483,19 @@ describe("Home virtual pad", () => {
     );
   });
 
-  it("the result line opens the dry run's trace entry", async () => {
-    await mounted();
+  it("the result line opens the dry run's trace entry in the shell's drawer", async () => {
+    const ontrace = vi.fn<(entry: TraceRecord) => void>();
+    render(Home, { props: { daemon: fake().daemon, editor: editor(), ontrace } });
+    await waitFor(() => expect(key(5)).toHaveAccessibleName("Key 5: Test, exec cargo test"));
     await fireEvent.click(key(5));
     await fireEvent.click(
       await screen.findByRole("button", { name: "Show the trace entry" }),
     );
-    const drawer = screen.getByRole("dialog", { name: "Trace entry" });
-    expect(within(drawer).getByRole("region", { name: "Block reason" })).toHaveTextContent(
-      "Dry run: resolved, nothing executed.",
-    );
-    await fireEvent.click(within(drawer).getByRole("button", { name: "Close the trace entry" }));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(ontrace).toHaveBeenCalledWith({
+      ...DRY_RUN,
+      key: 5,
+      trigger: { press: "short", simulated: true },
+    });
   });
 
   it("a right click sends a long press", async () => {
