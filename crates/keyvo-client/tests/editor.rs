@@ -29,6 +29,7 @@ struct Fixture {
     file: String,
     path: PathBuf,
     fields: KeyFields,
+    line: usize,
     steps: Vec<Step>,
 }
 
@@ -36,6 +37,7 @@ struct Fixture {
 struct Step {
     fields: KeyFields,
     file: String,
+    line: usize,
 }
 
 fn steps() -> Fixture {
@@ -100,6 +102,7 @@ fn the_shared_steps_write_their_files_and_undo_restores_them() {
     let view = editor.key(&steps.profile, steps.page, key).unwrap();
     assert_eq!(view.path, dirs.config().join(&steps.path));
     assert_eq!(view.fields, steps.fields);
+    assert_eq!(view.line, Some(steps.line));
 
     let mut files = vec![steps.file.clone()];
     let mut before = steps.fields.clone();
@@ -110,6 +113,7 @@ fn the_shared_steps_write_their_files_and_undo_restores_them() {
             .unwrap();
         assert_eq!(edited.before, before, "step {n}");
         assert_eq!(edited.fields, step.fields, "step {n}");
+        assert_eq!(edited.line, Some(step.line), "step {n}");
         assert_eq!(
             dirs.profile(&steps.profile),
             fixture(&step.file),
@@ -160,10 +164,9 @@ fn the_same_fields_write_nothing_and_take_no_snapshot() {
 fn a_missing_global_profile_is_created_from_the_builtin_one() {
     let dirs = Dirs::new(&[]);
     let editor = dirs.editor();
-    assert_eq!(
-        editor.key("global", 1, slot(3)).unwrap().fields,
-        KeyFields::default()
-    );
+    let view = editor.key("global", 1, slot(3)).unwrap();
+    assert_eq!(view.fields, KeyFields::default());
+    assert_eq!(view.line, None);
     let fields = KeyFields {
         label: Some("Build".into()),
         ..KeyFields::default()
@@ -172,6 +175,9 @@ fn a_missing_global_profile_is_created_from_the_builtin_one() {
         .set_key("global", 1, slot(3), &fields, at(1))
         .unwrap();
     assert_eq!(edited.snapshot, None);
+    // The key added at the end of the page has a line after the write.
+    assert_eq!(edited.line, Some(10));
+    assert_eq!(editor.key("global", 1, slot(3)).unwrap().line, Some(10));
     assert_eq!(
         dirs.profile("global"),
         format!("{BUILTIN_GLOBAL}\n[pages.keys.3]\nlabel = \"Build\"\n")
@@ -271,6 +277,17 @@ fn a_problem_serializes_its_position() {
         serde_json::to_value(&problem).unwrap(),
         serde_json::json!({ "message": "bad", "path": "/c/profiles/t.toml", "line": 4, "column": 8 })
     );
+}
+
+#[test]
+fn a_key_view_serializes_its_line_only_when_the_key_has_one() {
+    let steps = steps();
+    let dirs = Dirs::new(&[(&steps.profile, &fixture(&steps.file))]);
+    let editor = dirs.editor();
+    let defined = serde_json::to_value(editor.key(&steps.profile, 1, slot(2)).unwrap()).unwrap();
+    assert_eq!(defined["line"], serde_json::json!(steps.line));
+    let blank = serde_json::to_value(editor.key(&steps.profile, 1, slot(3)).unwrap()).unwrap();
+    assert_eq!(blank.get("line"), None, "{blank}");
 }
 
 #[test]

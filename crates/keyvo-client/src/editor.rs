@@ -96,6 +96,10 @@ pub struct KeyView {
     pub path: PathBuf,
     /// The key's fields.
     pub fields: KeyFields,
+    /// The line, from 1, on which the key's table starts in the file; none
+    /// for a key the page does not define.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<usize>,
 }
 
 /// What a write did.
@@ -107,6 +111,10 @@ pub struct Edited {
     pub before: KeyFields,
     /// The fields written.
     pub fields: KeyFields,
+    /// The line, from 1, on which the key's table starts in the written
+    /// file; none when the key is left without a table.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<usize>,
     /// The copy of the file taken before the write; none when nothing was
     /// written or the file did not exist yet.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -163,7 +171,8 @@ impl Editor {
     pub fn key(&self, id: &str, page: usize, slot: KeySlot) -> Result<KeyView, EditorError> {
         let (path, doc) = self.open(id)?;
         let fields = doc.key(page, slot)?;
-        Ok(KeyView { path, fields })
+        let line = doc.key_line(page, slot);
+        Ok(KeyView { path, fields, line })
     }
 
     /// Sets the fields of key `slot` on page `page` of profile `id`: a
@@ -192,6 +201,7 @@ impl Editor {
             self.write(&path, &doc, now)?
         };
         Ok(Edited {
+            line: doc.key_line(page, slot),
             path,
             before,
             fields: fields.clone(),
