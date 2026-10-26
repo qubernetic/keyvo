@@ -54,6 +54,9 @@ thumbs.db
 
 # Local scratch
 /scratch/
+
+# impeccable live mode on the app dev server (design pass, never committed)
+.impeccable/
 AUDIT.md
 
 # Host-runnable binaries copied by `just build`
