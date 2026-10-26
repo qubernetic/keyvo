@@ -24,6 +24,8 @@
     <rect id="key-7" x="57" y="334" width="117" height="117" rx="23"/>
     <rect id="key-8" x="194" y="334" width="117" height="117" rx="23"/>
     <rect id="key-9" x="331" y="334" width="117" height="117" rx="23"/>
+    <!-- The tactile bar of key 5, the home key under the finger. -->
+    <path id="key-5-notch" d="M216 296 H289" fill="none" style="stroke: var(--kv-device-glyph, #ffffff)" stroke-opacity=".18" stroke-width="3" stroke-linecap="round"/>
   </g>
   <g id="page-buttons" style="stroke: var(--kv-device-edge, #16181b)" stroke-width="3">
     <g id="page-prev">

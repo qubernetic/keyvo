@@ -15,7 +15,7 @@ comment). The version is the one `keyvo-core` renders on the pad
 release, add the header, and list it in `src/lib/icons.ts`.
 
 The device drawings are the owner's originals with a cleanup for the app:
-ids on the parts (`key-1` to `key-9`, `page-prev`, `page-next`; `button-1`
+ids on the parts (`key-1` to `key-9`, `key-5-notch` (the tactile bar of the home key), `page-prev`, `page-next`; `button-1`
 to `button-4`, `roller`, `led`, `dial`), prefixed gradient ids so both can
 be inlined on one page, two stray paths and three empty groups removed,
 the two page buttons made the same size, and every colour as a CSS custom
