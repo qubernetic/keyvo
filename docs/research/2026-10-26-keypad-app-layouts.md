@@ -539,7 +539,7 @@ Project files read first: `docs/design/critique-2026-10.md` sections 5, 8 and 9;
 
 ## 9. Saved screenshots
 
-All under `/tmp/claude-1000/-var-home-cbiro-Git-keyvo/0714c272-7828-43af-aca0-b3c936ed4bd6/scratchpad/layouts/`:
+Saved locally during the study and not committed (proprietary product images); the sources:
 
 | File | Source |
 |---|---|

@@ -13,15 +13,15 @@
 
 *Implements d1, d3; P2, P3.*
 
-The app is a live copy of the pad. Home shows the nine keys exactly as the
+The app is a live copy of the pad. The Pad screen shows the nine keys exactly as the
 Keypad shows them: the GUI subscribes to the daemon (`subscribe`), receives the
 same render inputs, and runs the same renderer as the daemon, so a tile on screen
 is bit-identical to the tile on the LCD. The user never has to guess whether the
 GUI and the device agree.
 
-Editing happens on the same mirror. Selecting a key on Home or on a Profiles
-page opens its editor; the preview in the right column is the mirror again, not
-a second drawing. There is no separate "design canvas".
+Editing happens on the same mirror. Selecting a key on the Pad opens its
+inspector under the drawing; the page thumbnails of Profiles are the mirror
+again, not a second drawing. There is no separate "design canvas".
 
 Three sources can feed the mirror:
 
@@ -31,8 +31,8 @@ Three sources can feed the mirror:
 | Simulator, sandboxed | the user flips the sandbox switch | a working copy; Apply merges, Discard drops (§4.2) |
 | Simulator, direct | no device connected at start, or no daemon | the real profile files |
 
-The header shows which source is live. The sandbox switch is on Home and in the
-Profiles editor; it is not a mode the user can forget, because the header turns
+The header shows which source is live. The sandbox switch is in the header on
+every screen; it is not a mode the user can forget, because the header turns
 to the sandbox colour token and the Apply and Discard pair stays visible until
 one of them is pressed.
 
@@ -73,7 +73,7 @@ anti-reference. The sketch of `docs/ui-concepts/v3/` is superseded.*
   Keyboard shortcuts, About). Changing the selected device changes which
   device the drawing and the inspector focus; it never hides a panel (d13).
 - **Preferences**: a window (or a screen in the same shell) with the tabs
-  General, Devices (the device colour, the Dialpad panel of §3.6),
+  General, Devices (the device colour; the Dialpad panel of §3.3 and §4.2 moves here),
   Integrations, Projects. A tab not built yet shows one roadmap sentence
   there; "Coming soon" never sits in the rail.
 - **Actions catalogue** (right column of the Pad): a search field and
@@ -105,7 +105,8 @@ holds, what is special in the right column.
   tiles rendered by keyvo-core sit in the cutouts at the geometry rects
   and scale with the drawing: `width: 100%`, `max-width` the panel's
   pixel width, the device aspect ratio, never above 1:1, never clipped.
-  The Dialpad gets its own drawing (§3.6).
+  The Dialpad gets its own drawing with the Dialpad slice (the panel of
+  §3.3 and §4.2, then a Devices tab of Preferences).
 - The mirror shows the pad: the active profile and page, live. A key that
   falls through from the global layer is dimmed with a corner mark; the
   selected key has the accent outline; key feedback (§5.1) draws on the
@@ -169,6 +170,14 @@ priority and match rules.*
 ### 3.3 Behaviors
 
 *Implements d4, d9, d12, d13, d16.*
+
+*Sections 3.3 to 3.7 still describe the pre-2026-10-26 shell (rail screens
+with list columns, the key card, the Home status strip). Under §2 as
+rewritten, Behaviors stays a rail screen and Projects, Integrations, Devices
+and Settings become tabs of Preferences; these sections are rewritten with
+#108 and #109 and the slices that build them. Until then, read "Home" as the
+Pad, "status strip" as the header and the drawing's caption, "key card" as
+the inspector's subtitle.*
 
 "Behavior" is the GUI's word for one key binding: a key (or Dialpad control, or
 MX device control) on a page of a profile, with its triggers, conditions, actions
@@ -392,9 +401,9 @@ by printing `KEYVO_STATE=<name>` on stdout.
   the last frame it had.
 - **Daemon unreachable**: header badge, the mirror switches to the in-process
   simulator (§4.2), Devices shows the `doctor` entry for the service.
-- **Device missing**: the device selector shows "Simulator"; Home says which
+- **Device missing**: the device selector shows "Simulator"; the Pad says which
   device is missing and the last time it was seen.
-- **Schema error in a file**: the profile row and the Home status strip show the
+- **Schema error in a file**: the profile row and the Pad's header show the
   error with file and line; the editor is read-only for that file until the
   file parses again.
 
@@ -404,7 +413,7 @@ by printing `KEYVO_STATE=<name>` on stdout.
 
 | Keys | Action |
 |---|---|
-| `Ctrl+1` to `Ctrl+7` | rail screens in order |
+| `Ctrl+1` to `Ctrl+3` | rail screens in order (Pad, Profiles, Behaviors) |
 | `Ctrl+K` | command palette (screens, profiles, behaviors, projects, actions such as "Trust current project") |
 | `1` to `9`, arrows | select a key on the focused grid |
 | `Enter` | edit the selected key |
@@ -523,8 +532,8 @@ the measured values.
 
 *Implements d9; P4.*
 
-One trace entry per press, real or simulated. The drawer opens from the Home
-event list, from the "Test this behavior" result line, and from a key's error
+One trace entry per press, real or simulated. The drawer opens from the Pad's
+trace strip, from the "Test this behavior" result line, and from a key's error
 badge. It renders the entry as sections in resolution order:
 
 1. Trigger: timestamp, device, key or control, press kind, real or simulated.
@@ -556,7 +565,7 @@ card as "Run with key environment".
 
 | Direction | Message | Used for |
 |---|---|---|
-| in | `subscribe` (`events`: key, profile, page, mode, device, context, trace, config) | the mirror, status strip, event list |
+| in | `subscribe` (`events`: key, profile, page, mode, device, context, trace, config) | the mirror, the header facts, the trace strip |
 | in | `status` | first paint, reconnect |
 | in | `press` with `dry_run: true` | Test this behavior, virtual pad |
 | in | `set_key`, `push_overlay`, `pop_overlay` | reference plugins only; the GUI does not call them for editing |
@@ -598,7 +607,7 @@ marketplace. Unchanged: `.lp5` import (spec §7.3).
 |---|---|
 | P1 native theme | 2, 6, 7 |
 | P2 guided | 2 (hint bar), 4.4, 5.2 |
-| P3 no redundancy | 2 (rail, header, key card) |
+| P3 no redundancy | 2 (rail, header), 3.1 (inspector subtitle) |
 | P4 debuggable | 3.1, 3.6, 4.2, 8 |
 | d1 device mirror | 1, 3.1 |
 | d2 immediate apply | 3.2, 4.1 |
