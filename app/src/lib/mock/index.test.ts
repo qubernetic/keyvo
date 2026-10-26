@@ -37,6 +37,22 @@ describe("the mock clients", () => {
     expect(await ids("?mock-profiles=other")).not.toContainEqual(["empty", []]);
   });
 
+  it("refuses the editor's writes under ?mock-error=write, and only there", async () => {
+    const root = document.createElement("div");
+    const target = { profile: "global", page: 1, key: 9 };
+    const refused = mockClients("?mock-error=write", root);
+    await expect(refused.editor.editKey(target, { label: "Nine" })).rejects.toMatchObject({
+      message: expect.stringContaining("?mock-error=write"),
+      line: expect.any(Number),
+      column: 1,
+    });
+    expect((await refused.daemon.status()).device.connected).toBe(true);
+    const written = mockClients("?mock-error=unreachable", root);
+    await expect(written.editor.editKey(target, { label: "Nine" })).resolves.toMatchObject({
+      fields: { label: "Nine" },
+    });
+  });
+
   it("answers status without ?mock-error", async () => {
     const root = document.createElement("div");
     const { daemon } = mockClients("?mock-error=other", root);

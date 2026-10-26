@@ -1,6 +1,6 @@
 // The key editor over the mock store, answering like the Tauri shell's
 // key and edit_key.
-import type { Editor, KeyFields, Target } from "../editor";
+import type { Editor, KeyFields, Problem, Target } from "../editor";
 import { attempt } from "./profiles";
 import { problem, type MockPage, type Store } from "./store";
 
@@ -22,7 +22,23 @@ function line(store: Store, { profile, page, key }: Target): { line?: number } {
   return found === undefined ? {} : { line: found };
 }
 
-export function mockEditor(store: Store): Editor {
+export interface MockEditorOptions {
+  /** Every write is refused with a Problem placed on the key's line
+   * (`?mock-error=write`), as keyvo_client refuses a write the profile
+   * would not load after. */
+  refuseWrites?: boolean;
+}
+
+function refused(store: Store, target: Target): Problem {
+  return {
+    ...problem("the mock refuses every write (?mock-error=write)"),
+    path: store.path(target.profile),
+    line: store.keyLine(target.profile, target.page, target.key) ?? 1,
+    column: 1,
+  };
+}
+
+export function mockEditor(store: Store, options: MockEditorOptions = {}): Editor {
   return {
     key: (target) =>
       attempt(() => ({
@@ -33,6 +49,7 @@ export function mockEditor(store: Store): Editor {
     editKey: (target, fields) =>
       attempt(() => {
         const keys = page(store, target).keys;
+        if (options.refuseWrites === true) throw refused(store, target);
         const before: KeyFields = keys.get(target.key) ?? {};
         keys.set(target.key, structuredClone(fields));
         return {

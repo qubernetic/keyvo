@@ -20,16 +20,19 @@ export interface Clients {
 
 /** The three clients over fresh copies of the contrib profiles, the token
  * set `?theme=` names applied to `root`; `?mock-error=unreachable` makes
- * `status` reject, `?mock-profiles=empty` adds a profile with no pages. */
+ * `status` reject, `?mock-error=write` makes every `editKey` reject with a
+ * Problem carrying file, line and column, `?mock-profiles=empty` adds a
+ * profile with no pages. */
 export function mockClients(search: string, root: HTMLElement): Clients {
   applyTheme(themeOf(search), root);
   const query = new URLSearchParams(search);
   const empty = query.get("mock-profiles") === "empty";
   const store = new Store([...contribProfiles(), ...(empty ? [EMPTY_PROFILE] : [])]);
   const unreachable = query.get("mock-error") === "unreachable";
+  const refuseWrites = query.get("mock-error") === "write";
   return {
     daemon: mockDaemon(store, { unreachable }),
-    editor: mockEditor(store),
+    editor: mockEditor(store, { refuseWrites }),
     files: mockProfiles(store),
   };
 }
