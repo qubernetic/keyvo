@@ -1,4 +1,6 @@
-// Entry point of the Tauri window.
+// Entry point of the Tauri window. On the Vite dev server with
+// VITE_KEYVO_MOCK=1 (`just app-dev`) the app runs against the in-memory
+// mock of lib/mock/ instead; a build without the variable leaves it out.
 import { mount } from "svelte";
 
 import App from "./App.svelte";
@@ -13,7 +15,9 @@ if (target === null) {
   throw new Error("index.html has no #app element");
 }
 
-export default mount(App, {
-  target,
-  props: { daemon: tauriDaemon, editor: tauriEditor, files: tauriProfiles },
-});
+const clients =
+  import.meta.env.VITE_KEYVO_MOCK === "1"
+    ? (await import("./lib/mock")).mockClients(window.location.search, document.documentElement)
+    : { daemon: tauriDaemon, editor: tauriEditor, files: tauriProfiles };
+
+export default mount(App, { target, props: clients });
