@@ -872,6 +872,27 @@ after the splash ends under half a second and the keep-alive pings
 `keep_alive_timeout` would let the keep-alive run out during the wait,
 because the claim pings only between two retries.
 
+Windows that hold the context, under `[focus]` in `config.toml` (read
+when the daemon starts):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `hold_classes` | `["keyvo-app"]` | window classes, compared ASCII-case-insensitively as the whole name, that never change the context; an empty list holds nothing |
+
+While a window of one of these classes has focus, the context and the
+profile stay those of the last other window: a held report cancels a
+pending one and leaves the applied window as it is, so the pad, the GUI's
+mirror and its editor stay on the profile the user was just in when they
+click into the keyvo app to configure it (the Stream Deck app suspends its
+Smart Profiles while its window is open for the same reason). The next
+report of a window not in the list applies with the usual
+`focus_hysteresis`; a held report before any other window keeps the
+global profile. A reload selects again for the window held over. The page
+buttons, the mode toggle and manual mode work as before while held. The
+daemon's `context` event and the `context` field of `status` carry
+`held: true` for such a report (§8); no `profile`, `page` or `mode` event
+follows it.
+
 ### 6.2 Window/context detection
 
 - **KDE Wayland (v1):** the daemon pushes its own KWin script over D-Bus
@@ -949,8 +970,9 @@ because the claim pings only between two retries.
   one without, then the first in id order. No match selects the global
   profile, whose rules are never consulted. A report applies once no
   other report came for `focus_hysteresis`; a report of the window
-  already applied cancels a pending one. Class globs and regexes come
-  later.
+  already applied cancels a pending one, and so does a report of a class
+  in `[focus].hold_classes` (§6.1), which never applies. Class globs and
+  regexes come later.
 - **Project context (M2).** Integrations push the working directory with
   `notify_context` (`cwd` field): shell prompt hooks for bash, zsh and fish,
   the VS Code extension, tmux. The daemon binds the directory to the focused
@@ -1017,7 +1039,8 @@ JSON Schema generated with `schemars` ships with every release and backs
 editor validation. Validation errors carry file, line and column.
 
 Loading (`keyvo_core::layout`, pre-alpha subset: `config.toml` with
-`[timing]`, `[render]` and `[trace]`, and `profiles/`):
+`[timing]`, `[focus]`, `[render]`, `[trace]` and `[daemon]`, and
+`profiles/`):
 
 - The directory is `$XDG_CONFIG_HOME/keyvo` when that variable is an
   absolute path, else `$HOME/.config/keyvo`. A missing directory,
@@ -1179,8 +1202,8 @@ mouse.dpi            = 1200
   load at start, the daemon runs with its `config.toml` (when that one is
   valid) and the built-in global profile. A missing directory turns
   hot-reload off with a warning. The `[timing]` values of the device
-  (§5), `long_press`, `focus_hysteresis` and `page_grace` are read at
-  start; the other `[timing]` and `[render]` values and `[trace].ring`
+  (§5), `long_press`, `focus_hysteresis`, `page_grace` and
+  `[focus].hold_classes` are read at start; the other `[timing]` and `[render]` values and `[trace].ring`
   apply from the next reload.
   The socket `reload` (§8) loads the directory at once, with the same
   rules, and answers whether it loaded. The mtime poll fallback and
@@ -1326,6 +1349,10 @@ As built (pre-alpha, `keyvo_core::socket` and `keyvo_daemon::socket`):
   of the newest trace entries), `press` (`key`, `kind`, `dry_run`),
   `reload`, and `notify_context` (`class`, `title`). Any other command and
   any unknown field is rejected as `invalid_request`.
+- A focus report of a class in `[focus].hold_classes` (§6.1) goes out as
+  a `context` event with `held: true` and is the `context` of `status`;
+  the view does not change, so no `profile`, `page` or `mode` event
+  follows.
 - Clients ignore unknown fields in responses and events, so a later daemon
   may add fields within version 1.
 - Every response echoes the request's `id` and carries `ok` with `result`
@@ -1681,7 +1708,9 @@ and the columns of `docs/design/gui-ux.md` §2:
 - **Status strip.** One fact each: device, profile, page, mode, top
   overlay (`none`: the daemon has no overlays yet) and context
   (`unknown project`, as the daemon sends no project yet, and the focused
-  window). Profile, page and mode link to Profiles; device, overlay and
+  window; a held window, §6.1, reads `keyvo-app focused, holding
+  org.kde.konsole`, or `holding the context` when the app saw no window
+  before it). Profile, page and mode link to Profiles; device, overlay and
   context belong to Devices, Integrations and Projects, which are not
   built, so they are plain text. A failed reload shows as an alert in the
   strip: `Schema error in <file>, line <n>, column <n>: <message>` when the
@@ -1995,6 +2024,12 @@ Status of the v0.1 questions after the grill and the research.
   shell's `key` and `edit_key` answer the line of the key's table in its
   profile file (`ProfileDocument::key_line`), for the Pad inspector's
   "file line N" subtitle (#122).
+- **v0.3, pre-alpha GUI design pass follow-up (2026-10-26)**: §6.1
+  `[focus].hold_classes` (default `["keyvo-app"]`): a focused window of
+  such a class keeps the context and profile of the window before it;
+  §6.2 a held report cancels a pending one; §7.2 read at start; §8 the
+  `context` event and `status` field carry `held: true`; §10 the Context
+  fact of Home names the window held over (#117).
 - **v0.3, pre-alpha slice 17a (2026-10-26)**: §5.4 the plug-in splash
   (`a4` after `setMode(a0)` for a few seconds after a plug-in, #52) and
   the claim's wait for it; §6.1 `claim_splash_retry` (500 ms) and

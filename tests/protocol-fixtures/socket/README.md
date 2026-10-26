@@ -16,7 +16,7 @@ the event lines to a fake daemon, and the trace drawer's tests
 |---|---|
 | `requests.ndjson` | one request per command, every field written out |
 | `responses.ndjson` | the answers to them: `status` with and without a Keypad (both with `config_dir`, the first with the captured Keypad `geometry`), `subscribe`, a dry-run and a real `press`, `reload` and its failure, `notify_context`, the three request errors, and the `unavailable` refusal of a connection over the cap (`crates/keyvo-daemon/tests/socket.rs` checks the daemon sends it) |
-| `events.ndjson` | every event class; the connected `device` line carries the `geometry`; the `trace` lines (with their `layer`) are the records of `crates/keyvo-core/tests/fixtures/trace/records.ndjson` |
+| `events.ndjson` | every event class; the connected `device` line carries the `geometry`; the last `context` line is the keyvo app holding the context (`held`); the `trace` lines (with their `layer`) are the records of `crates/keyvo-core/tests/fixtures/trace/records.ndjson` |
 
 The lines are written by hand from the protocol, not captured. Key order in
 an object carries no meaning; a client compares parsed values, not text.

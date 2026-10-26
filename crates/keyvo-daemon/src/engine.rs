@@ -37,10 +37,11 @@ pub struct Engine {
 impl Engine {
     /// The global profile's context page in auto mode, before any device
     /// told its key count. The state machine's `[timing]` values
-    /// (`focus_hysteresis`, `page_grace`, `long_press`) are read here.
+    /// (`focus_hysteresis`, `page_grace`, `long_press`) and
+    /// `[focus].hold_classes` are read here.
     #[must_use]
     pub fn new(loaded: Loaded) -> Self {
-        let state = State::new(&loaded.config.timing, &loaded.profiles);
+        let state = State::new(&loaded.config, &loaded.profiles);
         Self {
             loaded,
             state,
@@ -94,6 +95,13 @@ impl Engine {
     /// The focus source reports `window` at `now`.
     pub fn focus(&mut self, window: WindowContext, now: Instant) {
         self.state.focus(window, now, &self.loaded.profiles);
+    }
+
+    /// Whether a window of `class` holds the context
+    /// (`[focus].hold_classes`).
+    #[must_use]
+    pub fn holds(&self, class: &str) -> bool {
+        self.state.holds(class)
     }
 
     /// A page button went down at `now`.

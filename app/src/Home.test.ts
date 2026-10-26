@@ -337,8 +337,29 @@ describe("Home status strip", () => {
     const strip = screen.getByRole("region", { name: "Status" });
     expect(within(strip).getByLabelText("Device")).toHaveTextContent("No Keypad: device disconnected");
     expect(within(strip).getByLabelText("Mode")).toHaveTextContent("manual");
+    // The last context is the keyvo app's, holding the window before it.
     expect(within(strip).getByLabelText("Context")).toHaveTextContent(
-      "unknown project, org.gnome.Ptyxis: vim",
+      "unknown project, keyvo-app focused, holding org.gnome.Ptyxis",
+    );
+  });
+
+  it("names the window a held context holds", async () => {
+    const app = nth(eventsOf("context"), 2);
+    const daemon = await mounted();
+    await daemon.send({ kind: "event", event: app });
+    const strip = screen.getByRole("region", { name: "Status" });
+    expect(within(strip).getByLabelText("Context")).toHaveTextContent(
+      "unknown project, keyvo-app focused, holding org.kde.konsole",
+    );
+  });
+
+  it("says the context is held when the window before is not known", async () => {
+    const { event: _, ...held } = nth(eventsOf("context"), 2);
+    const status: Status = { ...STATUS, context: held };
+    await mounted(fake({ status: vi.fn(() => Promise.resolve(status)) }));
+    const strip = screen.getByRole("region", { name: "Status" });
+    expect(within(strip).getByLabelText("Context")).toHaveTextContent(
+      "unknown project, keyvo-app focused, holding the context",
     );
   });
 

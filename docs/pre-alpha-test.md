@@ -662,6 +662,14 @@ No Keypad and no daemon needed; a host browser.
 - [ ] #114 Daemon stopped, right after a replug: `just run -- fill '#00ff00' --panel --hold 5` paints green instead of failing with `display stayed in mode 0xa4 after setMode(a0)`.
 - [ ] #114 `printf '[timing]\nclaim_splash_retry = 2000\nclaim_splash_timeout = 2000\n' > ~/.config/keyvo/config.toml`, then `bin/keyvo-daemon`: it logs `configuration not loaded:` and `.../config.toml:2:22: `claim_splash_retry` (2000 ms) must be shorter than `claim_splash_timeout` (2000 ms); ...`. Then Ctrl-C and `rm ~/.config/keyvo/config.toml`.
 
+### Held window classes (#121)
+
+The daemon with the profiles from section 3 and `bin/keyvo-app` running (section 2: the GNOME runtime wrapper where `bin/keyvo-app` alone fails); no `~/.config/keyvo/config.toml`, so `[focus].hold_classes` is `["keyvo-app"]`.
+
+- [ ] #121 Focus Konsole: the pad shows the Konsole profile. Click the keyvo window: the pad stays on Konsole, Home's Context fact reads "keyvo-app focused, holding org.kde.konsole", and `bin/keyvo ctl subscribe` shows the `context` event with `"held":true` and no `profile`, `page` or `mode` event after it.
+- [ ] #121 Focus VS Code: the pad switches to the VS Code profile after the hysteresis as before.
+- [ ] #121 `printf '[focus]\nhold_classes = []\n' > ~/.config/keyvo/config.toml`, restart the daemon: clicking the keyvo window switches the pad to the global profile as before #121. Then `rm ~/.config/keyvo/config.toml`.
+
 ### Design critique (#106)
 
 No Keypad needed; the mock dev server of #113 in a host browser.

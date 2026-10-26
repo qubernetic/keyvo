@@ -3,8 +3,8 @@
 // subscription, folded the way crates/keyvo-client/src/mirror.rs folds them.
 import { describe, expect, it } from "vitest";
 
-import { apply, fromStatus, grid, HOME_TRACE, initial, schemaError, summarize } from "./home";
-import type { Status, TraceRecord } from "./protocol";
+import { apply, fromStatus, grid, HOME_TRACE, initial, schemaError, summarize, type HomeState } from "./home";
+import type { Event, Status, TraceRecord } from "./protocol";
 import { events, eventsOf, nth, responses } from "./fixtures";
 
 const STATUS = responses()[0] as Status;
@@ -107,7 +107,31 @@ describe("apply", () => {
     for (const event of eventsOf("context")) {
       state = apply(state, { kind: "event", event });
     }
-    expect(state.context).toEqual({ class: "org.gnome.Ptyxis", title: "vim", source: "notify_context" });
+    expect(state.context).toEqual({
+      class: "keyvo-app",
+      title: "keyvo",
+      pid: 5150,
+      source: "watcher",
+      held: true,
+    });
+    expect(state.holding?.class).toBe("org.gnome.Ptyxis");
+  });
+
+  it("a held context holds the window reported before it", () => {
+    const contexts = eventsOf("context");
+    const [konsole, ptyxis, app] = [nth(contexts, 0), nth(contexts, 1), nth(contexts, 2)];
+    const fold = (state: HomeState, event: Event) => apply(state, { kind: "event", event });
+    // Nothing reported before the keyvo app: it holds no known window.
+    let state = fold(initial(), app);
+    expect(state.holding).toBeUndefined();
+    state = fold(fold(state, konsole), app);
+    expect(state.holding?.class).toBe("org.kde.konsole");
+    // A second held report keeps the window held over.
+    state = fold(state, app);
+    expect(state.holding?.class).toBe("org.kde.konsole");
+    state = fold(state, ptyxis);
+    expect(state.holding).toBeUndefined();
+    expect(fromStatus(STATUS).holding).toBeUndefined();
   });
 
   it("key events hold and release a key", () => {

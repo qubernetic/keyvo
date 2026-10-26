@@ -25,8 +25,8 @@
 //!   in-memory ring buffer of `[trace].ring` entries.
 //!
 //! The `[timing]` values of the device actor, `long_press`,
-//! `focus_hysteresis` and `page_grace` are read at start; the others and
-//! `[trace].ring` apply from the next reload.
+//! `focus_hysteresis`, `page_grace` and `[focus].hold_classes` are read at
+//! start; the others and `[trace].ring` apply from the next reload.
 
 use std::collections::VecDeque;
 use std::future::Future;
@@ -419,11 +419,20 @@ impl<I: InputInjector> Controller<'_, I> {
     /// `source` reports the focused `window`.
     fn focus(&mut self, window: WindowContext, source: ContextSource) {
         tracing::debug!("focus from {source:?}: {window:?}");
+        let held = self.engine.holds(&window.class);
+        if held {
+            tracing::debug!(
+                "{} holds the context: the view stays {:?}",
+                window.class,
+                self.engine.view()
+            );
+        }
         let context = Context {
             class: window.class.clone(),
             title: window.title.clone(),
             pid: window.pid,
             source,
+            held,
         };
         self.context = Some(context.clone());
         self.emit(Event::Context(context));

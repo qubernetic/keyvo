@@ -1,5 +1,5 @@
-//! `config.toml`: the `[timing]` (spec §6.1), `[render]` (spec §9),
-//! `[trace]` and `[daemon]` (spec §8) tables, pre-alpha subset. Durations are integer milliseconds; a key left
+//! `config.toml`: the `[timing]` and `[focus]` (spec §6.1), `[render]`
+//! (spec §9), `[trace]` and `[daemon]` (spec §8) tables, pre-alpha subset. Durations are integer milliseconds; a key left
 //! out keeps its documented default; unknown keys are errors.
 
 use std::num::NonZeroUsize;
@@ -24,6 +24,8 @@ pub struct Config {
     pub trace: Trace,
     /// Limits of the daemon's control socket (spec §8).
     pub daemon: Daemon,
+    /// Which focused windows switch the context (spec §6.1).
+    pub focus: Focus,
 }
 
 impl Config {
@@ -285,6 +287,36 @@ impl Default for Daemon {
         Self {
             socket_line_bytes: NonZeroUsize::MIN.saturating_add(64 * 1024 - 1),
             socket_connections: NonZeroUsize::MIN.saturating_add(32 - 1),
+        }
+    }
+}
+
+/// The `[focus]` table (spec §6.1): the window classes that hold the
+/// context. While one of them has focus, the pad keeps the context and
+/// profile of the last other window, so the keyvo app can configure the
+/// profile it was opened from. Read when the daemon starts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct Focus {
+    /// Window classes, compared without case; an empty list holds nothing.
+    /// Default `["keyvo-app"]`, the keyvo app's own window.
+    pub hold_classes: Vec<String>,
+}
+
+impl Focus {
+    /// Whether a window of `class` holds the context.
+    #[must_use]
+    pub fn holds(&self, class: &str) -> bool {
+        self.hold_classes
+            .iter()
+            .any(|held| held.eq_ignore_ascii_case(class))
+    }
+}
+
+impl Default for Focus {
+    fn default() -> Self {
+        Self {
+            hold_classes: vec!["keyvo-app".to_owned()],
         }
     }
 }
