@@ -295,6 +295,10 @@ is for `keyvo ctl`, T3 for the app.
     ```
 
     shows only the `label` line of key 5, comments and alignment intact.
+    Then pick `rocket` in the inspector's Icon field and `#336699` in its
+    Color swatch: the pad's key 5 repaints with the rocket on that colour,
+    the inspector's header reads `Key 5: Exec` with the file and line, and
+    the diff shows the `icon = "lucide:rocket"` and `color` lines added.
     Restore it: `cp contrib/profiles/global.toml ~/.config/keyvo/profiles/`.
 
 12. **Shell and readable dropdowns.** Still in the app:
@@ -721,6 +725,15 @@ No Keypad needed for the first three; the mock dev server of #113 in a host brow
 - [ ] #133 Wait for the mock's focus cycle to reach `keyvo-app` (after Konsole): a line reads `keyvo-app focused, holding konsole` and the drawing stays on Konsole; the next step (VS Code) removes the line.
 - [ ] #133 Click a tile (it gets the accent outline, nothing is pressed), then wait for the focus cycle to move the pad: the key editor stays on the key, the drawing follows the pad, and `The pad moved to <profile>, page <n>` appears with `Follow`; `Follow` removes it and the editor shows the same key number on the pad's profile. `?mock-profiles=empty` and `Empty` in the header's dropdown: no tabs, only the greyed `+`.
 - [ ] #133 With the daemon and the Keypad: section 5 steps 9, 10 and 13.
+
+### The pinned inspector with the icon picker (#134)
+
+No Keypad needed for the first three; the mock dev server of #113 in a host browser, then the app. Run by the owner in #130.
+
+- [ ] #134 `just app-dev`, click key 1 on Konsole: the inspector reads `Key 1: Chord` with `konsole.toml line <n>` under it and the tile beside Label, Icon and Color. Change the label, type `rock` in Icon and pick `rocket` with the arrows and Enter, pick a colour in the swatch: each change repaints the tile, the swatch and its `#rrggbb` text agree, and the result line reads `Wrote key 1 to ... at <hh:mm:ss>`. `Ctrl+Z` three times outside a field takes the three changes back.
+- [ ] #134 Click a dimmed key with the `global` mark on Konsole: the inspector says `from global` with the global file and line; `Override here` writes the global key into Konsole's key (the mark goes), `Clear` empties it again (the global key shows through), and both undo.
+- [ ] #134 `?mock-error=write`: change a label; an error notice shows the file, line and column of the key and the message, the typed label stays in the field, and Undo stays disabled. Type `teal` into Color: the message stands under the field and nothing is written.
+- [ ] #134 With the daemon and the Keypad: section 5 step 11, the icon and colour included: the file round-trips (only the edited lines change).
 
 ### First-light records (#75)
 

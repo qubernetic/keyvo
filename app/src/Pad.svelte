@@ -2,13 +2,15 @@
   // The Pad screen (pad screen brief §5.2, §6; screen id `home`): the
   // device drawing with the live mirror (Mirror.svelte), the page tabs of
   // the pinned profile, the "pad moved" line, the held caption, and the
-  // inspector, today's key editor until the inspector slice. Selecting a
-  // key pins the inspector to the pad's profile and page (lib/pin.ts), so
-  // it never changes under the user; the drawing keeps following the pad.
-  // The unreachable, no-device and configuration notices go through Notice.
+  // pinned inspector. Selecting a key pins the inspector to the pad's
+  // profile and page (lib/pin.ts), so it never changes under the user; the
+  // drawing keeps following the pad. The inspector gets the pinned page's
+  // tile, the global key under a key that falls through, and Press, a dry
+  // run of the selected key whose result shows under the drawing. The
+  // unreachable, no-device and configuration notices go through Notice.
   import { untrack } from "svelte";
 
-  import KeyEditor from "./KeyEditor.svelte";
+  import Inspector from "./Inspector.svelte";
   import Mirror from "./Mirror.svelte";
   import Notice from "./Notice.svelte";
   import PageTabs from "./PageTabs.svelte";
@@ -26,7 +28,7 @@
   } from "./lib/pad";
   import type { Editor } from "./lib/editor";
   import { difference, follow, pinOnSelect, pinPage, target, type Pinned } from "./lib/pin";
-  import type { ProfileSummary } from "./lib/profiles";
+  import { contextPage, GLOBAL, type ProfileSummary } from "./lib/profiles";
   import type { DeviceStatus, PressKind, TraceRecord, View } from "./lib/protocol";
 
   let {
@@ -168,6 +170,29 @@
   );
   const shownProfile = $derived(profiles.find((profile) => profile.id === shown?.profile));
   const moved = $derived(difference(pinned, pad.view));
+
+  /** The tiles of the pinned page while the pad shows another one. */
+  let pinnedTiles: Tile[] = $state([]);
+  let fetchedPinned = 0;
+  $effect(() => {
+    const pin = moved === undefined ? undefined : shown;
+    const geometry = pad.geometry;
+    void pad.reloads;
+    void edits;
+    const mine = ++fetchedPinned;
+    if (pin === undefined || geometry === undefined) {
+      pinnedTiles = [];
+      return;
+    }
+    untrack(() => daemon.tiles(pin.profile, pin.page, geometry.rects.length, geometry.tile)).then(
+      (got) => {
+        if (mine === fetchedPinned) pinnedTiles = got;
+      },
+      () => {
+        if (mine === fetchedPinned) pinnedTiles = [];
+      },
+    );
+  });
   const held = $derived(caption(pad));
 
   function select(key: number) {
@@ -211,6 +236,21 @@
   });
 
   const editing = $derived(selected === undefined ? undefined : target(pinned, pad.view, selected));
+  /** The inspector's key as its page renders it. */
+  const editingTile = $derived(
+    selected === undefined ? undefined : (moved === undefined ? tiles : pinnedTiles)[selected - 1],
+  );
+  /** The global profile's key under the inspector's key when it falls
+   * through (spec §6.1). */
+  const fallThrough = $derived(
+    editing !== undefined && editing.profile !== GLOBAL && editingTile?.layer === "global"
+      ? {
+          profile: GLOBAL,
+          page: contextPage(profiles.find((profile) => profile.id === GLOBAL)),
+          key: editing.key,
+        }
+      : undefined,
+  );
   const gridName = $derived(
     pad.view === undefined
       ? t("home.mirror")
@@ -295,7 +335,16 @@
       </p>
     </div>
     <div class="inspector">
-      <KeyEditor {editor} target={editing} {active} revision={pad.reloads} onedited={() => edits++} />
+      <Inspector
+        {editor}
+        target={editing}
+        global={fallThrough}
+        tile={editingTile}
+        {active}
+        revision={pad.reloads}
+        onpress={selected === undefined ? undefined : () => void press(selected ?? 0, "short")}
+        onedited={() => edits++}
+      />
     </div>
   </div>
 

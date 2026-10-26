@@ -45,6 +45,20 @@ describe("the mock key editor", () => {
     expect((await editor.key(target)).fields).toEqual({ label: "New" });
   });
 
+  it("refuses every write with a placed Problem when told to, and leaves the key", async () => {
+    const editor = mockEditor(new Store(contribProfiles()), { refuseWrites: true });
+    const target = { profile: "konsole", page: 1, key: 1 };
+    const before = await editor.key(target);
+    const refused = editor.editKey(target, { label: "New" });
+    await expect(refused).rejects.toEqual({
+      message: "the mock refuses every write (?mock-error=write)",
+      path: before.path,
+      line: before.line,
+      column: 1,
+    });
+    expect(await editor.key(target)).toEqual(before);
+  });
+
   it("rejects an unknown profile, page or key with a Problem", async () => {
     const editor = mockEditor(new Store(contribProfiles()));
     await expect(editor.key({ profile: "nope", page: 1, key: 1 })).rejects.toEqual({

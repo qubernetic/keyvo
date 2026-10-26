@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  contextPage,
   fromHeaderForm,
   ordered,
   pageName,
@@ -45,6 +46,14 @@ describe("pageName", () => {
     expect(pageName(profile, 1)).toBe("edit");
     expect(pageName(profile, 2)).toBe("Page 2");
     expect(pageName(profile, 3)).toBe("Page 3");
+  });
+});
+
+describe("contextPage", () => {
+  it("is the page named context, else the first, as the daemon picks the global layer", () => {
+    expect(contextPage({ ...summary("global", 0), pages: ["general", "context"] })).toBe(2);
+    expect(contextPage({ ...summary("global", 0), pages: ["general", null] })).toBe(1);
+    expect(contextPage(undefined)).toBe(1);
   });
 });
 

@@ -45,15 +45,18 @@ describe("the form", () => {
     });
   });
 
-  it("says why a color or an empty action cannot be written", () => {
+  it("says why a color or an empty action cannot be written, and which field", () => {
     expect(fromForm({ ...BLANK, color: "red" })).toEqual({
       invalid: "The color red is not written #rrggbb.",
+      field: "color",
     });
     expect(fromForm({ ...BLANK, actionType: "chord" })).toEqual({
       invalid: "Enter the chord's keys to write it.",
+      field: "action",
     });
     expect(fromForm({ ...BLANK, actionType: "exec", action: " " })).toEqual({
       invalid: "Enter the command to write it.",
+      field: "action",
     });
   });
 

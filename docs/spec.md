@@ -1815,12 +1815,41 @@ then subscribes with a replay of the newest 20 trace entries;
   in-process simulator of §4.2 of the design and the header badge come
   later.
 
-**As built (pre-alpha key editor).** Beside the mirror, in the place of
-the inspector until its slice, the key editor
-(`app/src/KeyEditor.svelte`, `app/src/lib/editor.ts`) shows the key
-selected on the grid on the pinned profile and page: its profile file,
-and its label, color (`#rrggbb`),
-icon and action (none, a chord's keys or an `exec` command).
+**As built (pre-alpha inspector).** Beside the drawing, the pinned
+inspector (`app/src/Inspector.svelte`, `app/src/lib/editor.ts`) shows the
+key selected on the grid on the pinned profile and page. Profiles keeps
+the earlier key editor (`app/src/KeyEditor.svelte`, the same rules
+without the header, the tile row and the picker) until its own slice
+(#109).
+
+- **Header.** `Key <n>: <kind>`, the kind being the key's action (Chord,
+  Exec, or No action), and under it `<file> line <n>`, the profile file
+  and the line its key table starts on (§7.1, `KeyView.line`), or
+  `<file>, not on this page yet` for a key the page does not define.
+  Press runs the key as a dry run on the page the pad shows, the result
+  under the drawing (the "pad moved" line says when that is another page
+  than the pinned one); Clear writes the key with every field absent, on
+  the undo stack like any write.
+- **Fall-through.** A key the pinned app profile does not define and the
+  global profile does (its context page, §6.1) shows the global key's
+  kind, file and line with "from global", and "Override here", which
+  writes the global key's fields into the pinned profile's key. The form
+  edits the pinned profile's own key.
+- **Tile row.** The key's tile as the pinned page renders it (the shell's
+  `tiles`; fetched for the pinned page while the pad shows another), then
+  Label, Icon and Color. Icon is a combobox (`app/src/IconPicker.svelte`)
+  over the icons keyvo-core bundles for the renderer
+  (`crates/keyvo-core/assets/lucide/`, read at build time by
+  `app/src/lib/tileIcons.ts`; the alias files without an SVG are left
+  out): typing filters, the arrows move, Enter or a click picks, `Esc`
+  closes, each row with its glyph and name; the pick is written as
+  `lucide:<name>`, the value as written shows under the field, an emptied
+  field removes the icon, and a value the picker does not bundle stays as
+  written. Color is a colour swatch and its `#rrggbb` text, kept in step.
+- **Action.** A select (No action, Chord, Exec) and the kind's field, the
+  chord's keys or the `exec` command; the working directory and hold of
+  an `exec` wait for the action schema to carry them. The form is at most
+  `48ch` wide.
 
 - **Immediate apply.** A field is written the moment it changes (the
   input's `change`, on Enter or when the focus leaves it), through the
@@ -1829,7 +1858,8 @@ icon and action (none, a chord's keys or an `exec` command).
   watch reloads the file and repaints the pad; the mirror fetches its tiles
   again after the write and after the daemon's `config` event.
 - **Validation.** A color that is not `#rrggbb` or an action without its
-  keys or command is not written; an alert says why. A new action type
+  keys or command is not written; an alert under the field says why, and
+  the field is marked invalid and described by it. A new action type
   starts empty and is written when its keys or command are entered. A chord
   the parser refuses comes back from the shell as the error.
 - **Undo.** `Ctrl+Z` and `Ctrl+Shift+Z`, or the Undo and Redo buttons, undo
@@ -1840,7 +1870,10 @@ icon and action (none, a chord's keys or an `exec` command).
 - **Errors.** A profile file that does not validate (an external edit, for
   example) shows as an alert `file:line:column: message` and the form is
   hidden; the file is never rewritten to fix it. A failed write shows the
-  same way and leaves the history as it was.
+  same way, with its place when the shell names one, keeps the typed
+  value and leaves the history as it was.
+- **Result line.** `Wrote key <n> to <file> at <time>` (undo and redo say
+  so the same way), the time 24 h, in the body colour.
 - **Reloads.** After the daemon's `config` event the editor reads the key
   again; a field being edited keeps its text. "Open in editor" for the
   whole profile file is on Profiles (below); the file watch of
@@ -1910,7 +1943,8 @@ tiles. Its focus cycles Konsole, VS Code and a window no profile matches
 every ten seconds, and its subscription sends a fixture trace entry every
 two seconds. `?theme=` picks one of the four measured token sets of
 `docs/design/gui-ux.md` §7, `?mock-error=unreachable` makes `status`
-fail. A build without the variable contains no mock module.
+fail, `?mock-error=write` makes every `edit_key` fail with the key's file,
+line and column. A build without the variable contains no mock module.
 
 ---
 
@@ -2088,6 +2122,15 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha Pad slice 3 (2026-10-26)**: §10 the pinned inspector
+  as built (`Inspector.svelte`) in the key editor's place on the Pad:
+  header `Key <n>: <kind>` with the file and line, Press and Clear; "from
+  global" and "Override here" for a key that falls through; the tile row
+  with the tile, Label, the icon picker over keyvo-core's bundled lucide
+  icons (`IconPicker.svelte`, `lib/tileIcons.ts`) and the colour swatch
+  with its text; the Action and its field; the form at `48ch`; a
+  message under an invalid field; the result line with a time (#127).
+  The key editor stays on Profiles until #109.
 - **v0.3, pre-alpha Pad slice 2 (2026-10-26)**: §10 the Pad as built:
   Home becomes the Pad (`Pad.svelte`, `lib/pad.ts`); the mirror in the
   device drawing selects on a click and presses only on `Space` and

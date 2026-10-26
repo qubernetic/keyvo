@@ -89,6 +89,14 @@ export function ordered(list: readonly ProfileSummary[]): ProfileSummary[] {
   });
 }
 
+/** The page of `profile` named `context`, else the first, counted from 1:
+ * for the global profile, the page under an app profile's keys
+ * (keyvo_core::state::context_page). */
+export function contextPage(profile: ProfileSummary | undefined): number {
+  const index = profile?.pages.indexOf("context") ?? -1;
+  return index === -1 ? 1 : index + 1;
+}
+
 /** The tab name of page `page` (from 1): its name, else its number. */
 export function pageName(profile: ProfileSummary, page: number): string {
   return profile.pages[page - 1] ?? t("profiles.pageNumber", { page });

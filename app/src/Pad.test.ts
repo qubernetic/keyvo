@@ -2,9 +2,11 @@
 // the shared socket fixtures (tests/protocol-fixtures/socket/): the
 // drawing with the pad's tiles, the pin a selected key sets and the
 // "pad moved" line, the page tabs of the pinned profile, the held caption,
-// the dry-run presses, the notices and the event list. The key editor in
-// the inspector's place against a fake editor; KeyEditor.test.ts tests the
-// editor itself, Mirror.test.ts and PageTabs.test.ts their components.
+// the dry-run presses, the notices and the event list. The inspector
+// against a fake editor, for what the Pad hands it: the pinned page's tile,
+// the global key under a fall-through key, Press; Inspector.test.ts tests
+// the inspector itself, Mirror.test.ts and PageTabs.test.ts their
+// components.
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -215,7 +217,7 @@ describe("the drawing", () => {
 describe("the pin", () => {
   it("selects nothing at first: the inspector asks for a key and nothing is pinned", async () => {
     const { keys, onpin } = await mounted();
-    expect(screen.getByText(t("editor.select"))).toBeInTheDocument();
+    expect(screen.getByText(t("inspector.select"))).toBeInTheDocument();
     expect(keys.key).not.toHaveBeenCalled();
     expect(onpin).not.toHaveBeenCalled();
   });
@@ -225,10 +227,12 @@ describe("the pin", () => {
     await fireEvent.click(key(5));
     expect(onpin).toHaveBeenCalledWith({ profile: "terminal", page: 1 });
     await waitFor(() => expect(keys.key).toHaveBeenLastCalledWith({ profile: "terminal", page: 1, key: 5 }));
-    expect(screen.getByRole("heading", { name: "Key 5" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Key 5: No action" })).toBeInTheDocument();
     // The drawing follows the pad; the inspector does not.
     await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
-    await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenLastCalledWith("global", 2, 9, TILE));
+    await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenCalledWith("global", 2, 9, TILE));
+    // The pinned page's tiles for the inspector, now that the pad shows another.
+    await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenLastCalledWith("terminal", 1, 9, TILE));
     expect(keys.key).toHaveBeenLastCalledWith({ profile: "terminal", page: 1, key: 5 });
     // A second selection keeps the pin.
     await fireEvent.click(key(6));
@@ -479,7 +483,54 @@ describe("the event list", () => {
   });
 });
 
-describe("the key editor", () => {
+describe("the inspector", () => {
+  it("shows the tile of the pad's page while the pin agrees, without fetching again", async () => {
+    const { daemon } = await mounted();
+    await fireEvent.click(key(2));
+    expect(await screen.findByRole("img", { name: "Tile of key 2" })).toHaveAttribute(
+      "src",
+      "data:image/png;base64,terminal-1-2",
+    );
+    expect(daemon.daemon.tiles).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the tile of the pinned page when the pad shows another", async () => {
+    const { daemon } = await mounted({ pinned: { profile: "terminal", page: 2 } });
+    await fireEvent.click(key(2));
+    await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenCalledWith("terminal", 2, 9, TILE));
+    expect(await screen.findByRole("img", { name: "Tile of key 2" })).toHaveAttribute(
+      "src",
+      "data:image/png;base64,terminal-2-2",
+    );
+  });
+
+  it("reads the global key under a key that falls through, and offers the override", async () => {
+    const { keys } = await mounted();
+    await fireEvent.click(key(3));
+    await waitFor(() => expect(keys.key).toHaveBeenCalledWith({ profile: "global", page: 1, key: 3 }));
+    expect(await screen.findByText("from global")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Override here" })).toBeInTheDocument();
+    await fireEvent.click(key(4));
+    await waitFor(() => expect(screen.queryByText("from global")).toBeNull());
+  });
+
+  it("has no global key under a key of the global profile", async () => {
+    const { keys } = await mounted({ pinned: { profile: "global", page: 1 } });
+    await fireEvent.click(key(4));
+    await waitFor(() => expect(keys.key).toHaveBeenCalledWith({ profile: "global", page: 1, key: 4 }));
+    expect(screen.queryByText("from global")).toBeNull();
+  });
+
+  it("presses the selected key as a dry run, and the result shows under the drawing", async () => {
+    const { daemon } = await mounted();
+    await fireEvent.click(key(5));
+    await fireEvent.click(await screen.findByRole("button", { name: "Press" }));
+    expect(daemon.daemon.press).toHaveBeenCalledWith(5, "short");
+    expect(await screen.findByRole("status", { name: "Press result" })).toHaveTextContent(
+      "Key 5, simulated, global layer: exec cargo test, dry run, nothing executed",
+    );
+  });
+
   it("fetches the tiles again after an edit", async () => {
     const { daemon, keys } = await mounted();
     await fireEvent.click(key(1));
@@ -496,7 +547,7 @@ describe("the key editor", () => {
 describe("the style", () => {
   const SRC = dirname(fileURLToPath(import.meta.url));
   /** The rules of the Pad's own components, as written. */
-  const css = ["Pad.svelte", "Mirror.svelte", "PageTabs.svelte"]
+  const css = ["Pad.svelte", "Mirror.svelte", "PageTabs.svelte", "Inspector.svelte", "IconPicker.svelte"]
     .map((file) => readFileSync(join(SRC, file), "utf8"))
     .flatMap((source) => [...source.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((match) => match[1] ?? ""))
     .join("\n");
