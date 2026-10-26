@@ -60,6 +60,7 @@
         role="tab"
         aria-selected={number === page}
         tabindex={number === page ? 0 : -1}
+        aria-label={pageName(profile, number)}
         onclick={() => onpage(number)}
       >
         {pageName(profile, number)}

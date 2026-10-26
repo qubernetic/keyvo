@@ -164,7 +164,7 @@ describe("the tokens", () => {
 describe("the rules", () => {
   it("finds the stylesheets and the components", () => {
     expect(sheets.map((sheet) => sheet.file)).toContain("styles/controls.css");
-    expect(components.map((component) => component.file)).toContain("Home.svelte");
+    expect(components.map((component) => component.file)).toContain("Pad.svelte");
   });
 
   it.each(CONTROLS)("%s has a base rule with its text and background tokens", (control) => {
