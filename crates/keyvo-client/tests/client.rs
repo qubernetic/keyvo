@@ -9,6 +9,7 @@ use std::io::{self, BufRead, BufReader, Cursor, Read, Write};
 use std::os::unix::net::UnixListener;
 
 use keyvo_client::{Client, ClientError};
+use keyvo_core::recipe::Source;
 use keyvo_core::socket::{Command, ErrorCode, Event, EventClass, Reply, Response, ServerMessage};
 use keyvo_core::state::{Mode, View};
 use serde_json::Value;
@@ -83,6 +84,40 @@ fn status_sends_the_fixture_request_and_returns_the_fixture_answer() {
     let written = String::from_utf8(client.into_inner().written).unwrap();
     assert_eq!(written.lines().count(), 1);
     assert_eq!(json(&written), json(lines(fixture!("requests.ndjson"))[0]));
+}
+
+#[test]
+fn recipes_sends_the_fixture_request_and_returns_the_catalogue() {
+    let exchange = lines(fixture!("recipes.ndjson"));
+    let answers = [answering(exchange[1], 1), answering(exchange[2], 2)];
+    let answers: Vec<&str> = answers.iter().map(String::as_str).collect();
+    let mut client = Client::new(Script::new(&answers));
+
+    let recipes = client.recipes().unwrap();
+    assert!(recipes.problems.is_empty());
+    let screenshot = recipes
+        .recipes
+        .iter()
+        .find(|r| r.id == "screenshot")
+        .unwrap();
+    assert_eq!(screenshot.source, Source::User);
+    assert!(recipes.recipes.iter().any(|r| r.id == "spectacle"));
+    assert_eq!(client.recipes().unwrap().problems.len(), 1);
+
+    let written = String::from_utf8(client.into_inner().written).unwrap();
+    let mut request = json(written.lines().next().unwrap());
+    request["id"] = json(exchange[0])["id"].clone();
+    assert_eq!(request, json(exchange[0]));
+}
+
+#[test]
+fn recipes_refuses_another_reply() {
+    let status = answering(lines(fixture!("responses.ndjson"))[0], 1);
+    let mut client = Client::new(Script::new(&[&status]));
+    assert!(matches!(
+        client.recipes(),
+        Err(ClientError::Unexpected("recipes"))
+    ));
 }
 
 /// `line` with its `id` set to `id`, as the answer to the client's request
