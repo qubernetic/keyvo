@@ -177,6 +177,18 @@ priority and match rules.*
 - No key grid, no key editor, no right column: the key grid exists once,
   on the Pad. Every change writes through `toml_edit` immediately (§4.1).
 
+**As built (pre-alpha, #109).** `app/src/Profiles.svelte` follows the
+above with what has a backend today: name and accent are written (the
+editor's `ProfileFields`); priority shows as read with its hint; Enabled,
+the templates behind "+", "+ rule" and each rule row's Edit are disabled
+controls with their M4a-4 sentence (`Soon.svelte`). Each rule kind is
+named once with its patterns under it. The thumbnails are the device
+drawing (`Device.svelte`) with the page's rendered tiles; the selected
+one is the page "Edit keys on the Pad" pins. An invalid field carries its
+own message under it. The list column sits beside the editor from
+1000 px and above it below; the list and the editor each scroll with a
+reserved gutter and the thin scroll bar. Spec §10 has the detail.
+
 ### 3.3 Behaviors
 
 *Implements d4, d9, d12, d13, d16.*
