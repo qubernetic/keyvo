@@ -54,6 +54,16 @@ export function contribProfiles(): string[] {
   return [globalToml, konsoleToml, vscodeToml];
 }
 
+/** A mock-only profile with no pages (`?mock-profiles=empty`), for the
+ * Pad's "profile with no pages" state. */
+export const EMPTY_PROFILE = `schema_version = 1
+
+[profile]
+id    = "empty"
+name  = "Empty"
+match = { class = ["org.example.empty"] }
+`;
+
 /** The snapshot a key's tile stands in for, by what the key shows. */
 export const SNAPSHOTS = {
   background: backgroundPng,

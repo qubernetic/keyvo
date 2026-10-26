@@ -6,7 +6,7 @@ import type { Daemon } from "../daemon";
 import type { Editor } from "../editor";
 import type { ProfileFiles } from "../profiles";
 import { mockDaemon } from "./daemon";
-import { contribProfiles } from "./data";
+import { contribProfiles, EMPTY_PROFILE } from "./data";
 import { mockEditor } from "./editor";
 import { mockProfiles } from "./profiles";
 import { Store } from "./store";
@@ -20,11 +20,13 @@ export interface Clients {
 
 /** The three clients over fresh copies of the contrib profiles, the token
  * set `?theme=` names applied to `root`; `?mock-error=unreachable` makes
- * `status` reject. */
+ * `status` reject, `?mock-profiles=empty` adds a profile with no pages. */
 export function mockClients(search: string, root: HTMLElement): Clients {
   applyTheme(themeOf(search), root);
-  const store = new Store(contribProfiles());
-  const unreachable = new URLSearchParams(search).get("mock-error") === "unreachable";
+  const query = new URLSearchParams(search);
+  const empty = query.get("mock-profiles") === "empty";
+  const store = new Store([...contribProfiles(), ...(empty ? [EMPTY_PROFILE] : [])]);
+  const unreachable = query.get("mock-error") === "unreachable";
   return {
     daemon: mockDaemon(store, { unreachable }),
     editor: mockEditor(store),

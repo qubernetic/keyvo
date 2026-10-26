@@ -156,14 +156,14 @@ describe("the mock daemon", () => {
     expect((await daemon.status()).view).toEqual({ profile: "konsole", page: 1, mode: "auto" });
     expect((await daemon.press(1, "short")).profile).toBe("konsole");
 
-    vi.advanceTimersByTime(2 * FOCUS_MS);
+    vi.advanceTimersByTime(3 * FOCUS_MS);
     expect(views()).toEqual(["konsole", "vscode", "global"]);
-    expect(contexts()).toEqual(["org.kde.konsole", "code", "org.kde.dolphin"]);
+    expect(contexts()).toEqual(["org.kde.konsole", "keyvo-app", "code", "org.kde.dolphin"]);
 
     const traces = updates.filter(
       (update) => update.kind === "event" && update.event.event === "trace",
     );
-    expect(traces).toHaveLength((3 * FOCUS_MS) / TRACE_MS);
+    expect(traces).toHaveLength((4 * FOCUS_MS) / TRACE_MS);
     for (const update of updates) {
       if (update.kind === "event") expect(asEvent(update.event)).toEqual(update.event);
     }
@@ -172,6 +172,30 @@ describe("the mock daemon", () => {
     const seen = updates.length;
     vi.advanceTimersByTime(3 * FOCUS_MS);
     expect(updates).toHaveLength(seen);
+  });
+
+  it("holds the context while the keyvo app has focus, as [focus].hold_classes does", async () => {
+    const daemon = mockDaemon(new Store(contribProfiles()));
+    const updates: Update[] = [];
+    const stop = await daemon.subscribe(0, (update) => updates.push(update));
+    vi.advanceTimersByTime(FOCUS_MS);
+    const before = updates.length;
+    vi.advanceTimersByTime(FOCUS_MS);
+    const step = updates
+      .slice(before)
+      .filter((update) => update.kind === "event" && update.event.event !== "trace");
+    // One held context event and no profile event: the view stays Konsole's.
+    expect(step).toEqual([
+      {
+      kind: "event",
+        event: { event: "context", class: "keyvo-app", title: "keyvo", pid: 4545, source: "watcher", held: true },
+      },
+    ]);
+    const status = await daemon.status();
+    expect(status.view).toEqual({ profile: "konsole", page: 1, mode: "auto" });
+    expect(status.context?.held).toBe(true);
+    expect((await daemon.press(1, "short")).profile).toBe("konsole");
+    stop();
   });
 
   it("replays the newest trace entries to a new subscriber", async () => {
