@@ -97,6 +97,13 @@ impl Engine {
         self.state.focus(window, now, &self.loaded.profiles);
     }
 
+    /// Whether a window of `class` holds the context
+    /// (`[focus].hold_classes`).
+    #[must_use]
+    pub fn holds(&self, class: &str) -> bool {
+        self.state.holds(class)
+    }
+
     /// A page button went down at `now`.
     pub fn page_press(&mut self, button: PageButton, now: Instant) {
         self.state.press(button, now, &self.loaded.profiles);

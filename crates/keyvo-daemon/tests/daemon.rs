@@ -878,6 +878,7 @@ async fn notify_context_switches_like_the_watcher_and_is_reported() {
         title: "~ : bash".into(),
         pid: None,
         source: ContextSource::NotifyContext,
+        held: false,
     };
     let reported = daemon
         .until(|event| match event {
@@ -899,6 +900,107 @@ async fn notify_context_switches_like_the_watcher_and_is_reported() {
         .await;
     assert_eq!(reported.source, ContextSource::Watcher);
     assert_eq!(reported.pid, Some(7));
+    assert!(!reported.held);
+    daemon.stop().await;
+}
+
+impl Daemon {
+    /// The next `context` event.
+    async fn context(&mut self) -> Context {
+        self.until(|event| match event {
+            Event::Context(context) => Some(context.clone()),
+            _ => None,
+        })
+        .await
+    }
+
+    /// The context and view events up to and including the next view
+    /// switch.
+    async fn up_to_a_switch(&mut self) -> Vec<Event> {
+        let mut seen = Vec::new();
+        self.until(|event| {
+            if matches!(event, Event::Context(_) | Event::Switched(_)) {
+                seen.push(event.clone());
+            }
+            matches!(event, Event::Switched(_)).then_some(())
+        })
+        .await;
+        seen
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_keyvo_app_holds_the_context() {
+    let pad = Pad::new(&startup());
+    let watcher = FakeWindowWatcher::new();
+    let mut daemon = Daemon::start_with(
+        &[("global", GLOBAL), ("terminal", TERMINAL)],
+        vec![pad.clone()],
+        FakeInputInjector::new(),
+        watcher.clone(),
+    );
+    daemon.painted().await;
+    let app = WindowContext::new("keyvo-app", "keyvo").with_pid(9);
+    assert!(watcher.focus(app));
+    let held = Context {
+        class: "keyvo-app".into(),
+        title: "keyvo".into(),
+        pid: Some(9),
+        source: ContextSource::Watcher,
+        held: true,
+    };
+    assert_eq!(daemon.context().await, held);
+    assert_eq!(daemon.status().await.context, Some(held));
+
+    // The next window applies as usual: the first view event after the app's
+    // report follows the Konsole report.
+    assert!(watcher.focus(WindowContext::new("org.kde.konsole", "~")));
+    let seen = daemon.up_to_a_switch().await;
+    assert!(
+        matches!(seen.first(), Some(Event::Context(c)) if c.class == "org.kde.konsole" && !c.held),
+        "{seen:?}"
+    );
+    assert_eq!(
+        seen.last(),
+        Some(&Event::Switched(view("terminal", 1, Mode::Auto)))
+    );
+
+    // Held over the terminal: well past the hysteresis the pad still shows
+    // it, and the next view event is the Dolphin report's.
+    assert!(watcher.focus(WindowContext::new("keyvo-app", "keyvo")));
+    assert!(daemon.context().await.held);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(daemon.status().await.view, view("terminal", 1, Mode::Auto));
+    assert!(watcher.focus(WindowContext::new("org.kde.dolphin", "Home")));
+    let seen = daemon.up_to_a_switch().await;
+    assert!(
+        matches!(seen.first(), Some(Event::Context(c)) if c.class == "org.kde.dolphin"),
+        "{seen:?}"
+    );
+    assert_eq!(
+        seen.last(),
+        Some(&Event::Switched(view("global", 1, Mode::Auto)))
+    );
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_empty_hold_list_lets_the_keyvo_app_switch() {
+    let pad = Pad::new(&startup());
+    let watcher = FakeWindowWatcher::new();
+    let mut daemon = Daemon::start_on(
+        &format!("{CONFIG}[focus]\nhold_classes = []\n"),
+        &[("global", GLOBAL), ("terminal", TERMINAL)],
+        vec![pad.clone()],
+        FakeInputInjector::new(),
+        watcher.clone(),
+    );
+    daemon.painted().await;
+    assert!(watcher.focus(WindowContext::new("org.kde.konsole", "~")));
+    assert_eq!(daemon.switched().await, view("terminal", 1, Mode::Auto));
+    assert!(watcher.focus(WindowContext::new("keyvo-app", "keyvo")));
+    assert!(!daemon.context().await.held);
+    assert_eq!(daemon.switched().await, view("global", 1, Mode::Auto));
     daemon.stop().await;
 }
 

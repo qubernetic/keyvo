@@ -419,11 +419,20 @@ impl<I: InputInjector> Controller<'_, I> {
     /// `source` reports the focused `window`.
     fn focus(&mut self, window: WindowContext, source: ContextSource) {
         tracing::debug!("focus from {source:?}: {window:?}");
+        let held = self.engine.holds(&window.class);
+        if held {
+            tracing::debug!(
+                "{} holds the context: the view stays {:?}",
+                window.class,
+                self.engine.view()
+            );
+        }
         let context = Context {
             class: window.class.clone(),
             title: window.title.clone(),
             pid: window.pid,
             source,
+            held,
         };
         self.context = Some(context.clone());
         self.emit(Event::Context(context));
