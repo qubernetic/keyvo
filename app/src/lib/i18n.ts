@@ -131,6 +131,13 @@ export const messages = {
 
   "device.keypad": "The Keypad",
 
+  "pad.pages": "Pages",
+  "pad.add": "+",
+  "pad.addPage": "Add a page",
+  "soon.addPage": "Adding a page arrives with M4a-4 on the roadmap.",
+  "pad.accent": "Accent",
+  "pad.accentSwatch": "Accent {accent}",
+
   "home.unreachable": "Daemon unreachable: {reason}",
   "home.retry": "Retry",
   "home.connecting": "Connecting to the daemon",
