@@ -1700,8 +1700,13 @@ and the columns of `docs/design/gui-ux.md` §2:
   count and tile size come from the `geometry` the daemon reports for the
   Keypad (`status` and the `device` event, §8); the app hard-codes none of
   them. A key starts a new row when its top edge is below the middle of
-  the row's first key. The last geometry stays when the Keypad goes; before
-  any Keypad reported one, a note replaces the grid. A key the active app
+  the row's first key. The tiles sit in the key cutouts of the Keypad
+  drawing (`app/src/Device.svelte`, gui-ux §3.1), coloured from
+  `--kv-device`, and scale with it: the column's width, at most the
+  panel's pixel width, so never above 1:1. A geometry whose key count
+  differs from the drawing's cutouts puts the tiles on a plain panel at
+  the reported rects instead. The last geometry stays when the Keypad
+  goes; before any Keypad reported one, a note replaces the grid. A key the active app
   profile does not define shows the global key (§6.1) with a "global"
   mark. A key held on the device is outlined. A page the daemon's
   configuration cannot render shows why.

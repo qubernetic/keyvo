@@ -29,6 +29,7 @@ const TOKENS = [
   "--kv-radius",
   "--kv-contrast",
   "--kv-motion",
+  "--kv-device",
 ];
 
 /** Every form control the app can show, with the selector its base rule
@@ -142,6 +143,10 @@ describe("the tokens", () => {
     expect(token("--kv-state-running")).toBe("#f08c00");
     expect(token("--kv-state-success")).toBe("#2f9e44");
     expect(token("--kv-state-error")).toBe("#e03131");
+  });
+
+  it("the device drawing is graphite by default, the first of the three editions", () => {
+    expect(token("--kv-device")).toBe("#2f3133");
   });
 
   it("reduced motion from the system turns --kv-motion to reduced", () => {

@@ -5,13 +5,14 @@
 // tests the editor itself.
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { tick } from "svelte";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import Home from "./Home.svelte";
 import type { Daemon, Tile, Update } from "./lib/daemon";
 import type { Editor, KeyFields, Target } from "./lib/editor";
 import { eventsOf, nth, responses } from "./lib/fixtures";
 import { HOME_TRACE } from "./lib/home";
+import { t } from "./lib/i18n";
 import type { PressKind, Size, Status, TraceRecord } from "./lib/protocol";
 
 const STATUS = responses()[0] as Status;
@@ -79,6 +80,18 @@ function key(n: number): HTMLElement {
   return screen.getByRole("button", { name: new RegExp(`^Key ${n}\\b`) });
 }
 
+/** The grid cell of key `n`, which the device drawing places. */
+function cell(n: number): HTMLElement {
+  return key(n).closest('[role="gridcell"]') as HTMLElement;
+}
+
+/** The percent value of `property` in the inline style of `element`. */
+function percent(element: HTMLElement, property: string): number {
+  const style = element.getAttribute("style") ?? "";
+  const value = new RegExp(`(?:^|;)\\s*${property}:\\s*([\\d.]+)%`).exec(style)?.[1];
+  return value === undefined ? Number.NaN : Number(value);
+}
+
 /** A key editor on blank keys whose writes succeed; KeyEditor.test.ts
  * tests the editor itself. */
 function editor(overrides: Partial<Editor> = {}) {
@@ -108,7 +121,12 @@ describe("Home mirror", () => {
     }
     // Key count and tile size are the geometry of the status reply.
     expect(daemon.daemon.tiles).toHaveBeenCalledWith("terminal", 1, 9, TILE);
-    expect(key(1)).toHaveStyle({ width: "118px", height: "118px" });
+    // The tiles sit in the cutouts of the Keypad drawing, in percent of it.
+    expect(within(grid).getByRole("img", { name: t("device.keypad") })).toBeInTheDocument();
+    expect(cell(1)).toHaveStyle({ position: "absolute" });
+    expect(percent(cell(1), "left")).toBeCloseTo((57 / 512) * 100, 1);
+    expect(percent(cell(9), "top")).toBeCloseTo((334 / 610) * 100, 1);
+    expect(percent(cell(9), "width")).toBeCloseTo((117 / 512) * 100, 1);
     // The image is decorative (alt=""): the key's name says what it shows.
     expect(key(1).querySelector("img")).toHaveAttribute(
       "src",
@@ -213,13 +231,19 @@ describe("Home mirror", () => {
       rects: [rect(0, 0), rect(100, 0), rect(0, 100), rect(100, 100)],
     };
     const status: Status = { ...STATUS, device: { connected: true, keys: 4, geometry } };
+    // Four keys do not fit the Keypad's nine cutouts: the plain panel.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    onTestFinished(() => warn.mockRestore());
     const daemon = fake({ status: vi.fn(() => Promise.resolve(status)) });
     render(Home, { props: { daemon: daemon.daemon, editor: editor() } });
     await waitFor(() => expect(key(4)).toHaveAccessibleName("Key 4: Palette, chord ctrl+p, app layer"));
     expect(daemon.daemon.tiles).toHaveBeenCalledWith("terminal", 1, 4, { width: 90, height: 80 });
     const rows = within(screen.getByRole("grid")).getAllByRole("row");
     expect(rows.map((row) => within(row).getAllByRole("gridcell").length)).toEqual([2, 2]);
-    expect(key(1)).toHaveStyle({ width: "90px", height: "80px" });
+    expect(screen.queryByRole("img", { name: t("device.keypad") })).not.toBeInTheDocument();
+    expect(percent(cell(2), "left")).toBeCloseTo(50, 1);
+    expect(percent(cell(2), "width")).toBeCloseTo(45, 1);
+    expect(percent(cell(2), "height")).toBeCloseTo(40, 1);
     expect(screen.queryByRole("button", { name: /^Key 5\b/ })).not.toBeInTheDocument();
     // Arrows move inside the reported 2x2 grid; digits past the last key do nothing.
     await fireEvent.keyDown(screen.getByRole("grid"), { key: "ArrowRight" });

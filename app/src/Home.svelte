@@ -1,9 +1,11 @@
 <script lang="ts">
   // Home (docs/design/gui-ux.md §3.1): the mirror of the page the pad
-  // shows, laid out and sized by the geometry the daemon reports, the
+  // shows, laid out by the geometry the daemon reports in the cutouts of
+  // the Keypad drawing (Device.svelte), the
   // status strip, the recent trace entries, and the virtual pad:
   // a click is a short dry-run press, a right click a long one. Beside the
   // mirror, the key editor for the selected key.
+  import Device from "./Device.svelte";
   import KeyEditor from "./KeyEditor.svelte";
   import TraceDrawer from "./TraceDrawer.svelte";
   import type { Daemon, Outline, Tile } from "./lib/daemon";
@@ -446,35 +448,34 @@
       {/if}
     </div>
     <div role="grid" tabindex="-1" aria-label={gridName} class="grid" onkeydown={keydown}>
-      {#each rows as row, index (index)}
-        <div role="row" class="row">
-          {#each row as key (key)}
-            <div role="gridcell" aria-selected={key === selected}>
-              <button
-                bind:this={buttons[key - 1]}
-                type="button"
-                class="key"
-                class:held={home.held.includes(key)}
-                style:width={`${home.geometry.tile.width}px`}
-                style:height={`${home.geometry.tile.height}px`}
-                tabindex={key === selected ? 0 : -1}
-                aria-label={name(key)}
-                onclick={() => void press(key, "short")}
-                oncontextmenu={(event) => contextmenu(event, key)}
-              >
-                {#if tiles[key - 1]}
-                  <img src={tiles[key - 1]?.image} alt="" />
-                  {#if fallen(key)}
-                    <span class="layer" aria-hidden="true">{t("home.globalMark")}</span>
-                  {/if}
-                {:else}
-                  <span aria-hidden="true">{key}</span>
+      <Device geometry={home.geometry}>
+        {#snippet row(cells)}
+          <div role="row" class="row">{@render cells()}</div>
+        {/snippet}
+        {#snippet tile(key, place)}
+          <div role="gridcell" aria-selected={key === selected} style={place}>
+            <button
+              bind:this={buttons[key - 1]}
+              type="button"
+              class="key"
+              class:held={home.held.includes(key)}
+              tabindex={key === selected ? 0 : -1}
+              aria-label={name(key)}
+              onclick={() => void press(key, "short")}
+              oncontextmenu={(event) => contextmenu(event, key)}
+            >
+              {#if tiles[key - 1]}
+                <img src={tiles[key - 1]?.image} alt="" />
+                {#if fallen(key)}
+                  <span class="layer" aria-hidden="true">{t("home.globalMark")}</span>
                 {/if}
-              </button>
-            </div>
-          {/each}
-        </div>
-      {/each}
+              {:else}
+                <span aria-hidden="true">{key}</span>
+              {/if}
+            </button>
+          </div>
+        {/snippet}
+      </Device>
     </div>
     </div>
     {/if}
@@ -615,10 +616,13 @@
     align-items: flex-start;
   }
 
+  /* The drawing takes the column's width up to the panel's pixel width. */
   .mirror {
     display: flex;
+    flex: 1 1 300px;
     flex-direction: column;
     gap: 8px;
+    min-width: 0;
   }
 
   .pages {
@@ -641,18 +645,17 @@
   }
 
   .grid {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    align-self: flex-start;
+    width: 100%;
   }
 
+  /* Device places the cells; the rows only group them for the grid role. */
   .row {
-    display: flex;
-    gap: 8px;
+    display: contents;
   }
 
   .key {
+    width: 100%;
+    height: 100%;
     padding: 0;
     border: 2px solid transparent;
     border-radius: var(--kv-radius);
