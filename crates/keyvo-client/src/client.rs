@@ -85,9 +85,50 @@ pub fn open(path: &Path) -> Result<UnixStream, ClientError> {
         _ => Path::new("."),
     };
     check_dir(dir, &std::fs::symlink_metadata(dir)?, uid).map_err(untrusted)?;
-    let peer = rustix::net::sockopt::socket_peercred(&stream).map_err(std::io::Error::from)?;
-    check_peer(peer.uid.as_raw(), uid).map_err(untrusted)?;
+    check_peer(peer_uid(&stream)?, uid).map_err(untrusted)?;
     Ok(stream)
+}
+
+/// The uid of the process at the other end of `stream` (`SO_PEERCRED`).
+fn peer_uid(stream: &UnixStream) -> std::io::Result<u32> {
+    peer_cred(stream).map(uid_of)
+}
+
+/// The raw `struct ucred` of the peer: pid, uid, gid. The pid is the peer
+/// as seen from this process's pid namespace, so a sandboxed client (a
+/// Flatpak app) sees the host daemon as pid 0. rustix's `UCred` cannot hold
+/// a zero pid, hence the plain `getsockopt` into three `u32`.
+fn peer_cred(stream: &UnixStream) -> std::io::Result<[u32; 3]> {
+    use std::os::fd::AsRawFd;
+
+    let mut cred = [0_u32; 3];
+    let mut len = libc::socklen_t::try_from(size_of_val(&cred))
+        .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+    // SAFETY: the fd is open for the borrow of `stream`; `cred` is a
+    // writable buffer of `len` bytes laid out like `struct ucred` (three
+    // 32-bit fields), and the kernel writes at most `len` bytes into it.
+    let ret = unsafe {
+        libc::getsockopt(
+            stream.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_PEERCRED,
+            cred.as_mut_ptr().cast(),
+            &raw mut len,
+        )
+    };
+    if ret != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    if usize::try_from(len).ok() != Some(size_of_val(&cred)) {
+        return Err(std::io::Error::other("SO_PEERCRED returned a short ucred"));
+    }
+    Ok(cred)
+}
+
+/// The uid of a raw `ucred`; only the uid decides trust, neither the pid
+/// (namespace-dependent) nor the gid is examined.
+fn uid_of([_pid, uid, _gid]: [u32; 3]) -> u32 {
+    uid
 }
 
 /// `Err` with the reason unless `dir` (its `meta` not following a symlink)
@@ -278,6 +319,21 @@ mod tests {
             assert!(reason.contains(&format!("uid {peer}")), "{reason}");
             assert!(reason.contains("not as this user (1000)"), "{reason}");
         }
+    }
+
+    #[test]
+    fn peer_uid_reads_the_uid_of_the_other_end() {
+        let (ours, _theirs) = UnixStream::pair().unwrap();
+        assert_eq!(peer_uid(&ours).unwrap(), rustix::process::getuid().as_raw());
+    }
+
+    #[test]
+    fn a_peer_seen_as_pid_0_is_trusted_by_its_uid() {
+        // A sandboxed client sees the host daemon as pid 0 (Flatpak).
+        assert_eq!(check_peer(uid_of([0, 1000, 1000]), 1000), Ok(()));
+        assert_eq!(check_peer(uid_of([0, 1000, 4242]), 1000), Ok(()));
+        let reason = check_peer(uid_of([0, 1001, 1000]), 1000).unwrap_err();
+        assert!(reason.contains("uid 1001"), "{reason}");
     }
 
     #[test]
