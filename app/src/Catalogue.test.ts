@@ -1,16 +1,22 @@
 // The actions catalogue column (pad screen brief §5.2, §6, §7): the three
-// groups with their entries, the tools draggable and assignable to the
-// selected tile, the presets "Coming soon" naming #119, the search across
-// groups and its empty state, and `/` to the search.
+// groups with the entries of a `recipes` reply and the raw tools, every
+// entry draggable and assignable to the selected tile, the search across
+// groups, names and variant names and its empty state, why presets are
+// missing, and `/` to the search.
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { describe, expect, it, vi } from "vitest";
 
 import Catalogue from "./Catalogue.svelte";
-import { DRAG_TYPE } from "./lib/catalogue";
+import { catalogueOf, DRAG_TYPE } from "./lib/catalogue";
+import { nth, recipeReplies } from "./lib/fixtures";
 
-function catalogue(props: { selected?: number; active?: boolean } = {}) {
+const ENTRIES = catalogueOf(nth(recipeReplies(), 0).recipes);
+
+function catalogue(
+  props: { selected?: number; active?: boolean; problems?: string[]; unread?: string } = {},
+) {
   const onassign = vi.fn<(entry: string) => void>();
-  const result = render(Catalogue, { props: { onassign, ...props } });
+  const result = render(Catalogue, { props: { entries: ENTRIES, onassign, ...props } });
   return { onassign, ...result };
 }
 
@@ -26,15 +32,23 @@ function entries(name: string): string[] {
 }
 
 describe("the groups", () => {
-  it("show General, System and Apps expanded, each with its entries", () => {
+  it("show General, System and Apps expanded, each with the reply's entries", () => {
     catalogue();
     expect(screen.getByRole("region", { name: "Actions" })).toBeInTheDocument();
     for (const name of ["General", "System", "Apps"]) {
       expect(group(name)).toHaveAttribute("aria-expanded", "true");
     }
-    expect(entries("General")).toEqual(["Open folder", "Open website", "New email", "Chord", "Exec"]);
-    expect(entries("System")).toEqual(["Lock the desktop", "Volume", "Brightness", "Open a settings page"]);
-    expect(entries("Apps")).toEqual(["Spectacle", "Calculator", "VS Code", "Konsole"]);
+    expect(entries("General")).toEqual(["New email", "Open folder", "Open website", "Chord", "Exec"]);
+    expect(entries("System")).toEqual([
+      "Brightness down",
+      "Brightness up",
+      "Lock the desktop",
+      "Mute",
+      "Open a settings page",
+      "Volume down",
+      "Volume up",
+    ]);
+    expect(entries("Apps")).toEqual(["Calculator", "Konsole", "Screenshot", "Spectacle", "VS Code"]);
   });
 
   it("collapse and expand on their heading button", async () => {
@@ -44,26 +58,39 @@ describe("the groups", () => {
     expect(screen.queryByRole("list", { name: "System" })).toBeNull();
     await fireEvent.click(group("System"));
     expect(group("System")).toHaveAttribute("aria-expanded", "true");
-    expect(entries("System")).toHaveLength(4);
+    expect(entries("System")).toHaveLength(7);
+  });
+
+  it("hold only the raw tools without recipes", () => {
+    render(Catalogue, { props: { entries: catalogueOf([]), onassign: vi.fn() } });
+    expect(entries("General")).toEqual(["Chord", "Exec"]);
+    expect(screen.queryByRole("button", { name: "Apps" })).toBeNull();
   });
 });
 
 describe("the entries", () => {
-  it("make Chord and Exec draggable with the entry in the drag data", async () => {
+  it("make a tool and a preset draggable with the entry's key in the drag data", async () => {
     catalogue({ selected: 7 });
-    const exec = screen.getByRole("button", { name: "Exec" });
-    expect(exec).toHaveAttribute("draggable", "true");
-    const setData = vi.fn();
-    await fireEvent.dragStart(exec, { dataTransfer: { setData, effectAllowed: "none" } });
-    expect(setData).toHaveBeenCalledWith(DRAG_TYPE, "tool:exec");
+    for (const [name, key] of [
+      ["Exec", "tool:exec"],
+      ["Spectacle", "recipe:spectacle"],
+    ] as const) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveAttribute("draggable", "true");
+      const setData = vi.fn();
+      await fireEvent.dragStart(button, { dataTransfer: { setData, effectAllowed: "none" } });
+      expect(setData).toHaveBeenCalledWith(DRAG_TYPE, key);
+    }
   });
 
-  it("a click on a tool assigns it to the selected tile", async () => {
+  it("a click on a tool or a preset assigns it to the selected tile", async () => {
     const { onassign } = catalogue({ selected: 7 });
     const chord = screen.getByRole("button", { name: "Chord" });
     expect(chord).toHaveAccessibleDescription("Assign to key 7, or drag it onto a key.");
     await fireEvent.click(chord);
-    expect(onassign).toHaveBeenCalledWith("chord");
+    expect(onassign).toHaveBeenLastCalledWith("tool:chord");
+    await fireEvent.click(screen.getByRole("button", { name: "Spectacle" }));
+    expect(onassign).toHaveBeenLastCalledWith("recipe:spectacle");
   });
 
   it("a click assigns nothing while no tile is selected and says why", async () => {
@@ -74,17 +101,21 @@ describe("the entries", () => {
     await fireEvent.click(exec);
     expect(onassign).not.toHaveBeenCalled();
   });
+});
 
-  it("make the presets Coming soon controls naming #119", async () => {
-    const { onassign } = catalogue({ selected: 7 });
-    const spectacle = screen.getByRole("button", { name: "Spectacle" });
-    expect(spectacle).toHaveAttribute("aria-disabled", "true");
-    expect(spectacle).not.toHaveAttribute("draggable", "true");
-    spectacle.focus();
-    await fireEvent.focus(spectacle);
-    expect(spectacle).toHaveAccessibleDescription(/Coming soon.*#119/);
-    await fireEvent.click(spectacle);
-    expect(onassign).not.toHaveBeenCalled();
+describe("missing presets", () => {
+  it("names each user pack left out", () => {
+    catalogue({ problems: nth(recipeReplies(), 1).problems ?? [] });
+    expect(screen.getByRole("list", { name: "Recipe packs left out" })).toHaveTextContent(
+      "/home/u/.config/keyvo/recipes/volume.toml:12:19: unknown variant `dbus`",
+    );
+  });
+
+  it("says why the presets could not be read", () => {
+    catalogue({ unread: "cannot reach the keyvo daemon" });
+    expect(
+      screen.getByText("The presets could not be read: cannot reach the keyvo daemon"),
+    ).toBeInTheDocument();
   });
 });
 
@@ -93,12 +124,19 @@ describe("the search", () => {
     catalogue();
     const field = screen.getByRole("searchbox", { name: "Search actions" });
     expect(field).toHaveAttribute("placeholder", "Search actions");
-    await fireEvent.input(field, { target: { value: "o" } });
-    expect(entries("General")).toEqual(["Open folder", "Open website", "Chord"]);
-    expect(entries("System")).toEqual(["Lock the desktop", "Volume", "Open a settings page"]);
+    await fireEvent.input(field, { target: { value: "open" } });
+    expect(entries("General")).toEqual(["Open folder", "Open website"]);
+    expect(entries("System")).toEqual(["Open a settings page"]);
     await fireEvent.input(field, { target: { value: "konsole" } });
     expect(screen.queryByRole("button", { name: "General" })).toBeNull();
     expect(entries("Apps")).toEqual(["Konsole"]);
+  });
+
+  it("matches a variant's name", async () => {
+    catalogue();
+    await fireEvent.input(screen.getByRole("searchbox"), { target: { value: "Region" } });
+    expect(entries("Apps")).toEqual(["Spectacle"]);
+    expect(screen.queryByRole("button", { name: "System" })).toBeNull();
   });
 
   it("shows the matches of a collapsed group while searching", async () => {

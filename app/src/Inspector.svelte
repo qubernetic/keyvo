@@ -9,13 +9,23 @@
   // redo for the session. An invalid field says why under itself; a
   // refused write is a Notice with its place and the typed value stays. A
   // tool assigned from the actions catalogue sets the action type with an
-  // empty field, written once the field is entered; while the catalogue
-  // column is collapsed, the Action select carries its entries.
+  // empty field, written once the field is entered; a preset is written at
+  // once with its default variant, label and icon. While the catalogue
+  // column is collapsed, the Action select carries its entries. A key that
+  // carries a preset (lib/catalogue.ts recipeOf) shows its "What it does"
+  // select above the Action; another variant rewrites the action.
   import { untrack } from "svelte";
 
   import IconPicker from "./IconPicker.svelte";
   import Notice from "./Notice.svelte";
-  import { applied, CATALOGUE, GROUPS, type CatalogueEntry } from "./lib/catalogue";
+  import {
+    applied,
+    catalogueOf,
+    GROUPS,
+    recipeOf,
+    withVariant,
+    type CatalogueEntry,
+  } from "./lib/catalogue";
   import type { Tile } from "./lib/daemon";
   import {
     afterRedo,
@@ -44,6 +54,7 @@
   } from "./lib/editor";
   import { t, type MessageKey } from "./lib/i18n";
   import { clock } from "./lib/pad";
+  import type { Recipe } from "./lib/protocol";
 
   let {
     editor,
@@ -56,6 +67,7 @@
     onedited,
     assign,
     entries,
+    recipes = [],
   }: {
     editor: Editor;
     /** The key to edit: the selected key of the pinned page; none until
@@ -74,12 +86,15 @@
     onpress?: () => void;
     /** Called after every write. */
     onedited?: () => void;
-    /** A catalogue entry assigned to `target`; a new `seq` applies it once
-     * the key is read. */
+    /** A catalogue entry, by its key, assigned to `target`; a new `seq`
+     * applies it once the key is read. */
     assign?: { entry: string; target: Target; seq: number };
     /** The catalogue's entries for the Action select, while its column is
      * collapsed. */
     entries?: readonly CatalogueEntry[];
+    /** The daemon's recipe packs: what an assigned preset writes and the
+     * "What it does" of a key that carries one. */
+    recipes?: readonly Recipe[];
   } = $props();
 
   const uid = $props.id();
@@ -116,6 +131,8 @@
     form.actionType === "chord" ? t("inspector.chord") : t("inspector.command"),
   );
   const swatch = $derived(colorOf(form.color) ?? "");
+  /** The preset the key carries as written, and the variant it runs. */
+  const carried = $derived(view === undefined ? undefined : recipeOf(recipes, view.fields));
   const ids = {
     heading: `kv-inspector-${uid}`,
     color: `kv-inspector-${uid}-color`,
@@ -155,16 +172,20 @@
   /** Applies the pending entry once its key is the one the form shows. */
   function settle() {
     if (pending === undefined || view === undefined || !sameTarget(readAt, pending.target)) return;
-    form = applied(pending.entry, form);
+    const entry = pending.entry;
+    form = applied(entry, form);
     invalid = undefined;
     pending = undefined;
+    if (entry.kind === "recipe") commit();
   }
 
   $effect(() => {
     const next = assign;
     if (next === undefined || next.seq === assigned) return;
     assigned = next.seq;
-    const entry = CATALOGUE.find((candidate) => candidate.id === next.entry);
+    const entry = untrack(() => catalogueOf(recipes)).find(
+      (candidate) => candidate.key === next.entry,
+    );
     if (entry === undefined) return;
     pending = { entry, target: { ...next.target } };
     untrack(settle);
@@ -279,9 +300,24 @@
     });
   }
 
-  /** A new action type starts with an empty chord or command. */
-  function switched() {
-    form.action = "";
+  /** A new action type starts with an empty chord or command; a preset of
+   * the collapsed catalogue is applied like an assigned one. */
+  function switched(value: string) {
+    const preset = entries?.find((entry) => entry.kind === "recipe" && entry.key === value);
+    if (preset !== undefined) {
+      form = applied(preset, form);
+      invalid = undefined;
+    } else {
+      form.actionType = value as ActionType;
+      form.action = "";
+    }
+    commit();
+  }
+
+  /** Another variant of the carried preset rewrites the action. */
+  function vary(variant: string) {
+    if (carried === undefined) return;
+    form = withVariant(carried.recipe, variant, form);
     commit();
   }
 
@@ -443,9 +479,28 @@
             </div>
           </div>
         </div>
+        {#if carried !== undefined}
+          {@const preset = carried}
+          <label>
+            {t("inspector.whatItDoes")}
+            <select
+              aria-label={t("inspector.whatItDoes")}
+              value={preset.variant}
+              onchange={(event) => vary(event.currentTarget.value)}
+            >
+              {#each preset.recipe.variants as variant (variant.id)}
+                <option value={variant.id}>{variant.name}</option>
+              {/each}
+            </select>
+          </label>
+        {/if}
         <label>
           {t("inspector.action")}
-          <select aria-label={t("inspector.action")} bind:value={form.actionType} onchange={switched}>
+          <select
+            aria-label={t("inspector.action")}
+            value={form.actionType}
+            onchange={(event) => switched(event.currentTarget.value)}
+          >
             <option value="none">{t("inspector.kind.none")}</option>
             {#if entries === undefined}
               <option value="chord">{t("inspector.kind.chord")}</option>
@@ -453,14 +508,8 @@
             {:else}
               {#each GROUPS as group (group.id)}
                 <optgroup label={t(group.label)}>
-                  {#each entries.filter((entry) => entry.group === group.id) as entry (entry.id)}
-                    {#if entry.soon === undefined}
-                      <option value={entry.id}>{t(entry.label)}</option>
-                    {:else}
-                      <option value={`recipe:${entry.id}`} disabled>
-                        {t("catalogue.soonOption", { label: t(entry.label) })}
-                      </option>
-                    {/if}
+                  {#each entries.filter((entry) => entry.group === group.id) as entry (entry.key)}
+                    <option value={entry.kind === "tool" ? entry.id : entry.key}>{entry.name}</option>
                   {/each}
                 </optgroup>
               {/each}

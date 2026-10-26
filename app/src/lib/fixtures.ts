@@ -101,6 +101,29 @@ export function profileSteps(): ProfileSteps {
   return JSON.parse(readFileSync(join(EDITOR, "profile.json"), "utf8")) as ProfileSteps;
 }
 
+/** tests/protocol-fixtures/editor/recipe.json: variant `variant` of recipe
+ * `recipe` applied to a key, as keyvo_client::Editor::apply_recipe writes
+ * it. */
+export interface RecipeStep {
+  profile: string;
+  page: number;
+  key: number;
+  /** The file before and the file's path inside the configuration directory. */
+  file: string;
+  path: string;
+  recipe: string;
+  variant: string;
+  before: KeyFields;
+  fields: KeyFields;
+  /** The file the step gives and the line of the key's table in it. */
+  expected: string;
+  line: number;
+}
+
+export function recipeStep(): RecipeStep {
+  return JSON.parse(readFileSync(join(EDITOR, "recipe.json"), "utf8")) as RecipeStep;
+}
+
 /** The text of an editor fixture file. */
 export function editorFile(name: string): string {
   return readFileSync(join(EDITOR, name), "utf8");

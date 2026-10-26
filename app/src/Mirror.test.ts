@@ -189,16 +189,22 @@ describe("dropping a catalogue entry", () => {
     return { getData: (type: string) => (type === DRAG_TYPE ? data : ""), dropEffect: "none" };
   }
 
-  it("makes every cell a drop target: tool:exec dropped on key 7 calls ondrop(7, \"exec\")", async () => {
+  it("makes every cell a drop target: tool:exec dropped on key 7 calls ondrop(7, \"tool:exec\")", async () => {
     const { ondrop } = mirror();
     expect(await fireEvent.dragOver(cell(7), { dataTransfer: transfer("") })).toBe(false);
     await fireEvent.drop(cell(7), { dataTransfer: transfer("tool:exec") });
-    expect(ondrop).toHaveBeenCalledWith(7, "exec");
+    expect(ondrop).toHaveBeenCalledWith(7, "tool:exec");
   });
 
-  it("ignores a drop of a preset or of data from elsewhere", async () => {
+  it("hands on a dropped preset by its key", async () => {
     const { ondrop } = mirror();
-    await fireEvent.drop(cell(2), { dataTransfer: transfer("recipe:spectacle") });
+    await fireEvent.drop(cell(7), { dataTransfer: transfer("recipe:spectacle") });
+    expect(ondrop).toHaveBeenCalledWith(7, "recipe:spectacle");
+  });
+
+  it("ignores a drop of an unknown tool or of data from elsewhere", async () => {
+    const { ondrop } = mirror();
+    await fireEvent.drop(cell(2), { dataTransfer: transfer("tool:nope") });
     await fireEvent.drop(cell(2), { dataTransfer: transfer("") });
     expect(ondrop).not.toHaveBeenCalled();
   });

@@ -581,7 +581,83 @@ describe("the actions catalogue", () => {
     await waitFor(() => expect(action()).toBeInTheDocument());
     const groups = within(action()).getAllByRole("group");
     expect(groups.map((group) => group.getAttribute("label"))).toEqual(["General", "System", "Apps"]);
-    expect(within(action()).getByRole("option", { name: "Konsole (coming soon)" })).toBeDisabled();
+    await waitFor(() => expect(within(action()).getByRole("option", { name: "Konsole" })).toBeEnabled());
+  });
+
+  it("lists the presets of the daemon's recipes reply", async () => {
+    const { daemon } = await mounted({ columns: layout(1200) });
+    expect(daemon.daemon.recipes).toHaveBeenCalledTimes(1);
+    const apps = await screen.findByRole("list", { name: "Apps" });
+    expect(within(apps).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual([
+      "Calculator",
+      "Konsole",
+      "Screenshot",
+      "Spectacle",
+      "VS Code",
+    ]);
+  });
+
+  it("reads the recipes again after a configuration reload", async () => {
+    const { daemon } = await mounted({ columns: layout(1200) });
+    await daemon.send({ kind: "event", event: nth(eventsOf("config"), 0) });
+    await waitFor(() => expect(daemon.daemon.recipes).toHaveBeenCalledTimes(2));
+  });
+
+  it("shows the raw tools and why, when the recipes cannot be read", async () => {
+    await mounted({
+      columns: layout(1200),
+      daemon: fake({ recipes: vi.fn(() => Promise.reject(new Error("connection refused"))) }),
+    });
+    expect(
+      await screen.findByText("The presets could not be read: connection refused"),
+    ).toBeInTheDocument();
+    expect(within(screen.getByRole("list", { name: "General" })).getAllByRole("button")).toHaveLength(2);
+  });
+
+  it("names the user packs the daemon left out", async () => {
+    await mounted({
+      columns: layout(1200),
+      daemon: fake({ recipes: vi.fn(() => Promise.resolve(nth(recipeReplies(), 1))) }),
+    });
+    expect(await screen.findByRole("list", { name: "Recipe packs left out" })).toHaveTextContent(
+      "volume.toml:12:19",
+    );
+  });
+
+  it("Spectacle dropped on key 7 writes its default and offers What it does", async () => {
+    const { keys } = await mounted({ columns: layout(1200) });
+    await screen.findByRole("button", { name: "Spectacle" });
+    await fireEvent.drop(cell(7), { dataTransfer: transfer("recipe:spectacle") });
+    const at = { profile: "terminal", page: 1, key: 7 };
+    await waitFor(() =>
+      expect(keys.editKey).toHaveBeenCalledWith(at, {
+        icon: "lucide:camera",
+        label: "Capture",
+        action: { type: "exec", cmd: "spectacle --fullscreen" },
+      }),
+    );
+    const what = await screen.findByRole("combobox", { name: "What it does" });
+    await fireEvent.change(what, { target: { value: "region" } });
+    await waitFor(() =>
+      expect(keys.editKey).toHaveBeenLastCalledWith(at, {
+        icon: "lucide:camera",
+        label: "Capture",
+        action: { type: "exec", cmd: "spectacle --region" },
+      }),
+    );
+  });
+
+  it("a click on Volume up assigns it to the selected key", async () => {
+    const { keys } = await mounted({ columns: layout(1200) });
+    await fireEvent.click(key(8));
+    await waitFor(() => expect(action()).toHaveValue("none"));
+    await fireEvent.click(await screen.findByRole("button", { name: "Volume up" }));
+    await waitFor(() =>
+      expect(keys.editKey).toHaveBeenCalledWith(
+        { profile: "terminal", page: 1, key: 8 },
+        expect.objectContaining({ label: "Vol +", icon: "lucide:volume-2" }),
+      ),
+    );
   });
 
   it("Exec dropped on key 7 selects and pins the key and sets Exec without writing", async () => {
