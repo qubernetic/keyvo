@@ -1,0 +1,23 @@
+# keyvo recipe pack: lock the desktop.
+# The screen saver interface is KDE Plasma's (kscreenlocker). gdbus ships
+# with GLib on every desktop, unlike qdbus, which is qdbus6 on some
+# distributions and qdbus-qt6 on Fedora. GNOME answers on
+# org.gnome.ScreenSaver instead; the loginctl variant works on both when the
+# daemon runs inside the graphical session.
+schema_version = 1
+
+[recipe]
+group = "system"
+name  = "Lock the desktop"
+icon  = "lucide:lock"
+label = "Lock"
+
+[[variants]]
+id     = "screensaver"
+name   = "Screen locker"
+action = { type = "exec", cmd = "gdbus call --session --dest org.freedesktop.ScreenSaver --object-path /ScreenSaver --method org.freedesktop.ScreenSaver.Lock" }
+
+[[variants]]
+id     = "session"
+name   = "Lock the session (loginctl)"
+action = { type = "exec", cmd = "loginctl lock-session" }

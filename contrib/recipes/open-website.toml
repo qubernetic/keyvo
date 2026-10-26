@@ -1,0 +1,20 @@
+# keyvo recipe pack: open a website in the default browser.
+# xdg-open works on every desktop; replace the address in the key's Exec
+# field after applying the recipe.
+schema_version = 1
+
+[recipe]
+group = "general"
+name  = "Open website"
+icon  = "lucide:globe"
+label = "Website"
+
+[[variants]]
+id     = "keyvo"
+name   = "keyvo on GitHub"
+action = { type = "exec", cmd = "xdg-open https://github.com/qubernetic/keyvo" }
+
+[[variants]]
+id     = "search"
+name   = "Web search"
+action = { type = "exec", cmd = "xdg-open https://duckduckgo.com" }

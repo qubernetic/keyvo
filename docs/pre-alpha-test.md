@@ -699,6 +699,14 @@ No Keypad and no daemon needed; the mock dev server of #113 in a host browser.
 - [ ] #124 `just app-dev`, open `http://localhost:1420` with `?theme=breeze-dark`, `?theme=breeze-light`, `?theme=adwaita-dark` and `?theme=adwaita-light` in turn: Home shows the Keypad drawing with the mock's nine tiles in its key cutouts, scaled with the drawing, in all four themes.
 - [ ] #124 In the devtools, set `--kv-device: #b9bcc0` (the pale grey edition) on `:root`: the body and the key and page-button rims recolour to pale grey.
 
+### Recipe packs and the recipes request (#131)
+
+The daemon running; no app needed. The drag-and-drop user test of #119 runs in #130 once #129 is merged.
+
+- [ ] #131 `just run -- ctl recipes` prints one line with the fourteen bundled packs (`"source":"bundled"`), General, System and Apps in that order, and no `problems`.
+- [ ] #131 `mkdir -p ~/.config/keyvo/recipes && cp contrib/recipes/spectacle.toml ~/.config/keyvo/recipes/` and change its `label` to `Shot`: `just run -- ctl recipes` lists `spectacle` once, with `"source":"user"` and the label `Shot`. Write `x = 1` into a second file `~/.config/keyvo/recipes/bad.toml`: the answer carries a `problems` line naming `bad.toml:1:1`. Remove both files afterwards.
+- [ ] #131 Copy the `exec` of `contrib/recipes/volume-up.toml` (variant `plasma`) and run it in a terminal: the volume rises and the Plasma OSD shows. The same for `brightness-up.toml` and `lock.toml` (variant `screensaver`); note on #119 any command that fails on Plasma 6.
+
 ### The shell of three screens (#132)
 
 No Keypad needed; the mock dev server of #113 in a host browser, then the app. Run by the owner in #130.

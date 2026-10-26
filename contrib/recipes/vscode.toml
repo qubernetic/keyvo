@@ -1,0 +1,25 @@
+# keyvo recipe pack: VS Code's default shortcuts. A chord goes to the
+# focused window, so these keys belong on the VS Code profile's pages; the
+# same shortcuts apply on every desktop.
+schema_version = 1
+
+[recipe]
+group = "apps"
+name  = "VS Code"
+icon  = "lucide:code"
+label = "Code"
+
+[[variants]]
+id     = "palette"
+name   = "Command palette"
+action = { type = "chord", keys = "ctrl+shift+p" }
+
+[[variants]]
+id     = "build"
+name   = "Run the build task"
+action = { type = "chord", keys = "ctrl+shift+b" }
+
+[[variants]]
+id     = "run"
+name   = "Start debugging"
+action = { type = "chord", keys = "f5" }

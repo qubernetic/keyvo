@@ -141,6 +141,17 @@ user is trusted, and nothing else is.
 - `http` actions make outbound requests to the URL written in the profile.
   keyvo has no inbound network listener in v1; nothing on the network can reach
   the daemon.
+- Recipe packs (`docs/spec.md` §7.5) carry `chord` and `exec` actions: the
+  bundled ones are built into keyvo, the user's are read from
+  `~/.config/keyvo/recipes/`, the same trust as the profile files beside them.
+  Reading a pack runs nothing; the daemon only lists the packs on the socket's
+  `recipes` request. A pack's command runs only after the user applied it to a
+  key, which writes the command into the profile as a plain `exec`, visible
+  and editable like any other, and then pressed that key. A user pack replaces
+  the bundled pack of its id, so a file dropped into that directory can change
+  what a catalogue entry writes; anything that can write there can already
+  write the profiles. User packs are capped at 8 KiB each and 64 files, so the
+  `recipes` answer stays under the client's line limit.
 
 ### The project layer is the first foreign input
 

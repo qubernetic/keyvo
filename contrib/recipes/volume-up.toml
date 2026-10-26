@@ -1,0 +1,22 @@
+# keyvo recipe pack: raise the volume.
+# The first variant invokes KDE Plasma's own volume shortcut (plasma-pa
+# registers it in kglobalaccel under the `kmix` component), so the volume
+# OSD shows. The media key variant sends the keyboard's volume key, which
+# GNOME and X11 desktops handle too; a chord shows no success or error look.
+schema_version = 1
+
+[recipe]
+group = "system"
+name  = "Volume up"
+icon  = "lucide:volume-2"
+label = "Vol +"
+
+[[variants]]
+id     = "plasma"
+name   = "Plasma volume shortcut"
+action = { type = "exec", cmd = "gdbus call --session --dest org.kde.kglobalaccel --object-path /component/kmix --method org.kde.kglobalaccel.Component.invokeShortcut increase_volume" }
+
+[[variants]]
+id     = "key"
+name   = "Volume media key"
+action = { type = "chord", keys = "volumeup" }

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use keyvo_core::press::PressKind;
 use keyvo_core::profile::KeySlot;
 use keyvo_core::socket::{
-    Command, ErrorBody, Event, EventClass, ProtocolError, Reply, Request, ServerMessage,
+    Command, ErrorBody, Event, EventClass, ProtocolError, Recipes, Reply, Request, ServerMessage,
 };
 use keyvo_core::state::View;
 use keyvo_core::trace::TraceRecord;
@@ -282,6 +282,20 @@ impl<S: Read + Write> Client<S> {
         })? {
             Reply::Pressed(pressed) => Ok(pressed.entry),
             _ => Err(ClientError::Unexpected("press")),
+        }
+    }
+
+    /// The recipe packs of the actions catalogue: the bundled ones and the
+    /// user's, and a line per pack the daemon left out.
+    ///
+    /// # Errors
+    ///
+    /// As [`Client::request`], and when the daemon answers with another
+    /// reply.
+    pub fn recipes(&mut self) -> Result<Recipes, ClientError> {
+        match self.request(Command::Recipes {})? {
+            Reply::Recipes(recipes) => Ok(recipes),
+            _ => Err(ClientError::Unexpected("recipes")),
         }
     }
 

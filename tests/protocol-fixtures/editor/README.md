@@ -13,6 +13,8 @@ checked against the same bytes. Every file is hand-written.
 | `profile.json` | the same for the profile header (`docs/design/gui-ux.md` §3.2): the profile id, the file, its path, the header's name and accent before the first step, and each step: the header field the GUI changes, the name and accent after it, the expected file |
 | `terminal.name.toml` | after header step 1: the name `Terminal` becomes `Shell work` |
 | `terminal.accent.toml` | after header step 2: the accent `#2ecc71` becomes `#e67e22` |
+| `recipe.json` | a recipe applied to a key: the profile id, page and key, the file and its path, the bundled recipe (`contrib/recipes/spectacle.toml`) and its variant, the key's fields before (none: key 7 is blank) and after, the expected file and the key's `line` in it |
+| `terminal.recipe.toml` | after applying "Spectacle: region" to key 7: a new `[pages.keys.7]` table at the end of the page with the recipe's icon and label and the variant's `exec` |
 
 Tests:
 
@@ -24,6 +26,10 @@ Tests:
   byte.
 - `crates/keyvo-client/tests/editor.rs` replays `profile.json` the same way
   with `Editor::set_profile`.
+- `crates/keyvo-client/tests/editor.rs`: `Editor::apply_recipe` with
+  `recipe.json` writes `terminal.recipe.toml` byte for byte after a
+  snapshot, answers the fields and `line`, and writing `before` back
+  clears the key again.
 - `app/src/Profiles.test.ts`: the profile header sends each header step's
   name and accent when its field changes, against a fake that holds the
   file these steps give.
