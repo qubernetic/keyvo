@@ -662,6 +662,14 @@ No Keypad and no daemon needed; a host browser.
 - [ ] #114 Daemon stopped, right after a replug: `just run -- fill '#00ff00' --panel --hold 5` paints green instead of failing with `display stayed in mode 0xa4 after setMode(a0)`.
 - [ ] #114 `printf '[timing]\nclaim_splash_retry = 2000\nclaim_splash_timeout = 2000\n' > ~/.config/keyvo/config.toml`, then `bin/keyvo-daemon`: it logs `configuration not loaded:` and `.../config.toml:2:22: `claim_splash_retry` (2000 ms) must be shorter than `claim_splash_timeout` (2000 ms); ...`. Then Ctrl-C and `rm ~/.config/keyvo/config.toml`.
 
+### Design critique (#106)
+
+No Keypad needed; the mock dev server of #113 in a host browser.
+
+- [ ] #106 Read `docs/design/critique-2026-10.md`: the score table, the six priority issues and the priorities for slices 4 to 6 match what the Profiles and Home screens show on `just app-dev`; the priorities are approved in the PR.
+- [ ] #106 With the browser detector injected as section 2 of the critique describes, the `[Human]` overlay marks the trace rows (cramped padding) on Home in `breeze-dark` and the muted labels (low contrast) on Profiles in `?theme=breeze-light`.
+- [ ] #106 On Profiles with no profile picked in the list, wait for the mock's focus cycle (10 s): the editor switches profile on its own; this is the P1 finding the pass fixes in #108.
+
 ### First-light records (#75)
 
 - [ ] #75 Read `docs/hardware-notes.md`, "Measurements", against the first-light report on #40 and its logs: every number and log citation matches.
