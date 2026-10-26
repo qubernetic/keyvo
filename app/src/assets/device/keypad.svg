@@ -10,7 +10,7 @@
       <stop offset="1" style="stop-color: var(--kv-device-shade, #292b30)"/>
     </linearGradient>
   </defs>
-  <g id="body">
+  <g id="kp-body-shape">
     <rect x="9" y="5.6" width="494" height="599" rx="72" fill="url(#kp-body)" style="stroke: var(--kv-device-edge, #16181b)" stroke-width="8"/>
     <rect x="16" y="12.3" width="480" height="585.2" rx="66" fill="none" style="stroke: var(--kv-device-rim, #74777c)" stroke-opacity=".25" stroke-width="2"/>
   </g>
