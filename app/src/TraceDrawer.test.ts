@@ -1,0 +1,126 @@
+// The trace drawer (docs/design/gui-ux.md §8) against the trace entries of
+// the shared socket fixtures (tests/protocol-fixtures/socket/): one section
+// per part of the entry that the daemon records today, in resolution order.
+import { fireEvent, render, screen, within } from "@testing-library/svelte";
+import { describe, expect, it, vi } from "vitest";
+
+import TraceDrawer from "./TraceDrawer.svelte";
+import { eventsOf, nth, responses } from "./lib/fixtures";
+import type { TraceRecord } from "./lib/protocol";
+
+/** The fixture entries: chord sent, exec exited 101, exec failed, dry run,
+ * unbound. */
+const ENTRIES = eventsOf("trace").map((event) => event.entry);
+
+function drawer(entry: TraceRecord, onclose = vi.fn()) {
+  render(TraceDrawer, { props: { entry, onclose } });
+  return { dialog: screen.getByRole("dialog", { name: "Trace entry" }), onclose };
+}
+
+/** The section headings of the drawer, in order. */
+function sections(dialog: HTMLElement): string[] {
+  return within(dialog)
+    .getAllByRole("heading", { level: 3 })
+    .map((heading) => heading.textContent ?? "");
+}
+
+function section(dialog: HTMLElement, name: string): HTMLElement {
+  return within(dialog).getByRole("region", { name });
+}
+
+/** The value next to the term `term` in `region`. */
+function value(region: HTMLElement, term: string): string {
+  return within(region).getByText(term, { selector: "dt" }).nextElementSibling?.textContent ?? "";
+}
+
+describe("TraceDrawer", () => {
+  it("shows a sent chord: trigger, context, resolved action and the key events", () => {
+    const { dialog } = drawer(nth(ENTRIES, 0));
+    expect(sections(dialog)).toEqual(["Trigger", "Context snapshot", "Resolved action", "Result"]);
+    const trigger = section(dialog, "Trigger");
+    expect(value(trigger, "Time")).toBe(new Date(1792929600250).toLocaleString());
+    expect(value(trigger, "Key")).toBe("4");
+    expect(value(trigger, "Press")).toBe("short");
+    expect(value(trigger, "Source")).toBe("the device");
+    const context = section(dialog, "Context snapshot");
+    expect(value(context, "Profile")).toBe("demo");
+    expect(value(context, "Page")).toBe("1");
+    const action = section(dialog, "Resolved action");
+    expect(value(action, "Layer")).toBe("app layer");
+    expect(value(action, "Type")).toBe("chord");
+    expect(value(action, "Keys")).toBe("ctrl+p");
+    const result = section(dialog, "Result");
+    expect(value(result, "Status")).toBe("sent");
+    expect(value(result, "Key events")).toBe("29 down, 25 down, 25 up, 29 up");
+  });
+
+  it("shows an exec's exit code and duration", () => {
+    const { dialog } = drawer(nth(ENTRIES, 1));
+    expect(value(section(dialog, "Resolved action"), "Command")).toBe("cargo build");
+    const result = section(dialog, "Result");
+    expect(value(result, "Status")).toBe("exited");
+    expect(value(result, "Exit code")).toBe("101");
+    expect(value(result, "Duration")).toBe("2318 ms");
+  });
+
+  it("shows an exec ended by a signal", () => {
+    const entry = nth(ENTRIES, 1);
+    const { dialog } = drawer({ ...entry, result: { status: "exited", code: null, duration_ms: 40 } });
+    expect(value(section(dialog, "Result"), "Exit code")).toBe("none, ended by a signal");
+  });
+
+  it("shows why an action failed", () => {
+    const { dialog } = drawer(nth(ENTRIES, 2));
+    const result = section(dialog, "Result");
+    expect(value(result, "Status")).toBe("failed");
+    expect(value(result, "Error")).toBe("no such file or directory: gh");
+  });
+
+  it("gives a dry run's block reason instead of a result", () => {
+    const { dialog } = drawer(nth(ENTRIES, 3));
+    expect(sections(dialog)).toEqual([
+      "Trigger",
+      "Context snapshot",
+      "Resolved action",
+      "Block reason",
+    ]);
+    expect(value(section(dialog, "Trigger"), "Press")).toBe("long");
+    expect(value(section(dialog, "Trigger"), "Source")).toBe("simulated");
+    expect(section(dialog, "Block reason")).toHaveTextContent(
+      "Dry run: resolved, nothing executed.",
+    );
+  });
+
+  it("says no layer binds an unbound key", () => {
+    const { dialog } = drawer(nth(ENTRIES, 4));
+    const action = section(dialog, "Resolved action");
+    expect(value(action, "Layer")).toBe("none");
+    expect(value(action, "Type")).toBe("none");
+    expect(section(dialog, "Block reason")).toHaveTextContent(
+      "Unbound: no layer binds this key on this page.",
+    );
+  });
+
+  it("shows a running exec as running", () => {
+    const pending = (responses()[4] as { entry: TraceRecord }).entry;
+    const { dialog } = drawer(pending);
+    expect(value(section(dialog, "Result"), "Status")).toBe("running");
+  });
+
+  it("names a result status it does not know", () => {
+    const { dialog } = drawer({ ...nth(ENTRIES, 0), result: { status: "teleported" } });
+    expect(value(section(dialog, "Result"), "Status")).toBe("teleported");
+  });
+
+  it("takes the focus and closes on Esc and on its close button", async () => {
+    const { dialog, onclose } = drawer(nth(ENTRIES, 0));
+    const close = within(dialog).getByRole("button", { name: "Close the trace entry" });
+    expect(close).toHaveFocus();
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(onclose).toHaveBeenCalledTimes(1);
+    await fireEvent.click(close);
+    expect(onclose).toHaveBeenCalledTimes(2);
+    await fireEvent.keyDown(window, { key: "Enter" });
+    expect(onclose).toHaveBeenCalledTimes(2);
+  });
+});
