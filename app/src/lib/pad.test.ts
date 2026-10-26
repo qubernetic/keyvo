@@ -3,7 +3,7 @@
 // subscription, folded the way crates/keyvo-client/src/mirror.rs folds them.
 import { describe, expect, it } from "vitest";
 
-import { apply, caption, fromStatus, grid, PAD_TRACE, initial, schemaError, summarize, type PadState } from "./pad";
+import { apply, caption, clock, fromStatus, grid, PAD_TRACE, initial, schemaError, summarize, type PadState } from "./pad";
 import type { Event, Status, TraceRecord } from "./protocol";
 import { events, eventsOf, nth, responses } from "./fixtures";
 
@@ -252,5 +252,12 @@ describe("schemaError", () => {
 
   it("has nothing for an error without a place", () => {
     expect(schemaError("cannot read the configuration directory")).toBeUndefined();
+  });
+});
+
+describe("clock", () => {
+  it("writes a time of day in 24 h with seconds", () => {
+    expect(clock(new Date(2026, 9, 26, 15, 4, 5).getTime())).toBe("15:04:05");
+    expect(clock(new Date(2026, 9, 26, 0, 0, 9).getTime())).toBe("00:00:09");
   });
 });

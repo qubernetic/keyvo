@@ -34,6 +34,7 @@ describe("SHORTCUTS", () => {
       "Shift+Space",
       "Ctrl+Z",
       "Ctrl+Shift+Z",
+      "/",
       "Escape",
     ]);
   });

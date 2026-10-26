@@ -7,11 +7,15 @@
   // Action with its field are written to the profile file the moment a
   // field changes, after a snapshot, one write after the other; undo and
   // redo for the session. An invalid field says why under itself; a
-  // refused write is a Notice with its place and the typed value stays.
+  // refused write is a Notice with its place and the typed value stays. A
+  // tool assigned from the actions catalogue sets the action type with an
+  // empty field, written once the field is entered; while the catalogue
+  // column is collapsed, the Action select carries its entries.
   import { untrack } from "svelte";
 
   import IconPicker from "./IconPicker.svelte";
   import Notice from "./Notice.svelte";
+  import { applied, CATALOGUE, GROUPS, type CatalogueEntry } from "./lib/catalogue";
   import type { Tile } from "./lib/daemon";
   import {
     afterRedo,
@@ -39,6 +43,7 @@
     type Target,
   } from "./lib/editor";
   import { t, type MessageKey } from "./lib/i18n";
+  import { clock } from "./lib/pad";
 
   let {
     editor,
@@ -49,6 +54,8 @@
     active = true,
     onpress,
     onedited,
+    assign,
+    entries,
   }: {
     editor: Editor;
     /** The key to edit: the selected key of the pinned page; none until
@@ -67,6 +74,12 @@
     onpress?: () => void;
     /** Called after every write. */
     onedited?: () => void;
+    /** A catalogue entry assigned to `target`; a new `seq` applies it once
+     * the key is read. */
+    assign?: { entry: string; target: Target; seq: number };
+    /** The catalogue's entries for the Action select, while its column is
+     * collapsed. */
+    entries?: readonly CatalogueEntry[];
   } = $props();
 
   const uid = $props.id();
@@ -110,13 +123,8 @@
   };
 
   /** The time of a result, 24 h. */
-  function clock(): string {
-    return new Date(Date.now()).toLocaleTimeString(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hourCycle: "h23",
-    });
+  function now(): string {
+    return clock(Date.now());
   }
 
   /** Writes run one after the other, each against the last one's result. */
@@ -137,6 +145,30 @@
 
   /** Bumped by every read, so a late answer of an earlier one is dropped. */
   let reads = 0;
+  /** The key `view` was read for. */
+  let readAt: Target | undefined;
+  /** An assigned catalogue entry waiting for its key to be read. */
+  let pending: { entry: CatalogueEntry; target: Target } | undefined;
+  /** The `seq` of the last assignment taken. */
+  let assigned = 0;
+
+  /** Applies the pending entry once its key is the one the form shows. */
+  function settle() {
+    if (pending === undefined || view === undefined || !sameTarget(readAt, pending.target)) return;
+    form = applied(pending.entry, form);
+    invalid = undefined;
+    pending = undefined;
+  }
+
+  $effect(() => {
+    const next = assign;
+    if (next === undefined || next.seq === assigned) return;
+    assigned = next.seq;
+    const entry = CATALOGUE.find((candidate) => candidate.id === next.entry);
+    if (entry === undefined) return;
+    pending = { entry, target: { ...next.target } };
+    untrack(settle);
+  });
 
   async function read(at: Target, keepEdits: boolean) {
     const mine = ++reads;
@@ -145,8 +177,10 @@
       if (mine !== reads) return;
       const editing = keepEdits && view !== undefined && !sameForm(form, toForm(view.fields));
       view = got;
+      readAt = at;
       if (!editing) form = toForm(got.fields);
       problem = undefined;
+      settle();
     } catch (error) {
       if (mine !== reads) return;
       view = undefined;
@@ -168,6 +202,8 @@
       view = undefined;
       return;
     }
+    // An assignment for a key the user left is dropped.
+    if (pending !== undefined && !sameTarget(pending.target, at)) pending = undefined;
     // A new revision of the same key keeps a field the user is editing.
     const again = id === shownId;
     shownId = id;
@@ -226,7 +262,7 @@
     const edited = await write(at, fields, show);
     if (edited === undefined) return;
     history = recorded(history, { target: at, before: edited.before, after: edited.fields });
-    note = t("inspector.wroteAt", { key: at.key, path: edited.path, time: clock() });
+    note = t("inspector.wroteAt", { key: at.key, path: edited.path, time: now() });
   }
 
   function commit() {
@@ -281,7 +317,7 @@
     const change = history.done.at(-1);
     replay(change, (c) => c.before, () => {
       history = afterUndo(history);
-      note = t("inspector.undidAt", { key: String(change?.target.key), time: clock() });
+      note = t("inspector.undidAt", { key: String(change?.target.key), time: now() });
     });
   }
 
@@ -289,7 +325,7 @@
     const change = history.undone.at(-1);
     replay(change, (c) => c.after, () => {
       history = afterRedo(history);
-      note = t("inspector.redidAt", { key: String(change?.target.key), time: clock() });
+      note = t("inspector.redidAt", { key: String(change?.target.key), time: now() });
     });
   }
 
@@ -411,8 +447,24 @@
           {t("inspector.action")}
           <select aria-label={t("inspector.action")} bind:value={form.actionType} onchange={switched}>
             <option value="none">{t("inspector.kind.none")}</option>
-            <option value="chord">{t("inspector.kind.chord")}</option>
-            <option value="exec">{t("inspector.kind.exec")}</option>
+            {#if entries === undefined}
+              <option value="chord">{t("inspector.kind.chord")}</option>
+              <option value="exec">{t("inspector.kind.exec")}</option>
+            {:else}
+              {#each GROUPS as group (group.id)}
+                <optgroup label={t(group.label)}>
+                  {#each entries.filter((entry) => entry.group === group.id) as entry (entry.id)}
+                    {#if entry.soon === undefined}
+                      <option value={entry.id}>{t(entry.label)}</option>
+                    {:else}
+                      <option value={`recipe:${entry.id}`} disabled>
+                        {t("catalogue.soonOption", { label: t(entry.label) })}
+                      </option>
+                    {/if}
+                  {/each}
+                </optgroup>
+              {/each}
+            {/if}
           </select>
         </label>
         {#if form.actionType !== "none"}

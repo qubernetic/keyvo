@@ -5,6 +5,7 @@ import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { describe, expect, it, vi } from "vitest";
 
 import Mirror from "./Mirror.svelte";
+import { DRAG_TYPE } from "./lib/catalogue";
 import type { Tile } from "./lib/daemon";
 import { responses } from "./lib/fixtures";
 import { t } from "./lib/i18n";
@@ -33,6 +34,7 @@ interface Props {
 function mirror(props: Props = {}) {
   const onselect = vi.fn<(key: number) => void>();
   const onpress = vi.fn<(key: number, kind: PressKind) => void>();
+  const ondrop = vi.fn<(key: number, entry: string) => void>();
   const result = render(Mirror, {
     props: {
       geometry: GEOMETRY,
@@ -42,10 +44,11 @@ function mirror(props: Props = {}) {
       name: "Keypad mirror: profile terminal, page 1",
       onselect,
       onpress,
+      ondrop,
       ...props,
     },
   });
-  return { onselect, onpress, grid: screen.getByRole("grid"), ...result };
+  return { onselect, onpress, ondrop, grid: screen.getByRole("grid"), ...result };
 }
 
 function key(n: number): HTMLElement {
@@ -177,5 +180,26 @@ describe("the mirror", () => {
     mirror({ held: [5] });
     expect(key(5)).toHaveClass("held");
     expect(key(4)).not.toHaveClass("held");
+  });
+});
+
+describe("dropping a catalogue entry", () => {
+  /** jsdom has no DataTransfer: a plain object with `getData` stands in. */
+  function transfer(data: string) {
+    return { getData: (type: string) => (type === DRAG_TYPE ? data : ""), dropEffect: "none" };
+  }
+
+  it("makes every cell a drop target: tool:exec dropped on key 7 calls ondrop(7, \"exec\")", async () => {
+    const { ondrop } = mirror();
+    expect(await fireEvent.dragOver(cell(7), { dataTransfer: transfer("") })).toBe(false);
+    await fireEvent.drop(cell(7), { dataTransfer: transfer("tool:exec") });
+    expect(ondrop).toHaveBeenCalledWith(7, "exec");
+  });
+
+  it("ignores a drop of a preset or of data from elsewhere", async () => {
+    const { ondrop } = mirror();
+    await fireEvent.drop(cell(2), { dataTransfer: transfer("recipe:spectacle") });
+    await fireEvent.drop(cell(2), { dataTransfer: transfer("") });
+    expect(ondrop).not.toHaveBeenCalled();
   });
 });

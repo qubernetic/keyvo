@@ -15,14 +15,16 @@ import { tick } from "svelte";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import Pad from "./Pad.svelte";
+import { DRAG_TYPE } from "./lib/catalogue";
 import type { Daemon, Tile, Update } from "./lib/daemon";
 import type { Editor, KeyFields, Target } from "./lib/editor";
 import { eventsOf, nth, responses } from "./lib/fixtures";
 import { t } from "./lib/i18n";
-import { PAD_TRACE } from "./lib/pad";
+import { PAD_TRACE, STRIP_LINE } from "./lib/pad";
 import type { Pinned } from "./lib/pin";
 import type { ProfileSummary } from "./lib/profiles";
 import type { PressKind, Size, Status, TraceRecord } from "./lib/protocol";
+import { layout, type Columns } from "./lib/shell";
 
 const STATUS = responses()[0] as Status;
 const TILE = { width: 118, height: 118 };
@@ -122,13 +124,15 @@ interface Options {
   keys?: ReturnType<typeof editor>;
   pinned?: Pinned;
   ontrace?: (entry: TraceRecord) => void;
+  /** The window's columns; the default window shows them all. */
+  columns?: Columns;
 }
 
 /** The Pad with the pin held the way App holds it: `onpin` sets the prop. */
-function pad({ daemon = fake(), keys = editor(), pinned, ontrace }: Options = {}) {
+function pad({ daemon = fake(), keys = editor(), pinned, ontrace, columns = layout(1200) }: Options = {}) {
   const onpin = vi.fn<(next: Pinned) => void>();
   const result = render(Pad, {
-    props: { daemon: daemon.daemon, editor: keys, profiles: PROFILES, pinned, onpin, ontrace },
+    props: { daemon: daemon.daemon, editor: keys, profiles: PROFILES, pinned, onpin, ontrace, columns },
   });
   onpin.mockImplementation((next) => void result.rerender({ pinned: next }));
   return { daemon, keys, onpin };
@@ -455,12 +459,15 @@ describe("connecting", () => {
   });
 });
 
-describe("the event list", () => {
+describe("the trace strip", () => {
   it("lists the trace entries newest first, one line each, and hands one to the drawer", async () => {
     const ontrace = vi.fn<(entry: TraceRecord) => void>();
     const { daemon } = await mounted({ ontrace });
     const entries = eventsOf("trace");
     await daemon.send(...entries.map((event): Update => ({ kind: "event", event })));
+    const strip = screen.getByRole("region", { name: "Recent events" });
+    expect(within(strip).getAllByRole("listitem")).toHaveLength(STRIP_LINE);
+    await fireEvent.click(within(strip).getByRole("button", { name: t("trace.expand") }));
     const items = within(screen.getByRole("list", { name: "Recent events" })).getAllByRole("listitem");
     expect(items.map((item) => item.textContent?.trim())).toEqual([
       expect.stringContaining("Key 1: unbound"),
@@ -471,7 +478,7 @@ describe("the event list", () => {
     ]);
     await fireEvent.click(
       screen.getByRole("button", {
-        name: "Key 9, app layer: exec gh pr view --web, failed: no such file or directory: gh, open the trace entry",
+        name: /^\d\d:\d\d:\d\d Key 9, app layer: exec gh pr view --web, failed: no such file or directory: gh, open the trace entry$/,
       }),
     );
     expect(ontrace).toHaveBeenCalledWith(nth(entries, 2).entry);
@@ -544,10 +551,80 @@ describe("the inspector", () => {
   });
 });
 
+describe("the actions catalogue", () => {
+  /** jsdom has no DataTransfer: a plain object with `getData` stands in. */
+  function transfer(data: string) {
+    return { getData: (type: string) => (type === DRAG_TYPE ? data : ""), dropEffect: "none" };
+  }
+
+  function cell(n: number): HTMLElement {
+    return key(n).closest('[role="gridcell"]') as HTMLElement;
+  }
+
+  function action(): HTMLSelectElement {
+    return screen.getByRole("combobox", { name: "Action" }) as HTMLSelectElement;
+  }
+
+  it("is the right column from 1200 px, and the Action select carries no entries", async () => {
+    await mounted({ columns: layout(1200) });
+    expect(screen.getByRole("region", { name: "Actions" })).toBeInTheDocument();
+    await fireEvent.click(key(5));
+    await waitFor(() => expect(action()).toBeInTheDocument());
+    expect(within(action()).queryAllByRole("group")).toEqual([]);
+  });
+
+  it("collapses into the Action select at 1199 px", async () => {
+    await mounted({ columns: layout(1199) });
+    expect(screen.queryByRole("region", { name: "Actions" })).toBeNull();
+    await fireEvent.click(key(5));
+    await waitFor(() => expect(action()).toBeInTheDocument());
+    const groups = within(action()).getAllByRole("group");
+    expect(groups.map((group) => group.getAttribute("label"))).toEqual(["General", "System", "Apps"]);
+    expect(within(action()).getByRole("option", { name: "Konsole (coming soon)" })).toBeDisabled();
+  });
+
+  it("Exec dropped on key 7 selects and pins the key and sets Exec without writing", async () => {
+    const { keys, onpin } = await mounted({ columns: layout(1200) });
+    await fireEvent.drop(cell(7), { dataTransfer: transfer("tool:exec") });
+    expect(onpin).toHaveBeenCalledWith({ profile: "terminal", page: 1 });
+    expect(key(7)).toHaveClass("selected");
+    await waitFor(() => expect(action()).toHaveValue("exec"));
+    expect(screen.getByRole("heading", { name: /^Key 7/ })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Command" })).toHaveValue("");
+    expect(keys.editKey).not.toHaveBeenCalled();
+    const command = screen.getByRole("textbox", { name: "Command" });
+    await fireEvent.input(command, { target: { value: "kate" } });
+    await fireEvent.change(command);
+    await waitFor(() =>
+      expect(keys.editKey).toHaveBeenCalledWith(
+        { profile: "terminal", page: 1, key: 7 },
+        { action: { type: "exec", cmd: "kate" } },
+      ),
+    );
+  });
+
+  it("a click on Chord assigns it to the selected key", async () => {
+    await mounted({ columns: layout(1200) });
+    await fireEvent.click(key(2));
+    await waitFor(() => expect(action()).toHaveValue("none"));
+    await fireEvent.click(screen.getByRole("button", { name: "Chord" }));
+    await waitFor(() => expect(action()).toHaveValue("chord"));
+    expect(screen.getByRole("textbox", { name: "Chord" })).toHaveValue("");
+  });
+});
+
 describe("the style", () => {
   const SRC = dirname(fileURLToPath(import.meta.url));
   /** The rules of the Pad's own components, as written. */
-  const css = ["Pad.svelte", "Mirror.svelte", "PageTabs.svelte", "Inspector.svelte", "IconPicker.svelte"]
+  const css = [
+    "Pad.svelte",
+    "Mirror.svelte",
+    "PageTabs.svelte",
+    "Inspector.svelte",
+    "IconPicker.svelte",
+    "Catalogue.svelte",
+    "TraceStrip.svelte",
+  ]
     .map((file) => readFileSync(join(SRC, file), "utf8"))
     .flatMap((source) => [...source.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((match) => match[1] ?? ""))
     .join("\n");

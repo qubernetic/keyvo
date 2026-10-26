@@ -86,6 +86,7 @@
         {daemon}
         {editor}
         active={active === "home"}
+        {columns}
         ondevice={(next) => (device = next)}
         {profiles}
         {pinned}

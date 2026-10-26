@@ -6,10 +6,12 @@
   // and the arrows select, Space presses the selected key short and
   // Shift+Space long, as dry runs. The selected tile has the accent
   // outline, a key held down on the device its mark, and a key that falls
-  // through from the global layer is dimmed with a corner mark.
+  // through from the global layer is dimmed with a corner mark. Every cell
+  // is a drop target for a tool dragged from the actions catalogue.
   import { tick } from "svelte";
 
   import Device from "./Device.svelte";
+  import { DRAG_TYPE, dropped } from "./lib/catalogue";
   import type { Tile } from "./lib/daemon";
   import { t } from "./lib/i18n";
   import { describeAction, grid, moved, phrase } from "./lib/pad";
@@ -25,6 +27,7 @@
     name,
     onselect,
     onpress,
+    ondrop,
   }: {
     geometry: Geometry;
     /** The pad's tiles in key order; a missing one shows its key number. */
@@ -40,6 +43,8 @@
     onselect: (key: number) => void;
     /** A dry-run press of `key`. */
     onpress: (key: number, kind: PressKind) => void;
+    /** A catalogue tool, by its entry id, dropped on `key`. */
+    ondrop?: (key: number, entry: string) => void;
   } = $props();
 
   const rows = $derived(grid(geometry));
@@ -67,6 +72,24 @@
     buttons[key - 1]?.focus();
   }
 
+  /** The key a drag is over, for its outline. */
+  let over: number | undefined = $state();
+
+  function dragover(event: DragEvent, key: number) {
+    if (ondrop === undefined) return;
+    event.preventDefault();
+    if (event.dataTransfer !== null) event.dataTransfer.dropEffect = "copy";
+    over = key;
+  }
+
+  function drop(event: DragEvent, key: number) {
+    over = undefined;
+    const entry = dropped(event.dataTransfer?.getData(DRAG_TYPE) ?? "");
+    if (entry === undefined) return;
+    event.preventDefault();
+    ondrop?.(key, entry);
+  }
+
   function keydown(event: KeyboardEvent) {
     if (/^[1-9]$/.test(event.key) && Number(event.key) <= keyCount) {
       event.preventDefault();
@@ -87,7 +110,15 @@
       <div role="row" class="row">{@render cells()}</div>
     {/snippet}
     {#snippet tile(key, place)}
-      <div role="gridcell" aria-selected={key === selected} style={place}>
+      <div
+        role="gridcell"
+        aria-selected={key === selected}
+        tabindex="-1"
+        style={place}
+        ondragover={(event) => dragover(event, key)}
+        ondragleave={() => (over = over === key ? undefined : over)}
+        ondrop={(event) => drop(event, key)}
+      >
         <button
           bind:this={buttons[key - 1]}
           type="button"
@@ -95,6 +126,7 @@
           class:selected={key === selected}
           class:held={held.includes(key)}
           class:fallen={fallen(key)}
+          class:over={key === over}
           tabindex={key === (selected ?? 1) ? 0 : -1}
           aria-label={label(key)}
           onclick={() => void select(key)}
@@ -144,6 +176,11 @@
 
   .key.selected {
     border-color: var(--kv-accent);
+  }
+
+  .key.over {
+    border-style: dashed;
+    border-color: var(--kv-fg);
   }
 
   .key.held {

@@ -8,12 +8,19 @@
   // tile, the global key under a key that falls through, and Press, a dry
   // run of the selected key whose result shows under the drawing. The
   // unreachable, no-device and configuration notices go through Notice.
+  // The trace strip sits under the inspector; the actions catalogue is the
+  // right column from 1200 px and collapses into the inspector's Action
+  // select below it. A tool dropped on a tile, or clicked in the catalogue
+  // with a tile selected, selects that tile and sets its action type.
   import { untrack } from "svelte";
 
+  import Catalogue from "./Catalogue.svelte";
   import Inspector from "./Inspector.svelte";
   import Mirror from "./Mirror.svelte";
   import Notice from "./Notice.svelte";
   import PageTabs from "./PageTabs.svelte";
+  import TraceStrip from "./TraceStrip.svelte";
+  import { CATALOGUE } from "./lib/catalogue";
   import type { Daemon, Tile } from "./lib/daemon";
   import { t } from "./lib/i18n";
   import {
@@ -26,15 +33,17 @@
     summarize,
     type PadState,
   } from "./lib/pad";
-  import type { Editor } from "./lib/editor";
+  import type { Editor, Target } from "./lib/editor";
   import { difference, follow, pinOnSelect, pinPage, target, type Pinned } from "./lib/pin";
   import { contextPage, GLOBAL, type ProfileSummary } from "./lib/profiles";
   import type { DeviceStatus, PressKind, TraceRecord, View } from "./lib/protocol";
+  import { layout, RIGHT_FROM, type Columns } from "./lib/shell";
 
   let {
     daemon,
     editor,
     active = true,
+    columns = layout(RIGHT_FROM),
     profiles = [],
     pinned,
     onpin,
@@ -47,6 +56,8 @@
     /** False while the shell shows another screen: the Pad keeps following
      * the daemon but leaves the keyboard alone. */
     active?: boolean;
+    /** What the window is wide enough for: the catalogue column with `right`. */
+    columns?: Columns;
     /** Every profile, for the page tabs; empty until the shell has read them. */
     profiles?: ProfileSummary[];
     /** The inspector's profile and page; undefined follows the pad. */
@@ -201,6 +212,17 @@
     if (next !== pinned) onpin?.(next);
   }
 
+  /** The catalogue entry the inspector applies to its key. */
+  let assign: { entry: string; target: Target; seq: number } | undefined = $state();
+
+  /** Selects `key` and hands the inspector the tool `entry` for it. */
+  function assignTo(key: number, entry: string) {
+    const at = target(pinned, pad.view, key);
+    if (at === undefined) return;
+    select(key);
+    assign = { entry, target: at, seq: (assign?.seq ?? 0) + 1 };
+  }
+
   function choosePage(page: number) {
     if (shown !== undefined) onpin?.(pinPage(shown, page));
   }
@@ -214,10 +236,6 @@
     } catch (error) {
       result = t("home.pressFailed", { reason: reason(error) });
     }
-  }
-
-  function time(entry: TraceRecord): string {
-    return new Date(entry.timestamp_ms).toLocaleTimeString();
   }
 
   const configMessage = $derived.by(() => {
@@ -291,6 +309,7 @@
           name={gridName}
           onselect={select}
           onpress={(key, kind) => void press(key, kind)}
+          ondrop={assignTo}
         />
       {:else if connecting}
         <!-- §5.2: skeleton tiles, no spinner. -->
@@ -344,34 +363,23 @@
         revision={pad.reloads}
         onpress={selected === undefined ? undefined : () => void press(selected ?? 0, "short")}
         onedited={() => edits++}
+        {assign}
+        entries={columns.right ? undefined : CATALOGUE}
       />
+      <TraceStrip entries={pad.trace} {connecting} onopen={(entry) => ontrace?.(entry)} />
     </div>
-  </div>
-
-  <section class="events" aria-labelledby="kv-events">
-    <h2 id="kv-events">{t("home.events")}</h2>
-    {#if pad.trace.length === 0}
-      {#if !connecting}
-        <p class="note">{t("home.noEvents")}</p>
-      {/if}
-    {:else}
-      <ol aria-label={t("home.events")}>
-        {#each pad.trace as entry, index (index)}
-          <li>
-            <button
-              type="button"
-              class="entry"
-              aria-label={t("home.openEntry", { line: summarize(entry) })}
-              onclick={() => ontrace?.(entry)}
-            >
-              <time>{time(entry)}</time>
-              {summarize(entry)}
-            </button>
-          </li>
-        {/each}
-      </ol>
+    {#if columns.right}
+      <div class="catalogue">
+        <Catalogue
+          {selected}
+          {active}
+          onassign={(entry) => {
+            if (selected !== undefined) assignTo(selected, entry);
+          }}
+        />
+      </div>
     {/if}
-  </section>
+  </div>
 </section>
 
 <style>
@@ -403,8 +411,15 @@
   }
 
   .inspector {
+    display: flex;
     flex: 1 1 300px;
+    flex-direction: column;
+    gap: 16px;
     min-width: 0;
+  }
+
+  .catalogue {
+    flex: none;
   }
 
   .skeleton {
@@ -452,24 +467,4 @@
     text-align: left;
   }
 
-  .events h2 {
-    margin: 0 0 4px;
-    font-size: 1em;
-  }
-
-  .events ol {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .events .entry {
-    width: 100%;
-  }
-
-  .events time {
-    margin-right: 8px;
-    background: var(--kv-bg);
-    color: var(--kv-fg-muted);
-  }
 </style>

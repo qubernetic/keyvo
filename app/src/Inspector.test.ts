@@ -12,6 +12,7 @@ import { isDeepStrictEqual } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import Inspector from "./Inspector.svelte";
+import { CATALOGUE } from "./lib/catalogue";
 import type { Tile } from "./lib/daemon";
 import type { Edited, Editor, KeyFields, KeyView, Target } from "./lib/editor";
 import { editorFile, editorSteps, nth } from "./lib/fixtures";
@@ -408,5 +409,57 @@ describe("Inspector", () => {
   it("caps the form at 48ch", () => {
     const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "Inspector.svelte"), "utf8");
     expect(source).toMatch(/form\s*\{[^}]*max-width:\s*48ch/);
+  });
+});
+
+describe("the actions catalogue", () => {
+  it("applies an assigned tool: the action type set, the field empty, nothing written", async () => {
+    const editor = await mounted(accepting());
+    await editor.view.rerender({ assign: { entry: "exec", target: TARGET, seq: 1 } });
+    await waitFor(() => expect(action()).toHaveValue("exec"));
+    expect(field("Command")).toHaveValue("");
+    expect(field("Command")).not.toHaveAccessibleDescription();
+    expect(field("Label")).toHaveValue("Copy");
+    expect(editor.editor.editKey).not.toHaveBeenCalled();
+    await type(field("Command"), "wl-paste");
+    await waitFor(() =>
+      expect(editor.editor.editKey).toHaveBeenLastCalledWith(TARGET, {
+        ...STEPS.fields,
+        action: { type: "exec", cmd: "wl-paste" },
+      }),
+    );
+  });
+
+  it("applies an assignment for another key once that key is read, and only once", async () => {
+    const other = { ...TARGET, key: 7 };
+    const editor = await mounted();
+    const assign = { entry: "exec", target: other, seq: 1 };
+    await editor.view.rerender({ target: other, assign });
+    await waitFor(() => expect(editor.editor.key).toHaveBeenLastCalledWith(other));
+    await waitFor(() => expect(action()).toHaveValue("exec"));
+    expect(field("Command")).toHaveValue("");
+    // Away and back: the key reads as the file has it, the tool is not applied again.
+    await editor.view.rerender({ target: TARGET, assign });
+    await waitFor(() => expect(action()).toHaveValue("chord"));
+    await editor.view.rerender({ target: other, assign });
+    await waitFor(() => expect(editor.editor.key).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(field("Chord")).toHaveValue("ctrl+shift+c"));
+    expect(action()).toHaveValue("chord");
+  });
+
+  it("carries the catalogue's entries in the Action select while the column is collapsed", async () => {
+    const editor = await mounted();
+    expect(screen.queryAllByRole("group")).toEqual([]);
+    await editor.view.rerender({ entries: CATALOGUE });
+    const groups = screen.getAllByRole("group");
+    expect(groups.map((group) => group.getAttribute("label"))).toEqual(["General", "System", "Apps"]);
+    const exec = screen.getByRole("option", { name: "Exec" }) as HTMLOptionElement;
+    expect(exec).toHaveValue("exec");
+    expect(exec).toBeEnabled();
+    const spectacle = screen.getByRole("option", { name: "Spectacle (coming soon)" });
+    expect(spectacle).toBeDisabled();
+    await fireEvent.change(action(), { target: { value: "exec" } });
+    expect(field("Command")).toHaveValue("");
+    expect(editor.editor.editKey).not.toHaveBeenCalled();
   });
 });
