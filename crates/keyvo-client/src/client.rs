@@ -97,38 +97,49 @@ fn peer_uid(stream: &UnixStream) -> std::io::Result<u32> {
 /// The raw `struct ucred` of the peer: pid, uid, gid. The pid is the peer
 /// as seen from this process's pid namespace, so a sandboxed client (a
 /// Flatpak app) sees the host daemon as pid 0. rustix's `UCred` cannot hold
-/// a zero pid, hence the plain `getsockopt` into three `u32`.
-fn peer_cred(stream: &UnixStream) -> std::io::Result<[u32; 3]> {
+/// a zero pid, hence the plain `getsockopt` into `libc::ucred`.
+fn peer_cred(stream: &UnixStream) -> std::io::Result<libc::ucred> {
     use std::os::fd::AsRawFd;
 
-    let mut cred = [0_u32; 3];
-    let mut len = libc::socklen_t::try_from(size_of_val(&cred))
+    let mut cred = libc::ucred {
+        pid: 0,
+        uid: 0,
+        gid: 0,
+    };
+    let mut len = libc::socklen_t::try_from(size_of::<libc::ucred>())
         .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
     // SAFETY: the fd is open for the borrow of `stream`; `cred` is a
-    // writable buffer of `len` bytes laid out like `struct ucred` (three
-    // 32-bit fields), and the kernel writes at most `len` bytes into it.
+    // writable `struct ucred` of `len` bytes, and the kernel writes at most
+    // `len` bytes into it.
     let ret = unsafe {
         libc::getsockopt(
             stream.as_raw_fd(),
             libc::SOL_SOCKET,
             libc::SO_PEERCRED,
-            cred.as_mut_ptr().cast(),
+            (&raw mut cred).cast(),
             &raw mut len,
         )
     };
     if ret != 0 {
         return Err(std::io::Error::last_os_error());
     }
-    if usize::try_from(len).ok() != Some(size_of_val(&cred)) {
-        return Err(std::io::Error::other("SO_PEERCRED returned a short ucred"));
-    }
+    full_ucred(len)?;
     Ok(cred)
+}
+
+/// `Err` unless the kernel filled `len` bytes, a whole `struct ucred`.
+fn full_ucred(len: libc::socklen_t) -> std::io::Result<()> {
+    if usize::try_from(len).ok() == Some(size_of::<libc::ucred>()) {
+        Ok(())
+    } else {
+        Err(std::io::Error::other("SO_PEERCRED returned a short ucred"))
+    }
 }
 
 /// The uid of a raw `ucred`; only the uid decides trust, neither the pid
 /// (namespace-dependent) nor the gid is examined.
-fn uid_of([_pid, uid, _gid]: [u32; 3]) -> u32 {
-    uid
+fn uid_of(cred: libc::ucred) -> u32 {
+    cred.uid
 }
 
 /// `Err` with the reason unless `dir` (its `meta` not following a symlink)
@@ -330,10 +341,19 @@ mod tests {
     #[test]
     fn a_peer_seen_as_pid_0_is_trusted_by_its_uid() {
         // A sandboxed client sees the host daemon as pid 0 (Flatpak).
-        assert_eq!(check_peer(uid_of([0, 1000, 1000]), 1000), Ok(()));
-        assert_eq!(check_peer(uid_of([0, 1000, 4242]), 1000), Ok(()));
-        let reason = check_peer(uid_of([0, 1001, 1000]), 1000).unwrap_err();
+        let cred = |pid, uid, gid| libc::ucred { pid, uid, gid };
+        assert_eq!(check_peer(uid_of(cred(0, 1000, 1000)), 1000), Ok(()));
+        assert_eq!(check_peer(uid_of(cred(0, 1000, 4242)), 1000), Ok(()));
+        let reason = check_peer(uid_of(cred(0, 1001, 1000)), 1000).unwrap_err();
         assert!(reason.contains("uid 1001"), "{reason}");
+    }
+
+    #[test]
+    fn only_a_full_ucred_is_read() {
+        assert!(full_ucred(12).is_ok());
+        for len in [0, 8] {
+            assert!(full_ucred(len).is_err(), "{len}");
+        }
     }
 
     #[test]
