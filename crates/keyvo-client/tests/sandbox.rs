@@ -1,5 +1,9 @@
 //! A client in another pid namespace, as in a Flatpak sandbox, sees the
 //! daemon as pid 0 through `SO_PEERCRED` and still connects (#104).
+//!
+//! The namespace maps the user's own uid, as bwrap (Flatpak) does. Without
+//! a mapping both sides would read as the overflow uid and `open` would pass
+//! against a listener of any uid, so the child checks the mapping first.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -10,11 +14,20 @@ use std::process::Command;
 /// Where the parent's listener is, for the child run.
 const SOCKET: &str = "KEYVO_TEST_SANDBOX_SOCKET";
 
+/// The parent's uid, which the child must also run as.
+const UID: &str = "KEYVO_TEST_SANDBOX_UID";
+
 /// The child half: runs only when the parent starts it inside `unshare`.
 #[test]
 #[ignore = "started by open_succeeds_from_another_pid_namespace"]
 fn open_from_inside_the_namespace() {
     let path = std::env::var_os(SOCKET).expect("started without the socket path");
+    let uid = std::env::var(UID).expect("started without the parent's uid");
+    assert_eq!(
+        rustix::process::getuid().as_raw().to_string(),
+        uid,
+        "the namespace does not map the parent's uid"
+    );
     keyvo_client::open(path.as_ref()).unwrap();
 }
 
@@ -22,7 +35,7 @@ fn open_from_inside_the_namespace() {
 fn open_succeeds_from_another_pid_namespace() {
     let unshare = || {
         let mut command = Command::new("unshare");
-        command.args(["--user", "--pid", "--fork"]);
+        command.args(["--user", "--map-current-user", "--pid", "--fork"]);
         command
     };
     match unshare().arg("true").output() {
@@ -52,6 +65,7 @@ fn open_succeeds_from_another_pid_namespace() {
             "--nocapture",
         ])
         .env(SOCKET, &path)
+        .env(UID, rustix::process::getuid().as_raw().to_string())
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&child.stdout);
