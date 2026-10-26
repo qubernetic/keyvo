@@ -397,6 +397,33 @@ describe("Home event list", () => {
     ]);
   });
 
+  it("opens an entry in the trace drawer; Esc closes it and gives the focus back", async () => {
+    const daemon = await mounted();
+    await daemon.send(...eventsOf("trace").map((event): Update => ({ kind: "event", event })));
+    const line = screen.getByRole("button", {
+      name: "Key 9, app layer: exec gh pr view --web, failed: no such file or directory: gh, open the trace entry",
+    });
+    line.focus();
+    await fireEvent.click(line);
+    const drawer = screen.getByRole("dialog", { name: "Trace entry" });
+    expect(within(drawer).getByRole("region", { name: "Result" })).toHaveTextContent(
+      "no such file or directory: gh",
+    );
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(line).toHaveFocus();
+  });
+
+  it("shows the debug log toggle disabled until the daemon sends HID-level events", async () => {
+    await mounted();
+    const toggle = screen.getByRole("switch", { name: "Debug log" });
+    expect(toggle).toHaveAttribute("aria-disabled", "true");
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(toggle).toHaveAccessibleDescription("Coming soon");
+    await fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+  });
+
   it("says when nothing happened yet and how to fill the list", async () => {
     await mounted();
     expect(
@@ -416,6 +443,20 @@ describe("Home virtual pad", () => {
     expect(await screen.findByRole("status", { name: "Press result" })).toHaveTextContent(
       "Key 5, simulated, global layer: exec cargo test, dry run, nothing executed",
     );
+  });
+
+  it("the result line opens the dry run's trace entry", async () => {
+    await mounted();
+    await fireEvent.click(key(5));
+    await fireEvent.click(
+      await screen.findByRole("button", { name: "Show the trace entry" }),
+    );
+    const drawer = screen.getByRole("dialog", { name: "Trace entry" });
+    expect(within(drawer).getByRole("region", { name: "Block reason" })).toHaveTextContent(
+      "Dry run: resolved, nothing executed.",
+    );
+    await fireEvent.click(within(drawer).getByRole("button", { name: "Close the trace entry" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("a right click sends a long press", async () => {

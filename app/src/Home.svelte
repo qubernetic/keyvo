@@ -5,6 +5,7 @@
   // a click is a short dry-run press, a right click a long one. Beside the
   // mirror, the key editor for the selected key.
   import KeyEditor from "./KeyEditor.svelte";
+  import TraceDrawer from "./TraceDrawer.svelte";
   import type { Daemon, Outline, Tile } from "./lib/daemon";
   import type { Editor, Target } from "./lib/editor";
   import {
@@ -55,6 +56,8 @@
   let tilesError: string | undefined = $state();
   let selected = $state(1);
   let result: string | undefined = $state();
+  /** The entry of the last dry-run press, for the result line's drawer. */
+  let pressed: TraceRecord | undefined = $state();
   const buttons: HTMLButtonElement[] = $state([]);
 
   let stop: (() => void) | undefined;
@@ -188,6 +191,7 @@
 
   async function press(key: number, kind: PressKind) {
     selected = key;
+    pressed = undefined;
     const pad = home.view?.page;
     if (pad !== undefined && shown !== pad) {
       // The daemon resolves a press on the page the pad shows.
@@ -197,9 +201,25 @@
     try {
       const entry: TraceRecord = await daemon.press(key, kind);
       result = summarize(entry);
+      pressed = entry;
     } catch (error) {
       result = t("home.pressFailed", { reason: reason(error) });
     }
+  }
+
+  /** The entry the trace drawer shows, and the control that opened it. */
+  let drawn: TraceRecord | undefined = $state();
+  let opener: HTMLElement | undefined;
+
+  function draw(entry: TraceRecord) {
+    opener = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
+    drawn = entry;
+  }
+
+  function undraw() {
+    drawn = undefined;
+    opener?.focus();
+    opener = undefined;
   }
 
   function select(key: number) {
@@ -465,10 +485,35 @@
 
   <p role="status" aria-label={t("home.result")} class="result">
     {result ?? t("home.resultHint")}
+    {#if pressed !== undefined}
+      {@const entry = pressed}
+      <button
+        type="button"
+        class="link"
+        aria-label={t("home.showEntry")}
+        onclick={() => draw(entry)}
+      >
+        {t("home.showEntry")}
+      </button>
+    {/if}
   </p>
 
   <section class="events">
-    <h2 id="kv-events">{t("home.events")}</h2>
+    <div class="head">
+      <h2 id="kv-events">{t("home.events")}</h2>
+      <!-- §3.1: Debug mode adds HID-level events; the daemon sends none yet. -->
+      <button
+        type="button"
+        role="switch"
+        aria-checked="false"
+        aria-disabled="true"
+        aria-label={t("home.debug")}
+        aria-describedby="kv-debug-soon"
+      >
+        {t("home.debug")}
+      </button>
+      <span id="kv-debug-soon" class="note">{t("soon")}</span>
+    </div>
     {#if connecting && home.trace.length === 0}
       <!-- §5.2: skeleton rows, no spinner; the mirror keeps its last frame. -->
       <ul class="skeleton" aria-busy="true" aria-label={t("home.connecting")}>
@@ -481,12 +526,26 @@
     {:else}
       <ol aria-label={t("home.events")}>
         {#each home.trace as entry, index (index)}
-          <li><time>{time(entry)}</time> {summarize(entry)}</li>
+          <li>
+            <button
+              type="button"
+              class="entry"
+              aria-label={t("home.openEntry", { line: summarize(entry) })}
+              onclick={() => draw(entry)}
+            >
+              <time>{time(entry)}</time>
+              {summarize(entry)}
+            </button>
+          </li>
         {/each}
       </ol>
     {/if}
   </section>
 </section>
+
+{#if drawn !== undefined && active}
+  <TraceDrawer entry={drawn} onclose={undraw} />
+{/if}
 
 <style>
   .home {
@@ -640,9 +699,24 @@
     color: var(--kv-fg-muted);
   }
 
-  .events h2 {
+  .events .head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
     margin: 0 0 4px;
+  }
+
+  .events h2 {
+    margin: 0;
     font-size: 1em;
+  }
+
+  .entry {
+    width: 100%;
+    border-color: transparent;
+    background: var(--kv-bg);
+    color: var(--kv-fg);
+    text-align: left;
   }
 
   .events ol {
