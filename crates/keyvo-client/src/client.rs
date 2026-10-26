@@ -61,9 +61,10 @@ pub enum ClientError {
 }
 
 /// Opens the daemon's socket at `path` for this user. Nothing is sent
-/// before two checks pass: the socket's directory is private to this user,
-/// as the daemon creates it, and the process listening on it runs as this
-/// user (`SO_PEERCRED`). `keyvo ctl` and the app open the socket here.
+/// before three checks pass: this user's uid is mapped in the process's
+/// user namespace, the socket's directory is private to this user, as the
+/// daemon creates it, and the process listening on it runs as this user
+/// (`SO_PEERCRED`). `keyvo ctl` and the app open the socket here.
 ///
 /// # Errors
 ///
@@ -80,6 +81,7 @@ pub fn open(path: &Path) -> Result<UnixStream, ClientError> {
         reason,
     };
     let uid = rustix::process::getuid().as_raw();
+    check_identity(uid, overflow_uid()).map_err(untrusted)?;
     let dir = match path.parent() {
         Some(dir) if !dir.as_os_str().is_empty() => dir,
         _ => Path::new("."),
@@ -140,6 +142,36 @@ fn full_ucred(len: libc::socklen_t) -> std::io::Result<()> {
 /// (namespace-dependent) nor the gid is examined.
 fn uid_of(cred: libc::ucred) -> u32 {
     cred.uid
+}
+
+/// Where the kernel names the uid an unmapped user reads as.
+const OVERFLOW_UID: &str = "/proc/sys/kernel/overflowuid";
+
+/// The kernel's overflow uid, the uid an unmapped user reads as in a user
+/// namespace.
+fn overflow_uid() -> u32 {
+    overflow_uid_from(std::fs::read_to_string(OVERFLOW_UID).ok().as_deref())
+}
+
+/// The overflow uid from the contents of [`OVERFLOW_UID`], or the kernel's
+/// default 65534 when it cannot be read.
+fn overflow_uid_from(contents: Option<&str>) -> u32 {
+    contents
+        .and_then(|text| text.trim().parse().ok())
+        .unwrap_or(65534)
+}
+
+/// `Err` with the reason when this process runs as the overflow uid: its
+/// user namespace does not map the user, so the listener's uid and the
+/// directory's owner would read as the same overflow uid whoever they are.
+fn check_identity(uid: u32, overflow: u32) -> Result<(), String> {
+    if uid == overflow {
+        Err(format!(
+            "this process runs as the overflow uid {uid}: its user namespace does not map this user"
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 /// `Err` with the reason unless `dir` (its `meta` not following a symlink)
@@ -354,6 +386,24 @@ mod tests {
         for len in [0, 8] {
             assert!(full_ucred(len).is_err(), "{len}");
         }
+    }
+
+    #[test]
+    fn an_unmapped_user_is_refused() {
+        // An unmapped uid reads as the overflow uid on both ends of the
+        // socket, so the uid check alone would trust any listener.
+        assert_eq!(check_identity(1000, 65534), Ok(()));
+        let reason = check_identity(65534, 65534).unwrap_err();
+        assert!(reason.contains("does not map this user"), "{reason}");
+        assert_eq!(check_identity(65534, 4242), Ok(()));
+    }
+
+    #[test]
+    fn the_overflow_uid_is_read_from_the_kernel() {
+        assert_eq!(overflow_uid_from(Some("65534\n")), 65534);
+        assert_eq!(overflow_uid_from(Some("4242")), 4242);
+        assert_eq!(overflow_uid_from(Some("nobody")), 65534);
+        assert_eq!(overflow_uid_from(None), 65534);
     }
 
     #[test]

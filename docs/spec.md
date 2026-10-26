@@ -1311,9 +1311,10 @@ As built (pre-alpha, `keyvo_core::socket` and `keyvo_daemon::socket`):
   A failed `accept` waits `[timing].accept_backoff` (§6.1). The client
   side reads daemon lines up to 1 MiB (`keyvo_client::client::LINE_LIMIT`).
 - The clients (`keyvo_client::open`, shared by `keyvo ctl` and the app)
-  send nothing before two checks pass: the socket's directory is private
-  to the user (a `0755` directory is refused) and the listening process
-  runs as the user (`SO_PEERCRED`, uid only; a sandboxed client sees the
+  send nothing before three checks pass: the user's uid is mapped in
+  the client's user namespace (a client running as the overflow uid is
+  refused), the socket's directory is private to the user (a `0755`
+  directory is refused) and the listening process runs as the user (`SO_PEERCRED`, uid only; a sandboxed client sees the
   daemon as pid 0).
 - `keyvo ctl <command> [json]` prints the response line and exits 1 on an
   error. `keyvo ctl subscribe` prints every later line. The socket is
@@ -1941,7 +1942,8 @@ Status of the v0.1 questions after the grill and the research.
 - **v0.3, pre-alpha GUI design pass slice 1 (2026-10-26)**: §8 the
   client's peer check reads the raw `ucred` and decides on the uid alone,
   so a client in a Flatpak sandbox, which sees the daemon as pid 0,
-  reaches the host daemon (#104).
+  reaches the host daemon; a client whose user namespace does not map
+  the user (it runs as the overflow uid) refuses the socket (#104).
 - **v0.3, pre-alpha slice G3 (2026-10-26)**: §10 Profiles as built: list
   column by priority with the global profile pinned and the active one
   marked, profile header with name and accent written round-trip (shell

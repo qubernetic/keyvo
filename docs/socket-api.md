@@ -35,7 +35,10 @@ their roadmap issues. Until then they are rejected as `invalid_request`.
   socket must run as the user (`SO_PEERCRED`). A failed check is an error
   that names the socket and the reason. Only the listener's uid is
   checked, because its pid depends on the pid namespace: a sandboxed
-  client, such as the Flatpak app, sees the daemon as pid 0.
+  client, such as the Flatpak app, sees the daemon as pid 0. The check
+  requires the user's uid to be mapped in the client's user namespace: a
+  client running as the overflow uid (`/proc/sys/kernel/overflowuid`)
+  refuses the socket.
 
 ## Framing
 
