@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use keyvo_core::clock::Clock;
 use keyvo_core::hid::HidTransport;
-use keyvo_hid::display::{self, Claim, ClaimError, ClaimWatch};
+use keyvo_hid::display::{self, Claim, ClaimError, ClaimWatch, SplashWait};
 use keyvo_hid::frame::Frame;
 use keyvo_hid::hidpp::{Hidpp, HidppError, Plane};
 use keyvo_hid::keep_alive::{DEFAULT_PERIOD, KeepAlive, KeepAliveTiming};
@@ -35,7 +35,8 @@ pub struct Session<T, C> {
 
 impl<T: HidTransport, C: Clock> Session<T, C> {
     /// Sends the first keep-alive ping (unless `keep_alive` is `None`), then
-    /// claims the display.
+    /// claims the display, waiting out the plug-in splash as `splash` says
+    /// and pinging while it waits.
     ///
     /// # Errors
     ///
@@ -44,12 +45,16 @@ impl<T: HidTransport, C: Clock> Session<T, C> {
         mut hidpp: Hidpp<T>,
         clock: C,
         keep_alive: Option<KeepAliveTiming>,
+        splash: SplashWait,
     ) -> anyhow::Result<Self> {
         let mut keep_alive = keep_alive.map(|timing| KeepAlive::new(clock, timing));
         if let Some(scheduler) = &mut keep_alive {
             scheduler.poll(&mut hidpp)?;
         }
-        let claim = display::claim(&mut hidpp)?;
+        let claim = display::claim(&mut hidpp, splash, |hidpp| match &mut keep_alive {
+            Some(scheduler) => scheduler.poll(hidpp).map(drop),
+            None => Ok(()),
+        })?;
         let mut watch = ClaimWatch::new(hidpp.device_index(), claim.display_index);
         if keep_alive.is_some() {
             // Resolved by the first ping; no request.
@@ -121,8 +126,13 @@ mod tests {
             exchanges(&pings, 2..3),
         );
         let clock = FakeClock::new();
-        let mut session =
-            Session::open(replay(&script), &clock, Some(KeepAliveTiming::default())).unwrap();
+        let mut session = Session::open(
+            replay(&script),
+            &clock,
+            Some(KeepAliveTiming::default()),
+            SplashWait::default(),
+        )
+        .unwrap();
         assert_eq!(session.claim.boot_mode, DisplayMode::STANDBY);
         assert_eq!(session.until_due(), DEFAULT_PERIOD);
         session.tick().unwrap();
@@ -144,8 +154,34 @@ mod tests {
             replay(&script),
             FakeClock::new(),
             Some(KeepAliveTiming::default()),
+            SplashWait::default(),
         )
         .unwrap()
+    }
+
+    /// `display-claim.txt` with its switch to `a0` replaced by
+    /// `display-splash.txt` (constructed from the #52 daemon log).
+    fn claim_through_splash() -> String {
+        let claim = fixture("display-claim.txt");
+        let head = claim.split("# 6.").next().unwrap_or_default().to_owned();
+        head + &fixture("display-splash.txt")
+    }
+
+    #[test]
+    fn open_waits_out_the_plug_in_splash_with_keep_alive() {
+        let script = format!(
+            "{}{}",
+            exchanges(&fixture("keep-alive-ping.txt"), 0..2),
+            claim_through_splash(),
+        );
+        let session = Session::open(
+            replay(&script),
+            FakeClock::new(),
+            Some(KeepAliveTiming::default()),
+            SplashWait::default(),
+        )
+        .unwrap();
+        assert_eq!(session.claim.splash_retries, 2);
     }
 
     fn set_modes(session: &mut Session<FakeHidTransport, FakeClock>) -> usize {
@@ -192,7 +228,13 @@ mod tests {
     fn other_reports_come_through_as_frames() {
         let key = "< 13 ff 02 00 c0 01 05 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n";
         let script = format!("{}{key}", fixture("display-claim.txt"));
-        let mut session = Session::open(replay(&script), FakeClock::new(), None).unwrap();
+        let mut session = Session::open(
+            replay(&script),
+            FakeClock::new(),
+            None,
+            SplashWait::default(),
+        )
+        .unwrap();
         match session.next_frame(Duration::ZERO).unwrap() {
             Some(Inbound::Frame(frame)) => assert_eq!(frame.params[..2], [0x01, 0x05]),
             other => panic!("{other:?}"),
@@ -202,8 +244,13 @@ mod tests {
     #[test]
     fn without_keep_alive_the_claim_comes_first_and_tick_sends_nothing() {
         let clock = FakeClock::new();
-        let mut session =
-            Session::open(replay(&fixture("display-claim.txt")), &clock, None).unwrap();
+        let mut session = Session::open(
+            replay(&fixture("display-claim.txt")),
+            &clock,
+            None,
+            SplashWait::default(),
+        )
+        .unwrap();
         session.tick().unwrap();
         assert_eq!(session.until_due(), DEFAULT_PERIOD);
         assert!(session.hidpp.transport_mut().is_done());

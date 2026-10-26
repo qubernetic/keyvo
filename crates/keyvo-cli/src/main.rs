@@ -17,6 +17,7 @@ use keyvo_core::clock::{Clock, SystemClock};
 use keyvo_core::config::{self, Timing};
 use keyvo_core::hid::{HidTransport, to_hex};
 use keyvo_core::layout;
+use keyvo_hid::display::SplashWait;
 use keyvo_hid::dump::Dump;
 use keyvo_hid::hidpp::{DEFAULT_REPLY_TIMEOUT, DEVICE_DIRECT, Hidpp, SoftwareId};
 use keyvo_hid::hidraw::HidrawTransport;
@@ -399,7 +400,8 @@ fn run<T: HidTransport, C: Clock>(
             probe::probe_feature(&mut hidpp, device, id, out)
         }
         DeviceCommand::Keys { json, keep_alive } => {
-            let mut session = Session::open(hidpp, clock, keep_alive.timing(timing)?)?;
+            let mut session =
+                Session::open(hidpp, clock, keep_alive.timing(timing)?, splash(timing))?;
             eprintln!("keyvo keys on {device}; Ctrl-C to stop");
             keys::keys(
                 &mut session,
@@ -435,7 +437,8 @@ fn run<T: HidTransport, C: Clock>(
                 },
                 ..ImageConfig::default()
             };
-            let mut session = Session::open(hidpp, clock, keep_alive.timing(timing)?)?;
+            let mut session =
+                Session::open(hidpp, clock, keep_alive.timing(timing)?, splash(timing))?;
             let placement = placement(key, panel, full);
             fill::fill(&mut session, &source, placement, margin, &config, out)?;
             fill::hold(
@@ -449,6 +452,14 @@ fn run<T: HidTransport, C: Clock>(
                 },
             )
         }
+    }
+}
+
+/// The claim's plug-in splash wait of the user's `timing` (spec §5.4).
+fn splash(timing: &Timing) -> SplashWait {
+    SplashWait {
+        retry: timing.claim_splash_retry,
+        timeout: timing.claim_splash_timeout,
     }
 }
 
@@ -585,6 +596,39 @@ mod tests {
         );
         assert!(waits.contains(&Duration::from_millis(7)), "{waits:?}");
         assert!(!waits.contains(&Duration::from_millis(100)), "{waits:?}");
+    }
+
+    #[test]
+    fn keys_waits_out_the_splash_with_the_timing_of_the_configuration() {
+        // The keys script with its claim seeing the splash twice.
+        let claim = fixture("display-claim.txt");
+        let head = claim.split("# 6.").next().unwrap();
+        let script = crate::keys::tests::script()
+            .replace(&claim, &format!("{head}{}", fixture("display-splash.txt")));
+        assert_ne!(script, crate::keys::tests::script());
+        let timing = |retry| Timing {
+            claim_splash_retry: Duration::from_millis(retry),
+            claim_splash_timeout: Duration::from_millis(10_000),
+            ..Timing::default()
+        };
+        // Two retries fit into the timeout.
+        run_with(&["keys"], &script, &timing(5000));
+        // One does not.
+        let error = super::run(
+            command(&["keys"]),
+            &timing(6000),
+            replay(&script),
+            "/dev/hidraw2",
+            &FakeClock::new(),
+            |_| {},
+            || false,
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "display stayed in mode 0xa4 after setMode(a0)"
+        );
     }
 
     #[test]

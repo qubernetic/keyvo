@@ -267,10 +267,21 @@ fn the_captured_geometry_is_the_hcooper_reply() {
     );
 }
 
+/// The `[timing]` defaults of the plug-in splash wait (spec §6.1).
+const SPLASH: display::SplashWait = display::SplashWait {
+    retry: Duration::from_millis(500),
+    timeout: Duration::from_millis(10_000),
+};
+
+/// The claim without a keep-alive to poll while it waits.
+fn claim(hidpp: &mut Hidpp<FakeHidTransport>) -> Result<display::Claim, display::ClaimError> {
+    display::claim(hidpp, SPLASH, |_| Ok(()))
+}
+
 #[test]
 fn hcooper_claim_takes_the_display_from_logo_to_streaming_mode() {
     let mut hidpp = replay(fixture!("display-claim.txt"));
-    let claim = display::claim(&mut hidpp).unwrap();
+    let claim = claim(&mut hidpp).unwrap();
     assert_eq!(
         claim.protocol,
         VlpProtocol {
@@ -286,6 +297,38 @@ fn hcooper_claim_takes_the_display_from_logo_to_streaming_mode() {
     assert_eq!(claim.geometry.keys.len(), 9);
     assert!(claim.mode_event);
     // The mode-change event is consumed, not left for the input path.
+    assert_eq!(hidpp.take_unmatched(), None);
+    assert!(hidpp.transport_mut().is_done());
+    assert_eq!(claim.splash_retries, 0);
+}
+
+/// `display-claim.txt` with its switch to `a0` (steps 6 and 7) replaced by
+/// `display-splash.txt`, built from the #52 daemon log.
+fn claim_through_splash() -> String {
+    let head = fixture!("display-claim.txt").split("# 6.").next().unwrap();
+    format!("{head}{}", fixture!("display-splash.txt"))
+}
+
+#[test]
+fn the_claim_waits_out_the_plug_in_splash() {
+    let mut hidpp = replay(&claim_through_splash());
+    let mut polls = 0;
+    let claim = display::claim(&mut hidpp, SPLASH, |_| {
+        polls += 1;
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(claim.splash_retries, 2);
+    assert!(claim.mode_event);
+    // Between two retries the caller's keep-alive gets its turn.
+    assert_eq!(polls, 2);
+    let set_modes = hidpp
+        .transport_mut()
+        .written()
+        .iter()
+        .filter(|report| report.starts_with(&[0x13, 0xff, 0x02, 0x4e]))
+        .count();
+    assert_eq!(set_modes, 3);
     assert_eq!(hidpp.take_unmatched(), None);
     assert!(hidpp.transport_mut().is_done());
 }
@@ -317,7 +360,7 @@ fn claim_then_lost(lost: &[usize], reclaims: usize) -> String {
 /// number of reclaims.
 fn reclaims_after(script: &str) -> usize {
     let mut hidpp = replay(script);
-    let claim = display::claim(&mut hidpp).unwrap();
+    let claim = claim(&mut hidpp).unwrap();
     let watch = display::ClaimWatch::new(DEVICE_DIRECT, claim.display_index)
         .with_keep_alive(KEEP_ALIVE_INDEX);
     let mut reclaims = 0;
@@ -380,7 +423,7 @@ fn a_reclaim_the_display_does_not_confirm_is_an_error() {
         fixture!("display-reclaim.txt").replace("< 13 ff 02 5e c0 a0", "< 13 ff 02 5e c0 a1");
     script.push_str(&refused);
     let mut hidpp = replay(&script);
-    let claim = display::claim(&mut hidpp).unwrap();
+    let claim = claim(&mut hidpp).unwrap();
     let watch = display::ClaimWatch::new(DEVICE_DIRECT, claim.display_index);
     let frame = hidpp.next_frame(Duration::ZERO).unwrap().unwrap();
     assert_eq!(

@@ -212,6 +212,7 @@ pub(crate) mod tests {
     use crate::tests::{exchanges, fixture, replay};
     use keyvo_core::clock::FakeClock;
     use keyvo_core::hid::to_hex;
+    use keyvo_hid::display::SplashWait;
     use keyvo_hid::hidpp::DEVICE_DIRECT;
     use keyvo_hid::image::ImageError;
     use keyvo_hid::keep_alive::{DEFAULT_PERIOD, KeepAliveTiming};
@@ -226,6 +227,7 @@ pub(crate) mod tests {
             replay(&fixture("display-claim.txt")),
             FakeClock::new(),
             None,
+            SplashWait::default(),
         )
         .unwrap()
         .claim
@@ -273,7 +275,12 @@ pub(crate) mod tests {
     ) -> anyhow::Result<String> {
         let config = ImageConfig::default();
         let script = fixture("display-claim.txt") + &paints_at(source, rects, &config);
-        let mut session = Session::open(replay(&script), FakeClock::new(), None)?;
+        let mut session = Session::open(
+            replay(&script),
+            FakeClock::new(),
+            None,
+            SplashWait::default(),
+        )?;
         let mut out = Vec::new();
         fill(&mut session, source, placement, margin, &config, &mut out)?;
         assert!(session.hidpp.transport_mut().is_done());
@@ -457,8 +464,13 @@ pub(crate) mod tests {
             exchanges(&pings, 2..4),
         );
         let clock = FakeClock::new();
-        let mut session =
-            Session::open(replay(&script), &clock, Some(KeepAliveTiming::default())).unwrap();
+        let mut session = Session::open(
+            replay(&script),
+            &clock,
+            Some(KeepAliveTiming::default()),
+            SplashWait::default(),
+        )
+        .unwrap();
         let mut sleeps = Vec::new();
         hold(
             &mut session,
@@ -489,7 +501,8 @@ pub(crate) mod tests {
             fixture("display-reclaim.txt"),
         );
         let clock = FakeClock::new();
-        let mut session = Session::open(replay(&script), &clock, None).unwrap();
+        let mut session =
+            Session::open(replay(&script), &clock, None, SplashWait::default()).unwrap();
         let mut out = Vec::new();
         fill(
             &mut session,

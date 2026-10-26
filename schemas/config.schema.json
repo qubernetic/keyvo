@@ -65,6 +65,20 @@
           "minimum": 0,
           "type": "integer"
         },
+        "claim_splash_retry": {
+          "default": 500,
+          "description": "While the display shows the plug-in splash (mode `a4`), the claim\nre-sends `setMode(a0)` this often (spec §5.4); must be shorter than\n`claim_splash_timeout`. Default 500 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "claim_splash_timeout": {
+          "default": 10000,
+          "description": "How long the claim waits for the plug-in splash to end before it\nreports the display as not claimed (spec §5.4). Default 10000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "divert_settle": {
           "default": 100,
           "description": "Wait before the first page-button divert request (spec §5.6).\nDefault 100 ms.",
@@ -193,6 +207,8 @@
       "default": {
         "accept_backoff": 100,
         "ack_timeout": 50,
+        "claim_splash_retry": 500,
+        "claim_splash_timeout": 10000,
         "divert_settle": 100,
         "divert_spacing": 20,
         "exec_timeout": 30000,

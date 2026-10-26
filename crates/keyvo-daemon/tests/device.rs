@@ -317,6 +317,42 @@ fn a_lost_device_is_reopened_reclaimed_and_repainted() {
 }
 
 #[test]
+fn a_replug_whose_claim_sees_the_splash_is_no_second_disconnect() {
+    let first = Pad::new(&startup());
+    let second = Pad::new(&support::startup_in_splash());
+    assert_ne!(support::startup_in_splash(), startup());
+    let actor = Actor::start(Pads::new([first.clone(), second.clone()]));
+    assert_eq!(actor.next(), connected());
+    let specs = labelled(&["a", "b", "c"]);
+    actor.commands.send(paint(&specs)).unwrap();
+    assert!(matches!(actor.next(), Event::Painted { .. }));
+    first.unplug();
+    assert_eq!(
+        actor.next(),
+        Event::Disconnected {
+            error: "device disconnected".into()
+        }
+    );
+    // The splash is waited out within the claim: no disconnect for it.
+    assert_eq!(actor.next(), connected());
+    assert_eq!(
+        actor.next(),
+        Event::Painted {
+            keys: vec![1, 2, 3]
+        }
+    );
+    assert!(second.script_done());
+    assert_eq!(second.images(), [union_of(None, &specs)]);
+    assert!(
+        actor
+            .events
+            .recv_timeout(Duration::from_millis(100))
+            .is_err()
+    );
+    actor.stop();
+}
+
+#[test]
 fn a_lost_claim_is_reclaimed_once_and_the_union_repainted() {
     let pad = Pad::new(&(startup() + &support::fixture("display-reclaim.txt")));
     let actor = Actor::start(Pads::new([pad.clone()]));

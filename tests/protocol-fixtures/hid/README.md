@@ -67,13 +67,16 @@ Two fixtures carry the reclaim after a lost claim (spec §5.3):
 | `claim-lost.txt` | first light (see above), `sniff.log` 1792912466.383 and .386, the end of `28-item3-default.log` | the `KEEP_ALIVE` expiry event, then the display mode-change event to `a1`, 0 to 4 ms apart, as every expiry of the log sends them |
 | `display-reclaim.txt` | hcooper #1765 to #1773, steps 6 and 7 of `display-claim.txt` | setMode(a0) and the getMode that confirms it, with the mode-change event announcing `a0` |
 
-Two fixtures are not captured; `keyvo probe --feature` (spec §5.10) is
-tested on them until the owner's `--dump` run records the real bytes:
+Three fixtures are not captured; `keyvo probe --feature` (spec §5.10) is
+tested on the first two until the owner's `--dump` run records the real
+bytes, the claim's splash wait (spec §5.4) on the third until a replug is
+captured:
 
 | File | Source | Content |
 |---|---|---|
 | `vlp-get-feature-absent.txt` | built from `vlp-get-feature-display.txt` and the id of `root-get-feature-absent.txt` | VLP getFeature(0x0020) answered with index 0, the absent answer keyvo assumes |
 | `probe-feature-error.txt` | the classic error layout of HID++ 2.0, the VLP error shape keyvo matches | getFeature(0x1234) refused with `InvalidArgument` on the classic and the VLP root |
+| `display-splash.txt` | the layout of `display-reclaim.txt` with the getMode answer `a4` of the owner's daemon log of a replug (#52, finding 2, 2026-10-25, firmware `U1 66.00.B0017`) | steps 6 and 7 of `display-claim.txt` while the plug-in splash runs: getMode answers `a4` twice, the third setMode(a0) takes |
 
 The image writer's golden tests also reproduce the LCD writes of
 `02-binding-paint.pcap` (frames #521, #639, #640, software id `0xd`) from

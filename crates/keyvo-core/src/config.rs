@@ -37,21 +37,49 @@ impl Config {
         let config: Self =
             toml::from_str(text).map_err(|e| Diagnostic::from_toml(path, text, &e))?;
         let timing = config.timing;
+        // The text parsed once already; the spans point at the key the
+        // user set, the shorter one first.
+        let spans = || toml::from_str::<Spans>(text).unwrap_or_default().timing;
         if let Some(message) = keep_alive_problem(
             ("`keep_alive_period`", timing.keep_alive_period),
             ("`keep_alive_timeout`", timing.keep_alive_timeout),
         ) {
-            // The text parsed once already; the spans point at the key the
-            // user set, the period first.
-            let spans = toml::from_str::<Spans>(text).unwrap_or_default().timing;
+            let spans = spans();
             let span = spans
                 .keep_alive_period
                 .or(spans.keep_alive_timeout)
                 .map(|value| value.span());
             return Err(Diagnostic::at(path, text, span, message));
         }
+        if let Some(message) = claim_splash_problem(
+            ("`claim_splash_retry`", timing.claim_splash_retry),
+            ("`claim_splash_timeout`", timing.claim_splash_timeout),
+        ) {
+            let spans = spans();
+            let span = spans
+                .claim_splash_retry
+                .or(spans.claim_splash_timeout)
+                .map(|value| value.span());
+            return Err(Diagnostic::at(path, text, span, message));
+        }
         Ok(config)
     }
+}
+
+/// The rule of spec §6.1 between the two splash-wait values of the display
+/// claim: a retry not below the timeout would never retry. The message
+/// names the two settings as given; `None` when the rule holds.
+#[must_use]
+pub fn claim_splash_problem(retry: (&str, Duration), timeout: (&str, Duration)) -> Option<String> {
+    let ((retry_name, retry), (timeout_name, timeout)) = (retry, timeout);
+    (retry >= timeout).then(|| {
+        format!(
+            "{retry_name} ({} ms) must be shorter than {timeout_name} ({} ms); the display \
+             claim re-sends setMode(a0) every retry until the timeout",
+            retry.as_millis(),
+            timeout.as_millis()
+        )
+    })
 }
 
 /// The rule of spec §6.1 between the two keep-alive values: every ping has
@@ -82,6 +110,8 @@ struct Spans {
 struct TimingSpans {
     keep_alive_period: Option<toml::Spanned<toml::Value>>,
     keep_alive_timeout: Option<toml::Spanned<toml::Value>>,
+    claim_splash_retry: Option<toml::Spanned<toml::Value>>,
+    claim_splash_timeout: Option<toml::Spanned<toml::Value>>,
 }
 
 /// The `[timing]` table (spec §6.1).
@@ -155,6 +185,17 @@ pub struct Timing {
     #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub accept_backoff: Duration,
+    /// While the display shows the plug-in splash (mode `a4`), the claim
+    /// re-sends `setMode(a0)` this often (spec §5.4); must be shorter than
+    /// `claim_splash_timeout`. Default 500 ms.
+    #[serde(with = "millis")]
+    #[schemars(with = "u64")]
+    pub claim_splash_retry: Duration,
+    /// How long the claim waits for the plug-in splash to end before it
+    /// reports the display as not claimed (spec §5.4). Default 10000 ms.
+    #[serde(with = "millis")]
+    #[schemars(with = "u64")]
+    pub claim_splash_timeout: Duration,
 }
 
 impl Default for Timing {
@@ -174,6 +215,8 @@ impl Default for Timing {
             reconnect_interval: Duration::from_millis(1000),
             reload_settle: Duration::from_millis(100),
             accept_backoff: Duration::from_millis(100),
+            claim_splash_retry: Duration::from_millis(500),
+            claim_splash_timeout: Duration::from_millis(10_000),
         }
     }
 }
