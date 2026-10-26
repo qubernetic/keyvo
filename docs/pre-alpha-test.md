@@ -735,6 +735,15 @@ No Keypad needed for the first three; the mock dev server of #113 in a host brow
 - [ ] #134 `?mock-error=write`: change a label; an error notice shows the file, line and column of the key and the message, the typed label stays in the field, and Undo stays disabled. Type `teal` into Color: the message stands under the field and nothing is written.
 - [ ] #134 With the daemon and the Keypad: section 5 step 11, the icon and colour included: the file round-trips (only the edited lines change).
 
+### The actions catalogue column and the trace strip (#135)
+
+The mock dev server of #113 in a host browser for the first three, then the app. Run by the owner in #130.
+
+- [ ] #135 `just app-dev` in a window at least 1200 px wide: the Actions column at the right lists General, System and Apps; a heading collapses and expands its group. Type `ko` into Search actions: only Konsole is left; `zzz` says `No action matches`. Press `/` with the focus outside a field: the search takes it. Focus Spectacle: `Coming soon` with the #119 sentence, and a click does nothing.
+- [ ] #135 Drag Exec onto key 7: key 7 gets the outline, the inspector reads `Key 7` with Exec in the Action select and an empty Command, and nothing is written yet; type a command and leave the field: the result line says it was written. Select key 2 and click Chord in the column: the same with an empty Chord field.
+- [ ] #135 Narrow the window below 1200 px: the column goes, and the Action select lists the three groups with the presets as `(coming soon)` options. Once the mock has sent a few trace entries, the trace strip under the inspector shows the three newest with their 24 h times, the chevron expands it to every entry and back, and an entry opens the drawer on itself.
+- [ ] #135 With the daemon and the Keypad, at 1363x798 and at 960 px: drag Exec onto key 7 and set the command: the file round-trips (only key 7's lines change) and the pad repaints.
+
 ### First-light records (#75)
 
 - [ ] #75 Read `docs/hardware-notes.md`, "Measurements", against the first-light report on #40 and its logs: every number and log citation matches.

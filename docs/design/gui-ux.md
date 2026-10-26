@@ -129,8 +129,14 @@ holds, what is special in the right column.
   select above them. Forms capped at 48ch. Every change writes through
   `toml_edit` immediately (§4.1), the result line with a time stamp under
   the fields. Empty: "Select a key to edit it."
-- **Actions catalogue** (right): drag an entry onto a tile to assign it,
-  click to assign it to the selected tile. v1 groups: General (Open
+- **Actions catalogue** (right, from a 1200 px window; below it the
+  entries collapse into the inspector's Action select): a search field
+  (`/`, "Search actions", empty: "No action matches"), then the groups,
+  each collapsible on its heading. Drag an entry onto a tile to assign it,
+  click to assign it to the selected tile; a raw tool sets the action
+  type with an empty field, written once the field is entered. The
+  presets stay "Coming soon" until the recipe packs reach the app
+  (#119, #129). v1 groups: General (Open
   folder, Open website, New email, then the raw tools Chord and Exec),
   System (Lock the desktop, Volume, Brightness, Open a settings page),
   Apps (one entry per app, Spectacle, Calculator, VS Code, Konsole and so
@@ -139,9 +145,12 @@ holds, what is special in the right column.
   Assistant light) and Behaviors. The entries are the recipes of §4.3.
   Moving a key between tiles stays `Ctrl+X` and `Ctrl+V` and "Move key"
   (d15).
-- **Trace strip** (bottom): the newest trace entries (§8), one line each,
-  newest first; the chevron opens the trace drawer. Debug log toggle in
-  the drawer header (Debug mode adds HID-level events).
+- **Trace strip** (under the inspector): one line with the newest trace
+  entries (§8), newest first, each with its 24 h time and opening the
+  trace drawer on itself; the chevron expands the strip in place to the
+  20 entries the Pad keeps. Debug log switch in the drawer header (Debug
+  mode adds HID-level events), disabled with its sentence until the
+  daemon sends them.
 - Status facts (device, profile, page, mode, top overlay, context with the
   project name or "unknown project" with the reason, d7) live in the
   header and the drawing's caption, each once; they are no longer a strip

@@ -1774,12 +1774,34 @@ then subscribes with a replay of the newest 20 trace entries;
 - **Held caption.** While the focused window is held (§6.1,
   `[focus].hold_classes`), a `status` line reads `keyvo-app focused,
   holding <profile>`, the profile the pad keeps.
-- **Event list.** The trace entries, newest first, one line each: the key,
-  the press kind, whether it was simulated, the layer that supplied the
-  key (`app layer` or `global layer`), the action and its result. Each
-  line opens the trace drawer.
+- **Trace strip** (`app/src/TraceStrip.svelte`). Under the inspector, one
+  line "Recent events" with the newest three trace entries, newest first,
+  each with its 24 h time: the key, the press kind, whether it was
+  simulated, the layer that supplied the key (`app layer` or `global
+  layer`), the action and its result. Each entry opens the trace drawer
+  on itself. Once there are more, the chevron expands the strip in place
+  to the 20 entries the Pad keeps, one per line, and collapses it again.
+- **Actions catalogue** (`app/src/Catalogue.svelte`,
+  `app/src/lib/catalogue.ts`). From a 1200 px window on, the right
+  column: "Search actions" (`/` focuses it outside a field) narrows the
+  entries by label or group name, case-insensitive, and says "No action
+  matches" when none is left; then the groups General (Open folder, Open
+  website, New email, Chord, Exec), System (Lock the desktop, Volume,
+  Brightness, Open a settings page) and Apps (Spectacle, Calculator, VS
+  Code, Konsole), each collapsible on its heading (`aria-expanded`; a
+  search shows the matches of a collapsed group). The raw tools Chord and
+  Exec are dragged onto a tile of the mirror (the drag carries
+  `tool:<id>` as `application/x-keyvo-action`; every cell is a drop
+  target) or clicked to assign them to the selected tile. Either way the
+  tile is selected (and pinned, as a click would), and the inspector sets
+  the action type with an empty field: nothing is written until the keys
+  or the command are entered. The presets are disabled with "Coming soon"
+  and the sentence naming the recipe packs of #119, until the catalogue
+  reads them from the daemon. Below 1200 px the column goes and the
+  inspector's Action select carries the entries in the three groups, the
+  presets as disabled options.
 - **Trace drawer** (`app/src/TraceDrawer.svelte` on `Drawer`). Opens from
-  an event line and from the result line of a dry-run press, takes the
+  an entry of the trace strip and from the result line of a dry-run press, takes the
   focus, and closes on `Esc` or its close button, giving the focus back.
   Its header carries the Debug log switch, disabled with "Coming soon"
   until the daemon sends HID-level events. It shows the
@@ -1798,7 +1820,7 @@ then subscribes with a replay of the newest 20 trace entries;
   `aria-selected`, and the result line and the held caption are `status`
   regions.
 - **Screen states** (design §5.2, brief §6), each notice through `Notice`.
-  Empty: the event list says how to fill it (press a key on the pad, or
+  Empty: the trace strip says how to fill it (press a key on the pad, or
   select one in the mirror and press `Space`). Loading: nine skeleton
   tiles in the drawing (`aria-busy`), no spinner; on a reconnect the
   mirror keeps its last frame instead. Device missing: a note names the
@@ -2122,6 +2144,16 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha Pad slice 4 (2026-10-26)**: §10 the actions
+  catalogue as built (`Catalogue.svelte`, `lib/catalogue.ts`): the right
+  column from 1200 px with "Search actions" (`/`), the groups General,
+  System and Apps; Chord and Exec dragged onto a tile of the mirror or
+  clicked for the selected tile set the action type with an empty field,
+  the presets "Coming soon" until #119's packs reach the app; below
+  1200 px the entries sit in the inspector's Action select. The event
+  list becomes the trace strip under the inspector (`TraceStrip.svelte`):
+  the newest entries on one line with 24 h times, the chevron expanding it
+  to the 20 the Pad keeps (#128).
 - **v0.3, pre-alpha Pad slice 3 (2026-10-26)**: §10 the pinned inspector
   as built (`Inspector.svelte`) in the key editor's place on the Pad:
   header `Key <n>: <kind>` with the file and line, Press and Clear; "from
