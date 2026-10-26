@@ -2,7 +2,16 @@
 // of a subscription, the way keyvo_client::Mirror folds them on the Rust
 // side; and the one-line summary of a trace entry.
 import type { Update } from "./daemon";
-import type { Context, DeviceStatus, Geometry, Status, TraceRecord, View } from "./protocol";
+import { t } from "./i18n";
+import type {
+  Action,
+  Context,
+  DeviceStatus,
+  Geometry,
+  Status,
+  TraceRecord,
+  View,
+} from "./protocol";
 
 /** The trace entries Home keeps and asks the daemon to replay. */
 export const HOME_TRACE = 20;
@@ -102,14 +111,15 @@ export function apply(state: HomeState, update: Update): HomeState {
   }
 }
 
-function action(entry: TraceRecord): string {
-  switch (entry.action?.type) {
+/** What `action` does, in a few words; none for an unbound key. */
+export function describeAction(action: Action | null | undefined): string | undefined {
+  switch (action?.type) {
     case undefined:
-      return "";
+      return undefined;
     case "chord":
-      return `chord ${entry.action.keys}, `;
+      return t("action.chord", { keys: action.keys });
     case "exec":
-      return `exec ${entry.action.cmd}, `;
+      return t("action.exec", { cmd: action.cmd });
   }
 }
 
@@ -117,25 +127,30 @@ function result(entry: TraceRecord): string {
   const result = entry.result;
   switch (result.status) {
     case "dry_run":
-      return "dry run, nothing executed";
+      return t("trace.dryRun");
     case "pending":
-      return "running";
+      return t("trace.running");
     case "exited":
-      return `exited ${String(result.code)} after ${String(result.duration_ms)} ms`;
+      return t("trace.exited", { code: String(result.code), ms: String(result.duration_ms) });
     case "failed":
-      return `failed: ${String(result.error)}`;
+      return t("trace.failed", { error: String(result.error) });
     default:
       return result.status;
   }
 }
 
+/** Present parts joined into one comma-separated phrase. */
+export function phrase(parts: (string | undefined)[]): string {
+  return parts.filter((part) => part !== undefined).join(", ");
+}
+
 /** One line: the key, how it was pressed, the layer that supplied it, the
  * action and what came of it. */
 export function summarize(entry: TraceRecord): string {
-  const how = [
-    entry.trigger.press === "long" ? " long" : "",
-    entry.trigger.simulated ? ", simulated" : "",
-    entry.layer === undefined ? "" : `, ${entry.layer} layer`,
-  ].join("");
-  return `Key ${entry.key}${how}: ${action(entry)}${result(entry)}`;
+  const head = phrase([
+    t(entry.trigger.press === "long" ? "trace.keyLong" : "trace.key", { key: entry.key }),
+    entry.trigger.simulated ? t("trace.simulated") : undefined,
+    entry.layer === undefined ? undefined : t("layer", { layer: entry.layer }),
+  ]);
+  return t("trace.line", { head, body: phrase([describeAction(entry.action), result(entry)]) });
 }

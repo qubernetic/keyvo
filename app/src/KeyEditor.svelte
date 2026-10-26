@@ -27,11 +27,13 @@
     type Problem,
     type Target,
   } from "./lib/editor";
+  import { t } from "./lib/i18n";
 
   let {
     editor,
     target,
     revision = 0,
+    active = true,
     onedited,
   }: {
     editor: Editor;
@@ -39,6 +41,8 @@
     target?: Target;
     /** Bumped when the files may have changed on disk (a reload). */
     revision?: number;
+    /** False while another screen shows: Ctrl+Z and Ctrl+Shift+Z are not ours. */
+    active?: boolean;
     /** Called after every write. */
     onedited?: () => void;
   } = $props();
@@ -52,6 +56,9 @@
   /** What the last write did. */
   let note: string | undefined = $state();
   let history: History = $state.raw(emptyHistory());
+  const actionLabel = $derived(
+    form.actionType === "chord" ? t("editor.keys") : t("editor.command"),
+  );
 
   /** Writes run one after the other, each against the last one's result. */
   let queue: Promise<void> = Promise.resolve();
@@ -144,7 +151,7 @@
       const edited = await write(at, result.fields, false);
       if (edited === undefined) return;
       history = recorded(history, { target: at, before: edited.before, after: edited.fields });
-      note = `Wrote key ${at.key} to ${edited.path}`;
+      note = t("editor.wrote", { key: at.key, path: edited.path });
     });
   }
 
@@ -165,7 +172,7 @@
     const change = history.done.at(-1);
     replay(change, (c) => c.before, () => {
       history = afterUndo(history);
-      note = `Undid the change to key ${String(change?.target.key)}`;
+      note = t("editor.undid", { key: String(change?.target.key) });
     });
   }
 
@@ -173,13 +180,14 @@
     const change = history.undone.at(-1);
     replay(change, (c) => c.after, () => {
       history = afterRedo(history);
-      note = `Redid the change to key ${String(change?.target.key)}`;
+      note = t("editor.redid", { key: String(change?.target.key) });
     });
   }
 
   /** Ctrl+Z and Ctrl+Shift+Z for the session, unless a form field has the
    * focus: there they undo the typing. */
   function keydown(event: KeyboardEvent) {
+    if (!active) return;
     if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "z") return;
     const focus = event.target;
     if (
@@ -199,42 +207,62 @@
 
 <section class="editor" aria-labelledby="kv-editor">
   {#if target === undefined}
-    <h2 id="kv-editor">Key editor</h2>
-    <p class="note">Select a key on the mirror to edit it.</p>
+    <h2 id="kv-editor">{t("editor.title")}</h2>
+    <p class="note">{t("editor.select")}</p>
   {:else}
-    <h2 id="kv-editor">Key {target.key}</h2>
+    <h2 id="kv-editor">{t("editor.key", { key: target.key })}</h2>
     {#if problem !== undefined}
       <p role="alert" class="problem">{describe(problem)}</p>
     {/if}
     {#if view !== undefined}
-      <p class="note">File: <code>{view.path}</code></p>
+      <p class="note">{t("editor.file")} <code>{view.path}</code></p>
       <form onsubmit={(event) => event.preventDefault()}>
         <label>
-          Label
-          <input type="text" bind:value={form.label} onchange={commit} />
+          {t("editor.label")}
+          <input
+            type="text"
+            aria-label={t("editor.label")}
+            bind:value={form.label}
+            onchange={commit}
+          />
         </label>
         <label>
-          Color
-          <input type="text" placeholder="#rrggbb" bind:value={form.color} onchange={commit} />
+          {t("editor.color")}
+          <input
+            type="text"
+            aria-label={t("editor.color")}
+            placeholder={t("editor.colorExample")}
+            bind:value={form.color}
+            onchange={commit}
+          />
         </label>
         <label>
-          Icon
-          <input type="text" placeholder="lucide:hammer" bind:value={form.icon} onchange={commit} />
+          {t("editor.icon")}
+          <input
+            type="text"
+            aria-label={t("editor.icon")}
+            placeholder={t("editor.iconExample")}
+            bind:value={form.icon}
+            onchange={commit}
+          />
         </label>
         <label>
-          Action
-          <select bind:value={form.actionType} onchange={switched}>
-            <option value="none">none</option>
-            <option value="chord">chord</option>
-            <option value="exec">exec</option>
+          {t("editor.action")}
+          <select aria-label={t("editor.action")} bind:value={form.actionType} onchange={switched}>
+            <option value="none">{t("editor.none")}</option>
+            <option value="chord">{t("editor.chord")}</option>
+            <option value="exec">{t("editor.exec")}</option>
           </select>
         </label>
         {#if form.actionType !== "none"}
           <label>
-            {form.actionType === "chord" ? "Chord" : "Command"}
+            {actionLabel}
             <input
               type="text"
-              placeholder={form.actionType === "chord" ? "ctrl+shift+g" : "cargo build"}
+              aria-label={actionLabel}
+              placeholder={form.actionType === "chord"
+                ? t("editor.chordExample")
+                : t("editor.commandExample")}
               bind:value={form.action}
               onchange={commit}
             />
@@ -247,19 +275,26 @@
     {/if}
   {/if}
   <div class="history">
-    <button type="button" aria-keyshortcuts="Control+Z" disabled={history.done.length === 0} onclick={undo}>
-      Undo
+    <button
+      type="button"
+      aria-label={t("editor.undo")}
+      aria-keyshortcuts="Control+Z"
+      disabled={history.done.length === 0}
+      onclick={undo}
+    >
+      {t("editor.undo")}
     </button>
     <button
       type="button"
+      aria-label={t("editor.redo")}
       aria-keyshortcuts="Control+Shift+Z"
       disabled={history.undone.length === 0}
       onclick={redo}
     >
-      Redo
+      {t("editor.redo")}
     </button>
   </div>
-  <p role="status" aria-label="Editor result" class="note">{note ?? ""}</p>
+  <p role="status" aria-label={t("editor.result")} class="note">{note ?? ""}</p>
 </section>
 
 <style>
@@ -285,26 +320,9 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
+    background: var(--kv-bg);
     color: var(--kv-fg-muted);
     font-size: 0.85em;
-  }
-
-  input,
-  select {
-    min-height: 32px;
-    padding: 0 8px;
-    border: 1px solid var(--kv-bg-alt);
-    border-radius: var(--kv-radius);
-    background: var(--kv-bg-alt);
-    color: var(--kv-fg);
-    font: inherit;
-    font-size: var(--kv-font-size);
-  }
-
-  input:focus-visible,
-  select:focus-visible {
-    border-color: var(--kv-accent);
-    outline: none;
   }
 
   .history {
@@ -312,12 +330,9 @@
     gap: 8px;
   }
 
-  .history button {
-    min-height: 32px;
-  }
-
   .note {
     margin: 0;
+    background: var(--kv-bg);
     color: var(--kv-fg-muted);
     overflow-wrap: anywhere;
   }
@@ -326,6 +341,7 @@
     margin: 0;
     padding: 8px 12px;
     background: var(--kv-bg-alt);
+    color: var(--kv-fg);
     border-left: 4px solid var(--kv-state-error);
     border-radius: var(--kv-radius);
     overflow-wrap: anywhere;

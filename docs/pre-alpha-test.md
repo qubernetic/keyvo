@@ -250,7 +250,7 @@ is for `keyvo ctl`, T3 for the app.
    `trace` event), switch windows (`context` and `profile` events), write
    a profile file again unchanged with
    `cp contrib/profiles/konsole.toml ~/.config/keyvo/profiles/` in T3 (a
-   `config` event; a bare `touch` changes no content and is not seen). Ctrl-C ends it. Leave it running for steps 9 to 11.
+   `config` event; a bare `touch` changes no content and is not seen). Ctrl-C ends it. Leave it running for steps 9 to 12.
 
 9. **GUI mirror.** In T3:
 
@@ -258,11 +258,13 @@ is for `keyvo ctl`, T3 for the app.
    bin/keyvo-app
    ```
 
-   Expected: a window titled `keyvo` with nine tiles matching the pad, a
-   status strip with `Keypad connected`, the profile, page, mode and the
-   focused window. The app window itself matches no profile, so the
-   global profile shows. Switch the page with a page button: the grid and
-   the strip follow.
+   Expected: a window titled `keyvo`, 1200 x 760, with a header (`keyvo`,
+   a device selector showing `Keypad`, a `...` menu button), the
+   navigation rail on the left with Home selected, and Home beside it:
+   nine tiles matching the pad, a status strip with `Keypad connected`,
+   the profile, page, mode and the focused window. The app window itself
+   matches no profile, so the global profile shows. Switch the page with
+   a page button: the grid and the strip follow.
 
 10. **Dry-run press and its trace entry.** In the app, click key 2
     (Fail). Expected: the result line reads `Key 2, simulated: <action>,
@@ -289,6 +291,28 @@ is for `keyvo ctl`, T3 for the app.
 
     shows only the `label` line of key 5, comments and alignment intact.
     Restore it: `cp contrib/profiles/global.toml ~/.config/keyvo/profiles/`.
+
+12. **Shell and readable dropdowns.** Still in the app:
+
+    - The rail lists Home, Profiles, Behaviors, Projects, Integrations,
+      Devices, Settings. `Ctrl+2` shows Profiles (three columns, each one
+      sentence saying it is not built yet), `Ctrl+1` brings Home back
+      with the mirror as it was. Behaviors to Settings are greyed:
+      hovering one shows `Coming soon`; `Ctrl+3` to `Ctrl+7` or Tab onto
+      one shows `Coming soon` and the sentence naming its roadmap item
+      (M4a-5, M4a-6 or M4a-8), and the screen does not change.
+    - Narrow the window: below 1200 px the right column of Profiles
+      collapses to its toggle button, below 1100 px the rail shows icons
+      only, below 1000 px the list column collapses too. The window does
+      not shrink below 960 x 640.
+    - Open the device selector in the header and the Action selector of
+      the key editor, and the `...` menu: every option and entry is
+      readable (light text on a dark background). The menu's five
+      entries are greyed with `Coming soon`. Switch the desktop between
+      the light and the dark theme (System Settings, Colors and Themes,
+      Global Theme) and open them again: still readable in both.
+    - Unplug the Keypad: the device selector shows `Simulator` only.
+      Plug it back: `Keypad` returns and is selected.
 
 Stop the app and the daemon (Ctrl-C) before section 6; it restarts them
 as each item needs.
@@ -518,6 +542,12 @@ no-strip expectations stay.
 - [ ] #99 `bin/keyvo-daemon --config-dir /tmp/kv-other` (a copy of `~/.config/keyvo` with one label changed): `keyvo ctl status` shows `config_dir` `/tmp/kv-other`, and the app's mirror and key editor show and edit that copy, not `~/.config/keyvo`.
 - [ ] #99 `KEYVO_SOCKET=/tmp/kv.sock bin/keyvo-daemon`, then `KEYVO_SOCKET=/tmp/kv.sock keyvo ctl status` answers; a key with `cmd = "keyvo ctl status > /tmp/kv-status.json"` writes the status (the child got `KEYVO_SOCKET`).
 
+### App shell with rail, header and tokens (#100)
+
+- [ ] #100 In the light and in the dark desktop theme, open every dropdown of the app (the header's device selector, the key editor's Action selector, the `...` menu) and read every option: no white text on a white background, no dark text on a dark background.
+- [ ] #100 Section 5 step 12: rail order and `Ctrl+1` to `Ctrl+7`, the five "Coming soon" screens with their roadmap sentence on keyboard focus, the column collapse order when narrowing the window, the 960 x 640 minimum.
+- [ ] #100 With the desktop's reduced animations on (System Settings, Animation speed at Instant), nothing in the app animates.
+
 ### First-light records (#75)
 
 - [ ] #75 Read `docs/hardware-notes.md`, "Measurements", against the first-light report on #40 and its logs: every number and log citation matches.
@@ -551,7 +581,7 @@ you made one.
 - Commit: <git rev-parse --short HEAD>
 - Host: <distribution, kernel (uname -r), Plasma version, Wayland or X11>
 - Method: docs/pre-alpha-test.md sections 5 and 6
-- Section 5: step 1 <pass / fail: what you saw> ... step 11 <...>
+- Section 5: step 1 <pass / fail: what you saw> ... step 12 <...>
 - Section 6: <PR number and item text of every unticked item, with what you saw>
 - Logs: <the daemon log of section 5, attached>
 ```
