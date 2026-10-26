@@ -9,7 +9,8 @@ export const DEFAULT_THEME: ThemeName = "breeze-dark";
 
 /** The tokens that do not come from the desktop theme: the derived
  * indicators keep the pre-alpha defaults until M4a-1 defines their
- * derivation, the feedback states are the pad theme's. */
+ * derivation, the feedback states are the pad theme's, the device colour
+ * is the graphite edition's. */
 const SHARED = {
   "--kv-sandbox": "#b48ef0",
   "--kv-project": "#3cbfae",
@@ -17,6 +18,7 @@ const SHARED = {
   "--kv-state-success": "#2f9e44",
   "--kv-state-error": "#e03131",
   "--kv-contrast": "normal",
+  "--kv-device": "#2f3133",
 };
 
 const BREEZE = {

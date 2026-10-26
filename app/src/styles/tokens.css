@@ -25,6 +25,9 @@
   --kv-radius: 6px;
   --kv-contrast: normal;
   --kv-motion: full;
+  /* The body colour of the device drawing (Device.svelte), per edition:
+     graphite (the default), pale grey #b9bcc0, white #f1f1f1. */
+  --kv-device: #2f3133;
 }
 
 @media (prefers-reduced-motion: reduce) {
