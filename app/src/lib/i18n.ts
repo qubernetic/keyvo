@@ -115,6 +115,8 @@ export const messages = {
   "home.unknown": "unknown",
   "home.noWindow": "no window reported",
   "home.window": "{class}: {title}",
+  "home.holding": "{class} focused, holding {holding}",
+  "home.holdingUnknown": "{class} focused, holding the context",
   "home.keypad": "Keypad connected",
   "home.keypadKeys": "Keypad connected, {keys} keys",
   "home.noKeypad": "No Keypad",

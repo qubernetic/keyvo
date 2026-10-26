@@ -13,6 +13,9 @@
 //! - A page button held for `[timing].long_press` toggles the mode; both
 //!   held together escape to the global profile's context page in auto
 //!   mode.
+//! - A window whose class is in `[focus].hold_classes` (the keyvo app)
+//!   holds the context: its report cancels a pending one and the window
+//!   applied before stays, so the profile and page stay too.
 //!
 //! Synchronous and clock-free: every call takes `now`, and the caller
 //! wakes the machine with [`State::poll`] at [`State::next_deadline`].
@@ -22,7 +25,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::Timing;
+use crate::config::{Config, Focus};
 use crate::focus::WindowContext;
 use crate::layout::Profiles;
 use crate::press::{PressDetector, PressKind};
@@ -92,6 +95,10 @@ pub struct State {
     window: Option<WindowContext>,
     /// A newer window and when it applies.
     pending: Option<(WindowContext, Instant)>,
+    /// The classes that hold the context.
+    hold: Focus,
+    /// The focused window while it holds the context.
+    in_front: Option<WindowContext>,
     /// The last page-button press or release.
     page_used: Option<Instant>,
     held: BTreeSet<PageButton>,
@@ -100,9 +107,10 @@ pub struct State {
 
 impl State {
     /// Auto mode on the global profile's context page, before any focus
-    /// report, with the times of `timing`.
+    /// report, with the `[timing]` and `[focus]` of `config`.
     #[must_use]
-    pub fn new(timing: &Timing, profiles: &Profiles) -> Self {
+    pub fn new(config: &Config, profiles: &Profiles) -> Self {
+        let timing = &config.timing;
         Self {
             hysteresis: timing.focus_hysteresis,
             page_grace: timing.page_grace,
@@ -113,6 +121,8 @@ impl State {
             manual: (GLOBAL_ID.to_owned(), context_page(profiles.global())),
             window: None,
             pending: None,
+            hold: config.focus.clone(),
+            in_front: None,
             page_used: None,
             held: BTreeSet::new(),
             buttons: PressDetector::new(timing.long_press),
@@ -154,14 +164,33 @@ impl State {
         }
     }
 
+    /// Whether a window of `class` holds the context.
+    #[must_use]
+    pub fn holds(&self, class: &str) -> bool {
+        self.hold.holds(class)
+    }
+
+    /// The focused window, while it is one that holds the context.
+    #[must_use]
+    pub const fn held(&self) -> Option<&WindowContext> {
+        self.in_front.as_ref()
+    }
+
     /// The focus source reports `window` at `now`. It applies once no other
     /// report came for `[timing].focus_hysteresis`; a report of the window
-    /// already applied cancels a pending one.
+    /// already applied cancels a pending one, and so does a report of a
+    /// window that holds the context, which never applies.
     pub fn focus(&mut self, window: WindowContext, now: Instant, profiles: &Profiles) {
-        if self.window.as_ref() == Some(&window) {
+        if self.holds(&window.class) {
             self.pending = None;
+            self.in_front = Some(window);
         } else {
-            self.pending = Some((window, now + self.hysteresis));
+            self.in_front = None;
+            if self.window.as_ref() == Some(&window) {
+                self.pending = None;
+            } else {
+                self.pending = Some((window, now + self.hysteresis));
+            }
         }
         self.poll(now, profiles);
     }
@@ -211,7 +240,8 @@ impl State {
         }
     }
 
-    /// The profiles were reloaded: the focused window selects again, as its
+    /// The profiles were reloaded: the focused window (while one that holds
+    /// the context is in front, the one before it) selects again, as its
     /// rules may have changed; manual mode stays unless its profile is gone
     /// (then the global context page) or its page is (then page 1).
     pub fn reload(&mut self, profiles: &Profiles) {

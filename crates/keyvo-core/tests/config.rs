@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use keyvo_core::config::{Config, Daemon, Render, Timing, Trace};
+use keyvo_core::config::{Config, Daemon, Focus, Render, Timing, Trace};
 use keyvo_core::diagnostic::{Diagnostic, Position};
 
 fn fixture(name: &str) -> PathBuf {
@@ -99,6 +99,35 @@ fn the_socket_limits_default_to_64_kib_lines_and_32_connections() {
 }
 
 #[test]
+fn the_keyvo_app_holds_the_context_unless_set() {
+    assert_eq!(
+        Focus::default(),
+        Focus {
+            hold_classes: vec!["keyvo-app".to_owned()],
+        }
+    );
+    let config = parse("valid/focus.toml").unwrap();
+    assert_eq!(
+        config.focus.hold_classes,
+        ["keyvo-app", "org.kde.plasmashell"]
+    );
+    // An empty list holds nothing.
+    let config =
+        Config::from_toml("[focus]\nhold_classes = []\n", Path::new("config.toml")).unwrap();
+    assert!(config.focus.hold_classes.is_empty());
+    assert!(!config.focus.holds("keyvo-app"));
+}
+
+#[test]
+fn a_hold_class_matches_case_insensitively() {
+    let focus = Focus::default();
+    assert!(focus.holds("keyvo-app"));
+    assert!(focus.holds("Keyvo-App"));
+    assert!(!focus.holds("org.kde.konsole"));
+    assert!(!focus.holds("keyvo"));
+}
+
+#[test]
 fn an_empty_file_is_the_defaults() {
     assert_eq!(
         Config::from_toml("", Path::new("config.toml")),
@@ -133,6 +162,14 @@ fn invalid_fixtures_report_file_line_and_column() {
             "invalid/unknown-timing-key.toml",
             Position { line: 3, column: 1 },
             "unknown field `long_pres`",
+        ),
+        (
+            "invalid/focus-hold-class-number.toml",
+            Position {
+                line: 2,
+                column: 30,
+            },
+            "invalid type: integer `7`, expected a string",
         ),
         (
             "invalid/negative-duration.toml",

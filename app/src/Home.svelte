@@ -304,6 +304,17 @@
     };
   }
 
+  // The focused window; a held one (`[focus].hold_classes`, the keyvo app)
+  // names the window whose context stays.
+  function focused(): string {
+    const context = home.context;
+    if (context === undefined) return t("home.noWindow");
+    if (context.held !== true) return t("home.window", { class: context.class, title: context.title });
+    return home.holding === undefined
+      ? t("home.holdingUnknown", { class: context.class })
+      : t("home.holding", { class: context.class, holding: home.holding.class });
+  }
+
   // Design detail: the screen that owns each fact (§3.1). Overlays come
   // from plugins and integrations, the context's project from Projects.
   const facts: Fact[] = $derived([
@@ -317,9 +328,7 @@
       "home.context",
       phrase([
         t("home.unknownProject"),
-        home.context === undefined
-          ? t("home.noWindow")
-          : t("home.window", { class: home.context.class, title: home.context.title }),
+        focused(),
       ]),
       "projects",
     ),

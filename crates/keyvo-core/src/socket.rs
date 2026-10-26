@@ -441,6 +441,10 @@ pub struct Context {
     pub pid: Option<u32>,
     /// Who reported it.
     pub source: ContextSource,
+    /// The class is in `[focus].hold_classes`: the context and the view
+    /// stay those of the window before. Absent when `false`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub held: bool,
 }
 
 /// Where a focus report came from.

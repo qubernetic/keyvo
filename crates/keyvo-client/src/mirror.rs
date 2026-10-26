@@ -15,6 +15,7 @@ pub struct Mirror {
     view: Option<View>,
     device: Option<DeviceStatus>,
     context: Option<Context>,
+    holding: Option<Context>,
     held: Vec<KeySlot>,
     trace: VecDeque<TraceRecord>,
     trace_capacity: usize,
@@ -38,7 +39,7 @@ impl Mirror {
             Reply::Status(status) => {
                 self.view = Some(status.view.clone());
                 self.device = Some(status.device.clone());
-                self.context.clone_from(&status.context);
+                self.set_context(status.context.as_ref());
             }
             Reply::Subscribed(subscribed) => self.view = Some(subscribed.view.clone()),
             Reply::Pressed(pressed) => self.push_trace(pressed.entry.clone()),
@@ -66,7 +67,11 @@ impl Mirror {
                 replace(&mut self.view, view)
             }
             Event::Device(device) => replace(&mut self.device, device),
-            Event::Context(context) => replace(&mut self.context, context),
+            Event::Context(context) => {
+                let changed = self.context.as_ref() != Some(context);
+                self.set_context(Some(context));
+                changed
+            }
             Event::Trace { entry } => {
                 self.push_trace(entry.clone());
                 true
@@ -98,6 +103,27 @@ impl Mirror {
     #[must_use]
     pub const fn context(&self) -> Option<&Context> {
         self.context.as_ref()
+    }
+
+    /// While the focused window holds the context (`held`), the window
+    /// reported before it, whose context stays; `None` when this mirror
+    /// saw no such report.
+    #[must_use]
+    pub const fn holding(&self) -> Option<&Context> {
+        self.holding.as_ref()
+    }
+
+    /// A held context keeps the window before it as `holding`; any other
+    /// ends the hold.
+    fn set_context(&mut self, context: Option<&Context>) {
+        if context.is_some_and(|context| context.held) {
+            if let Some(before) = self.context.take().filter(|before| !before.held) {
+                self.holding = Some(before);
+            }
+        } else {
+            self.holding = None;
+        }
+        self.context = context.cloned();
     }
 
     /// The keys held down on the device, in key order.
