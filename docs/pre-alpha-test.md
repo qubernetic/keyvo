@@ -684,6 +684,13 @@ No Keypad needed.
 
 - [ ] #107 Read `docs/plans/2026-10-26-pad-screen-brief.md` and `docs/design/gui-ux.md` §2 to §3.2: the eleven decisions of the 2026-10-26 grill are recorded as agreed; the brief is approved in the PR.
 
+### The keypad drawing (#124)
+
+No Keypad and no daemon needed; the mock dev server of #113 in a host browser.
+
+- [ ] #124 `just app-dev`, open `http://localhost:1420` with `?theme=breeze-dark`, `?theme=breeze-light`, `?theme=adwaita-dark` and `?theme=adwaita-light` in turn: Home shows the Keypad drawing with the mock's nine tiles in its key cutouts, scaled with the drawing, in all four themes.
+- [ ] #124 In the devtools, set `--kv-device: #b9bcc0` (the pale grey edition) on `:root`: the body and the key and page-button rims recolour to pale grey.
+
 ### First-light records (#75)
 
 - [ ] #75 Read `docs/hardware-notes.md`, "Measurements", against the first-light report on #40 and its logs: every number and log citation matches.
