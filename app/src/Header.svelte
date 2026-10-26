@@ -1,11 +1,18 @@
 <script lang="ts">
-  // The header (docs/design/gui-ux.md §2, d8, d13; §5.2): the app name,
-  // the device selector (every device the daemon reports plus the
-  // Simulator; the Simulator while the Keypad is missing) and the overflow
-  // menu, whose entries stay disabled until they exist.
+  // The header (docs/design/gui-ux.md §2, d8, d13; §5.2; pad screen brief
+  // §5.1): the app name, the device selector (every device the daemon
+  // reports plus the Simulator; the Simulator while the Keypad is
+  // missing), the profile dropdown that pins the inspector (by priority,
+  // the global one first, the pad's marked), the sandbox switch (M4a-4;
+  // Apply and Discard appear once it can be on), the gear that opens
+  // Preferences, and the overflow menu, whose entries stay disabled until
+  // they exist.
   import Icon from "./Icon.svelte";
+  import Soon from "./Soon.svelte";
   import { t, type MessageKey } from "./lib/i18n";
-  import type { DeviceStatus } from "./lib/protocol";
+  import type { Pinned } from "./lib/pin";
+  import { ordered, type ProfileSummary } from "./lib/profiles";
+  import type { DeviceStatus, View } from "./lib/protocol";
   import {
     chosenDevice,
     deviceChoices,
@@ -18,6 +25,11 @@
     device,
     chosen,
     onchoose,
+    profiles = [],
+    pad,
+    pinned,
+    onpin,
+    onpreferences,
     onshortcuts,
   }: {
     /** What the daemon reports; none while it cannot be reached. */
@@ -25,9 +37,23 @@
     /** The user's last choice, if any. */
     chosen?: DeviceChoice;
     onchoose: (choice: DeviceChoice) => void;
+    /** Every profile, as `files.list()` reads them; empty while loading. */
+    profiles?: readonly ProfileSummary[];
+    /** What the pad shows. */
+    pad?: View;
+    /** The inspector's pin; undefined follows the pad. */
+    pinned?: Pinned;
+    /** Pins the inspector to the chosen profile. */
+    onpin?: (profile: string) => void;
+    /** Opens Preferences, the gear. */
+    onpreferences?: () => void;
     /** Opens the keyboard map, the menu's "Keyboard shortcuts". */
     onshortcuts?: () => void;
   } = $props();
+
+  const listed = $derived(ordered(profiles));
+  /** The dropdown's profile: the pinned one, else the pad's. */
+  const shownProfile = $derived(pinned?.profile ?? pad?.profile ?? "");
 
   const ACTIONS: Partial<Record<MenuId, () => void>> = {
     shortcuts: () => onshortcuts?.(),
@@ -102,6 +128,28 @@
       <option value={choice}>{t(NAMES[choice])}</option>
     {/each}
   </select>
+  <select
+    aria-label={t("header.profile")}
+    value={shownProfile}
+    disabled={listed.length === 0}
+    onchange={(event) => onpin?.(event.currentTarget.value)}
+  >
+    {#each listed as profile (profile.id)}
+      <option value={profile.id}>
+        {profile.id === pad?.profile ? t("header.onPad", { name: profile.name }) : profile.name}
+      </option>
+    {/each}
+  </select>
+  <Soon label={t("header.sandbox")} soon="soon.sandbox" toggle />
+  <button
+    type="button"
+    class="gear"
+    aria-label={t("header.preferences")}
+    aria-haspopup="dialog"
+    onclick={() => onpreferences?.()}
+  >
+    <Icon name="settings" />
+  </button>
   <div class="overflow">
     <button
       bind:this={toggle}
@@ -169,7 +217,8 @@
     position: relative;
   }
 
-  .toggle {
+  .toggle,
+  .gear {
     display: flex;
     align-items: center;
     justify-content: center;
