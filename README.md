@@ -72,8 +72,9 @@ when the pad moved away from the profile being edited, a broken profile
 shown with file and line, the recent presses, each opening a trace drawer
 with what the press resolved to and what came of it, and a virtual pad
 (a click selects a key, `1` to `9` and the arrows too; `Space` is a
-dry-run press, `Shift+Space` a long one). Beside the mirror, a key editor changes the selected key's
-label, color, icon and action: each change lands in the profile file at
+dry-run press, `Shift+Space` a long one). Beside the mirror, the inspector names the selected key, its
+file and line, and changes its label, icon (picked from the bundled icons), color and action, or
+overrides a key the global profile supplies: each change lands in the profile file at
 once (comments and formatting kept, a snapshot under
 `~/.local/state/keyvo/snapshots/` first), the daemon repaints the pad, and
 `Ctrl+Z` undoes it. It builds in the devcontainer and runs on the host:

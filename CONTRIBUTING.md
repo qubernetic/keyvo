@@ -102,7 +102,8 @@ shell, fed by `tests/protocol-fixtures/socket/`, `contrib/profiles/` and the
 renderer snapshots, so a change shows in a host browser in seconds without a
 container build, a daemon or a Keypad. `?theme=breeze-dark|breeze-light|adwaita-dark|adwaita-light`
 switches between the measured token sets of `docs/design/gui-ux.md` §7,
-`?mock-error=unreachable` shows the Pad's error state, `?mock-profiles=empty`
+`?mock-error=unreachable` shows the Pad's error state, `?mock-error=write`
+makes every key write fail with a file, line and column, `?mock-profiles=empty`
 adds a profile with no pages, and every fourth focus step is the keyvo app,
 which holds the context the way `[focus].hold_classes` does. Edits stay in memory until
 a reload. The mock never reaches a build without the variable, and it is not
