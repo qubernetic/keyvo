@@ -6,6 +6,7 @@
   "permissions": [
     "allow-status",
     "allow-tiles",
+    "allow-outline",
     "allow-press",
     "allow-subscribe",
     "allow-key",

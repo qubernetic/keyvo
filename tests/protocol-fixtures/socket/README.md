@@ -8,7 +8,9 @@ the same JSON, and the TypeScript client (`app/src/lib/protocol.test.ts`)
 runs the same check. `keyvo-client` (`crates/keyvo-client/tests/`) uses the
 response and event lines as the daemon's side of its exchanges, and the
 app's Home tests (`app/src/lib/home.test.ts`, `app/src/Home.test.ts`) feed
-the event lines to a fake daemon.
+the event lines to a fake daemon, and the trace drawer's tests
+(`app/src/TraceDrawer.test.ts`) render every `trace` entry and the pending
+`press` result.
 
 | File | Content |
 |---|---|

@@ -11,6 +11,7 @@ use std::time::SystemTime;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use keyvo_client::editor::{Edited, KeyView};
+use keyvo_client::tiles::Outline;
 use keyvo_client::{Client, Editor, Problem, Tiles};
 use keyvo_core::edit::KeyFields;
 use keyvo_core::press::PressKind;
@@ -131,6 +132,25 @@ fn edit_key(profile: String, page: usize, key: u8, fields: Value) -> Result<Edit
         .map_err(|error| Problem::from(&error))
 }
 
+/// The profiles of the daemon's configuration directory.
+fn profiles() -> Result<keyvo_core::layout::Profiles, String> {
+    Ok(keyvo_core::layout::load(&config_dir()?)
+        .map_err(|errors| errors.to_string())?
+        .profiles)
+}
+
+/// The page count and accent of `profile` in the daemon's configuration
+/// directory (`keyvo_client::tiles::Outline`), for the mirror's page
+/// selector and accent bar.
+#[tauri::command]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Tauri hands command arguments over owned"
+)]
+fn outline(profile: String) -> Result<Outline, String> {
+    keyvo_client::tiles::outline(&profiles()?, &profile).map_err(|error| error.to_string())
+}
+
 /// The `keys` keys of `profile`'s page `page` from the daemon's
 /// configuration directory in key order, rendered at `tile`; key count and
 /// tile size come from the geometry of the daemon's `status` reply. Each
@@ -138,10 +158,7 @@ fn edit_key(profile: String, page: usize, key: u8, fields: Value) -> Result<Edit
 /// `action` and `layer` (`keyvo_client::tiles::KeySummary`).
 #[tauri::command]
 fn tiles(profile: String, page: usize, keys: u8, tile: TileSize) -> Result<Vec<Value>, String> {
-    let dir = config_dir()?;
-    let profiles = keyvo_core::layout::load(&dir)
-        .map_err(|errors| errors.to_string())?
-        .profiles;
+    let profiles = profiles()?;
     let view = View {
         profile,
         page,
@@ -167,7 +184,7 @@ fn main() {
     if let Err(error) = tauri::Builder::default()
         .manage(Subscriptions::default())
         .invoke_handler(tauri::generate_handler![
-            status, tiles, press, subscribe, key, edit_key
+            status, tiles, outline, press, subscribe, key, edit_key
         ])
         .run(tauri::generate_context!())
     {

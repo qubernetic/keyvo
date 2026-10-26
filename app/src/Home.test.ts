@@ -46,6 +46,9 @@ function fake(overrides: Partial<Daemon> = {}) {
     tiles: vi.fn((profile: string, page: number, keys: number, _tile: Size) =>
       Promise.resolve(tiles(profile, page, keys)),
     ),
+    outline: vi.fn((profile: string) =>
+      Promise.resolve(profile === "terminal" ? { pages: 3, accent: "#2ecc71" } : { pages: 2 }),
+    ),
     press: vi.fn((key: number, kind: PressKind) =>
       Promise.resolve({ ...DRY_RUN, key, trigger: { press: kind, simulated: true } }),
     ),
@@ -140,6 +143,54 @@ describe("Home mirror", () => {
     ).toBeInTheDocument();
   });
 
+  it("offers the profile's pages and shows its accent bar", async () => {
+    const daemon = await mounted();
+    const pages = screen.getByRole("combobox", { name: "Page shown" });
+    expect(within(pages).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Page 1",
+      "Page 2",
+      "Page 3",
+    ]);
+    expect(pages).toHaveValue("1");
+    expect(daemon.daemon.outline).toHaveBeenCalledWith("terminal");
+    expect(screen.getByRole("img", { name: "Accent of profile terminal" })).toHaveStyle({
+      backgroundColor: "#2ecc71",
+    });
+    // The global profile has no accent: no bar.
+    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
+    await waitFor(() => expect(within(pages).getAllByRole("option")).toHaveLength(2));
+    expect(screen.queryByRole("img", { name: /^Accent/ })).not.toBeInTheDocument();
+  });
+
+  it("shows the page the selector picks until the pad changes its view", async () => {
+    const keys = editor();
+    const daemon = await mounted(fake(), keys);
+    await fireEvent.change(screen.getByRole("combobox", { name: "Page shown" }), {
+      target: { value: "3" },
+    });
+    await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenLastCalledWith("terminal", 3, 9, TILE));
+    expect(
+      screen.getByRole("grid", { name: "Keypad mirror: profile terminal, page 3" }),
+    ).toBeInTheDocument();
+    // The strip keeps saying what the pad shows; the editor edits the shown page.
+    const strip = screen.getByRole("region", { name: "Status" });
+    expect(within(strip).getByLabelText("Page")).toHaveTextContent("1");
+    await waitFor(() => expect(keys.key).toHaveBeenLastCalledWith({ profile: "terminal", page: 3, key: 1 }));
+    // A press simulates the pad's page, so a key of another page only selects.
+    await fireEvent.click(key(2));
+    expect(daemon.daemon.press).not.toHaveBeenCalled();
+    expect(screen.getByRole("status", { name: "Press result" })).toHaveTextContent(
+      "The pad shows page 1; presses simulate that page.",
+    );
+    expect(key(2)).toHaveAttribute("tabindex", "0");
+    // The pad's next view brings the selector back to it.
+    await daemon.send({ kind: "event", event: nth(eventsOf("profile"), 0) });
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Page shown" })).toHaveValue("1"),
+    );
+    await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenLastCalledWith("terminal", 1, 9, TILE));
+  });
+
   it("fetches the tiles again after a reload and shows a failed one", async () => {
     const daemon = await mounted();
     const good = nth(eventsOf("config"), 0);
@@ -147,7 +198,7 @@ describe("Home mirror", () => {
     await daemon.send({ kind: "event", event: bad });
     await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenCalledTimes(2));
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "Configuration not loaded: profiles/global.toml:8:9",
+      "Schema error in profiles/global.toml, line 8, column 9",
     );
     await daemon.send({ kind: "event", event: good });
     await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenCalledTimes(3));
@@ -222,14 +273,58 @@ describe("Home mirror", () => {
 });
 
 describe("Home status strip", () => {
-  it("shows device, profile, page, mode and context", async () => {
+  it("shows device, profile, page, mode, top overlay and context", async () => {
     await mounted();
     const strip = screen.getByRole("region", { name: "Status" });
     expect(within(strip).getByLabelText("Device")).toHaveTextContent("Keypad connected, 9 keys");
     expect(within(strip).getByLabelText("Profile")).toHaveTextContent("terminal");
     expect(within(strip).getByLabelText("Page")).toHaveTextContent("1");
     expect(within(strip).getByLabelText("Mode")).toHaveTextContent("auto");
-    expect(within(strip).getByLabelText("Context")).toHaveTextContent("org.kde.konsole: ~ : bash");
+    // The daemon has no overlays and sends no project yet (§3.1, d7).
+    expect(within(strip).getByLabelText("Overlay")).toHaveTextContent("none");
+    expect(within(strip).getByLabelText("Context")).toHaveTextContent(
+      "unknown project, org.kde.konsole: ~ : bash",
+    );
+  });
+
+  it("links each fact to its screen; facts of screens not built yet are inert", async () => {
+    const onnavigate = vi.fn();
+    render(Home, { props: { daemon: fake().daemon, editor: editor(), onnavigate } });
+    const strip = await screen.findByRole("region", { name: "Status" });
+    await waitFor(() => expect(within(strip).getByLabelText("Profile")).toHaveTextContent("terminal"));
+    const links = within(strip).getAllByRole("button");
+    expect(links.map((link) => link.getAttribute("aria-label"))).toEqual([
+      "Profile terminal, open Profiles",
+      "Page 1, open Profiles",
+      "Mode auto, open Profiles",
+    ]);
+    await fireEvent.click(within(strip).getByRole("button", { name: "Page 1, open Profiles" }));
+    expect(onnavigate).toHaveBeenCalledWith("profiles");
+    for (const fact of ["Device", "Overlay", "Context"]) {
+      expect(within(within(strip).getByLabelText(fact)).queryByRole("button")).toBeNull();
+    }
+  });
+
+  it("shows a schema error with file and line until a reload succeeds", async () => {
+    const onnavigate = vi.fn();
+    const daemon = fake();
+    render(Home, { props: { daemon: daemon.daemon, editor: editor(), onnavigate } });
+    await daemon.send({ kind: "event", event: nth(eventsOf("config"), 1) });
+    const strip = screen.getByRole("region", { name: "Status" });
+    const error = within(strip).getByRole("alert");
+    expect(error).toHaveTextContent(
+      "Schema error in profiles/global.toml, line 8, column 9: invalid type: integer `7`, expected a string",
+    );
+    await fireEvent.click(within(error).getByRole("button", { name: "Open Profiles" }));
+    expect(onnavigate).toHaveBeenCalledWith("profiles");
+    await daemon.send({ kind: "event", event: nth(eventsOf("config"), 0) });
+    expect(within(strip).queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows a reload error that names no place as it is", async () => {
+    const daemon = await mounted();
+    await daemon.send({ kind: "event", event: { event: "config", reloaded: false, error: "no config dir" } });
+    expect(screen.getByRole("alert")).toHaveTextContent("Configuration not loaded: no config dir");
   });
 
   it("follows device, mode and context events", async () => {
@@ -242,7 +337,27 @@ describe("Home status strip", () => {
     const strip = screen.getByRole("region", { name: "Status" });
     expect(within(strip).getByLabelText("Device")).toHaveTextContent("No Keypad: device disconnected");
     expect(within(strip).getByLabelText("Mode")).toHaveTextContent("manual");
-    expect(within(strip).getByLabelText("Context")).toHaveTextContent("org.gnome.Ptyxis: vim");
+    expect(within(strip).getByLabelText("Context")).toHaveTextContent(
+      "unknown project, org.gnome.Ptyxis: vim",
+    );
+  });
+
+  it("says which device is missing and when it was last seen", async () => {
+    const seen = new Date(2026, 9, 26, 9, 30, 15).getTime();
+    const now = vi.spyOn(Date, "now").mockReturnValue(seen);
+    try {
+      const daemon = await mounted();
+      expect(screen.queryByText(/is missing/)).not.toBeInTheDocument();
+      now.mockReturnValue(seen + 60_000);
+      await daemon.send({ kind: "event", event: nth(eventsOf("device"), 1) });
+      expect(screen.getByText(/is missing/)).toHaveTextContent(
+        `The Keypad is missing; last seen at ${new Date(seen).toLocaleTimeString()}.`,
+      );
+      // The mirror keeps the last frame.
+      expect(key(5)).toHaveAccessibleName("Key 5: Test, exec cargo test");
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it("says when no window was reported yet", async () => {
@@ -250,11 +365,16 @@ describe("Home status strip", () => {
     render(Home, { props: { daemon: daemon.daemon, editor: editor() } });
     const strip = await screen.findByRole("region", { name: "Status" });
     await waitFor(() =>
-      expect(within(strip).getByLabelText("Context")).toHaveTextContent("no window reported"),
+      expect(within(strip).getByLabelText("Context")).toHaveTextContent(
+        "unknown project, no window reported",
+      ),
     );
     expect(within(strip).getByLabelText("Device")).toHaveTextContent(
       "No Keypad: no hidraw node for 046d:c354",
     );
+    expect(
+      screen.getByText("The Keypad is missing; not seen since the app started."),
+    ).toBeInTheDocument();
   });
 });
 
@@ -277,9 +397,41 @@ describe("Home event list", () => {
     ]);
   });
 
-  it("says when nothing happened yet", async () => {
+  it("opens an entry in the trace drawer; Esc closes it and gives the focus back", async () => {
+    const daemon = await mounted();
+    await daemon.send(...eventsOf("trace").map((event): Update => ({ kind: "event", event })));
+    const line = screen.getByRole("button", {
+      name: "Key 9, app layer: exec gh pr view --web, failed: no such file or directory: gh, open the trace entry",
+    });
+    line.focus();
+    await fireEvent.click(line);
+    const drawer = screen.getByRole("dialog", { name: "Trace entry" });
+    expect(within(drawer).getByRole("region", { name: "Result" })).toHaveTextContent(
+      "no such file or directory: gh",
+    );
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(line).toHaveFocus();
+  });
+
+  it("shows the debug log toggle disabled until the daemon sends HID-level events", async () => {
     await mounted();
-    expect(screen.getByText("No presses yet.")).toBeInTheDocument();
+    const toggle = screen.getByRole("switch", { name: "Debug log" });
+    expect(toggle).toHaveAttribute("aria-disabled", "true");
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(toggle).toHaveAccessibleDescription("Coming soon");
+    await fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("says when nothing happened yet and how to fill the list", async () => {
+    await mounted();
+    expect(
+      screen.getByText(
+        "No presses yet. Press a key on the pad, or click one in the mirror for a dry run.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Connecting to the daemon" })).not.toBeInTheDocument();
   });
 });
 
@@ -291,6 +443,20 @@ describe("Home virtual pad", () => {
     expect(await screen.findByRole("status", { name: "Press result" })).toHaveTextContent(
       "Key 5, simulated, global layer: exec cargo test, dry run, nothing executed",
     );
+  });
+
+  it("the result line opens the dry run's trace entry", async () => {
+    await mounted();
+    await fireEvent.click(key(5));
+    await fireEvent.click(
+      await screen.findByRole("button", { name: "Show the trace entry" }),
+    );
+    const drawer = screen.getByRole("dialog", { name: "Trace entry" });
+    expect(within(drawer).getByRole("region", { name: "Block reason" })).toHaveTextContent(
+      "Dry run: resolved, nothing executed.",
+    );
+    await fireEvent.click(within(drawer).getByRole("button", { name: "Close the trace entry" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("a right click sends a long press", async () => {
@@ -399,12 +565,29 @@ describe("Home without a daemon", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Daemon unreachable: no shell");
   });
 
-  it("shows no keys while connecting, as the geometry comes with the status", () => {
+  it("shows skeleton rows and no keys while connecting, as the geometry comes with the status", () => {
     const daemon = fake({ status: vi.fn(() => new Promise<Status>(() => {})) });
     render(Home, { props: { daemon: daemon.daemon, editor: editor() } });
     expect(screen.queryByRole("grid")).not.toBeInTheDocument();
     expect(screen.queryByText(/reported its geometry/)).not.toBeInTheDocument();
-    expect(screen.getByText("Connecting to the daemon")).toBeInTheDocument();
+    const loading = screen.getByRole("list", { name: "Connecting to the daemon" });
+    expect(loading).toHaveAttribute("aria-busy", "true");
+    expect(within(loading).getAllByRole("listitem")).toHaveLength(3);
+    expect(screen.queryByText(/No presses yet/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the mirror's last frame while it connects again", async () => {
+    const status = vi
+      .fn<Daemon["status"]>()
+      .mockResolvedValueOnce(STATUS)
+      .mockReturnValue(new Promise<Status>(() => {}));
+    const daemon = fake({ status });
+    await mounted(daemon);
+    await daemon.send({ kind: "closed", reason: "the daemon closed the connection" });
+    await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(screen.getByRole("list", { name: "Connecting to the daemon" })).toBeInTheDocument();
+    expect(key(5)).toHaveAccessibleName("Key 5: Test, exec cargo test");
+    expect(key(5).querySelector("img")).toHaveAttribute("src", "data:image/png;base64,terminal-1-5");
   });
 });
 

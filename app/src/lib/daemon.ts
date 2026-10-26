@@ -22,6 +22,15 @@ export interface Tile {
   layer?: Layer;
 }
 
+/** What the mirror shows around a profile's keys
+ * (keyvo_client::tiles::Outline). */
+export interface Outline {
+  /** The profile's pages; page numbers count from 1. */
+  pages: number;
+  /** The profile's accent as `#rrggbb`; absent when it has none. */
+  accent?: string;
+}
+
 export interface Daemon {
   /** The daemon's `status` reply; rejects when the daemon cannot be reached. */
   status(): Promise<Status>;
@@ -29,6 +38,9 @@ export interface Daemon {
    * configuration directory, rendered at `tile` (both from the geometry
    * the daemon reports), in key order; rejects when they do not render. */
   tiles(profile: string, page: number, keys: number, tile: Size): Promise<Tile[]>;
+  /** The page count and accent of `profile` from the daemon's
+   * configuration directory; rejects when it has no such profile. */
+  outline(profile: string): Promise<Outline>;
   /** A dry-run press: the daemon resolves and traces it, executes nothing. */
   press(key: number, kind: PressKind): Promise<TraceRecord>;
   /** Follows a subscription that replays the newest `replay` trace entries;
@@ -44,6 +56,7 @@ export const UPDATE_EVENT = "keyvo://update";
 export const tauriDaemon: Daemon = {
   status: () => invoke<Status>("status"),
   tiles: (profile, page, keys, tile) => invoke<Tile[]>("tiles", { profile, page, keys, tile }),
+  outline: (profile) => invoke<Outline>("outline", { profile }),
   press: (key, kind) => invoke<TraceRecord>("press", { key, kind }),
   async subscribe(replay, listener) {
     const unlisten = await listen<Update>(UPDATE_EVENT, (message) => listener(message.payload));

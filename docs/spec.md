@@ -1554,17 +1554,19 @@ reduced to the tokens of
 `docs/design/gui-ux.md` §7 as CSS custom properties with fixed defaults in
 `app/src/styles/tokens.css` (the feedback states use the pad theme's
 colours); the KDE and GNOME readers come with M4a-1. `app/src-tauri`
-(identifier `org.qubernetic.keyvo`, bundling off) has six commands, all
+(identifier `org.qubernetic.keyvo`, bundling off) has seven commands, all
 over `keyvo-client`: `status`; `tiles` (a page from the daemon's
 configuration directory, `config_dir` of its `status` reply, at the key
 count and tile size the frontend passes from the reported geometry; each
-key as a PNG data URL with its label, action and layer); `press` (a dry-run press, the trace entry back); `subscribe` (a
+key as a PNG data URL with its label, action and layer); `outline` (a
+profile's page count and accent from the same directory,
+`keyvo_client::tiles::outline`); `press` (a dry-run press, the trace entry back); `subscribe` (a
 subscription with a trace replay on its own thread, each update emitted on
 the Tauri event `keyvo://update`; a newer `subscribe` stops the older one);
 `key` (a key's file and fields, `Editor::key`); `edit_key` (new fields
 written into a key, `Editor::set_key`, the fields before it back; an error
 is a `Problem` object with `message` and, when it has a place, `path`,
-`line` and `column`). `build.rs` declares the six commands in the Tauri app
+`line` and `column`). `build.rs` declares the seven commands in the Tauri app
 manifest, and the main window's capability
 (`app/src-tauri/capabilities/default.json`) allows exactly those and
 `core:event:allow-listen`/`allow-unlisten` for `keyvo://update`; there is
@@ -1615,12 +1617,20 @@ and the columns of `docs/design/gui-ux.md` §2:
   reaches the screen through `t(key, values)`; `app/src/strings.test.ts`
   keeps literal words out of the component markup.
 
-**As built (pre-alpha Home).** On start Home asks `status`, then
-subscribes with a replay of the newest 20 trace entries; `app/src/lib/home.ts`
-folds the updates the way `Mirror` does.
+**As built (pre-alpha Home).** Home follows `docs/design/gui-ux.md` §3.1,
+§5.2 and §8 (d1, d7, d9, P4); it has no list column. On start Home asks
+`status`, then subscribes with a replay of the newest 20 trace entries;
+`app/src/lib/home.ts` folds the updates the way `Mirror` does.
 
-- **Mirror.** A `grid` of the tiles of the active profile and page,
-  fetched again when the view changes and after every reload. Rows, key
+- **Mirror.** A `grid` of the tiles of the active profile and the shown
+  page, fetched again when the view changes and after every reload. Above
+  it, the page selector (the pages of the active profile, from the shell's
+  `outline`) and the profile's accent bar (none when the profile has no
+  accent). The selector shows the pad's page and follows it; a page picked
+  there stays until the pad's next view, the key editor then edits that
+  page, and a press on it only selects the key, with a result line saying
+  that presses simulate the page the pad shows (the daemon resolves a
+  press on its own page). Rows, key
   count and tile size come from the `geometry` the daemon reports for the
   Keypad (`status` and the `device` event, §8); the app hard-codes none of
   them. A key starts a new row when its top edge is below the middle of
@@ -1629,11 +1639,30 @@ folds the updates the way `Mirror` does.
   profile does not define shows the global key (§6.1) with a "global"
   mark. A key held on the device is outlined. A page the daemon's
   configuration cannot render shows why.
-- **Status strip.** Device, profile, page, mode and the focused window, and
-  the reload error while the configuration does not load.
+- **Status strip.** One fact each: device, profile, page, mode, top
+  overlay (`none`: the daemon has no overlays yet) and context
+  (`unknown project`, as the daemon sends no project yet, and the focused
+  window). Profile, page and mode link to Profiles; device, overlay and
+  context belong to Devices, Integrations and Projects, which are not
+  built, so they are plain text. A failed reload shows as an alert in the
+  strip: `Schema error in <file>, line <n>, column <n>: <message>` when the
+  error names a place (`<file>:<line>[:<column>]: <message>`), else the
+  error as it is, with a link to Profiles, until a reload succeeds.
 - **Event list.** The trace entries, newest first, one line each: the key,
   the press kind, whether it was simulated, the layer that supplied the
-  key (`app layer` or `global layer`), the action and its result.
+  key (`app layer` or `global layer`), the action and its result. Each
+  line opens the trace drawer. The Debug log switch in the list's header
+  is disabled with "Coming soon" until the daemon sends HID-level events.
+- **Trace drawer** (`app/src/TraceDrawer.svelte`). Opens from an event
+  line and from the result line of a dry-run press, takes the focus, and
+  closes on `Esc` or its close button, giving the focus back. It shows the
+  sections of the entry the daemon records today, in resolution order:
+  Trigger (time, key, press kind, the device or simulated), Context
+  snapshot (profile, page), Resolved action (layer, type, keys or
+  command), then Result (status; a chord's key events, an `exec`'s exit
+  code or signal and duration, a failure's error) or Block reason (dry
+  run, or no layer binds the key). Conditions, variables and the window
+  context come with the daemon fields that carry them.
 - **Virtual pad.** A click is a short dry-run press, a right click a long
   one; the one-line result shows under the grid. On the grid, `1` to `9`
   (up to the key count) and the arrows select a key, `Space` presses it
@@ -1641,9 +1670,16 @@ folds the updates the way `Mirror` does.
 - **Accessibility.** Each key's `aria-label` names the key, its label, its
   action and its layer; the grid has rows and cells, the selected cell is
   `aria-selected`, and the result line is a `status` region.
-- **Daemon unreachable.** When `status` fails or the subscription ends, an
-  alert says why, the mirror keeps its last frame, and Retry connects
-  again. The in-process simulator of §4.2 of the design comes later.
+- **Screen states** (design §5.2). Empty: the event list says how to fill
+  it (press a key on the pad, or click one in the mirror). Loading: three
+  skeleton rows in the event list (`aria-busy`), no spinner; the mirror
+  keeps its last frame. Device missing: a note names the Keypad and the
+  time it was last seen connected, or that it was not seen since the app
+  started; the mirror keeps the last geometry. Schema error: in the status
+  strip, above. Daemon unreachable: when `status` fails or the
+  subscription ends, an alert says why, the mirror keeps its last frame,
+  and Retry connects again. The in-process simulator of §4.2 of the
+  design and the header badge come later.
 
 **As built (pre-alpha key editor).** Beside the mirror, the key editor
 (`app/src/KeyEditor.svelte`, `app/src/lib/editor.ts`) shows the key
@@ -1853,6 +1889,12 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha slice G2 (2026-10-26)**: §10 Home as built: page
+  selector and accent bar above the mirror (shell command `outline`),
+  status strip with overlay and project context whose facts link to their
+  screens, schema error with file and line, event lines and the dry-run
+  result line opening the trace drawer, disabled Debug log switch, and the
+  empty, loading and device-missing states.
 - **v0.3, pre-alpha slice G1 (2026-10-26)**: §10 the app shell as built:
   rail with the five unbuilt screens disabled and announced, header with
   the device selector and a disabled overflow menu, columns with their

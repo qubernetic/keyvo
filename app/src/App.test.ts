@@ -23,6 +23,7 @@ function props(status: () => Promise<Status>): { daemon: Daemon; editor: Editor 
     daemon: {
       status,
       tiles: () => Promise.resolve([]),
+      outline: () => Promise.resolve({ pages: 1 }),
       press: () => Promise.reject(new Error("not in this test")),
       subscribe: () => Promise.resolve(() => {}),
     },
@@ -49,7 +50,7 @@ describe("App", () => {
   it("names the app in its heading", () => {
     app(() => new Promise(() => {}));
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("keyvo");
-    expect(screen.getByText("Connecting to the daemon")).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Connecting to the daemon" })).toBeInTheDocument();
   });
 
   it("opens on Home with the view the daemon reports", async () => {
@@ -93,6 +94,17 @@ describe("App", () => {
     );
     await fireEvent.keyDown(window, { key: "1", ctrlKey: true });
     expect(screen.getByRole("grid")).toBeInTheDocument();
+  });
+
+  it("opens Profiles from the profile in Home's status strip", async () => {
+    app();
+    await fireEvent.click(
+      await screen.findByRole("button", { name: "Profile terminal, open Profiles" }),
+    );
+    expect(screen.getByRole("button", { name: "Profiles" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 
   it("keeps Home's undo to Home", async () => {

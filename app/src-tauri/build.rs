@@ -8,6 +8,7 @@ fn main() {
     let manifest = tauri_build::AppManifest::new().commands(&[
         "status",
         "tiles",
+        "outline",
         "press",
         "subscribe",
         "key",

@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use keyvo_client::tiles::{self, KeySummary, TileError, Tiles};
+use keyvo_client::tiles::{self, KeySummary, Outline, TileError, Tiles};
 use keyvo_core::layout::{self, Profiles};
 use keyvo_core::render::{self, Renderer, TileSize};
 use keyvo_core::stack::{Layer, Stack};
@@ -106,6 +106,37 @@ fn a_profile_the_gui_does_not_have_is_named() {
         .unwrap_err();
     assert!(matches!(error, TileError::UnknownProfile(ref id) if id == "nowhere"));
     assert!(error.to_string().contains("nowhere"), "{error}");
+}
+
+#[test]
+fn the_outline_of_a_profile_has_its_page_count_and_accent() {
+    let profiles = profiles();
+    assert_eq!(
+        tiles::outline(&profiles, "konsole").unwrap(),
+        Outline {
+            pages: 0,
+            accent: Some("#2ecc71".into())
+        }
+    );
+    assert_eq!(
+        tiles::outline(&profiles, "global").unwrap(),
+        Outline {
+            pages: 1,
+            accent: None
+        }
+    );
+    assert_eq!(
+        serde_json::to_value(tiles::outline(&profiles, "konsole").unwrap()).unwrap(),
+        serde_json::json!({"pages": 0, "accent": "#2ecc71"})
+    );
+    assert_eq!(
+        serde_json::to_value(tiles::outline(&profiles, "global").unwrap()).unwrap(),
+        serde_json::json!({"pages": 1})
+    );
+    assert!(matches!(
+        tiles::outline(&profiles, "nowhere"),
+        Err(TileError::UnknownProfile(ref id)) if id == "nowhere"
+    ));
 }
 
 #[test]

@@ -31,7 +31,13 @@
   <Rail {active} labels={columns.railLabels} onnavigate={(id) => (active = id)} />
   <main>
     <div class="screen" hidden={active !== "home"}>
-      <Home {daemon} {editor} active={active === "home"} ondevice={(next) => (device = next)} />
+      <Home
+        {daemon}
+        {editor}
+        active={active === "home"}
+        ondevice={(next) => (device = next)}
+        onnavigate={(id) => (active = id)}
+      />
     </div>
     {#if active === "profiles"}
       <div class="screen">

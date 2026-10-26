@@ -5,7 +5,8 @@
   // a click is a short dry-run press, a right click a long one. Beside the
   // mirror, the key editor for the selected key.
   import KeyEditor from "./KeyEditor.svelte";
-  import type { Daemon, Tile } from "./lib/daemon";
+  import TraceDrawer from "./TraceDrawer.svelte";
+  import type { Daemon, Outline, Tile } from "./lib/daemon";
   import type { Editor, Target } from "./lib/editor";
   import {
     apply,
@@ -15,17 +16,20 @@
     HOME_TRACE,
     initial,
     phrase,
+    schemaError,
     summarize,
     type HomeState,
   } from "./lib/home";
-  import { t } from "./lib/i18n";
+  import { t, type MessageKey } from "./lib/i18n";
   import type { DeviceStatus, PressKind, TraceRecord } from "./lib/protocol";
+  import { SCREENS, type ScreenId } from "./lib/shell";
 
   let {
     daemon,
     editor,
     active = true,
     ondevice,
+    onnavigate,
   }: {
     daemon: Daemon;
     editor: Editor;
@@ -34,7 +38,12 @@
     active?: boolean;
     /** The device the daemon reports, none while it cannot be reached. */
     ondevice?: (device: DeviceStatus | undefined) => void;
+    /** Opens a screen; a status fact links to the screen that owns it. */
+    onnavigate?: (screen: ScreenId) => void;
   } = $props();
+
+  /** The skeleton rows of the event list while Home connects. */
+  const SKELETON = [1, 2, 3];
 
   let home: HomeState = $state(initial());
   /** The key numbers in rows, as the daemon's geometry lays them out. */
@@ -47,6 +56,8 @@
   let tilesError: string | undefined = $state();
   let selected = $state(1);
   let result: string | undefined = $state();
+  /** The entry of the last dry-run press, for the result line's drawer. */
+  let pressed: TraceRecord | undefined = $state();
   const buttons: HTMLButtonElement[] = $state([]);
 
   let stop: (() => void) | undefined;
@@ -104,16 +115,52 @@
   /** Writes of the key editor, so the tiles follow them without a daemon. */
   let edits = $state(0);
 
-  // The tiles of the page the pad shows, again after every reload and edit.
+  /** The page the user picked in the page selector; the pad's next view
+   * drops it. */
+  let picked: number | undefined = $state();
+  $effect(() => {
+    void home.view;
+    picked = undefined;
+  });
+  /** The page the mirror shows: the picked one, else the pad's. */
+  const shown = $derived(picked ?? home.view?.page);
+
+  // The page count and accent of the pad's profile, again after a reload.
+  let outline: Outline | undefined = $state();
+  let outlined = 0;
+  $effect(() => {
+    const profile = home.view?.profile;
+    void home.reloads;
+    if (profile === undefined) return;
+    const mine = ++outlined;
+    daemon.outline(profile).then(
+      (got) => {
+        if (mine === outlined) outline = got;
+      },
+      () => {
+        if (mine === outlined) outline = undefined;
+      },
+    );
+  });
+  /** The pages the selector offers; at least up to the pad's page. */
+  const pages = $derived(
+    Array.from(
+      { length: Math.max(outline?.pages ?? 0, home.view?.page ?? 0) },
+      (_, index) => index + 1,
+    ),
+  );
+
+  // The tiles of the page the mirror shows, again after every reload and edit.
   let fetched = 0;
   $effect(() => {
-    const view = home.view;
+    const profile = home.view?.profile;
+    const page = shown;
     const geometry = home.geometry;
     void home.reloads;
     void edits;
-    if (view === undefined || geometry === undefined) return;
+    if (profile === undefined || page === undefined || geometry === undefined) return;
     const mine = ++fetched;
-    daemon.tiles(view.profile, view.page, geometry.rects.length, geometry.tile).then(
+    daemon.tiles(profile, page, geometry.rects.length, geometry.tile).then(
       (got) => {
         if (mine !== fetched) return;
         tiles = got;
@@ -144,12 +191,35 @@
 
   async function press(key: number, kind: PressKind) {
     selected = key;
+    pressed = undefined;
+    const pad = home.view?.page;
+    if (pad !== undefined && shown !== pad) {
+      // The daemon resolves a press on the page the pad shows.
+      result = t("home.otherPage", { page: pad });
+      return;
+    }
     try {
       const entry: TraceRecord = await daemon.press(key, kind);
       result = summarize(entry);
+      pressed = entry;
     } catch (error) {
       result = t("home.pressFailed", { reason: reason(error) });
     }
+  }
+
+  /** The entry the trace drawer shows, and the control that opened it. */
+  let drawn: TraceRecord | undefined = $state();
+  let opener: HTMLElement | undefined;
+
+  function draw(entry: TraceRecord) {
+    opener = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
+    drawn = entry;
+  }
+
+  function undraw() {
+    drawn = undefined;
+    opener?.focus();
+    opener = undefined;
   }
 
   function select(key: number) {
@@ -209,15 +279,84 @@
     return new Date(entry.timestamp_ms).toLocaleTimeString();
   }
 
+  /** One fact of the status strip, a link when its screen is built. */
+  interface Fact {
+    id: string;
+    label: MessageKey;
+    value: string;
+    link?: ScreenId;
+    linkLabel?: string;
+  }
+
+  /** `screen` when it is built, so a fact can link to it. */
+  function built(screen: ScreenId): ScreenId | undefined {
+    return SCREENS.find((entry) => entry.id === screen)?.soon === undefined ? screen : undefined;
+  }
+
+  function fact(id: string, label: MessageKey, value: string, owner: ScreenId): Fact {
+    const link = built(owner);
+    const screen = SCREENS.find((entry) => entry.id === owner);
+    return {
+      id,
+      label,
+      value,
+      ...(link === undefined || screen === undefined
+        ? {}
+        : {
+            link,
+            linkLabel: t("home.link", {
+              fact: t("home.fact", { label: t(label), value }),
+              screen: t(screen.label),
+            }),
+          }),
+    };
+  }
+
+  // Design detail: the screen that owns each fact (§3.1). Overlays come
+  // from plugins and integrations, the context's project from Projects.
+  const facts: Fact[] = $derived([
+    fact("device", "home.device", device(), "devices"),
+    fact("profile", "home.profile", home.view?.profile ?? t("home.unknown"), "profiles"),
+    fact("page", "home.page", String(home.view?.page ?? t("home.unknown")), "profiles"),
+    fact("mode", "home.mode", home.view?.mode ?? t("home.unknown"), "profiles"),
+    fact("overlay", "home.overlay", t("home.noOverlay"), "integrations"),
+    fact(
+      "context",
+      "home.context",
+      phrase([
+        t("home.unknownProject"),
+        home.context === undefined
+          ? t("home.noWindow")
+          : t("home.window", { class: home.context.class, title: home.context.title }),
+      ]),
+      "projects",
+    ),
+  ]);
+
+  const configMessage = $derived.by(() => {
+    const error = home.configError;
+    if (error === undefined) return undefined;
+    const place = schemaError(error);
+    if (place === undefined) return t("home.configError", { error });
+    return place.column === undefined
+      ? t("home.schemaErrorLine", { file: place.file, line: place.line, message: place.message })
+      : t("home.schemaError", {
+          file: place.file,
+          line: place.line,
+          column: place.column,
+          message: place.message,
+        });
+  });
+
   const target: Target | undefined = $derived(
-    home.view === undefined
+    home.view === undefined || shown === undefined
       ? undefined
-      : { profile: home.view.profile, page: home.view.page, key: selected },
+      : { profile: home.view.profile, page: shown, key: selected },
   );
   const gridName = $derived(
-    home.view === undefined
+    home.view === undefined || shown === undefined
       ? t("home.mirror")
-      : t("home.mirrorView", { profile: home.view.profile, page: home.view.page }),
+      : t("home.mirrorView", { profile: home.view.profile, page: shown }),
   );
 </script>
 
@@ -229,43 +368,52 @@
         {t("home.retry")}
       </button>
     </div>
-  {:else if connecting && home.view === undefined}
-    <p class="banner">{t("home.connecting")}</p>
   {/if}
-  {#if home.configError !== undefined}
-    <div role="alert" class="banner error">
-      {t("home.configError", { error: home.configError })}
-    </div>
-  {/if}
-
   <section class="strip" aria-label={t("home.status")}>
     <dl>
-      <div>
-        <dt id="kv-device">{t("home.device")}</dt>
-        <dd aria-labelledby="kv-device">{device()}</dd>
-      </div>
-      <div>
-        <dt id="kv-profile">{t("home.profile")}</dt>
-        <dd aria-labelledby="kv-profile">{home.view?.profile ?? t("home.unknown")}</dd>
-      </div>
-      <div>
-        <dt id="kv-page">{t("home.page")}</dt>
-        <dd aria-labelledby="kv-page">{home.view?.page ?? t("home.unknown")}</dd>
-      </div>
-      <div>
-        <dt id="kv-mode">{t("home.mode")}</dt>
-        <dd aria-labelledby="kv-mode">{home.view?.mode ?? t("home.unknown")}</dd>
-      </div>
-      <div>
-        <dt id="kv-context">{t("home.context")}</dt>
-        <dd aria-labelledby="kv-context">
-          {home.context === undefined
-            ? t("home.noWindow")
-            : t("home.window", { class: home.context.class, title: home.context.title })}
-        </dd>
-      </div>
+      {#each facts as fact (fact.id)}
+        <div>
+          <dt id={`kv-${fact.id}`}>{t(fact.label)}</dt>
+          <dd aria-labelledby={`kv-${fact.id}`}>
+            {#if fact.link !== undefined}
+              {@const link = fact.link}
+              <button
+                type="button"
+                class="link"
+                aria-label={fact.linkLabel}
+                onclick={() => onnavigate?.(link)}
+              >
+                {fact.value}
+              </button>
+            {:else}
+              {fact.value}
+            {/if}
+          </dd>
+        </div>
+      {/each}
     </dl>
+    {#if home.configError !== undefined}
+      <p role="alert" class="error">
+        {configMessage}
+        <button
+          type="button"
+          class="link"
+          aria-label={t("home.open", { screen: t("rail.profiles") })}
+          onclick={() => onnavigate?.("profiles")}
+        >
+          {t("home.open", { screen: t("rail.profiles") })}
+        </button>
+      </p>
+    {/if}
   </section>
+
+  {#if home.device?.connected === false}
+    <p class="note">
+      {home.seen === undefined
+        ? t("home.missingNever")
+        : t("home.missing", { time: new Date(home.seen).toLocaleTimeString() })}
+    </p>
+  {/if}
 
   <div class="workspace">
     {#if home.geometry === undefined}
@@ -273,6 +421,29 @@
         <p class="note">{t("home.noGeometry")}</p>
       {/if}
     {:else}
+    <div class="mirror">
+    <div class="pages">
+      <label>
+        {t("home.pageShown")}
+        <select
+          aria-label={t("home.pageShown")}
+          value={String(shown)}
+          onchange={(event) => (picked = Number(event.currentTarget.value))}
+        >
+          {#each pages as page (page)}
+            <option value={String(page)}>{t("home.pageOption", { page })}</option>
+          {/each}
+        </select>
+      </label>
+      {#if outline?.accent !== undefined && home.view !== undefined}
+        <div
+          role="img"
+          class="accent"
+          aria-label={t("home.accent", { profile: home.view.profile })}
+          style:background-color={outline.accent}
+        ></div>
+      {/if}
+    </div>
     <div role="grid" tabindex="-1" aria-label={gridName} class="grid" onkeydown={keydown}>
       {#each rows as row, index (index)}
         <div role="row" class="row">
@@ -304,6 +475,7 @@
         </div>
       {/each}
     </div>
+    </div>
     {/if}
     <KeyEditor {editor} {target} {active} revision={home.reloads} onedited={() => edits++} />
   </div>
@@ -313,21 +485,67 @@
 
   <p role="status" aria-label={t("home.result")} class="result">
     {result ?? t("home.resultHint")}
+    {#if pressed !== undefined}
+      {@const entry = pressed}
+      <button
+        type="button"
+        class="link"
+        aria-label={t("home.showEntry")}
+        onclick={() => draw(entry)}
+      >
+        {t("home.showEntry")}
+      </button>
+    {/if}
   </p>
 
   <section class="events">
-    <h2 id="kv-events">{t("home.events")}</h2>
-    {#if home.trace.length === 0}
+    <div class="head">
+      <h2 id="kv-events">{t("home.events")}</h2>
+      <!-- §3.1: Debug mode adds HID-level events; the daemon sends none yet. -->
+      <button
+        type="button"
+        role="switch"
+        aria-checked="false"
+        aria-disabled="true"
+        aria-label={t("home.debug")}
+        aria-describedby="kv-debug-soon"
+      >
+        {t("home.debug")}
+      </button>
+      <span id="kv-debug-soon" class="note">{t("soon")}</span>
+    </div>
+    {#if connecting && home.trace.length === 0}
+      <!-- §5.2: skeleton rows, no spinner; the mirror keeps its last frame. -->
+      <ul class="skeleton" aria-busy="true" aria-label={t("home.connecting")}>
+        {#each SKELETON as row (row)}
+          <li><span class="bar"></span></li>
+        {/each}
+      </ul>
+    {:else if home.trace.length === 0}
       <p class="note">{t("home.noEvents")}</p>
     {:else}
       <ol aria-label={t("home.events")}>
         {#each home.trace as entry, index (index)}
-          <li><time>{time(entry)}</time> {summarize(entry)}</li>
+          <li>
+            <button
+              type="button"
+              class="entry"
+              aria-label={t("home.openEntry", { line: summarize(entry) })}
+              onclick={() => draw(entry)}
+            >
+              <time>{time(entry)}</time>
+              {summarize(entry)}
+            </button>
+          </li>
         {/each}
       </ol>
     {/if}
   </section>
 </section>
+
+{#if drawn !== undefined && active}
+  <TraceDrawer entry={drawn} onclose={undraw} />
+{/if}
 
 <style>
   .home {
@@ -365,11 +583,60 @@
     margin: 0;
   }
 
+  .link {
+    padding: 0 4px;
+    border-color: transparent;
+    background: var(--kv-bg);
+    color: var(--kv-accent);
+    text-decoration: underline;
+  }
+
+  .strip .error {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0 0;
+    padding: 4px 12px;
+    border-radius: var(--kv-radius);
+    background: var(--kv-bg-alt);
+    color: var(--kv-fg);
+  }
+
+  .strip .error .link {
+    background: var(--kv-bg-alt);
+    color: var(--kv-accent);
+  }
+
   .workspace {
     display: flex;
     flex-wrap: wrap;
     gap: 24px;
     align-items: flex-start;
+  }
+
+  .mirror {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .pages {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .pages label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .accent {
+    flex: 1;
+    min-width: 48px;
+    height: 6px;
+    border-radius: var(--kv-radius);
   }
 
   .grid {
@@ -432,15 +699,48 @@
     color: var(--kv-fg-muted);
   }
 
-  .events h2 {
+  .events .head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
     margin: 0 0 4px;
+  }
+
+  .events h2 {
+    margin: 0;
     font-size: 1em;
+  }
+
+  .entry {
+    width: 100%;
+    border-color: transparent;
+    background: var(--kv-bg);
+    color: var(--kv-fg);
+    text-align: left;
   }
 
   .events ol {
     margin: 0;
     padding: 0;
     list-style: none;
+  }
+
+  .skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .skeleton .bar {
+    display: block;
+    width: 60%;
+    height: 1em;
+    border-radius: var(--kv-radius);
+    background: var(--kv-bg-alt);
+    color: var(--kv-fg-muted);
   }
 
   .events time {
