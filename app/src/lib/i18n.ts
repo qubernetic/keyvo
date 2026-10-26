@@ -34,6 +34,8 @@ export const messages = {
   "menu.shortcuts": "Keyboard shortcuts",
   "menu.about": "About",
 
+  "preferences.title": "Preferences",
+  "preferences.close": "Close Preferences",
   "preferences.general": "General",
   "preferences.devices": "Devices",
   "preferences.integrations": "Integrations",
