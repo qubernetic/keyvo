@@ -1586,8 +1586,7 @@ and the columns of `docs/design/gui-ux.md` §2:
 - **Rail.** Home, Profiles, Behaviors, Projects, Integrations, Devices,
   Settings, on `Ctrl+1` to `Ctrl+7`, lucide icons (`app/src/assets/lucide`,
   the pad's lucide release) with labels, icons only below 1100 px. Home
-  and Profiles are built (Profiles shows its three columns, each with one
-  sentence saying it is not built yet). The other five carry
+  and Profiles are built. The other five carry
   `aria-disabled`: they stay in the tab order, hovering shows "Coming
   soon", keyboard focus adds the sentence naming their roadmap item
   (M4a-5, M4a-6, M4a-8), and neither a click nor the shortcut navigates;
@@ -1706,12 +1705,61 @@ icon and action (none, a chord's keys or an `exec` command).
   hidden; the file is never rewritten to fix it. A failed write shows the
   same way and leaves the history as it was.
 - **Reloads.** After the daemon's `config` event the editor reads the key
-  again; a field being edited keeps its text. The "Open in editor" button
-  and the file watch of `docs/design/gui-ux.md` §4.1 come with M4a-4.
+  again; a field being edited keeps its text. "Open in editor" for the
+  whole profile file is on Profiles (below); the file watch of
+  `docs/design/gui-ux.md` §4.1 comes with M4a-4.
 - **External changes, as built.** The app has no file watcher of its
   own: it refetches the tiles and the selected key when the
   daemon sends its `config` event, which the daemon's inotify watch
   (§7.2) triggers. `docs/design/gui-ux.md` §4.1 stays the target.
+
+**As built (pre-alpha Profiles).** Profiles (`app/src/Profiles.svelte`,
+`app/src/lib/profiles.ts`) follows `docs/design/gui-ux.md` §3.2 and §4.1
+(d1, d2, d14, ADR-0004) with the three columns of the shell. It reads the
+profiles of the daemon's configuration directory through the shell's
+`profile_list` (`keyvo_client::profiles::list`), again after every reload
+and every write of the screen.
+
+- **List column.** Every profile: the global one pinned first, then by
+  `priority`, highest first (the one that wins a match, §6.2), equal
+  priorities by id. Each row shows the accent, the name, the id and the
+  priority; the profile the pad shows is marked "active". The screen opens
+  on the active profile, else the global one. The "+" button (new profile
+  from a template) is disabled with "Coming soon" (M4a-4). A configuration
+  that does not load shows as an alert with the load errors.
+- **Profile header.** Id and priority as read from the file; name and
+  accent as fields, each written the moment it changes through the shell's
+  `edit_profile` (`keyvo_core::edit::ProfileDocument::set_profile`): a
+  snapshot, then the atomic write of §7.1, every byte outside the edited
+  value kept, an empty accent removed, a new one added at the end of
+  `[profile]`. An empty name or an accent that is not `#rrggbb` is not
+  written; an alert says why. The file path, and "Open in editor", which
+  hands the file to the desktop's application for it (`xdg-open`, shell
+  command `open_profile`; the path comes from the id, never from the
+  page). For the built-in global profile, which has no file until its
+  first edit, the button is disabled and a note says so. Header writes are
+  not on the key editor's undo stack; the snapshot keeps the file before
+  each one.
+- **Match rules.** The classes and the title regex as written, read-only;
+  "Edit match rules" is disabled with "Coming soon" (M4a-4). The global
+  profile says it has none and is under every window.
+- **Pages as tabs.** One tab per page, named by the page's `name`, else
+  `Page <n>`; the arrows, `Home` and `End` move between them. A newly
+  selected profile starts on page 1.
+- **Key grid.** The keys of the selected page with their numbers and
+  labels, laid out by the device geometry when the daemon reports one,
+  else as the nine key slots of the schema in three rows. A click, `1` to
+  `9` or the arrows select a key, and the key editor above (label, color,
+  icon, action; immediate apply, `Ctrl+Z` and `Ctrl+Shift+Z`) opens on it
+  below the grid. "Move key" (drag and drop, `Ctrl+X` then `Ctrl+V`) and
+  "Open in Behaviors" are disabled with "Coming soon" (M4a-4, M4a-5).
+- **Right column.** The mirror of the selected page, the tiles from the
+  shell's `tiles` at the device's tile size (a click selects the key), and
+  the key card: position, page (number and name) and layer origin, the
+  layer of the stack that supplies the key (§6.1: `app layer`, `global
+  layer`, or none when no layer defines it). Without a reported geometry
+  the mirror is a note and the layer origin says it is known once a Keypad
+  reported its geometry.
 
 ---
 
@@ -1889,6 +1937,14 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha slice G3 (2026-10-26)**: §10 Profiles as built: list
+  column by priority with the global profile pinned and the active one
+  marked, profile header with name and accent written round-trip (shell
+  commands `profile` and `edit_profile`), "Open in editor" for the profile
+  file (`open_profile`), read-only match rules, pages as tabs, key grid
+  with the key editor, mirror of the selected page and the key card with
+  the layer origin; new profile, match rule editing, moving keys and
+  Behaviors navigation disabled with "Coming soon".
 - **v0.3, pre-alpha slice G2 (2026-10-26)**: §10 Home as built: page
   selector and accent bar above the mirror (shell command `outline`),
   status strip with overlay and project context whose facts link to their
