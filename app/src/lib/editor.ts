@@ -126,27 +126,39 @@ export function toForm(fields: KeyFields): Form {
 
 const COLOR = /^#[0-9a-fA-F]{6}$/;
 
-/** The fields `form` says, or why it cannot be written yet: an empty input
- * is an absent field. */
-export function fromForm(form: Form): { fields: KeyFields } | { invalid: string } {
+/** `text` as a `#rrggbb` colour in lower case; undefined when it is not one. */
+export function colorOf(text: string): string | undefined {
+  const color = text.trim();
+  return COLOR.test(color) ? color.toLowerCase() : undefined;
+}
+
+/** The form field a message of `fromForm` belongs under. */
+export type FormField = "color" | "action";
+
+/** The fields `form` says, or why it cannot be written yet and in which
+ * field: an empty input is an absent field. */
+export function fromForm(
+  form: Form,
+): { fields: KeyFields } | { invalid: string; field: FormField } {
   const fields: KeyFields = {};
   if (form.icon.trim() !== "") fields.icon = form.icon.trim();
   if (form.label !== "") fields.label = form.label;
   const color = form.color.trim();
   if (color !== "") {
-    if (!COLOR.test(color)) return { invalid: t("editor.badColor", { color }) };
-    fields.color = color.toLowerCase();
+    const valid = colorOf(color);
+    if (valid === undefined) return { invalid: t("editor.badColor", { color }), field: "color" };
+    fields.color = valid;
   }
   const action = form.action.trim();
   switch (form.actionType) {
     case "none":
       break;
     case "chord":
-      if (action === "") return { invalid: t("editor.noKeys") };
+      if (action === "") return { invalid: t("editor.noKeys"), field: "action" };
       fields.action = { type: "chord", keys: action };
       break;
     case "exec":
-      if (action === "") return { invalid: t("editor.noCommand") };
+      if (action === "") return { invalid: t("editor.noCommand"), field: "action" };
       fields.action = { type: "exec", cmd: action };
       break;
   }
