@@ -61,9 +61,10 @@ pub enum ClientError {
 }
 
 /// Opens the daemon's socket at `path` for this user. Nothing is sent
-/// before two checks pass: the socket's directory is private to this user,
-/// as the daemon creates it, and the process listening on it runs as this
-/// user (`SO_PEERCRED`). `keyvo ctl` and the app open the socket here.
+/// before three checks pass: this user's uid is mapped in the process's
+/// user namespace, the socket's directory is private to this user, as the
+/// daemon creates it, and the process listening on it runs as this user
+/// (`SO_PEERCRED`). `keyvo ctl` and the app open the socket here.
 ///
 /// # Errors
 ///
@@ -80,14 +81,97 @@ pub fn open(path: &Path) -> Result<UnixStream, ClientError> {
         reason,
     };
     let uid = rustix::process::getuid().as_raw();
+    check_identity(uid, overflow_uid()).map_err(untrusted)?;
     let dir = match path.parent() {
         Some(dir) if !dir.as_os_str().is_empty() => dir,
         _ => Path::new("."),
     };
     check_dir(dir, &std::fs::symlink_metadata(dir)?, uid).map_err(untrusted)?;
-    let peer = rustix::net::sockopt::socket_peercred(&stream).map_err(std::io::Error::from)?;
-    check_peer(peer.uid.as_raw(), uid).map_err(untrusted)?;
+    check_peer(peer_uid(&stream)?, uid).map_err(untrusted)?;
     Ok(stream)
+}
+
+/// The uid of the process at the other end of `stream` (`SO_PEERCRED`).
+fn peer_uid(stream: &UnixStream) -> std::io::Result<u32> {
+    peer_cred(stream).map(uid_of)
+}
+
+/// The raw `struct ucred` of the peer: pid, uid, gid. The pid is the peer
+/// as seen from this process's pid namespace, so a sandboxed client (a
+/// Flatpak app) sees the host daemon as pid 0. rustix's `UCred` cannot hold
+/// a zero pid, hence the plain `getsockopt` into `libc::ucred`.
+fn peer_cred(stream: &UnixStream) -> std::io::Result<libc::ucred> {
+    use std::os::fd::AsRawFd;
+
+    let mut cred = libc::ucred {
+        pid: 0,
+        uid: 0,
+        gid: 0,
+    };
+    let mut len = libc::socklen_t::try_from(size_of::<libc::ucred>())
+        .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+    // SAFETY: the fd is open for the borrow of `stream`; `cred` is a
+    // writable `struct ucred` of `len` bytes, and the kernel writes at most
+    // `len` bytes into it.
+    let ret = unsafe {
+        libc::getsockopt(
+            stream.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_PEERCRED,
+            (&raw mut cred).cast(),
+            &raw mut len,
+        )
+    };
+    if ret != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    full_ucred(len)?;
+    Ok(cred)
+}
+
+/// `Err` unless the kernel filled `len` bytes, a whole `struct ucred`.
+fn full_ucred(len: libc::socklen_t) -> std::io::Result<()> {
+    if usize::try_from(len).ok() == Some(size_of::<libc::ucred>()) {
+        Ok(())
+    } else {
+        Err(std::io::Error::other("SO_PEERCRED returned a short ucred"))
+    }
+}
+
+/// The uid of a raw `ucred`; only the uid decides trust, neither the pid
+/// (namespace-dependent) nor the gid is examined.
+fn uid_of(cred: libc::ucred) -> u32 {
+    cred.uid
+}
+
+/// Where the kernel names the uid an unmapped user reads as.
+const OVERFLOW_UID: &str = "/proc/sys/kernel/overflowuid";
+
+/// The kernel's overflow uid, the uid an unmapped user reads as in a user
+/// namespace.
+fn overflow_uid() -> u32 {
+    overflow_uid_from(std::fs::read_to_string(OVERFLOW_UID).ok().as_deref())
+}
+
+/// The overflow uid from the contents of [`OVERFLOW_UID`], or the kernel's
+/// default 65534 when it cannot be read.
+fn overflow_uid_from(contents: Option<&str>) -> u32 {
+    contents
+        .and_then(|text| text.trim().parse().ok())
+        .unwrap_or(65534)
+}
+
+/// `Err` with the reason when this process runs as the overflow uid: its
+/// user namespace does not map the user, so the listener's uid and the
+/// directory's owner would read as the same overflow uid whoever they are.
+fn check_identity(uid: u32, overflow: u32) -> Result<(), String> {
+    if uid == overflow {
+        Err(format!(
+            "this process runs as the overflow uid {uid}: its user namespace does not map this user"
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 /// `Err` with the reason unless `dir` (its `meta` not following a symlink)
@@ -278,6 +362,48 @@ mod tests {
             assert!(reason.contains(&format!("uid {peer}")), "{reason}");
             assert!(reason.contains("not as this user (1000)"), "{reason}");
         }
+    }
+
+    #[test]
+    fn peer_uid_reads_the_uid_of_the_other_end() {
+        let (ours, _theirs) = UnixStream::pair().unwrap();
+        assert_eq!(peer_uid(&ours).unwrap(), rustix::process::getuid().as_raw());
+    }
+
+    #[test]
+    fn a_peer_seen_as_pid_0_is_trusted_by_its_uid() {
+        // A sandboxed client sees the host daemon as pid 0 (Flatpak).
+        let cred = |pid, uid, gid| libc::ucred { pid, uid, gid };
+        assert_eq!(check_peer(uid_of(cred(0, 1000, 1000)), 1000), Ok(()));
+        assert_eq!(check_peer(uid_of(cred(0, 1000, 4242)), 1000), Ok(()));
+        let reason = check_peer(uid_of(cred(0, 1001, 1000)), 1000).unwrap_err();
+        assert!(reason.contains("uid 1001"), "{reason}");
+    }
+
+    #[test]
+    fn only_a_full_ucred_is_read() {
+        assert!(full_ucred(12).is_ok());
+        for len in [0, 8] {
+            assert!(full_ucred(len).is_err(), "{len}");
+        }
+    }
+
+    #[test]
+    fn an_unmapped_user_is_refused() {
+        // An unmapped uid reads as the overflow uid on both ends of the
+        // socket, so the uid check alone would trust any listener.
+        assert_eq!(check_identity(1000, 65534), Ok(()));
+        let reason = check_identity(65534, 65534).unwrap_err();
+        assert!(reason.contains("does not map this user"), "{reason}");
+        assert_eq!(check_identity(65534, 4242), Ok(()));
+    }
+
+    #[test]
+    fn the_overflow_uid_is_read_from_the_kernel() {
+        assert_eq!(overflow_uid_from(Some("65534\n")), 65534);
+        assert_eq!(overflow_uid_from(Some("4242")), 4242);
+        assert_eq!(overflow_uid_from(Some("nobody")), 65534);
+        assert_eq!(overflow_uid_from(None), 65534);
     }
 
     #[test]

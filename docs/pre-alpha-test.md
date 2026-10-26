@@ -640,6 +640,13 @@ no-strip expectations stay.
 - [ ] #102 Section 5 step 14: list order with Global pinned and Konsole marked active, name and accent written with only their line changed, Open in editor, the tabs, a key into the key editor, the key card's layer origin, the greyed "Coming soon" controls.
 - [ ] #102 The look of Profiles in the light and the dark desktop theme: every text readable, the selected profile, tab and key visible.
 
+### Socket peer check in a sandbox (#104)
+
+Both items run by the owner on 88bb0b1 (2026-10-26).
+
+- [x] #104 Daemon on the host (`bin/keyvo-daemon`): `bin/keyvo ctl status` inside `flatpak run --filesystem=host --filesystem=xdg-run/keyvo --command=sh org.gnome.Platform//51` prints the status reply against the host daemon, not `socket: Unknown error -1000`.
+- [x] #104 Daemon on the host, app started with the GNOME runtime wrapper (`~/keyvo-prealpha-2026-10-25/keyvo-app-flatpak.sh`): Home shows the device connected, the mirror and the key editor.
+
 ### First-light records (#75)
 
 - [ ] #75 Read `docs/hardware-notes.md`, "Measurements", against the first-light report on #40 and its logs: every number and log citation matches.

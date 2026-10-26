@@ -75,7 +75,12 @@ user is trusted, and nothing else is.
   and the app refuse a socket whose directory is not private to the user
   and a socket another uid listens on (`SO_PEERCRED`), before they send a
   request. Another account cannot pose as the daemon, for example in the
-  `keyvo-<uid>` fallback under the shared temporary directory.
+  `keyvo-<uid>` fallback under the shared temporary directory. Only the
+  listener's uid is checked, not its pid, because the pid depends on the
+  pid namespace: a sandboxed client sees the daemon as pid 0. The check
+  requires the user's uid to be mapped in the client's user namespace; a
+  client running as the overflow uid refuses the socket, because there
+  every unmapped uid reads the same.
 - A socket request with an unknown command or field is rejected before
   anything runs, so a mistyped `dry_run` never executes a key's action.
   Requests are parsed as untrusted input; a malformed line gets an error
