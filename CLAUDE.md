@@ -24,7 +24,7 @@ Two-layer model ([ADR-0002](docs/adr/0002-two-layer-dev-model.md)):
 | Layer | Where | Commands |
 |---|---|---|
 | Build, test, lint, coverage, docs, CI parity | devcontainer (docker compose, Rust + Node image) | `just setup dev down clean rebuild shell build test lint fmt fmt-check deny cov ci app-test app-build diagrams docs` |
-| Hardware execution | host, with the container-built binary | `just run -- <args>`, `just test-hw` |
+| Hardware execution | host, with the container-built binary | `just run -- <args>`, `just test-hw`; `just app-dev` (mock dev server, Node only) |
 
 ```bash
 just setup        # build the dev image, start the container, fetch dependencies (first time)
@@ -43,6 +43,7 @@ just cov          # cargo-llvm-cov in the nextest ci profile; CI uploads it to C
 just ci           # fmt-check + lint + test --profile ci + deny + cov, the sequence CI runs
 just app-test     # desktop app: npm ci, svelte-check, vitest, npm audit, cargo deny on app/src-tauri (works in native mode)
 just app-build    # frontend build plus the Tauri shell (needs the dev image's webkit2gtk), bin/keyvo-app
+just app-dev      # host: the app on the Vite dev server against the mock daemon (app/src/lib/mock/), :1420
 just run -- probe # run the built binary (bin/keyvo) on the host against real hardware
 just test-hw      # host checks: hidraw nodes, /dev/uinput, groups (keyvo doctor is planned)
 just diagrams     # placeholder: regenerating docs/diagrams with archify lands with Issue #4

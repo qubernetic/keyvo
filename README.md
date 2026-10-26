@@ -81,6 +81,11 @@ just app-build
 bin/keyvo-app
 ```
 
+For layout work, `just app-dev` serves the same app in a browser at
+`http://localhost:1420` against an in-memory mock of the daemon, no
+device or daemon needed (`?theme=breeze-light` and three more token sets,
+CONTRIBUTING.md "Mock dev server").
+
 A profile renders without a device, onto the Keypad's panel as a PNG:
 
 ```bash

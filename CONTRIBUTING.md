@@ -55,7 +55,7 @@ keyvo separates *where code is built* from *where it touches hardware*
 | Layer | Where | What runs there |
 |---|---|---|
 | Build, test, lint, coverage, docs, CI parity | devcontainer (docker compose, Rust + Node image) | `just setup dev down clean rebuild shell build test lint fmt fmt-check deny cov ci app-test app-build diagrams docs` |
-| Hardware execution | host | the binary built in the container, via `just run` and `just test-hw` |
+| Hardware execution | host | the binary built in the container, via `just run` and `just test-hw`; the app's mock dev server, via `just app-dev` |
 
 ```bash
 git clone https://github.com/qubernetic/keyvo.git
@@ -75,6 +75,7 @@ just cov          # cargo-llvm-cov in the nextest ci profile (coverage/lcov.info
 just ci           # fmt-check, lint, test (nextest ci profile), deny, cov: the sequence CI runs
 just app-test     # desktop app: npm ci, svelte-check, vitest, npm audit, cargo deny on the app lock
 just app-build    # desktop app: frontend build, then the Tauri shell; bin/keyvo-app
+just app-dev      # host: the app on the Vite dev server against a mock daemon, http://localhost:1420
 just run -- probe # run the container-built binary on the host against real hardware
 just test-hw      # host checks: hidraw nodes, /dev/uinput, groups (keyvo doctor is planned)
 just diagrams     # placeholder: regenerating docs/diagrams from the archify IR lands with Issue #4
@@ -90,8 +91,21 @@ the toolchain directly instead of through `docker compose exec`. It is for a
 shell that already is the container: the project's agent sandbox sets the
 variable for every agent, and it works the same inside `just shell`. The
 lifecycle recipes (`setup`, `dev`, `down`, `clean`, `rebuild`, `shell`) and the
-hardware recipes (`run`, `test-hw`) refuse to run in native mode. The host
+host recipes (`run`, `test-hw`, `app-dev`) refuse to run in native mode. The host
 never uses it: the host has no toolchain, and the hardware stays on the host.
+
+**Mock dev server.** For work on the app's layout, `just app-dev` runs on the
+host (it needs only Node, which the host has) and serves the real Svelte app on
+the Vite dev server at `http://localhost:1420` with `VITE_KEYVO_MOCK=1`: the
+app talks to the in-memory mock of `app/src/lib/mock/` instead of the Tauri
+shell, fed by `tests/protocol-fixtures/socket/`, `contrib/profiles/` and the
+renderer snapshots, so a change shows in a host browser in seconds without a
+container build, a daemon or a Keypad. `?theme=breeze-dark|breeze-light|adwaita-dark|adwaita-light`
+switches between the measured token sets of `docs/design/gui-ux.md` §7,
+`?mock-error=unreachable` shows Home's error state. Edits stay in memory until
+a reload. The mock never reaches a build without the variable, and it is not
+the final check: WebKitGTK renders differently, so a layout change is still
+verified in the Tauri shell (the GNOME runtime) before its User test.
 
 The container image is `rust:<version>-slim-trixie` plus Node LTS, `just`,
 `cargo-deny`, `cargo-llvm-cov`, `cargo-nextest` and `cargo-insta`, and the
