@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use keyvo_client::editor::{Editor, EditorError, Problem};
-use keyvo_core::edit::{BUILTIN_GLOBAL, EditError, KeyFields};
+use keyvo_core::edit::{BUILTIN_GLOBAL, EditError, KeyFields, ProfileFields};
 use keyvo_core::profile::KeySlot;
 use serde::Deserialize;
 
@@ -280,4 +280,99 @@ fn an_unreadable_file_is_an_io_error_naming_it() {
     let error = dirs.editor().key("terminal", 1, slot(1)).unwrap_err();
     assert!(matches!(error, EditorError::Io { .. }), "{error:?}");
     assert!(error.to_string().contains("terminal.toml"), "{error}");
+}
+
+#[derive(Deserialize)]
+struct ProfileFixture {
+    profile: String,
+    file: String,
+    path: PathBuf,
+    fields: ProfileFields,
+    steps: Vec<ProfileStep>,
+}
+
+#[derive(Deserialize)]
+struct ProfileStep {
+    fields: ProfileFields,
+    file: String,
+}
+
+#[test]
+fn the_shared_profile_steps_write_their_files_and_undo_restores_them() {
+    let steps: ProfileFixture = serde_json::from_str(&fixture("profile.json")).unwrap();
+    let dirs = Dirs::new(&[(&steps.profile, &fixture(&steps.file))]);
+    let editor = dirs.editor();
+
+    let view = editor.profile(&steps.profile).unwrap();
+    assert_eq!(view.path, dirs.config().join(&steps.path));
+    assert_eq!(view.fields, steps.fields);
+
+    let mut before = steps.fields.clone();
+    let mut previous = steps.file.clone();
+    for (n, step) in steps.steps.iter().enumerate() {
+        let ms = u64::try_from(n).unwrap();
+        let edited = editor
+            .set_profile(&steps.profile, &step.fields, at(ms))
+            .unwrap();
+        assert_eq!(edited.before, before, "step {n}");
+        assert_eq!(edited.fields, step.fields, "step {n}");
+        assert_eq!(
+            dirs.profile(&steps.profile),
+            fixture(&step.file),
+            "step {n}"
+        );
+        let snapshot = edited.snapshot.unwrap();
+        assert_eq!(
+            std::fs::read_to_string(snapshot).unwrap(),
+            fixture(&previous)
+        );
+        before = step.fields.clone();
+        previous = step.file.clone();
+    }
+
+    let edited = editor
+        .set_profile(&steps.profile, &steps.fields, at(100))
+        .unwrap();
+    assert_eq!(edited.before, before);
+    assert_eq!(dirs.profile(&steps.profile), fixture(&steps.file));
+}
+
+#[test]
+fn the_same_profile_fields_write_nothing() {
+    let steps: ProfileFixture = serde_json::from_str(&fixture("profile.json")).unwrap();
+    let dirs = Dirs::new(&[(&steps.profile, &fixture(&steps.file))]);
+    let edited = dirs
+        .editor()
+        .set_profile(&steps.profile, &steps.fields, at(1))
+        .unwrap();
+    assert_eq!(edited.snapshot, None);
+    assert_eq!(dirs.snapshots(), Vec::<PathBuf>::new());
+}
+
+#[test]
+fn renaming_the_missing_global_profile_creates_its_file() {
+    let root = tempfile::tempdir().unwrap();
+    let config = root.path().join("config");
+    let editor = Editor::new(config.clone(), &root.path().join("state"));
+    let fields = ProfileFields {
+        name: "Everywhere".to_owned(),
+        accent: None,
+    };
+    let edited = editor.set_profile("global", &fields, at(1)).unwrap();
+    assert_eq!(edited.path, config.join("profiles/global.toml"));
+    assert_eq!(
+        std::fs::read_to_string(&edited.path).unwrap(),
+        BUILTIN_GLOBAL.replace("\"Global\"", "\"Everywhere\"")
+    );
+}
+
+#[test]
+fn the_path_of_a_profile_is_its_file_in_the_profiles_directory() {
+    let dirs = Dirs::new(&[]);
+    let editor = dirs.editor();
+    assert_eq!(
+        editor.path("terminal").unwrap(),
+        dirs.config().join("profiles/terminal.toml")
+    );
+    assert!(matches!(editor.path("../x"), Err(EditorError::BadId(_))));
 }

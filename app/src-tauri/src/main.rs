@@ -10,10 +10,11 @@ use std::time::SystemTime;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use keyvo_client::editor::{Edited, KeyView};
+use keyvo_client::editor::{Edited, KeyView, ProfileEdited, ProfileView};
+use keyvo_client::profiles::ProfileSummary;
 use keyvo_client::tiles::Outline;
 use keyvo_client::{Client, Editor, Problem, Tiles};
-use keyvo_core::edit::KeyFields;
+use keyvo_core::edit::{KeyFields, ProfileFields};
 use keyvo_core::press::PressKind;
 use keyvo_core::profile::KeySlot;
 use keyvo_core::render::TileSize;
@@ -132,6 +133,64 @@ fn edit_key(profile: String, page: usize, key: u8, fields: Value) -> Result<Edit
         .map_err(|error| Problem::from(&error))
 }
 
+/// The name and accent of `profile`, for the profile header
+/// (`keyvo_client::editor::ProfileView`).
+#[tauri::command]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Tauri hands command arguments over owned"
+)]
+fn profile(profile: String) -> Result<ProfileView, Problem> {
+    editor()?
+        .profile(&profile)
+        .map_err(|error| Problem::from(&error))
+}
+
+/// Writes `fields` (`keyvo_core::edit::ProfileFields`) into `profile`'s
+/// header after a snapshot of the file
+/// (`keyvo_client::editor::ProfileEdited`); the daemon reloads it.
+#[tauri::command]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Tauri hands command arguments over owned"
+)]
+fn edit_profile(profile: String, fields: Value) -> Result<ProfileEdited, Problem> {
+    let fields: ProfileFields = serde_json::from_value(fields)
+        .map_err(|error| Problem::message(format!("invalid profile fields: {error}")))?;
+    editor()?
+        .set_profile(&profile, &fields, SystemTime::now())
+        .map_err(|error| Problem::from(&error))
+}
+
+/// Opens `profile`'s file in the desktop's application for it
+/// (`keyvo_client::profiles::opener`); the path comes from the id, never
+/// from the frontend.
+#[tauri::command]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Tauri hands command arguments over owned"
+)]
+fn open_profile(profile: String) -> Result<(), Problem> {
+    let path = editor()?
+        .path(&profile)
+        .map_err(|error| Problem::from(&error))?;
+    let mut child = keyvo_client::profiles::opener(&path)
+        .spawn()
+        .map_err(|error| Problem::message(format!("cannot run xdg-open: {error}")))?;
+    // Reaped on its own thread, so it leaves no zombie behind.
+    std::thread::spawn(move || child.wait());
+    Ok(())
+}
+
+/// Every profile of the daemon's configuration directory in id order
+/// (`keyvo_client::profiles::ProfileSummary`), for the Profiles screen.
+#[tauri::command]
+fn profile_list() -> Result<Vec<ProfileSummary>, String> {
+    let dir = config_dir()?;
+    let loaded = keyvo_core::layout::load(&dir).map_err(|errors| errors.to_string())?;
+    Ok(keyvo_client::profiles::list(&loaded.profiles, &dir))
+}
+
 /// The profiles of the daemon's configuration directory.
 fn profiles() -> Result<keyvo_core::layout::Profiles, String> {
     Ok(keyvo_core::layout::load(&config_dir()?)
@@ -184,7 +243,17 @@ fn main() {
     if let Err(error) = tauri::Builder::default()
         .manage(Subscriptions::default())
         .invoke_handler(tauri::generate_handler![
-            status, tiles, outline, press, subscribe, key, edit_key
+            status,
+            tiles,
+            outline,
+            press,
+            subscribe,
+            key,
+            edit_key,
+            profile,
+            edit_profile,
+            open_profile,
+            profile_list
         ])
         .run(tauri::generate_context!())
     {

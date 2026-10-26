@@ -11,6 +11,7 @@ pub mod client;
 pub mod editor;
 pub mod follow;
 pub mod mirror;
+pub mod profiles;
 pub mod tiles;
 
 use std::ffi::OsStr;

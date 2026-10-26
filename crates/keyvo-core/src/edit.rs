@@ -61,6 +61,30 @@ impl KeyFields {
     }
 }
 
+/// The fields of the `[profile]` table the editor changes
+/// (`docs/design/gui-ux.md` §3.2); the id, the match rules and the priority
+/// are kept as they are. An absent accent is removed from the file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProfileFields {
+    /// Display name.
+    pub name: String,
+    /// Accent color.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accent: Option<Color>,
+}
+
+impl ProfileFields {
+    /// The editable fields of `profile`.
+    #[must_use]
+    pub fn of(profile: &Profile) -> Self {
+        Self {
+            name: profile.profile.name.clone(),
+            accent: profile.profile.accent,
+        }
+    }
+}
+
 /// Why a key cannot be edited.
 #[derive(Debug, thiserror::Error)]
 pub enum EditError {
@@ -178,6 +202,47 @@ impl ProfileDocument {
         }
         if before.action != fields.action {
             set_action(key, before.action.as_ref(), fields.action.as_ref());
+        }
+        let text = doc.to_string();
+        self.profile = Profile::from_toml(&text, &self.path)?;
+        self.doc = doc;
+        Ok(before)
+    }
+
+    /// The fields of the `[profile]` table.
+    #[must_use]
+    pub fn profile_fields(&self) -> ProfileFields {
+        ProfileFields::of(&self.profile)
+    }
+
+    /// Sets the name and the accent of the `[profile]` table to `fields`;
+    /// only the values that differ are touched, an absent accent is
+    /// removed, a new one goes to the end of the table. Returns the fields
+    /// before the edit, for undo.
+    ///
+    /// # Errors
+    ///
+    /// [`EditError::Shape`] when `profile` is not a table, and
+    /// [`EditError::Invalid`] when the edited text does not validate; the
+    /// document is unchanged after an error.
+    pub fn set_profile(&mut self, fields: &ProfileFields) -> Result<ProfileFields, EditError> {
+        let before = self.profile_fields();
+        if before == *fields {
+            return Ok(before);
+        }
+        let mut doc = self.doc.clone();
+        let table = doc
+            .get_mut("profile")
+            .and_then(Item::as_table_like_mut)
+            .ok_or_else(|| EditError::Shape {
+                path: self.path.clone(),
+                what: "profile".into(),
+            })?;
+        if before.name != fields.name {
+            set_value(table, "name", Some(fields.name.as_str().into()));
+        }
+        if before.accent != fields.accent {
+            set_value(table, "accent", fields.accent.map(|c| c.to_string().into()));
         }
         let text = doc.to_string();
         self.profile = Profile::from_toml(&text, &self.path)?;

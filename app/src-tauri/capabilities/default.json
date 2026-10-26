@@ -11,6 +11,10 @@
     "allow-subscribe",
     "allow-key",
     "allow-edit-key",
+    "allow-profile",
+    "allow-edit-profile",
+    "allow-open-profile",
+    "allow-profile-list",
     "core:event:allow-listen",
     "core:event:allow-unlisten"
   ]

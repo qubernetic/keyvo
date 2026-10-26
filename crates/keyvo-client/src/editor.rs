@@ -1,14 +1,14 @@
-//! The key editor's file side (spec §10, `docs/design/gui-ux.md` §4.1):
-//! a key of a profile file read and written through `keyvo-core`'s
-//! round-trip edit, a snapshot of the file before every write, the write
-//! atomic. The daemon's inotify watch then reloads and repaints.
+//! The editors' file side (spec §10, `docs/design/gui-ux.md` §3.2, §4.1):
+//! a key or the profile header (name, accent) of a profile file read and
+//! written through `keyvo-core`'s round-trip edit, a snapshot of the file
+//! before every write, the write atomic. The daemon's inotify watch then reloads and repaints.
 
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use keyvo_core::diagnostic::Diagnostic;
-use keyvo_core::edit::{BUILTIN_GLOBAL, EditError, KeyFields, ProfileDocument};
+use keyvo_core::edit::{BUILTIN_GLOBAL, EditError, KeyFields, ProfileDocument, ProfileFields};
 use keyvo_core::layout::SNAPSHOTS;
 use keyvo_core::profile::{GLOBAL_ID, KeySlot, is_valid_id};
 use keyvo_core::store::{self, SNAPSHOTS_KEPT};
@@ -113,7 +113,31 @@ pub struct Edited {
     pub snapshot: Option<PathBuf>,
 }
 
-/// Reads and writes keys of the profiles in one configuration directory.
+/// A profile header as the editor shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ProfileView {
+    /// The profile file.
+    pub path: PathBuf,
+    /// The header's name and accent.
+    pub fields: ProfileFields,
+}
+
+/// What a write of a profile header did.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ProfileEdited {
+    /// The profile file.
+    pub path: PathBuf,
+    /// The fields before the write, for undo.
+    pub before: ProfileFields,
+    /// The fields written.
+    pub fields: ProfileFields,
+    /// The copy of the file taken before the write; none when nothing was
+    /// written or the file did not exist yet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<PathBuf>,
+}
+
+/// Reads and writes keys and headers of the profiles in one configuration directory.
 #[derive(Debug, Clone)]
 pub struct Editor {
     config_dir: PathBuf,
@@ -162,35 +186,95 @@ impl Editor {
     ) -> Result<Edited, EditorError> {
         let (path, mut doc) = self.open(id)?;
         let before = doc.set_key(page, slot, fields)?;
-        let mut edited = Edited {
+        let snapshot = if before == *fields {
+            None
+        } else {
+            self.write(&path, &doc, now)?
+        };
+        Ok(Edited {
             path,
             before,
             fields: fields.clone(),
-            snapshot: None,
+            snapshot,
+        })
+    }
+
+    /// The name and accent of profile `id`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Editor::set_profile`], without the write errors.
+    pub fn profile(&self, id: &str) -> Result<ProfileView, EditorError> {
+        let (path, doc) = self.open(id)?;
+        let fields = doc.profile_fields();
+        Ok(ProfileView { path, fields })
+    }
+
+    /// Sets the name and accent of profile `id` like [`Editor::set_key`]
+    /// sets a key: a snapshot, then the edited text written atomically;
+    /// nothing is written when the fields are already these.
+    ///
+    /// # Errors
+    ///
+    /// As [`Editor::set_key`].
+    pub fn set_profile(
+        &self,
+        id: &str,
+        fields: &ProfileFields,
+        now: SystemTime,
+    ) -> Result<ProfileEdited, EditorError> {
+        let (path, mut doc) = self.open(id)?;
+        let before = doc.set_profile(fields)?;
+        let snapshot = if before == *fields {
+            None
+        } else {
+            self.write(&path, &doc, now)?
         };
-        if edited.before == edited.fields {
-            return Ok(edited);
+        Ok(ProfileEdited {
+            path,
+            before,
+            fields: fields.clone(),
+            snapshot,
+        })
+    }
+
+    /// The file of profile `id`, whether it exists or not.
+    ///
+    /// # Errors
+    ///
+    /// [`EditorError::BadId`] when `id` is not a profile id.
+    pub fn path(&self, id: &str) -> Result<PathBuf, EditorError> {
+        if !is_valid_id(id) {
+            return Err(EditorError::BadId(id.to_owned()));
         }
+        Ok(self.config_dir.join("profiles").join(format!("{id}.toml")))
+    }
+
+    /// Writes `doc` to `path` after a snapshot of the file; the snapshot's
+    /// path, none when the file did not exist yet.
+    fn write(
+        &self,
+        path: &Path,
+        doc: &ProfileDocument,
+        now: SystemTime,
+    ) -> Result<Option<PathBuf>, EditorError> {
         let io = |path: &Path| {
             let path = path.to_path_buf();
             move |source| EditorError::Io { path, source }
         };
-        edited.snapshot = store::snapshot(&edited.path, &self.snapshots, now, SNAPSHOTS_KEPT)
+        let snapshot = store::snapshot(path, &self.snapshots, now, SNAPSHOTS_KEPT)
             .map_err(io(&self.snapshots))?;
         // The first edit of the built-in global profile on a fresh install,
         // where neither the configuration directory nor `profiles/` exists.
         let profiles = self.config_dir.join("profiles");
         std::fs::create_dir_all(&profiles).map_err(io(&profiles))?;
-        store::write(&edited.path, &doc.to_string()).map_err(io(&edited.path))?;
-        Ok(edited)
+        store::write(path, &doc.to_string()).map_err(io(path))?;
+        Ok(snapshot)
     }
 
     /// The file of profile `id` and its document.
     fn open(&self, id: &str) -> Result<(PathBuf, ProfileDocument), EditorError> {
-        if !is_valid_id(id) {
-            return Err(EditorError::BadId(id.to_owned()));
-        }
-        let path = self.config_dir.join("profiles").join(format!("{id}.toml"));
+        let path = self.path(id)?;
         let text = match std::fs::read_to_string(&path) {
             Ok(text) => text,
             Err(e) if e.kind() == io::ErrorKind::NotFound && id == GLOBAL_ID => {

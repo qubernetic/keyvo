@@ -299,9 +299,8 @@ is for `keyvo ctl`, T3 for the app.
 12. **Shell and readable dropdowns.** Still in the app:
 
     - The rail lists Home, Profiles, Behaviors, Projects, Integrations,
-      Devices, Settings. `Ctrl+2` shows Profiles (three columns, each one
-      sentence saying it is not built yet), `Ctrl+1` brings Home back
-      with the mirror as it was. Behaviors to Settings are greyed:
+      Devices, Settings. `Ctrl+2` shows Profiles (step 14), `Ctrl+1`
+      brings Home back with the mirror as it was. Behaviors to Settings are greyed:
       hovering one shows `Coming soon`; `Ctrl+3` to `Ctrl+7` or Tab onto
       one shows `Coming soon` and the sentence naming its roadmap item
       (M4a-5, M4a-6 or M4a-8), and the screen does not change.
@@ -350,6 +349,51 @@ is for `keyvo ctl`, T3 for the app.
       the mirror keeps its tiles. Start it again and click Retry: for a
       moment three grey skeleton rows stand in Recent events (no
       spinner), then the replayed entries.
+
+14. **Profiles.** Focus Konsole, then press `Ctrl+2` in the app:
+
+    - The list shows Global first, then Konsole and VS Code (all three
+      have priority 0, so by id), each with its accent, id and priority;
+      Konsole is marked `active` and selected. Focus another window and
+      come back: the mark follows the pad.
+    - The header shows id `konsole`, priority `0`, the name and the
+      accent `#3fae5a`, and the file
+      `~/.config/keyvo/profiles/konsole.toml`. Change the name to
+      `Terminal` and press Enter. Expected: the list shows `Terminal`
+      at once, and
+
+      ```bash
+      diff contrib/profiles/konsole.toml ~/.config/keyvo/profiles/konsole.toml
+      ```
+
+      shows only the `name` line, alignment intact. Change the accent to
+      `#d6884e` and press Enter: the pad's accent bar turns orange within
+      about a second and the diff shows the `accent` line too, its
+      `# green` comment kept. Type `teal` as the accent: an alert says it
+      is not `#rrggbb` and nothing is written. Restore the file:
+      `cp contrib/profiles/konsole.toml ~/.config/keyvo/profiles/`.
+    - `Open in editor` opens `konsole.toml` in the desktop's application
+      for TOML files.
+    - Match rules show `org.kde.konsole` and `konsole`; `Edit match
+      rules` is greyed with `Coming soon`. Select Global in the list: it
+      says it has no match rules and is under every window.
+    - On Global the tabs are `context`, `general` and `third`. Click
+      `general`, or Tab onto the tabs and press the right arrow: the key
+      grid and the page preview on the right show page 2, while the pad
+      stays where it is.
+    - On Konsole's `context` tab, click key 3 (or press `3` on the key
+      grid): the key editor opens below the grid on key 3 and the
+      `Selected key` card shows `Key 3`, `1, context` and `global
+      layer` (Konsole does not define key 3, so the global key shows,
+      as on the pad). Key 1 says `app layer`. Change key 1's label to
+      `Tab`, press Enter: the pad and both mirrors show `Tab`; click
+      outside the form and press `Ctrl+Z`: `New tab` comes back.
+    - `+` above the list, `Move key` and `Open in Behaviors` are greyed:
+      hovering shows `Coming soon`, Tab onto one adds the sentence with
+      its roadmap item, and a click does nothing.
+    - Unplug the Keypad: the key grid keeps its nine keys, the page
+      preview says it appears once a Keypad has reported its geometry.
+      Plug it back.
 
 Stop the app and the daemon (Ctrl-C) before section 6; it restarts them
 as each item needs.
@@ -591,6 +635,11 @@ no-strip expectations stay.
 - [ ] #101 Section 5 step 13: the drawer from the result line and from an event line, `Esc` closes it; Debug log greyed with `Coming soon`; the profile link opens Profiles; a picked page that the pad does not show; the schema error with file and line; the missing Keypad with its last-seen time; the skeleton rows after Retry.
 - [ ] #101 The look of Home in the light and the dark desktop theme: every text readable, the links visible as links.
 
+### Profiles screen with tabs and key card (#102)
+
+- [ ] #102 Section 5 step 14: list order with Global pinned and Konsole marked active, name and accent written with only their line changed, Open in editor, the tabs, a key into the key editor, the key card's layer origin, the greyed "Coming soon" controls.
+- [ ] #102 The look of Profiles in the light and the dark desktop theme: every text readable, the selected profile, tab and key visible.
+
 ### First-light records (#75)
 
 - [ ] #75 Read `docs/hardware-notes.md`, "Measurements", against the first-light report on #40 and its logs: every number and log citation matches.
@@ -624,7 +673,7 @@ you made one.
 - Commit: <git rev-parse --short HEAD>
 - Host: <distribution, kernel (uname -r), Plasma version, Wayland or X11>
 - Method: docs/pre-alpha-test.md sections 5 and 6
-- Section 5: step 1 <pass / fail: what you saw> ... step 12 <...>
+- Section 5: step 1 <pass / fail: what you saw> ... step 14 <...>
 - Section 6: <PR number and item text of every unticked item, with what you saw>
 - Logs: <the daemon log of section 5, attached>
 ```

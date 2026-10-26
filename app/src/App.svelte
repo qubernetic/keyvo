@@ -3,23 +3,30 @@
   // top, the navigation rail on the left, the selected screen beside it.
   // Home stays mounted while another screen shows, so the header's device
   // selector follows the daemon and the mirror keeps its last frame.
-  import Columns from "./Columns.svelte";
   import Header from "./Header.svelte";
   import Home from "./Home.svelte";
+  import Profiles from "./Profiles.svelte";
   import Rail from "./Rail.svelte";
   import type { Daemon } from "./lib/daemon";
   import type { Editor } from "./lib/editor";
-  import { t } from "./lib/i18n";
-  import type { DeviceStatus } from "./lib/protocol";
+  import type { ProfileFiles } from "./lib/profiles";
+  import type { DeviceStatus, View } from "./lib/protocol";
   import { layout, type DeviceChoice, type ScreenId } from "./lib/shell";
 
-  let { daemon, editor }: { daemon: Daemon; editor: Editor } = $props();
+  let {
+    daemon,
+    editor,
+    files,
+  }: { daemon: Daemon; editor: Editor; files: ProfileFiles } = $props();
 
   let width = $state(window.innerWidth);
   const columns = $derived(layout(width));
   let active: ScreenId = $state("home");
   let device: DeviceStatus | undefined = $state();
   let chosen: DeviceChoice | undefined = $state();
+  /** What the pad shows and the daemon's reload count, as Home follows them. */
+  let view: View | undefined = $state();
+  let reloads = $state(0);
 </script>
 
 <svelte:window bind:innerWidth={width} />
@@ -37,21 +44,24 @@
         active={active === "home"}
         ondevice={(next) => (device = next)}
         onnavigate={(id) => (active = id)}
+        onview={(next, count) => {
+          view = next;
+          reloads = count;
+        }}
       />
     </div>
     {#if active === "profiles"}
       <div class="screen">
-        <Columns {columns}>
-          {#snippet list()}
-            <p class="empty">{t("profiles.list")}</p>
-          {/snippet}
-          {#snippet editor()}
-            <p class="empty">{t("profiles.editor")}</p>
-          {/snippet}
-          {#snippet right()}
-            <p class="empty">{t("profiles.right")}</p>
-          {/snippet}
-        </Columns>
+        <Profiles
+          {daemon}
+          {editor}
+          {files}
+          {columns}
+          {view}
+          {reloads}
+          geometry={device?.geometry}
+          active={active === "profiles"}
+        />
       </div>
     {/if}
   </main>
@@ -83,11 +93,5 @@
 
   .screen[hidden] {
     display: none;
-  }
-
-  .empty {
-    margin: 0;
-    background: var(--kv-bg);
-    color: var(--kv-fg-muted);
   }
 </style>
