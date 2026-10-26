@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use keyvo_core::config::Timing;
+use keyvo_core::config::{self, Config, Timing};
 use keyvo_core::focus::WindowContext;
 use keyvo_core::layout::{self, Profiles};
 use keyvo_core::profile::Profile;
@@ -87,12 +87,16 @@ const AUTO: Mode = Mode::Auto;
 const MANUAL: Mode = Mode::Manual;
 
 /// Runs `table` on a fresh state with the default `[timing]` (hysteresis
-/// 150 ms, long press 1000 ms, page grace 10 s) and checks the profile,
-/// page and mode after every step.
+/// 150 ms, long press 1000 ms, page grace 10 s) and `[focus]` (`keyvo-app`
+/// holds) and checks the profile, page and mode after every step.
 fn run(profiles: &Profiles, table: &[(Step, &str, usize, Mode)]) {
+    run_with(&Config::default(), profiles, table);
+}
+
+fn run_with(config: &Config, profiles: &Profiles, table: &[(Step, &str, usize, Mode)]) {
     let start = Instant::now();
     let at = |ms: u64| start + Duration::from_millis(ms);
-    let mut state = State::new(&Timing::default(), profiles);
+    let mut state = State::new(config, profiles);
     assert_eq!(state.view(profiles), view("global", 1, AUTO));
     for (row, &(step, profile, page, mode)) in table.iter().enumerate() {
         match step {
@@ -283,11 +287,14 @@ fn without_a_general_page_the_page_button_does_nothing_in_auto_mode() {
 #[test]
 fn a_zero_hysteresis_switches_at_the_report() {
     let profiles = profiles();
-    let timing = Timing {
-        focus_hysteresis: Duration::ZERO,
-        ..Timing::default()
+    let config = Config {
+        timing: Timing {
+            focus_hysteresis: Duration::ZERO,
+            ..Timing::default()
+        },
+        ..Config::default()
     };
-    let mut state = State::new(&timing, &profiles);
+    let mut state = State::new(&config, &profiles);
     let now = Instant::now();
     state.focus(window("code", "x"), now, &profiles);
     assert_eq!(state.view(&profiles), view("code", 2, AUTO));
@@ -297,7 +304,7 @@ fn a_zero_hysteresis_switches_at_the_report() {
 #[test]
 fn the_next_deadline_is_the_pending_focus_or_the_long_press() {
     let profiles = profiles();
-    let mut state = State::new(&Timing::default(), &profiles);
+    let mut state = State::new(&Config::default(), &profiles);
     let now = Instant::now();
     assert_eq!(state.next_deadline(), None);
     state.press(Left, now, &profiles);
@@ -315,7 +322,7 @@ fn the_next_deadline_is_the_pending_focus_or_the_long_press() {
 fn a_reload_selects_again_and_falls_back_when_profiles_are_gone() {
     let profiles = profiles();
     let start = Instant::now();
-    let mut state = State::new(&Timing::default(), &profiles);
+    let mut state = State::new(&Config::default(), &profiles);
     state.focus(window("code", "x"), start, &profiles);
     state.poll(start + Duration::from_secs(1), &profiles);
     assert_eq!(state.view(&profiles), view("code", 2, AUTO));
@@ -345,4 +352,124 @@ fn a_reload_selects_again_and_falls_back_when_profiles_are_gone() {
     state.press(Left, start, &builtin);
     state.poll(start + Duration::from_secs(5), &builtin);
     assert_eq!(state.view(&builtin), view("global", 1, AUTO));
+}
+
+#[test]
+fn a_held_window_keeps_the_profile_and_page_of_the_window_before() {
+    run(
+        &profiles(),
+        &[
+            (Focus("org.kde.konsole", "~", 0), "global", 1, AUTO),
+            (Poll(150), "konsole", 1, AUTO),
+            (Focus("keyvo-app", "keyvo", 1000), "konsole", 1, AUTO),
+            (Poll(1150), "konsole", 1, AUTO),
+            // The page buttons work as before while held.
+            (Down(Left, 2000), "konsole", 1, AUTO),
+            (Up(Left, 2100), "global", 2, AUTO),
+            // Past the page grace a held report is still no app switch.
+            (Focus("org.kde.konsole", "~", 13_000), "global", 2, AUTO),
+            (Poll(13_150), "global", 2, AUTO),
+            (Focus("keyvo-app", "keyvo", 30_000), "global", 2, AUTO),
+            (Poll(30_150), "global", 2, AUTO),
+            // Back to the window held over: nothing to apply.
+            (Focus("org.kde.konsole", "~", 31_000), "global", 2, AUTO),
+            (Poll(31_150), "global", 2, AUTO),
+        ],
+    );
+}
+
+#[test]
+fn a_held_report_cancels_a_pending_one() {
+    run(
+        &profiles(),
+        &[
+            (Focus("org.kde.konsole", "~", 0), "global", 1, AUTO),
+            (Poll(150), "konsole", 1, AUTO),
+            (Focus("code", "main.rs", 1000), "konsole", 1, AUTO),
+            (Focus("Keyvo-App", "keyvo", 1050), "konsole", 1, AUTO),
+            (Poll(1150), "konsole", 1, AUTO),
+            (Poll(5000), "konsole", 1, AUTO),
+        ],
+    );
+}
+
+#[test]
+fn the_window_after_a_held_one_applies_after_the_hysteresis() {
+    run(
+        &profiles(),
+        &[
+            (Focus("org.kde.konsole", "~", 0), "global", 1, AUTO),
+            (Poll(150), "konsole", 1, AUTO),
+            (Focus("keyvo-app", "keyvo", 1000), "konsole", 1, AUTO),
+            (Focus("code", "main.rs", 2000), "konsole", 1, AUTO),
+            (Poll(2149), "konsole", 1, AUTO),
+            (Poll(2150), "code", 2, AUTO),
+        ],
+    );
+}
+
+#[test]
+fn a_held_window_before_any_other_keeps_the_global_profile() {
+    run(
+        &profiles(),
+        &[
+            (Focus("keyvo-app", "keyvo", 0), "global", 1, AUTO),
+            (Poll(150), "global", 1, AUTO),
+            (Poll(1000), "global", 1, AUTO),
+        ],
+    );
+}
+
+#[test]
+fn without_hold_classes_the_keyvo_app_switches_like_any_window() {
+    let config = Config {
+        focus: config::Focus {
+            hold_classes: Vec::new(),
+        },
+        ..Config::default()
+    };
+    run_with(
+        &config,
+        &profiles(),
+        &[
+            (Focus("org.kde.konsole", "~", 0), "global", 1, AUTO),
+            (Poll(150), "konsole", 1, AUTO),
+            (Focus("keyvo-app", "keyvo", 1000), "konsole", 1, AUTO),
+            (Poll(1150), "global", 1, AUTO),
+        ],
+    );
+}
+
+#[test]
+fn the_state_tells_the_held_window_until_another_reports() {
+    let profiles = profiles();
+    let now = Instant::now();
+    let mut state = State::new(&Config::default(), &profiles);
+    assert_eq!(state.held(), None);
+    state.focus(window("org.kde.konsole", "~"), now, &profiles);
+    state.focus(window("keyvo-app", "keyvo"), now, &profiles);
+    assert_eq!(state.held(), Some(&window("keyvo-app", "keyvo")));
+    assert_eq!(state.next_deadline(), None);
+    assert!(state.holds("KEYVO-APP"));
+    state.focus(window("code", "x"), now, &profiles);
+    assert_eq!(state.held(), None);
+}
+
+#[test]
+fn a_reload_while_held_keeps_the_profile() {
+    let profiles = profiles();
+    let start = Instant::now();
+    let mut state = State::new(&Config::default(), &profiles);
+    state.focus(window("org.kde.konsole", "~"), start, &profiles);
+    state.poll(start + Duration::from_secs(1), &profiles);
+    state.focus(
+        window("keyvo-app", "keyvo"),
+        start + Duration::from_secs(2),
+        &profiles,
+    );
+    state.reload(&profiles);
+    assert_eq!(state.view(&profiles), view("konsole", 1, AUTO));
+    assert_eq!(state.held(), Some(&window("keyvo-app", "keyvo")));
+    state.poll(start + Duration::from_secs(3), &profiles);
+    assert_eq!(state.view(&profiles), view("konsole", 1, AUTO));
 }

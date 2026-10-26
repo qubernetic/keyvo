@@ -37,10 +37,11 @@ pub struct Engine {
 impl Engine {
     /// The global profile's context page in auto mode, before any device
     /// told its key count. The state machine's `[timing]` values
-    /// (`focus_hysteresis`, `page_grace`, `long_press`) are read here.
+    /// (`focus_hysteresis`, `page_grace`, `long_press`) and
+    /// `[focus].hold_classes` are read here.
     #[must_use]
     pub fn new(loaded: Loaded) -> Self {
-        let state = State::new(&loaded.config.timing, &loaded.profiles);
+        let state = State::new(&loaded.config, &loaded.profiles);
         Self {
             loaded,
             state,
