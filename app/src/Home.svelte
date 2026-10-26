@@ -41,6 +41,9 @@
     onnavigate?: (screen: ScreenId) => void;
   } = $props();
 
+  /** The skeleton rows of the event list while Home connects. */
+  const SKELETON = [1, 2, 3];
+
   let home: HomeState = $state(initial());
   /** The key numbers in rows, as the daemon's geometry lays them out. */
   const rows: number[][] = $derived(home.geometry === undefined ? [] : grid(home.geometry));
@@ -345,8 +348,6 @@
         {t("home.retry")}
       </button>
     </div>
-  {:else if connecting && home.view === undefined}
-    <p class="banner">{t("home.connecting")}</p>
   {/if}
   <section class="strip" aria-label={t("home.status")}>
     <dl>
@@ -468,7 +469,14 @@
 
   <section class="events">
     <h2 id="kv-events">{t("home.events")}</h2>
-    {#if home.trace.length === 0}
+    {#if connecting && home.trace.length === 0}
+      <!-- §5.2: skeleton rows, no spinner; the mirror keeps its last frame. -->
+      <ul class="skeleton" aria-busy="true" aria-label={t("home.connecting")}>
+        {#each SKELETON as row (row)}
+          <li><span class="bar"></span></li>
+        {/each}
+      </ul>
+    {:else if home.trace.length === 0}
       <p class="note">{t("home.noEvents")}</p>
     {:else}
       <ol aria-label={t("home.events")}>
@@ -641,6 +649,24 @@
     margin: 0;
     padding: 0;
     list-style: none;
+  }
+
+  .skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .skeleton .bar {
+    display: block;
+    width: 60%;
+    height: 1em;
+    border-radius: var(--kv-radius);
+    background: var(--kv-bg-alt);
+    color: var(--kv-fg-muted);
   }
 
   .events time {

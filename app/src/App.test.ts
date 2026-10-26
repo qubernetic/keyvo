@@ -50,7 +50,7 @@ describe("App", () => {
   it("names the app in its heading", () => {
     app(() => new Promise(() => {}));
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("keyvo");
-    expect(screen.getByText("Connecting to the daemon")).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Connecting to the daemon" })).toBeInTheDocument();
   });
 
   it("opens on Home with the view the daemon reports", async () => {

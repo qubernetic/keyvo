@@ -86,7 +86,8 @@ export const messages = {
   "home.resultHint": "Click a key for a dry-run press, right click for a long one.",
   "home.pressFailed": "Press failed: {reason}",
   "home.events": "Recent events",
-  "home.noEvents": "No presses yet.",
+  "home.noEvents":
+    "No presses yet. Press a key on the pad, or click one in the mirror for a dry run.",
 
   "action.chord": "chord {keys}",
   "action.exec": "exec {cmd}",

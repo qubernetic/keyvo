@@ -397,9 +397,14 @@ describe("Home event list", () => {
     ]);
   });
 
-  it("says when nothing happened yet", async () => {
+  it("says when nothing happened yet and how to fill the list", async () => {
     await mounted();
-    expect(screen.getByText("No presses yet.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "No presses yet. Press a key on the pad, or click one in the mirror for a dry run.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Connecting to the daemon" })).not.toBeInTheDocument();
   });
 });
 
@@ -519,12 +524,29 @@ describe("Home without a daemon", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Daemon unreachable: no shell");
   });
 
-  it("shows no keys while connecting, as the geometry comes with the status", () => {
+  it("shows skeleton rows and no keys while connecting, as the geometry comes with the status", () => {
     const daemon = fake({ status: vi.fn(() => new Promise<Status>(() => {})) });
     render(Home, { props: { daemon: daemon.daemon, editor: editor() } });
     expect(screen.queryByRole("grid")).not.toBeInTheDocument();
     expect(screen.queryByText(/reported its geometry/)).not.toBeInTheDocument();
-    expect(screen.getByText("Connecting to the daemon")).toBeInTheDocument();
+    const loading = screen.getByRole("list", { name: "Connecting to the daemon" });
+    expect(loading).toHaveAttribute("aria-busy", "true");
+    expect(within(loading).getAllByRole("listitem")).toHaveLength(3);
+    expect(screen.queryByText(/No presses yet/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the mirror's last frame while it connects again", async () => {
+    const status = vi
+      .fn<Daemon["status"]>()
+      .mockResolvedValueOnce(STATUS)
+      .mockReturnValue(new Promise<Status>(() => {}));
+    const daemon = fake({ status });
+    await mounted(daemon);
+    await daemon.send({ kind: "closed", reason: "the daemon closed the connection" });
+    await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(screen.getByRole("list", { name: "Connecting to the daemon" })).toBeInTheDocument();
+    expect(key(5)).toHaveAccessibleName("Key 5: Test, exec cargo test");
+    expect(key(5).querySelector("img")).toHaveAttribute("src", "data:image/png;base64,terminal-1-5");
   });
 });
 
