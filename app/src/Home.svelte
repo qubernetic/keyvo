@@ -8,7 +8,6 @@
   import Device from "./Device.svelte";
   import KeyEditor from "./KeyEditor.svelte";
   import Notice from "./Notice.svelte";
-  import TraceDrawer from "./TraceDrawer.svelte";
   import type { Daemon, Outline, Tile } from "./lib/daemon";
   import type { Editor, Target } from "./lib/editor";
   import {
@@ -35,6 +34,7 @@
     ondevice,
     onview,
     onnavigate,
+    ontrace,
   }: {
     daemon: Daemon;
     editor: Editor;
@@ -48,6 +48,8 @@
     /** What the pad shows, none until the daemon reports it, and the count
      * of configuration reloads, for the Profiles screen. */
     onview?: (view: View | undefined, reloads: number) => void;
+    /** Opens a trace entry in the drawer, which the shell shows. */
+    ontrace?: (entry: TraceRecord) => void;
   } = $props();
 
   /** The skeleton rows of the event list while Home connects. */
@@ -219,15 +221,9 @@
     }
   }
 
-  /** The entry the trace drawer shows; the drawer gives the focus back. */
-  let drawn: TraceRecord | undefined = $state();
-
+  /** Opens `entry` in the shell's trace drawer. */
   function draw(entry: TraceRecord) {
-    drawn = entry;
-  }
-
-  function undraw() {
-    drawn = undefined;
+    ontrace?.(entry);
   }
 
   function select(key: number) {
@@ -527,10 +523,6 @@
     {/if}
   </section>
 </section>
-
-{#if drawn !== undefined && active}
-  <TraceDrawer entry={drawn} onclose={undraw} />
-{/if}
 
 <style>
   .home {

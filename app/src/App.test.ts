@@ -1,15 +1,17 @@
 // The app shell against a fake daemon and editor (docs/design/gui-ux.md
-// §2): header, rail and the screen the rail selects. Home's own states
-// are tested in Home.test.ts and KeyEditor.test.ts.
-import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { afterEach, describe, expect, it } from "vitest";
+// §2; pad screen brief §5.1): header, rail, the screen the rail selects,
+// the one drawer open at a time, the pin and the profile list. Home's own
+// states are tested in Home.test.ts and KeyEditor.test.ts.
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
+import { tick } from "svelte";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App.svelte";
-import type { Daemon } from "./lib/daemon";
+import type { Daemon, Update } from "./lib/daemon";
 import type { Editor } from "./lib/editor";
-import type { ProfileFiles } from "./lib/profiles";
-import { responses } from "./lib/fixtures";
-import type { Status } from "./lib/protocol";
+import type { ProfileFiles, ProfileSummary } from "./lib/profiles";
+import { eventsOf, nth, responses } from "./lib/fixtures";
+import type { Event, Status } from "./lib/protocol";
 
 const STATUS = responses()[0] as Status;
 
@@ -18,41 +20,58 @@ const EDITOR: Editor = {
   editKey: () => Promise.reject(new Error("not in this test")),
 };
 
-const FILES: ProfileFiles = {
-  list: () =>
-    Promise.resolve([
-      {
-        id: "terminal",
-        name: "Terminal",
-        priority: 0,
-        match: { class: ["org.kde.konsole"] },
-        pages: ["context"],
-        path: "/c/profiles/terminal.toml",
-        file: true,
-      },
-    ]),
-  profile: () =>
-    Promise.resolve({ path: "/c/profiles/terminal.toml", fields: { name: "Terminal" } }),
-  editProfile: () => Promise.reject(new Error("not in this test")),
-  open: () => Promise.reject(new Error("not in this test")),
-};
-
-/** The App's props with a daemon whose `status` is `status`. */
-function props(status: () => Promise<Status>): {
-  daemon: Daemon;
-  editor: Editor;
-  files: ProfileFiles;
-} {
+function summary(id: string, name: string, priority: number): ProfileSummary {
   return {
-    files: FILES,
-    daemon: {
-      status,
-      tiles: () => Promise.resolve([]),
-      outline: () => Promise.resolve({ pages: 1 }),
-      press: () => Promise.reject(new Error("not in this test")),
-      subscribe: () => Promise.resolve(() => {}),
+    id,
+    name,
+    priority,
+    match: { class: id === "terminal" ? ["org.kde.konsole"] : [] },
+    pages: ["context"],
+    path: `/c/profiles/${id}.toml`,
+    file: true,
+  };
+}
+
+const PROFILES = [
+  summary("global", "Global", 0),
+  summary("terminal", "Terminal", 0),
+  summary("vscode", "VS Code", 20),
+];
+
+/** The App's props with a daemon whose `status` is `status`, and `send`,
+ * which hands events to the App's subscription. */
+function props(
+  status: () => Promise<Status>,
+  list: () => Promise<ProfileSummary[]> = () => Promise.resolve(PROFILES),
+) {
+  let listener: ((update: Update) => void) | undefined;
+  const files: ProfileFiles = {
+    list: vi.fn(list),
+    profile: () =>
+      Promise.resolve({ path: "/c/profiles/terminal.toml", fields: { name: "Terminal" } }),
+    editProfile: () => Promise.reject(new Error("not in this test")),
+    open: () => Promise.reject(new Error("not in this test")),
+  };
+  const daemon: Daemon = {
+    status,
+    tiles: () => Promise.resolve([]),
+    outline: () => Promise.resolve({ pages: 1 }),
+    press: () => Promise.reject(new Error("not in this test")),
+    subscribe: (_replay, next) => {
+      listener = next;
+      return Promise.resolve(() => {
+        listener = undefined;
+      });
     },
-    editor: EDITOR,
+  };
+  return {
+    props: { daemon, editor: EDITOR, files },
+    files,
+    async send(...events: Event[]) {
+      await waitFor(() => expect(listener).toBeDefined());
+      for (const event of events) listener?.({ kind: "event", event });
+      await tick();
+    },
   };
 }
 
@@ -67,9 +86,125 @@ afterEach(() => {
   window.innerWidth = WIDTH;
 });
 
-function app(status: () => Promise<Status> = () => Promise.resolve(STATUS)) {
-  render(App, { props: props(status) });
+function app(
+  status: () => Promise<Status> = () => Promise.resolve(STATUS),
+  list?: () => Promise<ProfileSummary[]>,
+) {
+  const fake = props(status, list);
+  render(App, { props: fake.props });
+  return fake;
 }
+
+function dropdown(): HTMLSelectElement {
+  return screen.getByRole("combobox", { name: "Profile" });
+}
+
+/** The dropdown's option texts once the profile list has arrived. */
+async function listed(): Promise<string[]> {
+  await waitFor(() => expect(dropdown().options.length).toBeGreaterThan(0));
+  return [...dropdown().options].map((option) => option.text);
+}
+
+describe("the drawers", () => {
+  it("opens Preferences from the gear; Escape closes it and gives the focus back", async () => {
+    app();
+    const gear = screen.getByRole("button", { name: "Preferences" });
+    gear.focus();
+    await fireEvent.click(gear);
+    const dialog = screen.getByRole("dialog", { name: "Preferences" });
+    expect(within(dialog).getByRole("tab", { name: "General" })).toBeInTheDocument();
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(gear).toHaveFocus();
+  });
+
+  it("opens the keyboard shortcuts from the menu; Escape closes them and gives the focus back", async () => {
+    app();
+    const menu = screen.getByRole("button", { name: "More actions" });
+    await fireEvent.click(menu);
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Keyboard shortcuts" }));
+    expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeInTheDocument();
+    expect(screen.queryByRole("menu")).toBeNull();
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(menu).toHaveFocus();
+  });
+
+  it("shows one drawer at a time", async () => {
+    app();
+    await fireEvent.click(screen.getByRole("button", { name: "Preferences" }));
+    await fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Keyboard shortcuts" }));
+    expect(screen.getAllByRole("dialog").map((dialog) => dialog.getAttribute("aria-modal"))).toEqual([
+      "false",
+    ]);
+    expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeInTheDocument();
+  });
+
+  it("opens a trace entry of the Pad in the drawer, and Preferences in its place", async () => {
+    const { send } = app();
+    await send(nth(eventsOf("trace"), 0));
+    await fireEvent.click(await screen.findByRole("button", { name: /open the trace entry$/ }));
+    expect(screen.getByRole("dialog", { name: "Trace entry" })).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole("button", { name: "Preferences" }));
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(screen.getByRole("dialog", { name: "Preferences" })).toBeInTheDocument();
+  });
+
+  it("closes a trace entry on Escape and gives the focus back to its line", async () => {
+    const { send } = app();
+    await send(nth(eventsOf("trace"), 2));
+    const line = await screen.findByRole("button", { name: /failed: .*, open the trace entry$/ });
+    line.focus();
+    await fireEvent.click(line);
+    const drawer = screen.getByRole("dialog", { name: "Trace entry" });
+    expect(within(drawer).getByRole("region", { name: "Result" })).toHaveTextContent(
+      "no such file or directory: gh",
+    );
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(line).toHaveFocus();
+  });
+
+  it("keeps the trace drawer to the Pad", async () => {
+    const { send } = app();
+    await send(nth(eventsOf("trace"), 0));
+    await fireEvent.click(await screen.findByRole("button", { name: /open the trace entry$/ }));
+    await fireEvent.keyDown(window, { key: "2", ctrlKey: true });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("the pin", () => {
+  it("lists the profiles in the header, the pad's one shown and marked", async () => {
+    app();
+    expect(await listed()).toEqual(["Global", "VS Code", "Terminal, on the pad"]);
+    expect(dropdown().value).toBe("terminal");
+  });
+
+  it("keeps a pinned profile when the pad moves", async () => {
+    const { send } = app();
+    await listed();
+    await fireEvent.change(dropdown(), { target: { value: "vscode" } });
+    expect(dropdown().value).toBe("vscode");
+    await send({ event: "profile", profile: "global", page: 1, mode: "auto" });
+    expect(dropdown().value).toBe("vscode");
+    expect(await listed()).toEqual(["Global, on the pad", "VS Code", "Terminal"]);
+  });
+
+  it("reads the profile list again after a reload and unpins a profile that is gone", async () => {
+    let answer = PROFILES;
+    const { files, send } = app(undefined, () => Promise.resolve(answer));
+    await listed();
+    expect(files.list).toHaveBeenCalledTimes(1);
+    await fireEvent.change(dropdown(), { target: { value: "vscode" } });
+    answer = PROFILES.filter((profile) => profile.id !== "vscode");
+    await send({ event: "config", reloaded: true });
+    await waitFor(() => expect(files.list).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(dropdown().value).toBe("terminal"));
+    expect(await listed()).toEqual(["Global", "Terminal, on the pad"]);
+  });
+});
 
 describe("App", () => {
   it("names the app in its heading", () => {

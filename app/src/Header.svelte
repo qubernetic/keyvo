@@ -62,7 +62,9 @@
   function choose(id: MenuId) {
     const action = ACTIONS[id];
     if (action === undefined) return;
-    close(false);
+    // The toggle takes the focus back first, so a drawer the entry opens
+    // returns it there.
+    close(true);
     action();
   }
 
