@@ -7,10 +7,20 @@
 /// The lucide icons keyvo bundles, by name.
 const LUCIDE: &[(&str, &str)] = &[
     ("bug", include_str!("../../assets/lucide/bug.svg")),
+    (
+        "calculator",
+        include_str!("../../assets/lucide/calculator.svg"),
+    ),
+    ("camera", include_str!("../../assets/lucide/camera.svg")),
     ("check", include_str!("../../assets/lucide/check.svg")),
     (
         "circle-question-mark",
         include_str!("../../assets/lucide/circle-question-mark.svg"),
+    ),
+    ("code", include_str!("../../assets/lucide/code.svg")),
+    (
+        "folder-open",
+        include_str!("../../assets/lucide/folder-open.svg"),
     ),
     (
         "git-branch",
@@ -24,7 +34,10 @@ const LUCIDE: &[(&str, &str)] = &[
         "git-pull-request",
         include_str!("../../assets/lucide/git-pull-request.svg"),
     ),
+    ("globe", include_str!("../../assets/lucide/globe.svg")),
     ("hammer", include_str!("../../assets/lucide/hammer.svg")),
+    ("lock", include_str!("../../assets/lucide/lock.svg")),
+    ("mail", include_str!("../../assets/lucide/mail.svg")),
     ("play", include_str!("../../assets/lucide/play.svg")),
     (
         "refresh-cw",
@@ -35,7 +48,12 @@ const LUCIDE: &[(&str, &str)] = &[
     ("search", include_str!("../../assets/lucide/search.svg")),
     ("settings", include_str!("../../assets/lucide/settings.svg")),
     ("square", include_str!("../../assets/lucide/square.svg")),
+    ("sun", include_str!("../../assets/lucide/sun.svg")),
+    ("sun-dim", include_str!("../../assets/lucide/sun-dim.svg")),
     ("terminal", include_str!("../../assets/lucide/terminal.svg")),
+    ("volume-1", include_str!("../../assets/lucide/volume-1.svg")),
+    ("volume-2", include_str!("../../assets/lucide/volume-2.svg")),
+    ("volume-x", include_str!("../../assets/lucide/volume-x.svg")),
     ("x", include_str!("../../assets/lucide/x.svg")),
 ];
 
@@ -106,5 +124,19 @@ mod tests {
             assert!(lookup(&format!("lucide:{alias}")).is_ok(), "{alias}");
         }
         assert!(lookup(FALLBACK).is_ok());
+    }
+
+    /// The GUI's icon picker reads `assets/lucide/`; every file there draws
+    /// on the pad too.
+    #[test]
+    fn every_svg_in_the_asset_directory_is_bundled() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/lucide");
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_some_and(|ext| ext == "svg") {
+                let name = path.file_stem().unwrap().to_string_lossy();
+                assert!(lookup(&format!("lucide:{name}")).is_ok(), "{name}");
+            }
+        }
     }
 }
