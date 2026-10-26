@@ -1650,19 +1650,46 @@ shell into `bin/keyvo-app`.
 to 960 x 640 (`tauri.conf.json`). It has the header, the navigation rail
 and the columns of `docs/design/gui-ux.md` §2:
 
-- **Rail.** Home, Profiles, Behaviors, Projects, Integrations, Devices,
-  Settings, on `Ctrl+1` to `Ctrl+7`, lucide icons (`app/src/assets/lucide`,
-  the pad's lucide release) with labels, icons only below 1100 px. Home
-  and Profiles are built. The other five carry
-  `aria-disabled`: they stay in the tab order, hovering shows "Coming
-  soon", keyboard focus adds the sentence naming their roadmap item
-  (M4a-5, M4a-6, M4a-8), and neither a click nor the shortcut navigates;
-  the shortcut focuses the item instead.
-- **Header.** The app name, the device selector (the Keypad while the
+- **Rail.** Pad (screen id `home`, today's Home content), Profiles,
+  Behaviors, on `Ctrl+1` to `Ctrl+3` (pad screen brief §5.1), lucide icons
+  (`app/src/assets/lucide`, the pad's lucide release) with labels, icons
+  only below 1100 px. Pad and Profiles are built. Behaviors carries
+  `aria-disabled`: it stays in the tab order, hovering shows "Coming
+  soon", keyboard focus adds the sentence naming M4a-5, and neither a
+  click nor the shortcut navigates; the shortcut focuses it instead.
+  Devices, Integrations and Projects (and Settings as General) became
+  tabs of Preferences.
+- **Header.** The app name; the device selector (the Keypad while the
   daemon reports it connected, and "Simulator"; only "Simulator" while
   the Keypad is missing or the daemon unreachable; the choice changes
-  nothing else yet) and the overflow menu with Export, Import, Open config
-  folder, Re-run setup step and About, all disabled with "Coming soon".
+  nothing else yet); the Profile dropdown (the list of `profile_list`,
+  read again on every reload: the global profile first, then by
+  priority, the profile on the pad marked "on the pad"), which shows the
+  pinned profile, else the pad's, and pins the choice (`app/src/lib/pin.ts`:
+  undefined follows the pad, a pinned profile starts on page 1, a view
+  event never moves the pin, a profile gone from a re-read list unpins;
+  the Pad's inspector reads the pin from the next slice on); the Sandbox
+  switch, disabled with its M4a-4 sentence, Apply and Discard not shown;
+  the gear, which opens Preferences; and the overflow menu with Export,
+  Import, Open config folder, Re-run setup step and About, disabled with
+  "Coming soon", and Keyboard shortcuts.
+- **Drawers.** One at a time, fixed at the right of the window, a
+  non-modal `dialog` (`app/src/Drawer.svelte`): it takes the focus on its
+  Close button, closes on `Esc` (unless a menu or field handled that
+  `Esc`) and gives the focus back to the control that opened it. The
+  trace entry (from the Pad only), Preferences and the keyboard map use
+  it. Preferences has the tabs General, Devices, Integrations, Projects,
+  each the sentence of its roadmap item (M4a-8, M4a-8, M4a-8, M4a-6),
+  arrows, Home and End between the tabs. The keyboard map
+  (`app/src/lib/shortcuts.ts`) lists the shortcuts that work (`Ctrl+1` to
+  `Ctrl+3`, `1` to `9`, the arrows, `Space`, `Shift+Space`, `Ctrl+Z`,
+  `Ctrl+Shift+Z`, `Esc`) and `Ctrl+X` and `Ctrl+V` with their M4a-4
+  sentence.
+- **Notices.** Every notice goes through `app/src/Notice.svelte`: the
+  panel surface with a 1 px full border, the error colour on the border
+  of an error only, a leading word ("Error", "Note"), the body in
+  `--kv-fg`; an error is an `alert`. The token test refuses a side
+  border over 1 px anywhere and a state-coloured border outside Notice.
 - **Columns.** List column, editor and right column; the right column
   collapses below 1200 px, the list column below 1000 px, and a toggle at
   each column's edge shows or hides it until the width crosses its limit
@@ -1681,7 +1708,8 @@ and the columns of `docs/design/gui-ux.md` §2:
   colour, that every such pair passes 4.5:1 and the focus ring 3:1.
 - **Strings.** Every string is in `app/src/lib/i18n.ts` (English) and
   reaches the screen through `t(key, values)`; `app/src/strings.test.ts`
-  keeps literal words out of the component markup.
+  keeps literal words out of the markup of every component under
+  `app/src/`, in folders too.
 
 **As built (pre-alpha Home).** Home follows `docs/design/gui-ux.md` §3.1,
 §5.2 and §8 (d1, d7, d9, P4); it has no list column. On start Home asks
@@ -1716,19 +1744,20 @@ and the columns of `docs/design/gui-ux.md` §2:
   window; a held window, §6.1, reads `keyvo-app focused, holding
   org.kde.konsole`, or `holding the context` when the app saw no window
   before it). Profile, page and mode link to Profiles; device, overlay and
-  context belong to Devices, Integrations and Projects, which are not
-  built, so they are plain text. A failed reload shows as an alert in the
+  context belong to tabs of Preferences, which are not built, so they
+  are plain text. A failed reload shows as an error notice in the
   strip: `Schema error in <file>, line <n>, column <n>: <message>` when the
   error names a place (`<file>:<line>[:<column>]: <message>`), else the
   error as it is, with a link to Profiles, until a reload succeeds.
 - **Event list.** The trace entries, newest first, one line each: the key,
   the press kind, whether it was simulated, the layer that supplied the
   key (`app layer` or `global layer`), the action and its result. Each
-  line opens the trace drawer. The Debug log switch in the list's header
-  is disabled with "Coming soon" until the daemon sends HID-level events.
-- **Trace drawer** (`app/src/TraceDrawer.svelte`). Opens from an event
-  line and from the result line of a dry-run press, takes the focus, and
-  closes on `Esc` or its close button, giving the focus back. It shows the
+  line opens the trace drawer.
+- **Trace drawer** (`app/src/TraceDrawer.svelte` on `Drawer`). Opens from
+  an event line and from the result line of a dry-run press, takes the
+  focus, and closes on `Esc` or its close button, giving the focus back.
+  Its header carries the Debug log switch, disabled with "Coming soon"
+  until the daemon sends HID-level events. It shows the
   sections of the entry the daemon records today, in resolution order:
   Trigger (time, key, press kind, the device or simulated), Context
   snapshot (profile, page), Resolved action (layer, type, keys or
@@ -2025,6 +2054,16 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha Pad slice 1 (2026-10-26)**: §10 the shell of three
+  screens: the rail is Pad (screen id `home`), Profiles, Behaviors on
+  `Ctrl+1` to `Ctrl+3`; the header gains the Profile dropdown that pins
+  the inspector's profile (`lib/pin.ts`), the Sandbox switch as a Soon
+  control (M4a-4) and the gear; Preferences (General, Devices,
+  Integrations, Projects) and the keyboard map open as non-modal drawers
+  on one `Drawer` frame with the trace entry, one at a time; the Debug
+  log switch moves into the trace drawer's header; every notice goes
+  through `Notice` with a 1 px full border instead of a side stripe
+  (#125).
 - **v0.3, pre-alpha GUI design pass follow-up (2026-10-26)**: §10 the
   shell's `key` and `edit_key` answer the line of the key's table in its
   profile file (`ProfileDocument::key_line`), for the Pad inspector's

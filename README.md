@@ -62,9 +62,11 @@ The commands need read-write access to the Keypad's `/dev/hidraw*` node and
 Solaar stopped; [docs/hardware-notes.md](docs/hardware-notes.md) lists the
 measurements they serve.
 
-The desktop app has its shell (a navigation rail, where the screens not
-built yet are greyed out, a header with the device selector, and
-collapsible columns) and shows Home so far: a live mirror of the pad's page
+The desktop app has its shell (a navigation rail of Pad, Profiles and
+Behaviors, where Behaviors is greyed out until it is built, a header with
+the device selector, the profile dropdown, Preferences behind a gear and a
+keyboard map in its menu, and collapsible columns) and shows the Pad so
+far: a live mirror of the pad's page
 with a page selector and the profile's accent bar, the daemon's status
 (each fact linking to its screen, a broken profile shown with file and
 line), the recent presses, each opening a trace drawer with what the press
