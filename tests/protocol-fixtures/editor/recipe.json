@@ -1,0 +1,17 @@
+{
+  "profile": "terminal",
+  "page": 1,
+  "key": 7,
+  "file": "terminal.toml",
+  "path": "profiles/terminal.toml",
+  "recipe": "spectacle",
+  "variant": "region",
+  "before": {},
+  "fields": {
+    "icon": "lucide:camera",
+    "label": "Capture",
+    "action": { "type": "exec", "cmd": "spectacle --region" }
+  },
+  "expected": "terminal.recipe.toml",
+  "line": 24
+}

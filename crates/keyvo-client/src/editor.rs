@@ -11,6 +11,7 @@ use keyvo_core::diagnostic::Diagnostic;
 use keyvo_core::edit::{BUILTIN_GLOBAL, EditError, KeyFields, ProfileDocument, ProfileFields};
 use keyvo_core::layout::SNAPSHOTS;
 use keyvo_core::profile::{GLOBAL_ID, KeySlot, is_valid_id};
+use keyvo_core::recipe::Recipe;
 use keyvo_core::store::{self, SNAPSHOTS_KEPT};
 use serde::Serialize;
 
@@ -42,6 +43,14 @@ pub enum EditorError {
     /// The key cannot be edited.
     #[error(transparent)]
     Edit(#[from] EditError),
+    /// The recipe has no variant of that id.
+    #[error("recipe `{recipe}` has no variant `{variant}`")]
+    NoVariant {
+        /// The recipe id.
+        recipe: String,
+        /// The variant asked for.
+        variant: String,
+    },
 }
 
 /// An [`EditorError`] as the GUI shows it: the message, and the file, line
@@ -207,6 +216,34 @@ impl Editor {
             fields: fields.clone(),
             snapshot,
         })
+    }
+
+    /// Applies variant `variant` of `recipe` to key `slot` on page `page`
+    /// of profile `id`: the variant's action and the recipe's label and
+    /// icon are written like [`Editor::set_key`] writes them, the key's
+    /// color and states stay. The answer's `before` is the undo.
+    ///
+    /// # Errors
+    ///
+    /// [`EditorError::NoVariant`] when the recipe has no such variant,
+    /// else as [`Editor::set_key`]; nothing is written after an error.
+    pub fn apply_recipe(
+        &self,
+        id: &str,
+        page: usize,
+        slot: KeySlot,
+        recipe: &Recipe,
+        variant: &str,
+        now: SystemTime,
+    ) -> Result<Edited, EditorError> {
+        let (_, doc) = self.open(id)?;
+        let fields = recipe
+            .apply(variant, &doc.key(page, slot)?)
+            .ok_or_else(|| EditorError::NoVariant {
+                recipe: recipe.id.clone(),
+                variant: variant.to_owned(),
+            })?;
+        self.set_key(id, page, slot, &fields, now)
     }
 
     /// The name and accent of profile `id`.

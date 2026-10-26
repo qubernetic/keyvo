@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use keyvo_core::chord::Chord;
 use keyvo_core::diagnostic::Diagnostic;
-use keyvo_core::profile::Action;
+use keyvo_core::edit::KeyFields;
+use keyvo_core::profile::{Action, Color};
 use keyvo_core::recipe::{self, Group, Recipe, Source, Variant};
 
 fn fixture(name: &str) -> PathBuf {
@@ -244,4 +245,41 @@ fn a_file_name_that_is_not_an_id_is_refused() {
     let error = Recipe::from_toml(&text, Path::new("Screen Shot.toml"), Source::User).unwrap_err();
     assert_eq!(error.position, None);
     assert!(error.message.contains("`Screen Shot`"), "{error}");
+}
+
+#[test]
+fn applying_a_variant_sets_icon_label_and_action_and_keeps_the_color() {
+    let recipe = parse("valid/screenshot.toml").unwrap();
+    let key = KeyFields {
+        icon: Some("lucide:x".into()),
+        label: Some("Old".into()),
+        color: Some(Color::rgb(1, 2, 3)),
+        action: None,
+    };
+    assert_eq!(
+        recipe.apply("key", &key),
+        Some(KeyFields {
+            icon: Some("lucide:camera".into()),
+            label: Some("Shot".into()),
+            color: Some(Color::rgb(1, 2, 3)),
+            action: Some(Action::Chord {
+                keys: Chord::parse("print").unwrap()
+            }),
+        })
+    );
+    assert_eq!(recipe.apply("nope", &key), None);
+}
+
+#[test]
+fn a_recipe_round_trips_as_json_and_ignores_unknown_fields() {
+    let recipe = parse("valid/screenshot.toml").unwrap();
+    let json = serde_json::to_value(&recipe).unwrap();
+    assert_eq!(json["source"], "user");
+    assert_eq!(json["group"], "apps");
+    assert_eq!(json["variants"][0]["action"]["type"], "exec");
+    let mut later = json.clone();
+    later["later"] = 1.into();
+    later["variants"][1]["later"] = 1.into();
+    later["variants"][1]["action"]["later"] = 1.into();
+    assert_eq!(serde_json::from_value::<Recipe>(later).unwrap(), recipe);
 }
