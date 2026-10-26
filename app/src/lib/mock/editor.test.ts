@@ -14,22 +14,32 @@ describe("the mock key editor", () => {
     const editor = mockEditor(new Store([editorFile(steps.file)]));
     const target = { profile: steps.profile, page: steps.page, key: steps.key };
     const path = `${CONFIG_DIR}/${steps.path}`;
-    expect(await editor.key(target)).toEqual({ path, fields: steps.fields });
+    expect(await editor.key(target)).toEqual({ path, fields: steps.fields, line: steps.line });
     let before = steps.fields;
     for (const step of steps.steps) {
       expect(await editor.editKey(target, step.fields)).toEqual({
         path,
         before,
         fields: step.fields,
+        line: step.line,
       });
-      expect(await editor.key(target)).toEqual({ path, fields: step.fields });
+      expect(await editor.key(target)).toEqual({ path, fields: step.fields, line: step.line });
       before = step.fields;
     }
   });
 
-  it("shows a key the page does not define as no fields, and writes it", async () => {
+  it("answers the line of a key's header on its own page", async () => {
+    const steps = editorSteps();
+    const text = `${editorFile(steps.file)}\n[[pages]]\nname = "two"\n\n[pages.keys.2]\nlabel = "Two"\n`;
+    const editor = mockEditor(new Store([text]));
+    expect((await editor.key({ profile: steps.profile, page: 1, key: 1 })).line).toBe(15);
+    expect((await editor.key({ profile: steps.profile, page: 2, key: 2 })).line).toBe(29);
+  });
+
+  it("shows a key the page does not define as no fields and no line, and writes it", async () => {
     const editor = mockEditor(new Store(contribProfiles()));
     const target = { profile: "konsole", page: 1, key: 3 };
+    expect(await editor.key(target)).not.toHaveProperty("line");
     expect((await editor.key(target)).fields).toEqual({});
     await editor.editKey(target, { label: "New" });
     expect((await editor.key(target)).fields).toEqual({ label: "New" });

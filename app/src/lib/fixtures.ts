@@ -52,6 +52,8 @@ export interface EditorStep {
   fields: KeyFields;
   /** The file the step gives. */
   file: string;
+  /** The line of the key's table in that file, from 1. */
+  line: number;
 }
 
 /** tests/protocol-fixtures/editor/steps.json. */
@@ -65,6 +67,8 @@ export interface EditorSteps {
   path: string;
   /** The key's fields before the steps. */
   fields: KeyFields;
+  /** The line of the key's table before the steps, from 1. */
+  line: number;
   steps: EditorStep[];
 }
 

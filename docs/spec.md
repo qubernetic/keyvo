@@ -1628,8 +1628,10 @@ profile's page count and accent from the same directory,
 `keyvo_client::tiles::outline`); `press` (a dry-run press, the trace entry back); `subscribe` (a
 subscription with a trace replay on its own thread, each update emitted on
 the Tauri event `keyvo://update`; a newer `subscribe` stops the older one);
-`key` (a key's file and fields, `Editor::key`); `edit_key` (new fields
-written into a key, `Editor::set_key`, the fields before it back; an error
+`key` (a key's file and fields, `Editor::key`, and the `line` on which the
+key's table starts in the file, absent for a key the page does not
+define); `edit_key` (new fields written into a key, `Editor::set_key`, the
+fields before it back and the key's `line` in the written file; an error
 is a `Problem` object with `message` and, when it has a place, `path`,
 `line` and `column`). `build.rs` declares the seven commands in the Tauri app
 manifest, and the main window's capability
@@ -2018,6 +2020,10 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha GUI design pass follow-up (2026-10-26)**: §10 the
+  shell's `key` and `edit_key` answer the line of the key's table in its
+  profile file (`ProfileDocument::key_line`), for the Pad inspector's
+  "file line N" subtitle (#122).
 - **v0.3, pre-alpha GUI design pass follow-up (2026-10-26)**: §6.1
   `[focus].hold_classes` (default `["keyvo-app"]`): a focused window of
   such a class keeps the context and profile of the window before it;

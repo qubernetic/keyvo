@@ -91,6 +91,8 @@ export function problem(message: string): Problem {
 export class Store {
   readonly configDir: string;
   readonly #profiles = new Map<string, MockProfile>();
+  /** The text each profile was parsed from; edits leave it as it was. */
+  readonly #texts = new Map<string, string>();
 
   /** The profiles of `files`, each the text of one profile file. */
   constructor(files: readonly string[], configDir = CONFIG_DIR) {
@@ -98,7 +100,22 @@ export class Store {
     for (const file of files) {
       const profile = parseProfile(file);
       this.#profiles.set(profile.id, profile);
+      this.#texts.set(profile.id, file);
     }
+  }
+
+  /** The line, from 1, of the `[pages.keys.N]` header of key `key` on page
+   * `page` (from 1) in the text of the profile `id`; none when that page of
+   * the text has no such header (an inline key, or one only an edit added). */
+  keyLine(id: string, page: number, key: number): number | undefined {
+    const lines = (this.#texts.get(id) ?? "").split("\n");
+    const header = new RegExp(`^\\s*\\[\\s*pages\\s*\\.\\s*keys\\s*\\.\\s*"?${key}"?\\s*\\]`);
+    let at = 0;
+    for (const [index, line] of lines.entries()) {
+      if (/^\s*\[\[\s*pages\s*\]\]/.test(line)) at += 1;
+      else if (at === page && header.test(line)) return index + 1;
+    }
+    return undefined;
   }
 
   /** Every profile, in id order. */

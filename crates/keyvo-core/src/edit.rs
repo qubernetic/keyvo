@@ -10,7 +10,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use toml_edit::{DocumentMut, InlineTable, Item, Table, TableLike, Value};
+use toml_edit::{Document, DocumentMut, InlineTable, Item, Table, TableLike, Value};
 
 use crate::diagnostic::Diagnostic;
 use crate::profile::{Action, Color, Key, KeySlot, Profile};
@@ -166,6 +166,34 @@ impl ProfileDocument {
                 pages: pages.len(),
             })?;
         Ok(found.keys.get(&slot).map(KeyFields::of).unwrap_or_default())
+    }
+
+    /// The line, counted from 1, on which the table of key `slot` on page
+    /// `page` starts in the text: its `[pages.keys.N]` header, or for a key
+    /// written as an inline table its value. `None` for a key the page does
+    /// not define.
+    #[must_use]
+    pub fn key_line(&self, page: usize, slot: KeySlot) -> Option<usize> {
+        // A `DocumentMut` keeps no spans, so the text is parsed again.
+        let text = self.doc.to_string();
+        let doc = Document::parse(text.as_str()).ok()?;
+        let index = page.checked_sub(1)?;
+        let page_table: &dyn TableLike = match doc.get("pages")? {
+            Item::ArrayOfTables(pages) => pages.get(index)?,
+            Item::Value(Value::Array(pages)) => pages.get(index)?.as_inline_table()?,
+            _ => return None,
+        };
+        let keys = page_table.get("keys")?.as_table_like()?;
+        let name = slot.get().to_string();
+        let span = match keys.get(&name)? {
+            Item::Table(table) => table.span(),
+            Item::Value(value) => value.span(),
+            _ => None,
+        }
+        // A dotted key (`keys.2.label = ...`) has no span of its own; the
+        // first place its name is written stands for it.
+        .or_else(|| keys.key(&name)?.span())?;
+        Some(text[..span.start].matches('\n').count() + 1)
     }
 
     /// Sets the fields of key `slot` on page `page` to `fields`; only the
@@ -377,5 +405,79 @@ mod tests {
     fn builtin_global_text_is_the_builtin_global_profile() {
         let doc = ProfileDocument::parse(BUILTIN_GLOBAL, Path::new("global.toml")).unwrap();
         assert_eq!(*doc.profile(), Profile::builtin_global());
+    }
+
+    fn slot(n: u8) -> KeySlot {
+        KeySlot::new(n).unwrap()
+    }
+
+    fn document(text: &str) -> ProfileDocument {
+        ProfileDocument::parse(text, Path::new("lines.toml")).unwrap()
+    }
+
+    const HEADER: &str = "\
+schema_version = 1
+
+[profile]
+id = \"lines\"
+name = \"Lines\"
+";
+
+    #[test]
+    fn the_line_of_a_key_table_is_its_header() {
+        let doc = document(&format!(
+            "{HEADER}\n[[pages]]\nname = \"one\"\n\n[pages.keys.1]\nlabel = \"A\"\n\n\
+             # the second key\n[pages.keys.2]   # copy\nlabel = \"B\"\n"
+        ));
+        assert_eq!(doc.key_line(1, slot(1)), Some(10));
+        assert_eq!(doc.key_line(1, slot(2)), Some(14));
+    }
+
+    #[test]
+    fn the_line_of_an_inline_key_is_its_value() {
+        let doc = document(&format!(
+            "{HEADER}\n[[pages]]\nname = \"one\"\nkeys = {{ 2 = {{ label = \"B\" }} }}\n\n\
+             [[pages]]\nname = \"two\"\n\n[pages.keys]\n1 = {{ label = \"C\" }}\n"
+        ));
+        assert_eq!(doc.key_line(1, slot(2)), Some(9));
+        assert_eq!(doc.key_line(2, slot(1)), Some(15));
+    }
+
+    #[test]
+    fn the_line_of_a_dotted_key_is_where_its_name_is_first_written() {
+        let doc = document(&format!(
+            "{HEADER}\n[[pages]]\nname = \"one\"\nkeys.3.label = \"C\"\nkeys.3.icon = \"lucide:copy\"\n"
+        ));
+        assert_eq!(doc.key_line(1, slot(3)), Some(9));
+    }
+
+    #[test]
+    fn a_key_the_page_does_not_define_has_no_line() {
+        let doc = document(&format!(
+            "{HEADER}\n[[pages]]\nname = \"one\"\n\n[pages.keys.1]\nlabel = \"A\"\n\n[[pages]]\n"
+        ));
+        assert_eq!(doc.key_line(1, slot(2)), None);
+        assert_eq!(doc.key_line(2, slot(1)), None);
+        assert_eq!(doc.key_line(3, slot(1)), None);
+        assert_eq!(doc.key_line(0, slot(1)), None);
+    }
+
+    #[test]
+    fn a_key_set_key_adds_has_a_line_at_the_end_of_its_page() {
+        let mut doc = document(&format!(
+            "{HEADER}\n[[pages]]\nname = \"one\"\n\n[pages.keys.1]\nlabel = \"A\"\n\n\
+             [[pages]]\nname = \"two\"\n"
+        ));
+        assert_eq!(doc.key_line(1, slot(5)), None);
+        let fields = KeyFields {
+            label: Some("E".into()),
+            ..KeyFields::default()
+        };
+        doc.set_key(1, slot(5), &fields).unwrap();
+        let text = doc.to_string();
+        let line = doc.key_line(1, slot(5)).unwrap();
+        assert_eq!(text.lines().nth(line - 1), Some("[pages.keys.5]"), "{text}");
+        assert!(line > 11 && line < 15, "{line}: {text}");
+        assert_eq!(doc.key_line(1, slot(1)), Some(10));
     }
 }

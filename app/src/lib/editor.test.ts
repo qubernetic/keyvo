@@ -13,6 +13,7 @@ import {
   sameFields,
   sameTarget,
   toForm,
+  viewOf,
   type Change,
   type Form,
 } from "./editor";
@@ -71,6 +72,28 @@ describe("the form", () => {
     expect(sameTarget(target, { ...target, page: 2 })).toBe(false);
     expect(sameTarget(target, undefined)).toBe(false);
     expect(sameTarget(undefined, undefined)).toBe(true);
+  });
+});
+
+describe("the view after a write", () => {
+  it("keeps the file, the fields and the line of the key", () => {
+    const steps = editorSteps();
+    for (const step of steps.steps) {
+      const edited = {
+        path: "/c/profiles/terminal.toml",
+        before: steps.fields,
+        fields: step.fields,
+        line: step.line,
+        snapshot: "/s/1",
+      };
+      expect(viewOf(edited)).toEqual({ path: edited.path, fields: step.fields, line: step.line });
+    }
+  });
+
+  it("has no line when the write answers none", () => {
+    const view = viewOf({ path: "/c/profiles/t.toml", before: {}, fields: {} });
+    expect(view).toEqual({ path: "/c/profiles/t.toml", fields: {} });
+    expect(view).not.toHaveProperty("line");
   });
 });
 
