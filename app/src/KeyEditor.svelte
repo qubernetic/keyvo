@@ -17,6 +17,7 @@
     sameFields,
     sameTarget,
     toForm,
+    viewOf,
     type Change,
     type Edited,
     type Editor,
@@ -126,7 +127,7 @@
     try {
       const edited = await editor.editKey(at, fields);
       if (sameTarget(at, target)) {
-        view = { path: edited.path, fields: edited.fields };
+        view = viewOf(edited);
         if (show) form = toForm(edited.fields);
       }
       problem = undefined;

@@ -22,6 +22,9 @@ export interface KeyView {
   /** The profile file. */
   path: string;
   fields: KeyFields;
+  /** The line, from 1, on which the key's table starts in the file; absent
+   * for a key the page does not define. */
+  line?: number;
 }
 
 /** What a write did (keyvo_client::editor::Edited). */
@@ -30,8 +33,16 @@ export interface Edited {
   /** The fields before the write, for undo. */
   before: KeyFields;
   fields: KeyFields;
+  /** The line of the key's table in the written file. */
+  line?: number;
   /** The copy of the file taken before the write. */
   snapshot?: string;
+}
+
+/** The key as the editor shows it after `edited`, its line included. */
+export function viewOf(edited: Edited): KeyView {
+  const { path, fields, line } = edited;
+  return { path, fields, ...(line !== undefined ? { line } : {}) };
 }
 
 /** Why a key cannot be read or written (keyvo_client::Problem): the file,

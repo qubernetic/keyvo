@@ -15,19 +15,32 @@ function page(store: Store, { profile, page, key }: Target): MockPage {
   return found;
 }
 
+/** The key's `line`, as keyvo_client answers it: absent for a key the
+ * page does not define. */
+function line(store: Store, { profile, page, key }: Target): { line?: number } {
+  const found = store.keyLine(profile, page, key);
+  return found === undefined ? {} : { line: found };
+}
+
 export function mockEditor(store: Store): Editor {
   return {
     key: (target) =>
       attempt(() => ({
         path: store.path(target.profile),
         fields: structuredClone(page(store, target).keys.get(target.key) ?? {}),
+        ...line(store, target),
       })),
     editKey: (target, fields) =>
       attempt(() => {
         const keys = page(store, target).keys;
         const before: KeyFields = keys.get(target.key) ?? {};
         keys.set(target.key, structuredClone(fields));
-        return { path: store.path(target.profile), before, fields: structuredClone(fields) };
+        return {
+          path: store.path(target.profile),
+          before,
+          fields: structuredClone(fields),
+          ...line(store, target),
+        };
       }),
   };
 }
