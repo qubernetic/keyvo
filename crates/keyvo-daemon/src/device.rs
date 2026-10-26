@@ -19,6 +19,10 @@
 //! device's response to the one before, and a crop above the device's
 //! `maxImageSize` goes as horizontal bands.
 //!
+//! The claim waits out the plug-in splash (display mode `a4`, spec §5.4)
+//! within `[timing].claim_splash_timeout`, pinging the keep-alive while it
+//! waits; a splash it outlasts is no disconnect and is logged at `debug`.
+//!
 //! When the device is gone, or the claim fails, the actor waits
 //! `[timing].reconnect_interval` and opens it again: a new connection
 //! claims, diverts and repaints the union. A claim lost on a live
@@ -39,7 +43,7 @@ use keyvo_core::hid::{HidTransport, TransportError};
 use keyvo_core::profile::Color;
 use keyvo_core::render::{Canvas, KeyPlace, KeySpec, Panel, RenderError, Renderer};
 use keyvo_core::state::View;
-use keyvo_hid::display::{self, ClaimError, ClaimWatch};
+use keyvo_hid::display::{self, ClaimError, ClaimWatch, SplashWait};
 use keyvo_hid::hidpp::{DEVICE_DIRECT, Hidpp, HidppError, Plane, SoftwareId};
 use keyvo_hid::image::{ImageConfig, ImageError, Queue, Rect};
 use keyvo_hid::input::{Input, InputEvent};
@@ -78,6 +82,8 @@ pub struct Settings {
     pub reply_timeout: Duration,
     /// `[timing].reconnect_interval`.
     pub reconnect_interval: Duration,
+    /// `[timing].claim_splash_retry` and `[timing].claim_splash_timeout`.
+    pub splash: SplashWait,
     /// `[timing].render_coalesce`: the longest read between two looks at
     /// the paint requests.
     pub poll: Duration,
@@ -103,6 +109,10 @@ impl Settings {
             },
             reply_timeout: timing.reply_timeout,
             reconnect_interval: timing.reconnect_interval,
+            splash: SplashWait {
+                retry: timing.claim_splash_retry,
+                timeout: timing.claim_splash_timeout,
+            },
             poll: timing.render_coalesce,
         }
     }
@@ -259,7 +269,15 @@ fn serve<T: HidTransport>(
     let mut hidpp = Hidpp::new(transport, DEVICE_DIRECT, swid, settings.reply_timeout);
     let mut keep_alive = KeepAlive::new(SystemClock, settings.keep_alive);
     keep_alive.poll(&mut hidpp)?;
-    let claim = display::claim(&mut hidpp)?;
+    let claim = display::claim(&mut hidpp, settings.splash, |hidpp| {
+        keep_alive.poll(hidpp).map(drop)
+    })?;
+    if claim.splash_retries > 0 {
+        tracing::debug!(
+            "keypad: display claimed after the plug-in splash (mode a4), {} retries",
+            claim.splash_retries
+        );
+    }
     let image = image_config(&mut hidpp, settings.image)?;
     let diverted = reprog::divert_page_buttons(&mut hidpp, &settings.divert, std::thread::sleep)?;
     let panel = claim.geometry.panel();

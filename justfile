@@ -1,10 +1,11 @@
 # keyvo task runner (ADR-0002, two-layer dev model).
 # Container recipes run inside the `rust` compose service; `run` and `test-hw`
-# execute the container-built binary on the host, where the hardware is.
+# execute the container-built binary on the host, where the hardware is;
+# `app-dev` serves the app against a mock daemon for a host browser.
 # Podman users: `COMPOSE_CMD="podman compose" just ...` or put it in `.env`.
 # Native mode: with AGENT_HORDE=1 the check and build recipes run the toolchain
 # directly (for a shell that already is the container, such as the project's
-# agent sandbox or `just shell`); the lifecycle and hardware recipes refuse.
+# agent sandbox or `just shell`); the lifecycle and host recipes refuse.
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 set dotenv-load := true
@@ -116,7 +117,14 @@ app-build profile="dev": _up
 # The exact sequence CI runs (.github/workflows/ci.yml), tests in the nextest ci profile
 ci: fmt-check lint (test "--profile" "ci") deny cov
 
-# ---- Host (hardware) -------------------------------------------------------
+# ---- Host (hardware, app dev server) ---------------------------------------
+
+# Serve the app on the Vite dev server at http://localhost:1420 against the
+# in-memory mock of the daemon (app/src/lib/mock/), for a host browser:
+# ?theme=breeze-dark|breeze-light|adwaita-dark|adwaita-light, ?mock-error=unreachable
+app-dev: _host_only
+    npm --prefix app ci --no-fund --no-audit
+    cd app && VITE_KEYVO_MOCK=1 npm run dev
 
 # Run the container-built keyvo binary on the host: just run -- --version
 run *args: _host_only
@@ -152,7 +160,7 @@ _up:
 _container_only:
     @if [ "{{ native }}" = "1" ]; then echo "not applicable in native mode (AGENT_HORDE=1): no container to manage" >&2; exit 1; fi
 
-# Refuse the host hardware recipes in native mode
+# Refuse the host recipes (hardware, app dev server) in native mode
 [private]
 _host_only:
-    @if [ "{{ native }}" = "1" ]; then echo "not applicable in native mode (AGENT_HORDE=1): hardware recipes run on the owner's host" >&2; exit 1; fi
+    @if [ "{{ native }}" = "1" ]; then echo "not applicable in native mode (AGENT_HORDE=1): host recipes run on the owner's host" >&2; exit 1; fi

@@ -83,6 +83,7 @@ pub(crate) mod tests {
     use crate::tests::{exchanges, fixture, replay};
     use keyvo_core::clock::FakeClock;
     use keyvo_core::hid::TransportError;
+    use keyvo_hid::display::SplashWait;
     use keyvo_hid::hidpp::HidppError;
     use keyvo_hid::keep_alive::KeepAliveTiming;
 
@@ -100,8 +101,13 @@ pub(crate) mod tests {
 
     fn run(json: bool) -> (String, Vec<Duration>) {
         let clock = FakeClock::new();
-        let mut session =
-            Session::open(replay(&script()), &clock, Some(KeepAliveTiming::default())).unwrap();
+        let mut session = Session::open(
+            replay(&script()),
+            &clock,
+            Some(KeepAliveTiming::default()),
+            SplashWait::default(),
+        )
+        .unwrap();
         let mut waits = Vec::new();
         let mut out = Vec::new();
         keys(
@@ -164,8 +170,13 @@ release page right
     fn a_failed_divert_ends_the_command() {
         // The claim, then nothing scripted: getFeature(0x1B04) is unexpected.
         let clock = FakeClock::new();
-        let mut session =
-            Session::open(replay(&fixture("display-claim.txt")), &clock, None).unwrap();
+        let mut session = Session::open(
+            replay(&fixture("display-claim.txt")),
+            &clock,
+            None,
+            SplashWait::default(),
+        )
+        .unwrap();
         let error = keys(
             &mut session,
             &DivertTiming::default(),

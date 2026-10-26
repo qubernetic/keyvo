@@ -417,6 +417,66 @@ desktop changes.
 - The pad's theme file is separate (it renders tiles); the GUI reads it only for
   the feedback-state tokens so that the mirror and the screens agree.
 
+### Measured token sets (mock dev server)
+
+Until the bridge exists (M4a-1), the mock dev server (`just app-dev`,
+`app/src/lib/mock/themes.ts`) sets the tokens from four sets measured from
+the sources above, picked with `?theme=` (default `breeze-dark`), so a
+layout is judged in light and dark. Measured on 2026-10-26.
+
+| Token | `breeze-dark` | `breeze-light` | `adwaita-dark` | `adwaita-light` |
+|---|---|---|---|---|
+| `color-scheme` | `dark` | `light` | `dark` | `light` |
+| `--kv-bg` | `#202326` | `#eff0f1` | `#222226` | `#fafafb` |
+| `--kv-bg-alt` | `#292c30` | `#e3e5e7` | `#2e2e32` | `#ebebed` |
+| `--kv-fg` | `#fcfcfc` | `#232629` | `#ffffff` | `#323237` |
+| `--kv-fg-muted` | `#a1a9b1` | `#707d8a` | `#9c9c9d` | `#8c8c8f` |
+| `--kv-accent` | `#3daee9` | `#3daee9` | `#81d0ff` | `#0461be` |
+| `--kv-font` | `"Noto Sans", sans-serif` | same | `"Adwaita Sans", sans-serif` | same |
+| `--kv-font-size` | `10pt` | `10pt` | `11pt` | `11pt` |
+| `--kv-radius` | `5px` | `5px` | `9px` | `9px` |
+| `--kv-sandbox`, `--kv-project` | `#b48ef0`, `#3cbfae` | same | same | same |
+| `--kv-state-running`, `-success`, `-error` | `#f08c00`, `#2f9e44`, `#e03131` | same | same | same |
+| `--kv-contrast` | `normal` | `normal` | `normal` | `normal` |
+| `--kv-motion` | the system's `prefers-reduced-motion` | same | same | same |
+
+Sources:
+
+- Breeze: `colors/BreezeDark.colors` and `colors/BreezeLight.colors` of
+  `plasma/breeze` (master at 3f23386c), the files a Breeze `kdeglobals`
+  copies. `--kv-bg` and `--kv-bg-alt` are `[Colors:Window]`
+  `BackgroundNormal` and `BackgroundAlternate`, `--kv-fg` and
+  `--kv-fg-muted` its `ForegroundNormal` and `ForegroundInactive`. The
+  schemes set no `[General] AccentColor`, so the accent is the scheme's
+  own, `DecorationFocus` (61,174,233). Font: `Noto Sans` 10 pt, the
+  default of `kcms/fonts/fontssettings.kcfg` in `plasma/plasma-workspace`.
+  Radius: `Frame_FrameRadius = 5` of `kstyle/breezemetrics.h` in
+  `plasma/breeze`.
+- Adwaita: libadwaita 1.10.0, `src/stylesheet/_colors.scss` and
+  `_common.scss`. `--kv-bg` is `window_bg_color`, `--kv-bg-alt`
+  `sidebar_bg_color`; `--kv-fg` is `window_fg_color` (light:
+  `RGB(0 0 6 / 80%)` over the background), `--kv-fg-muted` the same at
+  the `--dim-opacity` of 55 %, both composited to opaque colours. The
+  accent is the default `blue` (`accent-color` of
+  `org.gnome.desktop.interface`, gsettings-desktop-schemas 51.0,
+  `#3584e4`) as libadwaita's standalone `accent_color`: OKLab lightness
+  capped at 0.5 in light, raised to 0.85 in dark. Font: `Adwaita Sans 11`
+  (`font-name`, gsettings-desktop-schemas 51.0). Radius: `$button_radius`
+  of `_common.scss`.
+- Not from the desktop: the derived `--kv-sandbox` and `--kv-project` keep
+  the pre-alpha defaults of `tokens.css` until M4a-1 defines the
+  derivation; the feedback states are the pad theme's
+  (`keyvo_core::render::Theme`); `--kv-contrast` is `normal` (none of the
+  four is a high-contrast scheme).
+
+Contrast of the measured sets against the WCAG thresholds that
+`app/src/styles/tokens.test.ts` holds the default set to (text 4.5:1,
+focus ring 3:1): the dark sets pass every pair. In `breeze-light` the
+muted text is 3.7:1 on `--kv-bg` and 3.3:1 on `--kv-bg-alt`, and the
+accent 2.2:1 and 2.0:1; in `adwaita-light` the muted text is 3.2:1 and
+2.8:1. These are findings for the design pass (#106), not corrections of
+the measured values.
+
 ## 8. Trace drawer and debug log
 
 *Implements d9; P4.*

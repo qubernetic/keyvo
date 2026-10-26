@@ -1,9 +1,19 @@
 // Vite builds the frontend into dist/ for the Tauri shell (src-tauri,
 // frontendDist) and serves it on a fixed port for `tauri dev` (devUrl);
-// vitest runs the unit and component tests in jsdom.
+// vitest runs the unit and component tests in jsdom. With
+// VITE_KEYVO_MOCK=1 (`just app-dev`) the dev server serves the app against
+// the in-memory mock of src/lib/mock/, which reads its data in place from
+// the repository directories below; vitest reads them too.
+import { resolve } from "node:path";
+
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { svelteTesting } from "@testing-library/svelte/vite";
 import { defineConfig } from "vitest/config";
+
+const MOCK_DATA = ["contrib/profiles", "tests/protocol-fixtures", "crates/keyvo-core/tests/snapshots"];
+
+const mock = process.env.VITE_KEYVO_MOCK === "1" || process.env.VITEST !== undefined;
+const app = import.meta.dirname;
 
 export default defineConfig({
   plugins: [svelte(), svelteTesting()],
@@ -11,6 +21,7 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
+    ...(mock ? { fs: { allow: [app, ...MOCK_DATA.map((dir) => resolve(app, "..", dir))] } } : {}),
   },
   build: {
     outDir: "dist",

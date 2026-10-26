@@ -6,6 +6,8 @@
 //! Keep-alive comes first: the caller starts pinging
 //! ([`crate::keep_alive::KeepAlive`]) before it claims the display.
 
+use std::time::Duration;
+
 use keyvo_core::hid::HidTransport;
 use keyvo_core::render::{KeyPlace, Panel, TileSize};
 
@@ -39,6 +41,41 @@ impl DisplayMode {
     /// keep-alive expiry; a freshly plugged-in Keypad reports `a2`
     /// (measured, `docs/hardware-notes.md` item 5).
     pub const STANDBY: Self = Self(0xa1);
+    /// `a4`: the plug-in splash (Options+ `SplashBright`); for a few seconds
+    /// after a plug-in the display stays in it and does not take
+    /// `setMode(a0)` (#52, `docs/hardware-notes.md` item 5).
+    pub const SPLASH_BRIGHT: Self = Self(0xa4);
+}
+
+/// How the claim waits out the plug-in splash (spec §5.4):
+/// `[timing].claim_splash_retry` and `[timing].claim_splash_timeout`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SplashWait {
+    /// Wait between two `setMode(a0)` while the display reports `a4`.
+    pub retry: Duration,
+    /// How long the claim waits in all. It re-sends `setMode(a0)` at most
+    /// `timeout / retry` times; a zero `retry` does not wait.
+    pub timeout: Duration,
+}
+
+impl Default for SplashWait {
+    /// The `[timing]` defaults (spec §6.1): retry 500 ms, timeout 10 s.
+    fn default() -> Self {
+        Self {
+            retry: Duration::from_millis(500),
+            timeout: Duration::from_millis(10_000),
+        }
+    }
+}
+
+impl SplashWait {
+    /// The number of `setMode(a0)` the wait may re-send.
+    fn retries(self) -> u128 {
+        self.timeout
+            .as_nanos()
+            .checked_div(self.retry.as_nanos())
+            .unwrap_or(0)
+    }
 }
 
 /// What the claim found and did.
@@ -58,6 +95,9 @@ pub struct Claim {
     /// The switch itself is verified with `getMode`; the event is consumed so
     /// it does not reach the input path.
     pub mode_event: bool,
+    /// How often `setMode(a0)` was sent again while the plug-in splash ran;
+    /// 0 when the first one took.
+    pub splash_retries: u32,
 }
 
 /// Errors of [`claim`].
@@ -86,11 +126,22 @@ pub enum ClaimError {
 /// VLP root fn2 (the ping Options+ sends) is left out until the hardware
 /// check shows it is needed.
 ///
+/// A display that reports `a4` after `setMode(a0)` still shows the plug-in
+/// splash: the claim waits `splash.retry` for the mode-change event to
+/// `a0`, then sends `setMode(a0)` again and confirms it with `getMode`,
+/// until `a0` or until `splash.timeout` is used up. `between` runs before
+/// every wait, so the caller's keep-alive keeps pinging.
+///
 /// # Errors
 ///
-/// [`ClaimError::StreamingUnsupported`], [`ClaimError::ModeNotConfirmed`],
-/// and the request errors.
-pub fn claim<T: HidTransport>(hidpp: &mut Hidpp<T>) -> Result<Claim, ClaimError> {
+/// [`ClaimError::StreamingUnsupported`], [`ClaimError::ModeNotConfirmed`]
+/// (at once for a mode other than `a0` and `a4`, for `a4` after the
+/// timeout), and the request errors, also those of `between`.
+pub fn claim<T: HidTransport>(
+    hidpp: &mut Hidpp<T>,
+    splash: SplashWait,
+    mut between: impl FnMut(&mut Hidpp<T>) -> Result<(), HidppError>,
+) -> Result<Claim, ClaimError> {
     let protocol = hidpp.vlp_protocol()?;
     let display_index = hidpp.feature_index(Plane::Vlp, feature::VLP_DISPLAY)?;
     let modes = supported_modes(hidpp)?;
@@ -102,17 +153,40 @@ pub fn claim<T: HidTransport>(hidpp: &mut Hidpp<T>) -> Result<Claim, ClaimError>
     let boot_mode = current_mode(hidpp)?;
     let geometry = geometry(hidpp)?;
     let mut mode_event = false;
+    let mut splash_retries = 0_u32;
     if boot_mode != DisplayMode::STREAMING {
-        stream(hidpp, display_index)?;
-        mode_event = hidpp
-            .wait_for(|frame| {
-                frame.report == ReportId::VlpControl
-                    && frame.feature_index == display_index
-                    && frame.function == EVENT_MODE_CHANGED
-                    && frame.swid == 0
-                    && frame.params.first() == Some(&DisplayMode::STREAMING.0)
-            })?
-            .is_some();
+        let streams = |frame: &Frame| {
+            frame.report == ReportId::VlpControl
+                && frame.feature_index == display_index
+                && frame.function == EVENT_MODE_CHANGED
+                && frame.swid == 0
+                && frame.params.first() == Some(&DisplayMode::STREAMING.0)
+        };
+        let mut mode = set_streaming(hidpp, display_index)?;
+        let mut rounds = 0..splash.retries();
+        while mode == DisplayMode::SPLASH_BRIGHT && rounds.next().is_some() {
+            between(hidpp)?;
+            if hidpp.wait_for_within(splash.retry, streams)?.is_some() {
+                mode = DisplayMode::STREAMING;
+                mode_event = true;
+                break;
+            }
+            splash_retries = splash_retries.saturating_add(1);
+            mode = set_streaming(hidpp, display_index)?;
+        }
+        if mode != DisplayMode::STREAMING {
+            return Err(ClaimError::ModeNotConfirmed { mode: mode.0 });
+        }
+        if !mode_event {
+            mode_event = hidpp.wait_for(streams)?.is_some();
+        }
+        if splash_retries > 0 {
+            // Mode events the splash sent before `a0` are older than the
+            // confirmed `a0`; left kept, the claim watch would take them
+            // for a lost claim.
+            let watch = ClaimWatch::new(hidpp.device_index(), display_index);
+            hidpp.discard_kept(|kept| watch.is_mode_event(kept));
+        }
     }
     Ok(Claim {
         protocol,
@@ -121,22 +195,31 @@ pub fn claim<T: HidTransport>(hidpp: &mut Hidpp<T>) -> Result<Claim, ClaimError>
         boot_mode,
         geometry,
         mode_event,
+        splash_retries,
     })
 }
 
 /// `setMode(a0)` confirmed with `getMode`.
 fn stream<T: HidTransport>(hidpp: &mut Hidpp<T>, display_index: u8) -> Result<(), ClaimError> {
+    let mode = set_streaming(hidpp, display_index)?;
+    if mode != DisplayMode::STREAMING {
+        return Err(ClaimError::ModeNotConfirmed { mode: mode.0 });
+    }
+    Ok(())
+}
+
+/// `setMode(a0)`, then the mode `getMode` reports.
+fn set_streaming<T: HidTransport>(
+    hidpp: &mut Hidpp<T>,
+    display_index: u8,
+) -> Result<DisplayMode, HidppError> {
     hidpp.request(
         Plane::Vlp,
         display_index,
         FN_SET_MODE,
         &[DisplayMode::STREAMING.0],
     )?;
-    let mode = current_mode(hidpp)?;
-    if mode != DisplayMode::STREAMING {
-        return Err(ClaimError::ModeNotConfirmed { mode: mode.0 });
-    }
-    Ok(())
+    current_mode(hidpp)
 }
 
 /// Recognises the reports that mean the claim is lost (spec §5.3): the
@@ -574,10 +657,80 @@ mod tests {
         )
     }
 
+    /// A splash wait of three retries.
+    const SPLASH: SplashWait = SplashWait {
+        retry: Duration::from_millis(100),
+        timeout: Duration::from_millis(300),
+    };
+
+    /// `setMode(a0)` and the `getMode` that answers `mode`.
+    fn set_mode(mode: u8) -> String {
+        format!(
+            "> {}\n< {}\n> {}\n< {}\n",
+            vlp(2, 4, 0xe0, &[0xa0]),
+            vlp(2, 4, 0xc0, &[0xa0]),
+            vlp(2, 5, 0xe0, &[]),
+            vlp(2, 5, 0xc0, &[mode]),
+        )
+    }
+
+    #[test]
+    fn a_splash_that_outlasts_the_timeout_is_not_a_claim() {
+        // The first setMode and one more per retry, all answered a4.
+        let script = claim_head(&[0xa0, 0xa1, 0xa4], 0xa4) + &set_mode(0xa4).repeat(4);
+        let mut hidpp = hidpp(&script);
+        let mut polls = 0;
+        let result = claim(&mut hidpp, SPLASH, |_| {
+            polls += 1;
+            Ok(())
+        });
+        assert_eq!(result, Err(ClaimError::ModeNotConfirmed { mode: 0xa4 }));
+        assert_eq!(polls, 3);
+        assert!(hidpp.transport_mut().is_done());
+    }
+
+    #[test]
+    fn the_mode_change_event_to_a0_ends_the_splash_wait() {
+        // The unsolicited event of display-claim.txt step 7.
+        let event = format!("< 13 ff 02 10 c6 a0{}\n", " 00".repeat(26));
+        let script = claim_head(&[0xa0, 0xa4], 0xa4) + &set_mode(0xa4) + &event;
+        let mut hidpp = hidpp(&script);
+        let claim = claim(&mut hidpp, SPLASH, |_| Ok(())).unwrap();
+        assert!(claim.mode_event);
+        assert_eq!(claim.splash_retries, 0);
+        assert!(hidpp.transport_mut().is_done());
+    }
+
+    #[test]
+    fn a_failing_keep_alive_ends_the_splash_wait() {
+        let script = claim_head(&[0xa0, 0xa4], 0xa4) + &set_mode(0xa4);
+        let mut hidpp = hidpp(&script);
+        assert_eq!(
+            claim(&mut hidpp, SPLASH, |_| Err(HidppError::InvalidSoftwareId(
+                0
+            ))),
+            Err(ClaimError::Hidpp(HidppError::InvalidSoftwareId(0)))
+        );
+    }
+
+    #[test]
+    fn a_zero_retry_does_not_wait() {
+        let script = claim_head(&[0xa0, 0xa4], 0xa4) + &set_mode(0xa4);
+        let mut hidpp = hidpp(&script);
+        let none = SplashWait {
+            retry: Duration::ZERO,
+            ..SPLASH
+        };
+        assert_eq!(
+            claim(&mut hidpp, none, |_| Ok(())),
+            Err(ClaimError::ModeNotConfirmed { mode: 0xa4 })
+        );
+    }
+
     #[test]
     fn a_display_that_already_streams_is_not_switched_again() {
         let mut hidpp = hidpp(&claim_head(&[0xa0, 0xa1], 0xa0));
-        let claim = claim(&mut hidpp).unwrap();
+        let claim = claim(&mut hidpp, SPLASH, |_| Ok(())).unwrap();
         assert_eq!(claim.boot_mode, DisplayMode::STREAMING);
         assert!(!claim.mode_event);
         assert!(hidpp.transport_mut().is_done());
@@ -587,7 +740,7 @@ mod tests {
     fn a_display_without_streaming_mode_is_refused() {
         let mut hidpp = hidpp(&claim_head(&[0xa1, 0xa2], 0xa1));
         assert_eq!(
-            claim(&mut hidpp),
+            claim(&mut hidpp, SPLASH, |_| Ok(())),
             Err(ClaimError::StreamingUnsupported {
                 modes: vec![0xa1, 0xa2],
             })
@@ -606,7 +759,7 @@ mod tests {
             );
         let mut hidpp = hidpp(&script);
         assert_eq!(
-            claim(&mut hidpp),
+            claim(&mut hidpp, SPLASH, |_| Ok(())),
             Err(ClaimError::ModeNotConfirmed { mode: 0xa1 })
         );
     }
@@ -622,7 +775,7 @@ mod tests {
                 vlp(2, 5, 0xc0, &[0xa0]),
             );
         let mut hidpp = hidpp(&script);
-        let claim = claim(&mut hidpp).unwrap();
+        let claim = claim(&mut hidpp, SPLASH, |_| Ok(())).unwrap();
         assert!(!claim.mode_event);
         assert!(hidpp.transport_mut().is_done());
     }

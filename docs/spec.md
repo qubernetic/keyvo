@@ -388,6 +388,13 @@ version `docs/hardware-notes.md` records.
   mode is `a2`, not `a1`. `a1` is the device/logo mode a `KEEP_ALIVE`
   expiry leaves (§5.3); the capture's `a1` is that state. `a0` is the
   host-controlled mode `setMode(a0)` sets; without pings it stays.
+- Plug-in splash (observed, #52, `docs/hardware-notes.md` item 5): for a
+  few seconds after a plug-in the display is in `a4` (SplashBright) and
+  `setMode(a0)` does not take; `getMode` after it still answers `a4`. The
+  daemon log of the replug showed `a4` about three seconds after the
+  plug-in and the profile painted about seven seconds after that. The
+  `a2` of the item above is the state about one minute after a replug,
+  when the splash is over.
 - Display state names (the Options+ state enum, read in the display
   pipeline report, `docs/research/options-plus-display-pipeline.md`
   section 6; it corrects the inventory's mapping of `a3` to `a6`):
@@ -414,8 +421,20 @@ version `docs/hardware-notes.md` records.
   a0`, function 1, swid 0) arrives during that read in the capture; keyvo
   consumes it, waiting at most the reply timeout, and records whether it
   came. A missing event is not an error, a mode other than `a0` after
-  `setMode` is. VLP root fn2 is left out: painting works without it
-  (measured, first light).
+  `setMode` is, with one exception: `a4` is the plug-in splash, and the
+  claim waits it out. It waits `[timing].claim_splash_retry` for the
+  mode-change event to `a0` (which ends the wait), then sends
+  `setMode(a0)` again and confirms it with fn5, until fn5 reports `a0` or
+  the retries that fit into `[timing].claim_splash_timeout` are used up
+  (§6.1). The keep-alive keeps pinging between the retries. Only a display
+  still in `a4` after the timeout, or in any mode other than `a0` and `a4`
+  after `setMode(a0)` (at once, without a wait), fails the claim with
+  `display stayed in mode 0x<mode> after setMode(a0)`. Mode-change events
+  the splash sent before `a0` are dropped once `a0` is confirmed, so they
+  do not look like a lost claim (§5.3). The daemon logs a splash it waited
+  out at `debug` and reports no disconnect for it; `keyvo keys` and
+  `keyvo fill` wait the same way with the user's `[timing]`. VLP root fn2
+  is left out: painting works without it (measured, first light).
 - **The device publishes its own key geometry** via display fn1
   `getGeometry(01)` (Options+ calls it `getDisplayInfo(1)`), answered over
   four packets. The joined reply: byte 0 `displayShape` (u8, 1), bytes 1..2
@@ -827,6 +846,8 @@ Defaults, all configurable under `[timing]` in `config.toml`:
 | `reconnect_interval` | 1000 ms | wait between two attempts to open the Keypad after it is gone or not found, §5.1 |
 | `reload_settle` | 100 ms | quiet time after the last change in the configuration directory before the daemon reloads it, §7.2 |
 | `accept_backoff` | 100 ms | wait after a failed `accept` on the control socket before the next one, so a full file table does not spin the daemon, §8 |
+| `claim_splash_retry` | 500 ms | while the display shows the plug-in splash (`a4`), the claim re-sends `setMode(a0)` this often, §5.4 |
+| `claim_splash_timeout` | 10000 ms | how long the claim waits for the plug-in splash to end before it fails, §5.4 |
 
 `keep_alive_period` must be shorter than `keep_alive_timeout`: a period at
 or above the timeout lets the claim run out between two pings (§5.3). The
@@ -835,6 +856,21 @@ configuration is refused with the file, the line of the value that was set
 ``config.toml:4:21: `keep_alive_period` (3000 ms) must be shorter than
 `keep_alive_timeout` (3000 ms)``. `keyvo fill` and `keyvo keys` check `--keep-alive-period`
 and `--keep-alive-timeout` the same way before they open the device.
+
+`claim_splash_retry` must be shorter than `claim_splash_timeout`, or the
+claim would never retry; the configuration is refused the same way (the
+retry first), for example ``config.toml:4:22: `claim_splash_retry` (2000
+ms) must be shorter than `claim_splash_timeout` (2000 ms)``. The claim
+re-sends `setMode(a0)` at most `claim_splash_timeout / claim_splash_retry`
+times (20 with the defaults). The defaults come from the replug in #52
+(`docs/hardware-notes.md` item 5): the daemon opened the Keypad at
+20:48:31, its claim still saw `a4` at 20:48:34, and the profile was
+painted at 20:48:41, so the splash lasted at most about ten seconds from
+the open. The timeout covers that window; the retry keeps the delay
+after the splash ends under half a second and the keep-alive pings
+(period 1000 ms) on time between two retries. A retry above
+`keep_alive_timeout` would let the keep-alive run out during the wait,
+because the claim pings only between two retries.
 
 ### 6.2 Window/context detection
 
@@ -1311,9 +1347,11 @@ As built (pre-alpha, `keyvo_core::socket` and `keyvo_daemon::socket`):
   A failed `accept` waits `[timing].accept_backoff` (§6.1). The client
   side reads daemon lines up to 1 MiB (`keyvo_client::client::LINE_LIMIT`).
 - The clients (`keyvo_client::open`, shared by `keyvo ctl` and the app)
-  send nothing before two checks pass: the socket's directory is private
-  to the user (a `0755` directory is refused) and the listening process
-  runs as the user (`SO_PEERCRED`).
+  send nothing before three checks pass: the user's uid is mapped in
+  the client's user namespace (a client running as the overflow uid is
+  refused), the socket's directory is private to the user (a `0755`
+  directory is refused) and the listening process runs as the user
+  (`SO_PEERCRED`, uid only; a sandboxed client sees the daemon as pid 0).
 - `keyvo ctl <command> [json]` prints the response line and exits 1 on an
   error. `keyvo ctl subscribe` prints every later line. The socket is
   `--socket`, else `$KEYVO_SOCKET`, else the default.
@@ -1761,6 +1799,20 @@ and every write of the screen.
   the mirror is a note and the layer origin says it is known once a Keypad
   reported its geometry.
 
+**As built (mock dev server).** `just app-dev` (a host recipe) serves the
+app on the Vite dev server at `http://localhost:1420` with
+`VITE_KEYVO_MOCK=1`, for a host browser: `app/src/main.ts` then mounts
+the app with the in-memory clients of `app/src/lib/mock/` instead of the
+Tauri shell's. The mock reads its data in place: the connected `status`
+reply and the `trace` events of `tests/protocol-fixtures/socket/`, the
+three profiles of `contrib/profiles/` (edits stay in memory until a
+reload), and the PNG snapshots of `crates/keyvo-core/tests/snapshots/` as
+tiles. Its focus cycles Konsole, VS Code and a window no profile matches
+every ten seconds, and its subscription sends a fixture trace entry every
+two seconds. `?theme=` picks one of the four measured token sets of
+`docs/design/gui-ux.md` §7, `?mock-error=unreachable` makes `status`
+fail. A build without the variable contains no mock module.
+
 ---
 
 ## 11. Windows plugin (`plugins/logi/`, M5)
@@ -1937,6 +1989,20 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha slice 17a (2026-10-26)**: §5.4 the plug-in splash
+  (`a4` after `setMode(a0)` for a few seconds after a plug-in, #52) and
+  the claim's wait for it; §6.1 `claim_splash_retry` (500 ms) and
+  `claim_splash_timeout` (10000 ms), the retry below the timeout (#111).
+- **v0.3, pre-alpha GUI design pass slice 2 (2026-10-26)**: §10 the mock
+  dev server as built: `just app-dev` serves the app against an in-memory
+  mock of the daemon fed by the socket fixtures, the example profiles and
+  the renderer snapshots, with four token sets measured from Breeze and
+  libadwaita (`docs/design/gui-ux.md` §7) (#105).
+- **v0.3, pre-alpha GUI design pass slice 1 (2026-10-26)**: §8 the
+  client's peer check reads the raw `ucred` and decides on the uid alone,
+  so a client in a Flatpak sandbox, which sees the daemon as pid 0,
+  reaches the host daemon; a client whose user namespace does not map
+  the user (it runs as the overflow uid) refuses the socket (#104).
 - **v0.3, pre-alpha slice G3 (2026-10-26)**: §10 Profiles as built: list
   column by priority with the global profile pinned and the active one
   marked, profile header with name and accent written round-trip (shell

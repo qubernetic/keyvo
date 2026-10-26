@@ -1,0 +1,30 @@
+# The claim's switch to a0 while the plug-in splash runs (spec §5.4): it
+# replaces steps 6 and 7 of display-claim.txt. setMode(a0) is echoed, but
+# getMode reports a4 (SplashBright) twice; the third setMode(a0) takes, the
+# mode-change event announcing a0 arrives before the getMode reply, as in
+# step 7. All requests use swid 0xe.
+#
+# Not captured: no raw capture of a replug exists. The a4 answer is
+# constructed from the owner's daemon log of an unplug and replug
+# (qubernetic/keyvo#52, finding 2, 2026-10-25, firmware U1 66.00.B0017,
+# commit e4b37d3): "display stayed in mode 0xa4 after setMode(a0)" about
+# three seconds after the plug-in, the profile shown about seven seconds
+# later. The request and reply layout is that of display-reclaim.txt
+# (hcooper 03-options-plus-startup.pcap, frames #1765 to #1773, MIT, see
+# README.md) with the mode byte of the getMode reply set to a4.
+# 1. setMode(a0), getMode -> a4
+> 13 ff 02 4e e0 a0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 4e c0 a0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+> 13 ff 02 5e e0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 5e c0 a4 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 2. after [timing].claim_splash_retry: setMode(a0), getMode -> a4
+> 13 ff 02 4e e0 a0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 4e c0 a0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+> 13 ff 02 5e e0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 5e c0 a4 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 3. the splash is over: setMode(a0), the mode-change event to a0, getMode -> a0
+> 13 ff 02 4e e0 a0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 4e c0 a0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+> 13 ff 02 5e e0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 10 c6 a0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 5e c0 a0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
