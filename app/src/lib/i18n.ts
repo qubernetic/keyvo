@@ -216,6 +216,9 @@ export const messages = {
   "drawer.dryRun": "Dry run: resolved, nothing executed.",
   "drawer.unbound": "Unbound: no layer binds this key on this page.",
 
+  "picker.search": "Search the icons",
+  "picker.noMatch": "No icon matches",
+
   "editor.title": "Key editor",
   "editor.key": "Key {key}",
   "editor.select": "Select a key on the mirror to edit it.",
