@@ -231,11 +231,12 @@
     overflow-wrap: anywhere;
   }
 
+  /* Sentences, so the body size (DESIGN.md "Body"): the 0.85 em label size
+     fell under 12 px on a 10 pt desktop and the detector flagged it. */
   .hint,
   .note {
     margin: 0;
     background: var(--kv-bg);
     color: var(--kv-fg-muted);
-    font-size: 0.85em;
   }
 </style>

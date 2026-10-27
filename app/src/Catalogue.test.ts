@@ -43,6 +43,13 @@ describe("the groups", () => {
     expect(rule).toMatch(/overflow-wrap: anywhere;/);
   });
 
+  it("set the hint and the notes in the body size, as DESIGN.md Body says of notes", () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "Catalogue.svelte"), "utf8");
+    const rule = /\n  \.hint,\n  \.note \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toMatch(/color: var\(--kv-fg-muted\);/);
+    expect(rule).not.toMatch(/font-size/);
+  });
+
   it("show General, System and Apps expanded, each with the reply's entries", () => {
     catalogue();
     expect(screen.getByRole("region", { name: "Actions" })).toBeInTheDocument();
