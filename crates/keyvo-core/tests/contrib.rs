@@ -364,3 +364,21 @@ fn the_desktop_file_and_the_command_start_a_binary_the_manifest_installs() {
     let command = manifest_value(&manifest, "command").unwrap_or_default();
     assert!(installed.contains(command), "{command}");
 }
+
+/// `keyvo` and `keyvo-daemon` (the workspace version), `keyvo-app` (its own
+/// Cargo.toml and tauri.conf.json) and the metainfo's newest release are
+/// one version.
+#[test]
+fn the_three_binaries_and_the_metainfo_report_one_version() {
+    let app: toml::Table = repo_file("app/src-tauri/Cargo.toml").parse().unwrap();
+    assert_eq!(
+        app["package"]["version"].as_str(),
+        Some(keyvo_core::VERSION)
+    );
+    assert_eq!(tauri_conf()["version"], keyvo_core::VERSION);
+    let metainfo = repo_file(&format!("contrib/flatpak/{APP_ID}.metainfo.xml"));
+    assert_eq!(
+        xml_text(&metainfo, "<release version=\"", "\""),
+        Some(keyvo_core::VERSION)
+    );
+}

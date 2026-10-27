@@ -566,7 +566,7 @@ dependencies = [
 
 [[package]]
 name = "keyvo-cli"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -582,7 +582,7 @@ dependencies = [
 
 [[package]]
 name = "keyvo-client"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "keyvo-core",
  "libc",
@@ -595,7 +595,7 @@ dependencies = [
 
 [[package]]
 name = "keyvo-core"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "image",
  "insta",
@@ -612,7 +612,7 @@ dependencies = [
 
 [[package]]
 name = "keyvo-daemon"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -634,7 +634,7 @@ dependencies = [
 
 [[package]]
 name = "keyvo-hid"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "keyvo-core",
  "rustix",
