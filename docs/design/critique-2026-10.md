@@ -382,3 +382,157 @@ help affordances (heuristic 10), the rail with five dead entries (question
 
 A re-run of the critique after slice 6 closes the pass; the score to beat
 is 23/40.
+
+## 10. Re-run (2026-10-27)
+
+The closing pass of #130 on `epic/34-pre-alpha` at `aa8e3aa`, after the
+harden and polish of the Pad and Profiles screens (commits `cb9dad1`,
+`b19296c`, `1956cb4`, `aa8e3aa`) and the slices #108 to #151. Method as in
+the introduction: two independent assessments that did not see each other or this
+file, the LLM review in its own `[LLM]` tab of the mock dev server (#113)
+at 1363 px and 960 px in breeze-dark and breeze-light, the deterministic
+detector as the CLI scan (impeccable 4.8.0, `npx impeccable --json app/src`)
+and the browser overlay served from the local engine on five pages (the Pad
+and Profiles in breeze-dark, breeze-light and adwaita-light, the Pad with
+`?mock-error=unreachable`), the overlays left in a `[Human]` tab.
+
+### Design health score
+
+| # | Heuristic | 10-26 | 10-27 | Key issue now |
+|---|---|---|---|---|
+| 1 | Visibility of system status | 3 | 3 | The pin state is visible only as the missing ", on the pad" suffix of the header dropdown (`Header.svelte:141`); the Profiles editor followed the pad until a row was clicked (fixed the same day: a field taking the focus pins it, `b19296c`). |
+| 2 | Match between system and real world | 3 | 2 | Roadmap milestones in user copy ("arrives with M4a-4 on the roadmap"), one of them permanently visible beside Enabled (fixed: `aa8e3aa` drops it from the visible line; the Coming soon tooltips keep theirs); "Chord", "Exec", "app layer", "Title regex", "higher wins the window"; the drawer's time was 12 h locale while the strip is 24 h (fixed, `aa8e3aa`). |
+| 3 | User control and freedom | 2 | 3 | Key edits have undo and redo; Profiles name and accent writes have none; a catalogue preset writes on click. |
+| 4 | Consistency and standards | 2 | 3 | Two chevron idioms (clip-path triangles beside lucide icons); swatch radius 2 px on Profiles and the theme radius on the tabs; the Profiles write note had no time while the inspector's has (fixed, `aa8e3aa`). |
+| 5 | Error prevention | 2 | 2 | Chord and Command are free text checked for emptiness only; Clear wipes a key in one click; no preview of the write. |
+| 6 | Recognition rather than recall | 2 | 3 | Below 1200 px the catalogue is an 18-option native select without icons, search or drag; the global tabs explain themselves through `title` only. |
+| 7 | Flexibility and efficiency | 3 | 3 | Keyboard map, drag and drop; no bulk edit, move not built. |
+| 8 | Aesthetic and minimalist design | 2 | 3 | `lucide:<name>` echoed under the Icon field; Undo and Redo shown disabled in the empty inspector; 18 catalogue entries open at once in 240 px. |
+| 9 | Recognise, diagnose, recover from errors | 3 | 3 | The unreachable notice names the socket, the command and Retry; a failed exec in the drawer gives the error but no path to the key's file and line. |
+| 10 | Help and documentation | 1 | 2 | The shortcuts drawer and the Coming soon tooltips; no hint for chord syntax, window classes or match rules. |
+| **Total** | | **23/40** | **27/40** | **Acceptable, top of the band; the acceptance criterion of #130 (above 23, no P0, no P1 left) is met after the fixes below** |
+
+Cognitive load: 3 of 8 fail at 1200 px and wider (was 5), 4 below 1200 px
+(was 6). Chunking (three catalogue groups open at once), minimal choices
+(18 catalogue options plus five header controls at the first decision
+point), working memory in the "moved" state (the mirror drops the outline
+by the #143 decision and the sentence is the only anchor); below 1200 px
+also progressive disclosure (the catalogue collapses into one flat select
+and the rail drops its labels).
+
+### Anti-patterns verdict
+
+LLM assessment: passes. No absolute ban is hit: the notice is a full 1 px
+border in the state colour (section 5, P1 of 10-26, closed by #109), no
+gradient, glass, hero metric or card grid, the only floating surface a
+non-modal drawer. The product test passes: a Raycast or VS Code Settings
+user trusts the shell at once, the device drawing with the live tiles is
+the one memorable object. Two spots of vocabulary drift, not slop: the
+hand-made clip-path chevrons beside lucide icons everywhere else
+(`Catalogue.svelte`, `TraceStrip.svelte`), and the raw `result.status`
+words in the drawer (`TraceDrawer.svelte`) outside i18n.
+
+Deterministic scan: the CLI finds nothing in `app/src` (exit 0; 82 files by
+regex only, the element rules need a parsed page). The browser overlay
+reports four findings per page, the same across pages: `single-font` on
+the body (the system font by design, false positive), `flat-type-hierarchy`
+(10 to 16 px, ratio 1.6:1: DESIGN.md's five sizes, two weights, by design),
+`cramped-padding` on inline spans, paragraphs and the trace strip's entry
+buttons (0 px vertical padding on elements that centre their text or are
+inline: artefacts), and `tiny-text` on the catalogue's hint at 11.3 px
+under the 10 pt Breeze base. The last one was real: the hint and the notes
+of the catalogue were set in the 0.85 em label size although they are
+sentences; `1956cb4` sets them in the body size as DESIGN.md "Body" says.
+The light themes report no `low-contrast` (the 10-26 P1, closed by #144).
+
+### What's working
+
+- The device drawing with the live tiles (`Device.svelte`, `Mirror.svelte`)
+  carries the hierarchy on its own and makes the Profiles thumbnails
+  legible at a glance.
+- The unreachable path is a model notice: cause, socket path, the command
+  to run and Retry in one line (`Pad.svelte`).
+- The theme bridge holds: breeze-light reads as native, tokens only, labels
+  muted and values plain, 48ch forms, keyboard and ARIA coverage on every
+  control.
+
+### Priority issues and their disposition
+
+1. **[P1] Three notions of "current profile" disagree.** The header
+   dropdown names the pinned profile, the Profiles editor followed the pad
+   until a row was clicked, the pad shows a third; the pin has no visible
+   control. Fixed in part the same day: a field of the Profiles editor
+   taking the focus pins the selection (`b19296c`, spec §10). The visible
+   pin control in the header and the Profiles question are #164.
+2. **[P1] Roadmap milestones in user copy.** Fixed in part: the
+   permanently visible Enabled hint reads "Switching a profile off is not
+   built yet." (`aa8e3aa`); the Coming soon tooltips keep their milestone
+   sentence by the gui-ux.md decision of #100 (the audience is developers
+   and the roadmap is public). No P1 remains here.
+3. **[P1] The moved state loses the user's place.** The reviewer asks for
+   a dimmed outline on the pinned key while the pad shows another page;
+   the owner decided the opposite in #143 (no selection outline while the
+   pad is away), so that part is declined. The rest, Follow as the leading
+   control of the line and a "pinned" mark on the tab, is #164.
+4. **[P2] Unreachable leaves the drawing column empty and the catalogue
+   enabled.** The entries now read disabled and do not drag while no daemon
+   is connected (`aa8e3aa`); the device drawn with empty wells is #165.
+5. **[P2] Two scroll regions on Profiles, the catalogue taller than the
+   window.** #166: one scroll owner per screen, System and Apps collapsed
+   by default, "Edit keys on the Pad" in the Pages heading row.
+
+Heuristics 5, 6 and 10 (chord validation before the write, field hints, the
+catalogue below 1200 px) are #167.
+
+### Persona red flags
+
+- Alex (power user): the Profiles selection hijacked by focus changes
+  (fixed); `/` focuses nothing below 1200 px (#167); the pin set in the
+  header has no visible state (#164).
+- Jordan and the junior developer of PRODUCT.md: "Chord" and "Exec" as
+  action names, "Window class org.kde.konsole" with no hint how to find a
+  class, "higher wins the window", the "global" badge on a tile, the colour
+  field asking for `#rrggbb` (#167); after a catalogue preset is clicked
+  the write happens at once and the only confirmation is the muted result
+  line, so the first success can go unnoticed (question 2 below).
+- Sam (screen reader, low vision): structure is strong (roles, labels,
+  status regions, focus rings). In breeze-light the selected profile row
+  differs from its neighbours by a 1 px border and a 4 percent surface
+  shift; the mirror's focus ring is `--kv-fg` while every other control
+  uses the accent (the #141 decision for the device: the tile is part of
+  the pad, not a control of the app).
+- Riley (stress): long names and paths are handled (the harden commit
+  `cb9dad1`: a long profile name wraps in the heading, a long page name is
+  cut with an ellipsis and carried in the title, a long catalogue entry
+  wraps; every physical side property is logical now, for RTL). The
+  Profiles write note carries the time now; the drawer covers the header's
+  selectors while open (`Drawer.svelte`), so the pin cannot change while
+  reading a trace.
+
+### Minor observations
+
+- The mock's tiles all read "Commit" while the inspector shows another
+  label: the mock renders fixed snapshots, not the key; the product's
+  mirror is rendered by keyvo-core (the mirror-is-truth principle holds
+  on the runtime, which the owner's User test covers).
+- `<code>keyvo-daemon</code>` in the unreachable notice is the one
+  monospace run in the app; DESIGN.md keeps paths and ids in the body
+  font. Acceptable for a command line.
+- The header's profile select shows an empty option while unreachable.
+- The "+" buttons (profiles, pages) are a bare glyph with the name only in
+  `aria-label`.
+
+### Questions to consider
+
+1. Should Profiles ever follow the pad after the first paint, or is "on
+   the pad" in the list enough? (#164 decides.)
+2. Is write-on-change with undo the right model for the junior, or does a
+   fixed "Saved to konsole.toml" place (the header's right side) buy the
+   confidence the form line does not?
+3. Should the catalogue open with General only, and should the sub-1200
+   fallback be a popover with icons and search instead of a native select?
+   (#166 and #167.)
+4. Does the trace drawer need "open the key" (pin the inspector to the
+   entry's key) to honour P4, since the drawer knows profile, page and key?
+5. Should the global page tabs be labelled "Global: general" instead of
+   relying on the dashed rim and a title tooltip?

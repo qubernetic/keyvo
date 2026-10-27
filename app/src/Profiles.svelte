@@ -14,6 +14,7 @@
   import type { Daemon, Tile } from "./lib/daemon";
   import { describe, problemOf, type Problem } from "./lib/editor";
   import { t, type MessageKey } from "./lib/i18n";
+  import { clock } from "./lib/pad";
   import type { Pin } from "./lib/pin";
   import {
     fromHeaderForm,
@@ -98,7 +99,9 @@
 
   let templating = $state(false);
 
-  /** The profile the user picked in the list. */
+  /** The profile the user picked in the list, or started editing: a field
+   * taking the focus keeps the profile under the user when the pad moves
+   * on (critique P1 of #106, the editor pinned to its target). */
   let chosen: string | undefined = $state();
   /** The selected profile: the picked one, else the pad's one, else the
    * global one, while the list has it. */
@@ -169,7 +172,7 @@
         const edited = await files.editProfile(at, result.fields);
         if (at === id) header = { path: edited.path, fields: edited.fields };
         problem = undefined;
-        note = t("profiles.wrote", { id: at, path: edited.path });
+        note = t("profiles.wrote", { id: at, path: edited.path, time: clock(Date.now()) });
         edits++;
       } catch (error) {
         problem = problemOf(error);
@@ -308,7 +311,11 @@
     </ul>
   </section>
 
-  <section class={["editor", { scroll: !stacked }]} aria-labelledby={`kv-heading-${uid}`}>
+  <section
+    class={["editor", { scroll: !stacked }]}
+    aria-labelledby={`kv-heading-${uid}`}
+    onfocusin={() => (chosen = id)}
+  >
     {#if selected === undefined}
       {#if !loading}
         <p class="note">{t("profiles.select")}</p>
@@ -496,7 +503,7 @@
      takes the theme's thin scroll bar, so no control sits under it. */
   .scroll {
     min-height: 0;
-    padding-right: 8px;
+    padding-inline-end: 8px;
     overflow: auto;
     scrollbar-gutter: stable;
     scrollbar-width: thin;
@@ -541,7 +548,7 @@
     align-items: center;
     gap: 8px;
     width: 100%;
-    text-align: left;
+    text-align: start;
   }
 
   .profile[aria-current="true"] {
@@ -566,7 +573,7 @@
   }
 
   .mark {
-    margin-left: auto;
+    margin-inline-start: auto;
     background: var(--kv-bg-alt);
     color: var(--kv-fg-muted);
     font-size: 0.85em;
@@ -591,6 +598,18 @@
      end of the content, not at the column's edge. */
   .row {
     max-width: 48ch;
+  }
+
+  /* A name without spaces breaks anywhere rather than pushing the button
+     out of the row, and the button keeps its one line beside it. */
+  .heading h2 {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .heading > button {
+    flex: none;
+    white-space: nowrap;
   }
 
   /* DESIGN.md "Inputs / Fields", as the Inspector: each label above its
@@ -632,7 +651,7 @@
   }
 
   .hint {
-    margin-left: 8px;
+    margin-inline-start: 8px;
     background: var(--kv-bg);
     color: var(--kv-fg-muted);
   }

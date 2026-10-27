@@ -38,7 +38,10 @@ describe("TraceDrawer", () => {
     const { dialog } = drawer(nth(ENTRIES, 0));
     expect(sections(dialog)).toEqual(["Trigger", "Context snapshot", "Resolved action", "Result"]);
     const trigger = section(dialog, "Trigger");
-    expect(value(trigger, "Time")).toBe(new Date(1792929600250).toLocaleString());
+    // The date and a 24 h time, as the strip's times are 24 h.
+    expect(value(trigger, "Time")).toBe(
+      new Date(1792929600250).toLocaleString(undefined, { hourCycle: "h23" }),
+    );
     expect(value(trigger, "Key")).toBe("4");
     expect(value(trigger, "Press")).toBe("short");
     expect(value(trigger, "Source")).toBe("the device");

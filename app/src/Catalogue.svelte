@@ -65,7 +65,7 @@
   }
 
   function assign(entry: CatalogueEntry) {
-    if (selected !== undefined) onassign(entry.key);
+    if (connected && selected !== undefined) onassign(entry.key);
   }
 
   /** `/` to the search, unless a field has the focus: there it is typed. */
@@ -124,10 +124,13 @@
               <span class="icon" aria-hidden="true">
                 {#if svg !== undefined}{@html svg}{/if}
               </span>
+              <!-- Without a daemon there is nothing to assign to or drop on:
+                   the entries read disabled and do not drag. -->
               <button
                 type="button"
                 class="entry"
-                draggable="true"
+                draggable={connected}
+                aria-disabled={connected ? undefined : "true"}
                 aria-label={entry.name}
                 aria-describedby={ids.hint}
                 ondragstart={(event) => dragstart(event, entry)}
@@ -176,7 +179,7 @@
     background: var(--kv-bg);
     color: var(--kv-fg);
     font-weight: 600;
-    text-align: left;
+    text-align: start;
   }
 
   /* A filled triangle in the body colour: right while collapsed, down open. */
@@ -220,7 +223,10 @@
     height: 100%;
   }
 
+  /* A long name wraps inside the column instead of widening it. */
   .entry {
+    min-width: 0;
+    overflow-wrap: anywhere;
     cursor: grab;
   }
 
@@ -228,11 +234,12 @@
     overflow-wrap: anywhere;
   }
 
+  /* Sentences, so the body size (DESIGN.md "Body"): the 0.85 em label size
+     fell under 12 px on a 10 pt desktop and the detector flagged it. */
   .hint,
   .note {
     margin: 0;
     background: var(--kv-bg);
     color: var(--kv-fg-muted);
-    font-size: 0.85em;
   }
 </style>

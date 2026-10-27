@@ -234,6 +234,31 @@ describe("the list column", () => {
     expect(fake.files.profile).toHaveBeenLastCalledWith("code");
   });
 
+  it("follows the pad until the user picks or edits, then keeps that profile", async () => {
+    const fake = files();
+    const view = render(Profiles, {
+      props: {
+        daemon: daemon(),
+        files: fake.files,
+        columns: layout(1200),
+        view: VIEW,
+        geometry: GEOMETRY,
+        onedit: vi.fn((_pin: Pin) => {}),
+      },
+    });
+    await screen.findByRole("heading", { level: 2, name: "Terminal" });
+    // The pad moves on: the selection follows it.
+    await view.rerender({ view: { ...VIEW, profile: "claude" } });
+    await screen.findByRole("heading", { level: 2, name: "Claude Code" });
+    // A field taking the focus is the user at work on this profile: the
+    // pad moving on changes nothing under them.
+    await fireEvent.focusIn(field("Name"));
+    await view.rerender({ view: VIEW });
+    await waitFor(() => expect(fake.files.profile).toHaveBeenCalled());
+    expect(screen.getByRole("heading", { level: 2, name: "Claude Code" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2, name: "Terminal" })).toBeNull();
+  });
+
   it("selects the global profile when the pad shows none", async () => {
     mount({ view: { profile: "gone", page: 1, mode: "auto", index: 1 } });
     await listed();
@@ -336,7 +361,7 @@ describe("the profile header", () => {
     // Every profile is on until the schema can switch one off.
     const enabled = within(form).getByText("Enabled").parentElement as HTMLElement;
     expect(enabled).toHaveTextContent(
-      "Enabled On Switching a profile off arrives with M4a-4 on the roadmap.",
+      "Enabled On Switching a profile off is not built yet.",
     );
     expect(within(enabled).queryByRole("button")).toBeNull();
     expect(within(enabled).queryByRole("switch")).toBeNull();
@@ -350,6 +375,17 @@ describe("the profile header", () => {
     const add = within(rules()).getByRole("button", { name: "Add a rule" });
     expect(add.closest(".row")?.querySelector("h3")).toHaveTextContent("Match rules");
     expect(rule(".row")).toMatch(/max-width: 48ch;/);
+  });
+
+  it("wraps a long name in the heading and keeps Open in editor on one line beside it", async () => {
+    mount();
+    await screen.findByRole("heading", { level: 2, name: "Terminal" });
+    // A name without spaces breaks anywhere instead of pushing the button
+    // out of the 48ch row, and the button never wraps into three lines.
+    expect(rule(".heading h2")).toMatch(/min-width: 0;/);
+    expect(rule(".heading h2")).toMatch(/overflow-wrap: anywhere;/);
+    expect(rule(".heading > button")).toMatch(/flex: none;/);
+    expect(rule(".heading > button")).toMatch(/white-space: nowrap;/);
   });
 
   it("shows the accent as a swatch beside its text", async () => {
@@ -370,8 +406,10 @@ describe("the profile header", () => {
       await waitFor(() => expect(fake.file).toBe(editorFile(step.file)));
     }
     expect(fake.files.editProfile).toHaveBeenCalledTimes(STEPS.steps.length);
+    // The note carries the time, as the inspector's does, so a second
+    // write of the same value is seen to have happened.
     expect(screen.getByRole("status", { name: "Profile result" })).toHaveTextContent(
-      `Wrote the header of terminal to ${CONFIG}/${STEPS.path}`,
+      new RegExp(`^Wrote the header of terminal to ${CONFIG}/${STEPS.path} at \\d\\d:\\d\\d:\\d\\d$`),
     );
     // The list follows the write.
     await waitFor(() =>

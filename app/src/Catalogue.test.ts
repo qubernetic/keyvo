@@ -3,6 +3,10 @@
 // entry draggable and assignable to the selected tile, the search across
 // groups, names and variant names and its empty state, why presets are
 // missing, and `/` to the search.
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { describe, expect, it, vi } from "vitest";
 
@@ -13,7 +17,13 @@ import { nth, recipeReplies } from "./lib/fixtures";
 const ENTRIES = catalogueOf(nth(recipeReplies(), 0).recipes);
 
 function catalogue(
-  props: { selected?: number; active?: boolean; problems?: string[]; unread?: string } = {},
+  props: {
+    selected?: number;
+    active?: boolean;
+    connected?: boolean;
+    problems?: string[];
+    unread?: string;
+  } = {},
 ) {
   const onassign = vi.fn<(entry: string) => void>();
   const result = render(Catalogue, { props: { entries: ENTRIES, onassign, ...props } });
@@ -32,6 +42,20 @@ function entries(name: string): string[] {
 }
 
 describe("the groups", () => {
+  it("let a long entry name wrap inside the column instead of widening it", () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "Catalogue.svelte"), "utf8");
+    const rule = /\n  \.entry \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toMatch(/min-width: 0;/);
+    expect(rule).toMatch(/overflow-wrap: anywhere;/);
+  });
+
+  it("set the hint and the notes in the body size, as DESIGN.md Body says of notes", () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "Catalogue.svelte"), "utf8");
+    const rule = /\n  \.hint,\n  \.note \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toMatch(/color: var\(--kv-fg-muted\);/);
+    expect(rule).not.toMatch(/font-size/);
+  });
+
   it("show General, System and Apps expanded, each with the reply's entries", () => {
     catalogue();
     expect(screen.getByRole("region", { name: "Actions" })).toBeInTheDocument();
@@ -100,6 +124,16 @@ describe("the entries", () => {
     // marked disabled; the hint says what a click needs.
     expect(exec).not.toHaveAttribute("aria-disabled");
     expect(exec).toHaveAccessibleDescription("Select a key to assign it, or drag it onto a key.");
+    await fireEvent.click(exec);
+    expect(onassign).not.toHaveBeenCalled();
+  });
+
+  it("marks every entry disabled while no daemon is connected", async () => {
+    const { onassign } = catalogue({ connected: false, selected: 3 });
+    const exec = screen.getByRole("button", { name: "Exec" });
+    expect(exec).toHaveAttribute("aria-disabled", "true");
+    expect(exec).toHaveAttribute("draggable", "false");
+    expect(exec).toHaveAccessibleDescription("Connect the daemon to assign actions.");
     await fireEvent.click(exec);
     expect(onassign).not.toHaveBeenCalled();
   });

@@ -63,7 +63,7 @@
   .drawer {
     position: fixed;
     top: 0;
-    right: 0;
+    inset-inline-end: 0;
     bottom: 0;
     z-index: 2;
     box-sizing: border-box;
@@ -71,7 +71,7 @@
     max-width: 100%;
     padding: 16px;
     overflow: auto;
-    border-left: 1px solid var(--kv-fg-muted);
+    border-inline-start: 1px solid var(--kv-fg-muted);
     background: var(--kv-bg-alt);
     color: var(--kv-fg);
   }

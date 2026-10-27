@@ -2,6 +2,10 @@
 // the page list the pad walks, the global pages at index 0 and below muted
 // and marked as the global profile's, then the shown profile's pages by
 // name, the "+" not built yet after them, the accent at the right.
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { describe, expect, it, vi } from "vitest";
 
@@ -57,7 +61,20 @@ describe("the page tabs", () => {
     ]);
     expect(all.map((tab) => tab.classList.contains("global"))).toEqual([true, true, false, false, false]);
     expect(all[0]).toHaveAttribute("title", "apps, a page of Global");
-    expect(all[2]).not.toHaveAttribute("title");
+    expect(all[2]).toHaveAttribute("title", "context");
+  });
+
+  it("truncate a long page name with an ellipsis and keep the whole name in the title", () => {
+    const name = "a page with a name so long that it would push the strip past the drawing";
+    const { list } = tabs({ ...VSCODE, pages: ["context", name] }, 1);
+    const tab = within(list).getByRole("tab", { name });
+    expect(tab).toHaveAttribute("title", name);
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "PageTabs.svelte"), "utf8");
+    const rule = /\n  \[role="tab"\] \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toMatch(/max-width: 16ch;/);
+    expect(rule).toMatch(/overflow: hidden;/);
+    expect(rule).toMatch(/text-overflow: ellipsis;/);
+    expect(rule).toMatch(/white-space: nowrap;/);
   });
 
   it("select the tab at the given index", () => {
