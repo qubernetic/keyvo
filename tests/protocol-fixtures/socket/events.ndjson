@@ -14,5 +14,8 @@
 {"v":1,"event":"trace","entry":{"timestamp_ms":1792929600250,"trigger":{"press":"long","simulated":true},"profile":"demo","page":1,"key":5,"layer":"app","action":{"type":"exec","cmd":"cargo test"},"result":{"status":"dry_run"}}}
 {"v":1,"event":"trace","entry":{"timestamp_ms":1792929600250,"trigger":{"press":"short","simulated":false},"profile":"demo","page":2,"key":1,"action":null,"result":{"status":"unbound"}}}
 {"v":1,"event":"trace","entry":{"timestamp_ms":1792929600250,"trigger":{"press":"short","simulated":false},"profile":"global","page":3,"key":2,"layer":"global","action":{"type":"launch","cmd":"flatpak run org.kde.kcalc"},"result":{"status":"started","pid":4711}}}
+{"v":1,"event":"trace","entry":{"timestamp_ms":1792929600250,"trigger":{"press":"short","simulated":false},"profile":"demo","page":1,"key":5,"action":null,"result":{"status":"blocked","reason":"session locked"}}}
+{"v":1,"event":"session","locked":true}
+{"v":1,"event":"session","locked":false}
 {"v":1,"event":"config","reloaded":true}
 {"v":1,"event":"config","reloaded":false,"error":"profiles/global.toml:8:9: invalid type: integer `7`, expected a string"}

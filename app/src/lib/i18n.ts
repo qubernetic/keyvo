@@ -176,6 +176,7 @@ export const messages = {
   "trace.exited": "exited {code} after {ms} ms",
   "trace.started": "started, pid {pid}",
   "trace.failed": "failed: {error}",
+  "trace.blocked": "blocked, {reason}",
 
   "drawer.debug": "Debug log",
   "soon.debug": "The debug log shows HID-level events once the daemon sends them.",
@@ -211,6 +212,7 @@ export const messages = {
   "drawer.block": "Block reason",
   "drawer.dryRun": "Dry run: resolved, nothing executed.",
   "drawer.unbound": "Unbound: no layer binds this key on this page.",
+  "drawer.blocked": "Blocked: {reason}. Nothing was resolved or run.",
 
   "inspector.title": "Inspector",
   "inspector.select": "Select a key to edit it.",

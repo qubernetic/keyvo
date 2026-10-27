@@ -146,6 +146,7 @@ export function apply(state: PadState, update: Update, now = Date.now()): PadSta
         page: event.page,
         mode: event.mode,
         index: event.index,
+        locked: event.locked,
       });
     case "device": {
       const { event: _, ...device } = event;
@@ -171,6 +172,8 @@ export function apply(state: PadState, update: Update, now = Date.now()): PadSta
         configError: event.reloaded ? undefined : event.error,
         reloads: state.reloads + 1,
       };
+    case "session":
+      return state.view === undefined ? state : { ...state, view: { ...state.view, locked: event.locked } };
   }
 }
 
@@ -233,6 +236,8 @@ function result(entry: TraceRecord): string {
       return t("trace.started", { pid: String(result.pid) });
     case "failed":
       return t("trace.failed", { error: String(result.error) });
+    case "blocked":
+      return t("trace.blocked", { reason: String(result.reason) });
     default:
       return result.status;
   }

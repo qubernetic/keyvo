@@ -99,9 +99,20 @@ describe("apply", () => {
         page: event.page,
         mode: event.mode,
         index: event.index,
+        locked: event.locked,
       });
       expect(typeof state.view?.index).toBe("number");
     }
+  });
+
+  it("a session event locks and unlocks the view it knows", () => {
+    const lock: Event = { event: "session", locked: true };
+    expect(apply(initial(), { kind: "event", event: lock }).view).toBeUndefined();
+    const locked = apply(fromStatus(STATUS), { kind: "event", event: lock });
+    expect(locked.view).toEqual({ ...fromStatus(STATUS).view, locked: true });
+    const unlocked = apply(locked, { kind: "event", event: { event: "session", locked: false } });
+    expect(unlocked.view?.locked).toBe(false);
+    expect(unlocked.owner).toBe(locked.owner);
   });
 
   it("a connected device event brings its geometry, a lost one keeps the last", () => {
@@ -237,6 +248,7 @@ describe("summarize", () => {
       "Key 5 long, simulated, app layer: exec cargo test, dry run, nothing executed",
       "Key 1: unbound",
       "Key 2, global layer: launch flatpak run org.kde.kcalc, started, pid 4711",
+      "Key 5: blocked, session locked",
     ]);
   });
 

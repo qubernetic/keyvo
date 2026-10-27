@@ -209,6 +209,46 @@ fn a_switch_is_one_event_per_changed_class() {
 }
 
 #[test]
+fn a_lock_or_unlock_is_a_session_event() {
+    let before = View {
+        profile: "global".into(),
+        page: 1,
+        mode: Mode::Auto,
+        index: 1,
+        locked: false,
+    };
+    let locked = View {
+        locked: true,
+        ..before.clone()
+    };
+    assert_eq!(
+        Event::switched(&before, &locked),
+        [Event::Session { locked: true }]
+    );
+    assert_eq!(
+        Event::switched(&locked, &before),
+        [Event::Session { locked: false }]
+    );
+    // A profile shown at the unlock: its event carries the whole view.
+    let other = View {
+        profile: "terminal".into(),
+        ..before.clone()
+    };
+    assert_eq!(
+        Event::switched(&locked, &other),
+        [
+            Event::Profile(other.clone()),
+            Event::Session { locked: false }
+        ]
+    );
+    assert_eq!(Event::Session { locked: true }.class(), EventClass::Session);
+    assert_eq!(
+        json(&Event::Session { locked: true }.to_line()),
+        json(r#"{"v":1,"event":"session","locked":true}"#)
+    );
+}
+
+#[test]
 fn every_event_round_trips_its_fixture() {
     let mut classes = Vec::new();
     for line in lines(fixture!("events.ndjson")) {

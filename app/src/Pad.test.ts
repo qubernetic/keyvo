@@ -577,6 +577,7 @@ describe("the trace strip", () => {
     await fireEvent.click(within(strip).getByRole("button", { name: t("trace.expand") }));
     const items = within(screen.getByRole("list", { name: "Recent events" })).getAllByRole("listitem");
     expect(items.map((item) => item.textContent?.trim())).toEqual([
+      expect.stringContaining("Key 5: blocked, session locked"),
       expect.stringContaining("Key 2, global layer: launch flatpak run org.kde.kcalc, started, pid 4711"),
       expect.stringContaining("Key 1: unbound"),
       expect.stringContaining("Key 5 long, simulated, app layer: exec cargo test, dry run, nothing executed"),

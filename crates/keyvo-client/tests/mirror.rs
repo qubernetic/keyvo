@@ -122,6 +122,20 @@ fn every_fixture_event_lands_in_the_mirror() {
 }
 
 #[test]
+fn a_session_event_locks_and_unlocks_the_known_view() {
+    let mut mirror = Mirror::new(10);
+    let locked = Event::Session { locked: true };
+    assert!(!mirror.apply(&locked), "no view to lock yet");
+    assert_eq!(mirror.view(), None);
+    mirror.answer(&reply(2));
+    assert!(mirror.apply(&locked));
+    assert!(mirror.view().unwrap().locked);
+    assert!(!mirror.apply(&locked));
+    assert!(mirror.apply(&Event::Session { locked: false }));
+    assert_eq!(mirror.view(), Some(&view("global", 1, 1, Mode::Auto)));
+}
+
+#[test]
 fn a_held_context_holds_the_window_reported_before_it() {
     let mut mirror = Mirror::new(10);
     let events = events();

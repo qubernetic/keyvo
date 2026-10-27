@@ -15,7 +15,8 @@ export type EventClass =
   | "device"
   | "context"
   | "trace"
-  | "config";
+  | "config"
+  | "session";
 
 export const EVENT_CLASSES: readonly EventClass[] = [
   "key",
@@ -26,6 +27,7 @@ export const EVENT_CLASSES: readonly EventClass[] = [
   "context",
   "trace",
   "config",
+  "session",
 ];
 
 export type Mode = "auto" | "manual";
@@ -191,7 +193,8 @@ export type Event =
   | ({ event: "device" } & DeviceStatus)
   | ({ event: "context" } & Context)
   | { event: "trace"; entry: TraceRecord }
-  | { event: "config"; reloaded: boolean; error?: string };
+  | { event: "config"; reloaded: boolean; error?: string }
+  | { event: "session"; locked: boolean };
 
 /** A line from the daemon. */
 export type ServerMessage =

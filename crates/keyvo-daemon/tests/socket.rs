@@ -645,7 +645,7 @@ async fn device_key_and_failed_reload_events_reach_a_subscriber_of_everything() 
     let running = Running::start().await;
     let mut subscriber = running.client().await;
     let response = subscriber.ask(r#"{"v":1,"cmd":"subscribe"}"#).await;
-    assert_eq!(response["result"]["events"].as_array().unwrap().len(), 8);
+    assert_eq!(response["result"]["events"].as_array().unwrap().len(), 9);
 
     running.pad.hold(&[5]);
     assert_eq!(

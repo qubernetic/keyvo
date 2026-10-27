@@ -126,7 +126,7 @@ fn follow_subscribes_to_every_class_with_the_replay() {
             "v": 1,
             "id": 1,
             "cmd": "subscribe",
-            "events": ["key", "profile", "page", "mode", "device", "context", "trace", "config"],
+            "events": ["key", "profile", "page", "mode", "device", "context", "trace", "config", "session"],
             "replay": 20,
         })
     );

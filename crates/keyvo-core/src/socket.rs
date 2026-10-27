@@ -523,11 +523,13 @@ pub enum EventClass {
     Trace,
     /// A configuration reload.
     Config,
+    /// The session was locked or unlocked.
+    Session,
 }
 
 impl EventClass {
     /// Every class, in protocol order.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Key,
         Self::Profile,
         Self::Page,
@@ -536,6 +538,7 @@ impl EventClass {
         Self::Context,
         Self::Trace,
         Self::Config,
+        Self::Session,
     ];
 }
 
@@ -568,6 +571,12 @@ pub enum Event {
     },
     /// The configuration was reloaded, or did not load.
     Config(ConfigStatus),
+    /// The session was locked or unlocked: while locked the pad shows the
+    /// lock page and blocks every press.
+    Session {
+        /// The session is locked now.
+        locked: bool,
+    },
 }
 
 impl Event {
@@ -583,11 +592,13 @@ impl Event {
             Self::Context(_) => EventClass::Context,
             Self::Trace { .. } => EventClass::Trace,
             Self::Config(_) => EventClass::Config,
+            Self::Session { .. } => EventClass::Session,
         }
     }
 
     /// The events of a change from `before` to `after`: one per changed
-    /// class, each with the whole new view.
+    /// class, the view classes each with the whole new view, a lock or
+    /// unlock as `session` last.
     #[must_use]
     pub fn switched(before: &View, after: &View) -> Vec<Self> {
         let mut events = Vec::new();
@@ -599,6 +610,11 @@ impl Event {
         }
         if before.mode != after.mode {
             events.push(Self::Mode(after.clone()));
+        }
+        if before.locked != after.locked {
+            events.push(Self::Session {
+                locked: after.locked,
+            });
         }
         events
     }
