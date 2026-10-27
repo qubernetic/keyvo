@@ -9,13 +9,10 @@ const files = import.meta.glob<string>("../../../crates/keyvo-core/assets/lucide
   eager: true,
 });
 
-/** The bundled markup by icon name. A file without an `<svg>` keeps an old
- * lucide name the renderer maps to its new one (keyvo_core::render::icon,
- * LUCIDE_ALIASES); the picker offers the new name only. */
+/** The bundled markup by icon name: the whole lucide set, its old names
+ * left to the renderer (keyvo_core::render::icon, LUCIDE_ALIASES). */
 const MARKUP = new Map(
-  Object.entries(files)
-    .filter(([, svg]) => svg.includes("<svg"))
-    .map(([path, svg]) => [path.slice(path.lastIndexOf("/") + 1, -".svg".length), svg]),
+  Object.entries(files).map(([path, svg]) => [path.slice(path.lastIndexOf("/") + 1, -".svg".length), svg]),
 );
 
 /** The names of the tile icons, sorted. */

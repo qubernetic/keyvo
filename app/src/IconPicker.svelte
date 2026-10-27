@@ -1,7 +1,9 @@
 <script lang="ts">
   // The icon picker of the inspector (#108 component breakdown): a
   // combobox over the tile icons keyvo-core bundles (lib/tileIcons.ts),
-  // each row with its glyph and name. Typing filters, the arrows move,
+  // each row with its glyph and name. Typing filters; the first SHOWN
+  // matches are rows and a line counts the rest (the whole lucide set
+  // inlined would slow the list down). The arrows move over the rows,
   // Enter or a click picks, Escape closes; the pick is written as
   // `lucide:<name>`, and an emptied field removes the icon. A value the
   // picker does not bundle stays as written until the user picks.
@@ -40,13 +42,17 @@
     query = shownOf(value);
   });
 
+  /** How many matches the list shows as rows. */
+  const SHOWN = 60;
+
   const matches = $derived.by(() => {
     const text = query.trim().toLowerCase();
     // The list opened on the shown name lists everything.
     if (text === "" || text === shownOf(value).toLowerCase()) return TILE_ICONS;
     return TILE_ICONS.filter((name) => name.includes(text));
   });
-  const activeName = $derived(open ? matches[active] : undefined);
+  const rows = $derived(matches.slice(0, SHOWN));
+  const activeName = $derived(open ? rows[active] : undefined);
 
   function optionId(name: string): string {
     return `kv-icon-${uid}-${name}`;
@@ -64,7 +70,7 @@
   }
 
   function move(step: number) {
-    const count = matches.length;
+    const count = rows.length;
     if (!open || active < 0) {
       open = true;
       active = step > 0 ? 0 : count - 1;
@@ -127,24 +133,29 @@
     {#if matches.length === 0}
       <p class="none">{t("picker.noMatch")}</p>
     {:else}
-      <ul id={`kv-icons-${uid}`} role="listbox" aria-label={label}>
-        {#each matches as name, index (name)}
-          <!-- The keys reach the rows through the input's
-               aria-activedescendant (the combobox pattern); a row only
-               takes the pointer. -->
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <li
-            id={optionId(name)}
-            role="option"
-            aria-selected={index === active}
-            onmousedown={(event) => event.preventDefault()}
-            onclick={() => pick(name)}
-          >
-            <span class="glyph" aria-hidden="true">{@html tileIcon(name)}</span>
-            {name}
-          </li>
-        {/each}
-      </ul>
+      <div class="popup">
+        <ul id={`kv-icons-${uid}`} role="listbox" aria-label={label}>
+          {#each rows as name, index (name)}
+            <!-- The keys reach the rows through the input's
+                 aria-activedescendant (the combobox pattern); a row only
+                 takes the pointer. -->
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <li
+              id={optionId(name)}
+              role="option"
+              aria-selected={index === active}
+              onmousedown={(event) => event.preventDefault()}
+              onclick={() => pick(name)}
+            >
+              <span class="glyph" aria-hidden="true">{@html tileIcon(name)}</span>
+              {name}
+            </li>
+          {/each}
+        </ul>
+        {#if matches.length > rows.length}
+          <p class="more" role="status">{t("picker.more", { shown: rows.length, total: matches.length })}</p>
+        {/if}
+      </div>
     {/if}
   {/if}
   {#if value !== ""}
@@ -160,21 +171,32 @@
     gap: 2px;
   }
 
-  ul {
+  .popup {
     position: absolute;
     top: 34px;
     right: 0;
     left: 0;
     z-index: 1;
-    max-height: 240px;
-    margin: 0;
     padding: 4px;
-    overflow-y: auto;
     border: 1px solid var(--kv-fg-muted);
     border-radius: var(--kv-radius);
     background: var(--kv-bg-alt);
     color: var(--kv-fg);
+  }
+
+  ul {
+    max-height: 240px;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
     list-style: none;
+  }
+
+  .more {
+    margin: 4px 8px 0;
+    background: var(--kv-bg-alt);
+    color: var(--kv-fg-muted);
+    font-size: 0.85em;
   }
 
   li {

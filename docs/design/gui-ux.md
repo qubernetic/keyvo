@@ -132,7 +132,8 @@ holds, what is special in the right column.
   "Key 5: Exec" with the file path and line as the subtitle ("from global"
   for a fall-through key, with an "Override here" action), Press (dry run)
   and Clear at the right; one row with the tile, Label, Icon (picker with
-  search over the bundled lucide names) and Colour (swatch and text); then
+  search over the bundled lucide names, the first 60 matches shown and the
+  rest counted) and Colour (swatch and text); then
   the Action select and the kind's fields, or a preset's "What it does"
   select above them. Forms capped at 48ch. Every change writes through
   `toml_edit` immediately (§4.1), the result line with a time stamp under
