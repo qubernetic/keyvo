@@ -178,12 +178,14 @@ fn a_switch_is_one_event_per_changed_class() {
         page,
         mode,
         index: 1,
+        locked: false,
     };
     let before = view("global", 1, Mode::Auto);
     assert!(Event::switched(&before, &before).is_empty());
     // Another list position is another page, even on the same page.
     let moved = View {
         index: 0,
+        locked: false,
         ..before.clone()
     };
     assert_eq!(

@@ -27,6 +27,7 @@ fn view(profile: &str, page: usize) -> View {
         page,
         mode: Mode::Auto,
         index: 1,
+        locked: false,
     }
 }
 

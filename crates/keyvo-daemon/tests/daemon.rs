@@ -720,6 +720,7 @@ fn view(profile: &str, page: usize, index: isize, mode: Mode) -> View {
         page,
         mode,
         index,
+        locked: false,
     }
 }
 

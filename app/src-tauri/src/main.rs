@@ -232,6 +232,7 @@ fn tiles(profile: String, page: usize, keys: u8, tile: TileSize) -> Result<Vec<V
         mode: keyvo_core::state::Mode::Auto,
         // The tiles depend on the profile and page alone.
         index: 1,
+        locked: false,
     };
     let summaries =
         keyvo_client::tiles::keys(&profiles, &view, keys).map_err(|error| error.to_string())?;

@@ -42,6 +42,9 @@ export interface View {
    * context page, 2 and up its other pages, 0 the global `general` page,
    * below 0 the global pages after it. */
   index: number;
+  /** The session is locked: the pad shows the lock page over this view and
+   * blocks every press. Absent from a daemon before the session lock. */
+  locked?: boolean;
 }
 
 export type Command =

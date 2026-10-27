@@ -17,7 +17,13 @@ function traces(): TraceRecord[] {
 describe("fromStatus", () => {
   it("takes the view, the device and its geometry, and the context", () => {
     const state = fromStatus(STATUS);
-    expect(state.view).toEqual({ profile: "terminal", page: 1, mode: "auto", index: 1 });
+    expect(state.view).toEqual({
+      profile: "terminal",
+      page: 1,
+      mode: "auto",
+      index: 1,
+      locked: false,
+    });
     expect(state.device).toMatchObject({ connected: true, keys: 9 });
     expect(state.geometry?.tile).toEqual({ width: 118, height: 118 });
     expect(state.geometry?.rects).toHaveLength(9);
