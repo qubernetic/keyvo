@@ -2169,7 +2169,10 @@ Detailed issue lists, definitions of done and the measurement list are in
 The pre-alpha epic (`docs/roadmap.md`, Pre-alpha) cuts thin slices through
 M0 to M4a first, and **M4b: Flathub** follows it directly: the owner's
 atomic host has no webkit packages, so the app runs only inside the
-`org.gnome.Platform//51` runtime until the Flatpak exists. The list below
+`org.gnome.Platform//51` runtime until the Flatpak exists, in the sandbox
+of an installed application on that runtime (the bare runtime has no
+application id, and GTK's glycin icon loader cannot spawn its sandbox
+without one; `docs/pre-alpha-test.md` section 2). The list below
 is the order of the remaining milestone work.
 
 1. **M0: Protocol (hardware truth)**. TS quick-test with Julusian's
