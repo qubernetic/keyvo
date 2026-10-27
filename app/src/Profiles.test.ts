@@ -234,6 +234,31 @@ describe("the list column", () => {
     expect(fake.files.profile).toHaveBeenLastCalledWith("code");
   });
 
+  it("follows the pad until the user picks or edits, then keeps that profile", async () => {
+    const fake = files();
+    const view = render(Profiles, {
+      props: {
+        daemon: daemon(),
+        files: fake.files,
+        columns: layout(1200),
+        view: VIEW,
+        geometry: GEOMETRY,
+        onedit: vi.fn((_pin: Pin) => {}),
+      },
+    });
+    await screen.findByRole("heading", { level: 2, name: "Terminal" });
+    // The pad moves on: the selection follows it.
+    await view.rerender({ view: { ...VIEW, profile: "claude" } });
+    await screen.findByRole("heading", { level: 2, name: "Claude Code" });
+    // A field taking the focus is the user at work on this profile: the
+    // pad moving on changes nothing under them.
+    await fireEvent.focusIn(field("Name"));
+    await view.rerender({ view: VIEW });
+    await waitFor(() => expect(fake.files.profile).toHaveBeenCalled());
+    expect(screen.getByRole("heading", { level: 2, name: "Claude Code" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2, name: "Terminal" })).toBeNull();
+  });
+
   it("selects the global profile when the pad shows none", async () => {
     mount({ view: { profile: "gone", page: 1, mode: "auto", index: 1 } });
     await listed();

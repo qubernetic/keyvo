@@ -98,7 +98,9 @@
 
   let templating = $state(false);
 
-  /** The profile the user picked in the list. */
+  /** The profile the user picked in the list, or started editing: a field
+   * taking the focus keeps the profile under the user when the pad moves
+   * on (critique P1 of #106, the editor pinned to its target). */
   let chosen: string | undefined = $state();
   /** The selected profile: the picked one, else the pad's one, else the
    * global one, while the list has it. */
@@ -308,7 +310,11 @@
     </ul>
   </section>
 
-  <section class={["editor", { scroll: !stacked }]} aria-labelledby={`kv-heading-${uid}`}>
+  <section
+    class={["editor", { scroll: !stacked }]}
+    aria-labelledby={`kv-heading-${uid}`}
+    onfocusin={() => (chosen = id)}
+  >
     {#if selected === undefined}
       {#if !loading}
         <p class="note">{t("profiles.select")}</p>
