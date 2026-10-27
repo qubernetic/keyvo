@@ -79,7 +79,7 @@
         aria-selected={tab.index === selected}
         tabindex={position === Math.max(at, 0) ? 0 : -1}
         aria-label={label(tab) ?? tab.name}
-        title={label(tab)}
+        title={label(tab) ?? tab.name}
         onclick={() => onpage(tab.profile, tab.page)}
       >
         {tab.name}
@@ -115,6 +115,14 @@
     gap: 8px;
   }
 
+  /* A long page name is cut with an ellipsis; the title carries it whole. */
+  [role="tab"] {
+    max-width: 16ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   /* A global page: muted text and a dashed rim; selected, it keeps the rim. */
   [role="tab"].global {
     border-style: dashed;
@@ -132,7 +140,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-left: auto;
+    margin-inline-start: auto;
   }
 
   .swatch {

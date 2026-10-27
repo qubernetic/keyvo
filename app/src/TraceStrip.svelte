@@ -119,11 +119,11 @@
     border-color: transparent;
     background: var(--kv-bg);
     color: var(--kv-fg);
-    text-align: left;
+    text-align: start;
   }
 
   time {
-    margin-right: 8px;
+    margin-inline-end: 8px;
     background: var(--kv-bg);
     color: var(--kv-fg-muted);
   }

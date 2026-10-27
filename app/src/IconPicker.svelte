@@ -179,8 +179,7 @@
   .popup {
     position: absolute;
     top: 34px;
-    right: 0;
-    left: 0;
+    inset-inline: 0;
     z-index: 1;
     padding: 4px;
     border: 1px solid var(--kv-fg-muted);

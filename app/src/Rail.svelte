@@ -136,7 +136,7 @@
   [role="tooltip"] {
     position: absolute;
     top: 0;
-    left: calc(100% + 8px);
+    inset-inline-start: calc(100% + 8px);
     z-index: 1;
     width: max-content;
     max-width: 280px;

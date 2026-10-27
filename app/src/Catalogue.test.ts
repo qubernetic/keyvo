@@ -3,6 +3,10 @@
 // entry draggable and assignable to the selected tile, the search across
 // groups, names and variant names and its empty state, why presets are
 // missing, and `/` to the search.
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { describe, expect, it, vi } from "vitest";
 
@@ -32,6 +36,13 @@ function entries(name: string): string[] {
 }
 
 describe("the groups", () => {
+  it("let a long entry name wrap inside the column instead of widening it", () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "Catalogue.svelte"), "utf8");
+    const rule = /\n  \.entry \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toMatch(/min-width: 0;/);
+    expect(rule).toMatch(/overflow-wrap: anywhere;/);
+  });
+
   it("show General, System and Apps expanded, each with the reply's entries", () => {
     catalogue();
     expect(screen.getByRole("region", { name: "Actions" })).toBeInTheDocument();

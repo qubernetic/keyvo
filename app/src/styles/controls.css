@@ -64,7 +64,7 @@ textarea:disabled {
   border: none;
   background: var(--kv-bg-alt);
   color: var(--kv-fg);
-  text-align: left;
+  text-align: start;
 }
 
 [role="menuitem"][aria-disabled="true"] {

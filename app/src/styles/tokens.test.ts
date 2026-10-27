@@ -216,6 +216,19 @@ describe("the rules", () => {
     expect(bad).toEqual([]);
   });
 
+  it("no rule names a physical inline side: logical properties keep right-to-left open", () => {
+    const physical = /^(margin|padding|border)-(left|right)(-[a-z-]+)?$|^(left|right)$/;
+    const bad = all.flatMap((rule) =>
+      [...rule.declarations]
+        .filter(
+          ([name, value]) =>
+            physical.test(name) || (name === "text-align" && /^(left|right)$/.test(value)),
+        )
+        .map(([name, value]) => `${rule.file}: ${rule.selector}: ${name}: ${value}`),
+    );
+    expect(bad).toEqual([]);
+  });
+
   it("no rule outside :root writes a literal colour", () => {
     const literal = /#[0-9a-fA-F]{3,8}\b|\b(rgba?|hsla?)\(|\b(white|black|red|green|blue|gray|grey)\b/;
     const bad = all

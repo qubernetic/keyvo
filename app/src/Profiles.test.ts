@@ -352,6 +352,17 @@ describe("the profile header", () => {
     expect(rule(".row")).toMatch(/max-width: 48ch;/);
   });
 
+  it("wraps a long name in the heading and keeps Open in editor on one line beside it", async () => {
+    mount();
+    await screen.findByRole("heading", { level: 2, name: "Terminal" });
+    // A name without spaces breaks anywhere instead of pushing the button
+    // out of the 48ch row, and the button never wraps into three lines.
+    expect(rule(".heading h2")).toMatch(/min-width: 0;/);
+    expect(rule(".heading h2")).toMatch(/overflow-wrap: anywhere;/);
+    expect(rule(".heading > button")).toMatch(/flex: none;/);
+    expect(rule(".heading > button")).toMatch(/white-space: nowrap;/);
+  });
+
   it("shows the accent as a swatch beside its text", async () => {
     mount();
     await waitFor(() => expect(field("Accent")).toHaveValue("#2ecc71"));

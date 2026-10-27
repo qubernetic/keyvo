@@ -176,7 +176,7 @@
     background: var(--kv-bg);
     color: var(--kv-fg);
     font-weight: 600;
-    text-align: left;
+    text-align: start;
   }
 
   /* A filled triangle in the body colour: right while collapsed, down open. */
@@ -220,7 +220,10 @@
     height: 100%;
   }
 
+  /* A long name wraps inside the column instead of widening it. */
   .entry {
+    min-width: 0;
+    overflow-wrap: anywhere;
     cursor: grab;
   }
 

@@ -539,7 +539,7 @@
     border-color: transparent;
     background: var(--kv-bg);
     color: var(--kv-fg);
-    text-align: left;
+    text-align: start;
   }
 
 </style>

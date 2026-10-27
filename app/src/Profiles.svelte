@@ -496,7 +496,7 @@
      takes the theme's thin scroll bar, so no control sits under it. */
   .scroll {
     min-height: 0;
-    padding-right: 8px;
+    padding-inline-end: 8px;
     overflow: auto;
     scrollbar-gutter: stable;
     scrollbar-width: thin;
@@ -541,7 +541,7 @@
     align-items: center;
     gap: 8px;
     width: 100%;
-    text-align: left;
+    text-align: start;
   }
 
   .profile[aria-current="true"] {
@@ -566,7 +566,7 @@
   }
 
   .mark {
-    margin-left: auto;
+    margin-inline-start: auto;
     background: var(--kv-bg-alt);
     color: var(--kv-fg-muted);
     font-size: 0.85em;
@@ -591,6 +591,18 @@
      end of the content, not at the column's edge. */
   .row {
     max-width: 48ch;
+  }
+
+  /* A name without spaces breaks anywhere rather than pushing the button
+     out of the row, and the button keeps its one line beside it. */
+  .heading h2 {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .heading > button {
+    flex: none;
+    white-space: nowrap;
   }
 
   /* DESIGN.md "Inputs / Fields", as the Inspector: each label above its
@@ -632,7 +644,7 @@
   }
 
   .hint {
-    margin-left: 8px;
+    margin-inline-start: 8px;
     background: var(--kv-bg);
     color: var(--kv-fg-muted);
   }
