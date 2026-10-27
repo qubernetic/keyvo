@@ -89,13 +89,26 @@ On an atomic host (Aurora, Fedora Kinoite) that does not layer
 `webkit2gtk`, the app runs inside the installed `org.gnome.Platform//51`
 Flatpak runtime instead, until the Flatpak manifest of M4b-1 exists (the
 owner's comment on #52 of 2026-10-25; the runtime's glibc covers the
-binary's). Wherever the guide says `bin/keyvo-app`, run, from the
-repository root:
+binary's). Run it in the sandbox of an installed application on that
+runtime, not in the bare runtime: GTK loads SVG icons through glycin,
+whose loader is spawned with `flatpak-spawn --sandbox`, and the portal
+refuses that without an application id, so the Inspector's colour chooser
+aborts the app under the bare runtime (#169, 2026-10-27). Pick any
+application the list prints:
+
+```bash
+flatpak list --app --columns=application,runtime | grep 'org.gnome.Platform/x86_64/51'
+```
+
+Wherever the guide says `bin/keyvo-app`, run, from the repository root,
+with that application's id in place of `org.gnome.DejaDup` (the
+permissions are still passed explicitly; only the id and the runtime come
+from the application):
 
 ```bash
 flatpak run --filesystem=host --filesystem=xdg-run/keyvo \
   --socket=wayland --socket=fallback-x11 --share=ipc --device=dri \
-  --command="$PWD/bin/keyvo-app" org.gnome.Platform//51
+  --command="$PWD/bin/keyvo-app" org.gnome.DejaDup
 ```
 
 ## 3. Install the example profiles
