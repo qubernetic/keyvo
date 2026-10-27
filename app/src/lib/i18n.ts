@@ -127,6 +127,7 @@ export const messages = {
 
   "pad.held": "{class} focused, holding {profile}",
   "pad.locked": "Session locked; the pad shows the lock.",
+  "pad.noPad": "No pad",
   "pad.pages": "Pages",
   "pad.globalPage": "{page}, a page of {profile}",
   "pad.add": "+",

@@ -8,6 +8,8 @@
   // outline, a key held down on the device its mark, and a key that falls
   // through from the global layer is dimmed with a corner mark. Every cell
   // is a drop target for an entry dragged from the actions catalogue.
+  // Without a geometry (no pad has reported one) it draws the device with
+  // nine empty wells and the caption "No pad", nothing to select (#165).
   import { tick } from "svelte";
 
   import Device from "./Device.svelte";
@@ -29,7 +31,8 @@
     onpress,
     ondrop,
   }: {
-    geometry: Geometry;
+    /** The pad's geometry; none draws the empty wells. */
+    geometry?: Geometry;
     /** The pad's tiles in key order; a missing one shows its key number. */
     tiles: Tile[];
     /** The profile the pad shows, for the fall-through mark. */
@@ -47,9 +50,11 @@
     ondrop?: (key: number, entry: string) => void;
   } = $props();
 
-  const rows = $derived(grid(geometry));
-  const keyCount = $derived(geometry.rects.length);
+  const rows = $derived(geometry === undefined ? [] : grid(geometry));
+  const keyCount = $derived(geometry?.rects.length ?? 0);
   const buttons: HTMLButtonElement[] = $state([]);
+  const id = $props.id();
+  const caption = `${id}-caption`;
 
   function label(key: number): string {
     const tile = tiles[key - 1];
@@ -104,50 +109,81 @@
   }
 </script>
 
-<div role="grid" tabindex="-1" aria-label={name} class="grid" onkeydown={keydown}>
-  <Device {geometry}>
-    {#snippet row(cells)}
-      <div role="row" class="row">{@render cells()}</div>
-    {/snippet}
-    {#snippet tile(key, place)}
-      <div
-        role="gridcell"
-        aria-selected={key === selected}
-        tabindex="-1"
-        style={place}
-        ondragover={(event) => dragover(event, key)}
-        ondragleave={() => (over = over === key ? undefined : over)}
-        ondrop={(event) => drop(event, key)}
-      >
-        <button
-          bind:this={buttons[key - 1]}
-          type="button"
-          class="key"
-          class:selected={key === selected}
-          class:held={held.includes(key)}
-          class:fallen={fallen(key)}
-          class:over={key === over}
-          tabindex={key === (selected ?? 1) ? 0 : -1}
-          aria-label={label(key)}
-          onclick={() => void select(key)}
+{#if geometry === undefined}
+  <figure class="grid empty" aria-labelledby={caption}>
+    <Device>
+      {#snippet tile(_key, place)}
+        <span class="well" style={place}></span>
+      {/snippet}
+    </Device>
+    <figcaption id={caption} class="caption">{t("pad.noPad")}</figcaption>
+  </figure>
+{:else}
+  <div role="grid" tabindex="-1" aria-label={name} class="grid" onkeydown={keydown}>
+    <Device {geometry}>
+      {#snippet row(cells)}
+        <div role="row" class="row">{@render cells()}</div>
+      {/snippet}
+      {#snippet tile(key, place)}
+        <div
+          role="gridcell"
+          aria-selected={key === selected}
+          tabindex="-1"
+          style={place}
+          ondragover={(event) => dragover(event, key)}
+          ondragleave={() => (over = over === key ? undefined : over)}
+          ondrop={(event) => drop(event, key)}
         >
-          {#if tiles[key - 1]}
-            <img src={tiles[key - 1]?.image} alt="" />
-            {#if fallen(key)}
-              <span class="layer" aria-hidden="true">{t("home.globalMark")}</span>
+          <button
+            bind:this={buttons[key - 1]}
+            type="button"
+            class="key"
+            class:selected={key === selected}
+            class:held={held.includes(key)}
+            class:fallen={fallen(key)}
+            class:over={key === over}
+            tabindex={key === (selected ?? 1) ? 0 : -1}
+            aria-label={label(key)}
+            onclick={() => void select(key)}
+          >
+            {#if tiles[key - 1]}
+              <img src={tiles[key - 1]?.image} alt="" />
+              {#if fallen(key)}
+                <span class="layer" aria-hidden="true">{t("home.globalMark")}</span>
+              {/if}
+            {:else}
+              <span aria-hidden="true">{key}</span>
             {/if}
-          {:else}
-            <span aria-hidden="true">{key}</span>
-          {/if}
-        </button>
-      </div>
-    {/snippet}
-  </Device>
-</div>
+          </button>
+        </div>
+      {/snippet}
+    </Device>
+  </div>
+{/if}
 
 <style>
   .grid {
     width: 100%;
+  }
+
+  .empty {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+  }
+
+  /* An empty well: the cutout's corner and colour, nothing in it. */
+  .well {
+    display: block;
+    border-radius: var(--kv-tile-radius, var(--kv-radius));
+    background: var(--kv-device-well);
+    color: var(--kv-device-glyph);
+  }
+
+  .caption {
+    background: var(--kv-bg);
+    color: var(--kv-fg-muted);
   }
 
   /* Device places the cells; the rows only group them for the grid role. */

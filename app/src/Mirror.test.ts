@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import Mirror from "./Mirror.svelte";
 import { DRAG_TYPE } from "./lib/catalogue";
 import type { Tile } from "./lib/daemon";
-import { responses } from "./lib/fixtures";
+import { nth, responses } from "./lib/fixtures";
 import { t } from "./lib/i18n";
 import type { Geometry, PressKind, Status } from "./lib/protocol";
 
@@ -196,6 +196,32 @@ describe("the mirror", () => {
     mirror({ held: [5] });
     expect(key(5)).toHaveClass("held");
     expect(key(4)).not.toHaveClass("held");
+  });
+});
+
+describe("without a geometry", () => {
+  it("draws the device with nine empty wells and the caption No pad", () => {
+    const { container } = render(Mirror, {
+      props: {
+        tiles: TILES,
+        profile: undefined,
+        held: [],
+        name: "Keypad mirror",
+        onselect: vi.fn(),
+        onpress: vi.fn(),
+      },
+    });
+    const figure = screen.getByRole("figure", { name: t("pad.noPad") });
+    expect(t("pad.noPad")).toBe("No pad");
+    expect(within(figure).getByRole("img", { name: t("device.keypad") })).toBeInTheDocument();
+    const wells = [...container.querySelectorAll(".well")];
+    expect(wells).toHaveLength(9);
+    // Empty: no tile, no key number, nothing to select or press.
+    expect(wells.map((well) => well.textContent)).toEqual(Array(9).fill(""));
+    expect(container.querySelector("img[src]")).toBeNull();
+    expect(screen.queryByRole("grid")).not.toBeInTheDocument();
+    expect(screen.queryAllByRole("button")).toEqual([]);
+    expect(nth(wells, 4).getAttribute("style")).toMatch(/--kv-tile-radius: 19\.13\d*%/);
   });
 });
 
