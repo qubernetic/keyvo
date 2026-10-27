@@ -81,7 +81,8 @@ describe("IconPicker", () => {
 
   it("shows the value as written under the field", () => {
     picker("lucide:rocket");
-    expect(screen.getByText("lucide:rocket")).toBeInTheDocument();
+    // The id stays in the body font (DESIGN.md: paths and ids are not code).
+    expect(screen.getByText("lucide:rocket").tagName).toBe("SPAN");
   });
 
   it("removes the icon when the field is emptied", async () => {

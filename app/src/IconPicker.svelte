@@ -148,7 +148,7 @@
     {/if}
   {/if}
   {#if value !== ""}
-    <code class="value">{value}</code>
+    <span class="value">{value}</span>
   {/if}
 </div>
 
