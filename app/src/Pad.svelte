@@ -234,14 +234,18 @@
     );
   });
   const held = $derived(caption(pad));
+  /** A profile's name, as the header names it; its id while the list does
+   * not know it. */
+  const nameOf = (id: string) => profiles.find((profile) => profile.id === id)?.name ?? id;
   /** The "pad moved" line: what the inspector edits, then what the pad
-   * shows. */
+   * shows, both by name. */
   const movedLine = $derived.by(() => {
     if (moved === undefined || shown === undefined) return undefined;
-    const pinned = shownProfile?.name ?? shown.profile;
+    const pinned = nameOf(shown.profile);
+    const profile = nameOf(moved.profile);
     return selected === undefined
-      ? t("pad.movedPage", { pinned, pinnedPage: shown.page, profile: moved.profile, page: moved.page })
-      : t("pad.moved", { pinned, key: selected, profile: moved.profile, page: moved.page });
+      ? t("pad.movedPage", { pinned, pinnedPage: shown.page, profile, page: moved.page })
+      : t("pad.moved", { pinned, key: selected, profile, page: moved.page });
   });
 
   function select(key: number) {
