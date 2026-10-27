@@ -1822,7 +1822,9 @@ then subscribes with a replay of the newest 20 trace entries;
   the daemon reports no change while a focus switch within `page_grace`
   keeps the pad on a global page, so the tabs right of it can still name
   the profile before. While following, the selected tab is the `index`
-  the daemon reports; while pinned, the pinned page's tab. Arrows
+  the daemon reports; while pinned, the pinned page's tab. A tab is at
+  most `16ch` wide and cuts a longer name with an ellipsis; every tab
+  carries its whole name in its title (#130). Arrows
   wrapping, `Home` and `End`; a tab pins its page of the profile that
   owns it, so clicking `general` edits the global profile's general page.
   A profile with no pages adds no tab of its own. "+" (add a page), after
@@ -1992,7 +1994,10 @@ write of the screen.
   priorities by id. Each row shows the name, a 12 px accent square after
   it when the profile has an accent, and "on the pad" on the profile the
   pad shows; its accessible name adds the id and the priority. The
-  screen opens on the pad's profile, else the global one. Skeleton rows
+  screen opens on the pad's profile, else the global one, and follows
+  the pad until the user picks a profile in the list or a field of the
+  editor takes the focus: from then on the selection stays while the
+  pad moves on (#130). Skeleton rows
   stand in while the first read runs; a configuration that does not
   load shows as a notice with the load errors, the last list kept. "+"
   opens the templates (Empty profile, Copy of the active profile, Starter
@@ -2004,7 +2009,8 @@ write of the screen.
   which has no file until its first edit, the button is
   `aria-disabled` and a note says so. The row is as wide as the header
   form (`48ch`), so the button ends where the content ends; the "Match
-  rules" row with "+ rule" likewise.
+  rules" row with "+ rule" likewise. A name without spaces breaks inside
+  the heading and the button keeps its one line beside it (#130).
 - **Header form.** At most `48ch` wide, one column: each label above its
   field (`docs/DESIGN.md` "Inputs / Fields", as the Inspector). Name, and
   Accent as a swatch and

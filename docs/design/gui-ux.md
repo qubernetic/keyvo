@@ -191,7 +191,9 @@ Profiles dialog of Stream Deck as a screen, because keyvo profiles carry
 priority and match rules.*
 
 - List column: profiles by priority, the global profile pinned at the top,
-  a 12 px accent square after the name, "on the pad" on the live one. "+"
+  a 12 px accent square after the name, "on the pad" on the live one. The
+  selection follows the pad until the user picks a profile or starts
+  editing one; then it stays. "+"
   creates a profile from a template (empty, copy of the active, starter
   pack).
 - Editor: the profile header (name, accent as a swatch and `#rrggbb` text,
