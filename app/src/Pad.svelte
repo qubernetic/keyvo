@@ -444,7 +444,9 @@
         {active}
         {connected}
         revision={pad.reloads}
-        onpress={selected === undefined ? undefined : () => void press(selected ?? 0, "short")}
+        onpress={selected === undefined || !connected
+          ? undefined
+          : () => void press(selected ?? 0, "short")}
         onedited={() => edits++}
         {assign}
         entries={columns.right ? undefined : catalogue}

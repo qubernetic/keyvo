@@ -565,6 +565,14 @@ describe("the notices", () => {
     expect(screen.queryByText(/Tiles not rendered/)).not.toBeInTheDocument();
   });
 
+  it("disables Press on the selected key while the daemon cannot be reached", async () => {
+    const { daemon } = await mounted();
+    await fireEvent.click(key(5));
+    expect(await screen.findByRole("button", { name: "Press" })).toBeEnabled();
+    await daemon.send({ kind: "closed", reason: "the daemon closed the connection" });
+    expect(screen.getByRole("button", { name: "Press" })).toBeDisabled();
+  });
+
   it("says the daemon is unreachable when subscribing fails", async () => {
     pad({ daemon: fake({ subscribe: vi.fn(() => Promise.reject(new Error("no shell"))) }) });
     expect(await screen.findByRole("alert")).toHaveTextContent("Daemon unreachable: no shell");
