@@ -2,7 +2,7 @@
 // entries in the groups General, System and Apps, the search over them,
 // what an entry does to the inspector's form, and the data a drag carries
 // to a tile. The presets are the recipe packs of the daemon's `recipes`
-// reply (spec §7.5); the raw tools Chord and Exec close General. A key
+// reply (spec §7.5); the raw tools Chord, Exec and Launch close General. A key
 // never names its pack, so the recipe a key carries is found from its icon
 // and action.
 import type { Form, KeyFields } from "./editor";
@@ -35,7 +35,10 @@ export interface CatalogueEntry {
   recipe?: Recipe;
 }
 
-function tool(id: "chord" | "exec", label: MessageKey, icon: string): CatalogueEntry {
+/** The action types a raw tool sets. */
+type ToolId = Exclude<Form["actionType"], "none">;
+
+function tool(id: ToolId, label: MessageKey, icon: string): CatalogueEntry {
   return { key: `tool:${id}`, id, group: "general", name: t(label), icon, kind: "tool" };
 }
 
@@ -43,6 +46,7 @@ function tool(id: "chord" | "exec", label: MessageKey, icon: string): CatalogueE
 export const TOOLS: readonly CatalogueEntry[] = [
   tool("chord", "catalogue.chord", "square"),
   tool("exec", "catalogue.exec", "terminal"),
+  tool("launch", "catalogue.launch", "app-window"),
 ];
 
 /** The entries of `recipes` (in the reply's order) in group order, the raw
@@ -85,7 +89,7 @@ export function search(entries: readonly CatalogueEntry[], text: string): Catalo
 function actionForm(action: Action): Pick<Form, "actionType" | "action"> {
   return action.type === "chord"
     ? { actionType: "chord", action: action.keys }
-    : { actionType: "exec", action: action.cmd };
+    : { actionType: action.type, action: action.cmd };
 }
 
 /** `form` with variant `variant` of `recipe`: its action, the pack's label
@@ -105,8 +109,9 @@ export function applied(entry: CatalogueEntry, form: Form): Form {
     const first = entry.recipe.variants[0];
     return first === undefined ? form : withVariant(entry.recipe, first.id, form);
   }
-  if (entry.id !== "chord" && entry.id !== "exec") return form;
-  return { ...form, actionType: entry.id, action: "" };
+  const tool = TOOLS.find((candidate) => candidate.id === entry.id);
+  if (tool === undefined) return form;
+  return { ...form, actionType: tool.id as ToolId, action: "" };
 }
 
 /** The `DataTransfer` type a dragged entry is carried under. */
@@ -129,7 +134,7 @@ export function dropped(data: string): string | undefined {
 function sameAction(a: Action, b: Action): boolean {
   return a.type === "chord"
     ? b.type === "chord" && a.keys === b.keys
-    : b.type === "exec" && a.cmd === b.cmd;
+    : b.type === a.type && a.cmd === b.cmd;
 }
 
 /** The recipe a key carries and the variant it runs: a pack with the key's

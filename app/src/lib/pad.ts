@@ -215,6 +215,8 @@ export function describeAction(action: Action | null | undefined): string | unde
       return t("action.chord", { keys: action.keys });
     case "exec":
       return t("action.exec", { cmd: action.cmd });
+    case "launch":
+      return t("action.launch", { cmd: action.cmd });
   }
 }
 
@@ -227,6 +229,8 @@ function result(entry: TraceRecord): string {
       return t("trace.running");
     case "exited":
       return t("trace.exited", { code: String(result.code), ms: String(result.duration_ms) });
+    case "started":
+      return t("trace.started", { pid: String(result.pid) });
     case "failed":
       return t("trace.failed", { error: String(result.error) });
     default:

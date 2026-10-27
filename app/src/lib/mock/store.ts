@@ -37,7 +37,7 @@ function text(value: unknown): string | undefined {
 function action(value: unknown): Action | undefined {
   const { type, keys, cmd } = table(value);
   if (type === "chord" && typeof keys === "string") return { type, keys };
-  if (type === "exec" && typeof cmd === "string") return { type, cmd };
+  if ((type === "exec" || type === "launch") && typeof cmd === "string") return { type, cmd };
   return undefined;
 }
 

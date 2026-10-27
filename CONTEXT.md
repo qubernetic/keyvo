@@ -6,10 +6,13 @@ concept appears, add it here in the same PR that introduces it. Architecture
 choices behind these terms are recorded in `docs/adr/`; defaults and numbers in
 `docs/spec.md`.
 
-**Action**: What a key does when pressed: `chord`, `exec`, `http`, `text`,
-`page`, `profile`, `mode` or `recipe`. Defined per key in a profile's TOML;
-executed by `keyvo-core` (internal kinds) or `keyvo-daemon` (injection,
-processes, HTTP). An optional `on_fail` action runs when the primary one fails.
+**Action**: What a key does when pressed: `chord`, `exec`, `launch`, `http`,
+`text`, `page`, `profile`, `mode` or `recipe`. Defined per key in a profile's
+TOML; executed by `keyvo-core` (internal kinds) or `keyvo-daemon` (injection,
+processes, HTTP). `exec` runs a command and its exit is the result; `launch`
+opens an application and lets it go once it outlives
+`[timing].launch_settle`. An optional `on_fail` action runs when the primary
+one fails.
 
 **Behavior**: The GUI's view of one key binding: a key (or Dialpad or MX
 control) on a page of a profile with its trigger rows, conditions, actions and

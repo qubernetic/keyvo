@@ -230,6 +230,7 @@ describe("summarize", () => {
       "Key 9, app layer: exec gh pr view --web, failed: no such file or directory: gh",
       "Key 5 long, simulated, app layer: exec cargo test, dry run, nothing executed",
       "Key 1: unbound",
+      "Key 2, global layer: launch flatpak run org.kde.kcalc, started, pid 4711",
     ]);
   });
 

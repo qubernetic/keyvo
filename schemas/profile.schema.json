@@ -1,7 +1,7 @@
 {
   "$defs": {
     "Action": {
-      "description": "What a key press does (pre-alpha: `chord` and `exec`).",
+      "description": "What a key press does (pre-alpha: `chord`, `exec` and `launch`).",
       "oneOf": [
         {
           "additionalProperties": false,
@@ -32,6 +32,25 @@
             },
             "type": {
               "const": "exec",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "cmd"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Open an application: run a command like `exec`, in its own session,\nand let it go once it outlives `[timing].launch_settle`.",
+          "properties": {
+            "cmd": {
+              "description": "The command line.",
+              "type": "string"
+            },
+            "type": {
+              "const": "launch",
               "type": "string"
             }
           },

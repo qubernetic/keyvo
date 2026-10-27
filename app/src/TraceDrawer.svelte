@@ -63,7 +63,9 @@
       { term: "drawer.type", value: entry.action?.type ?? t("drawer.none") },
     ];
     if (entry.action?.type === "chord") rows.push({ term: "drawer.keys", value: entry.action.keys });
-    if (entry.action?.type === "exec") rows.push({ term: "drawer.command", value: entry.action.cmd });
+    if (entry.action?.type === "exec" || entry.action?.type === "launch") {
+      rows.push({ term: "drawer.command", value: entry.action.cmd });
+    }
     return { title: "drawer.action", rows };
   }
 
@@ -105,6 +107,11 @@
             },
             { term: "drawer.duration", value: t("drawer.ms", { ms: String(result.duration_ms) }) },
           ],
+        };
+      case "started":
+        return {
+          title: "drawer.result",
+          rows: [{ term: "drawer.status", value: t("trace.started", { pid: String(result.pid) }) }],
         };
       case "failed":
         return {

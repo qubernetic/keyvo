@@ -118,6 +118,7 @@
     none: "inspector.kind.none",
     chord: "inspector.kind.chord",
     exec: "inspector.kind.exec",
+    launch: "inspector.kind.launch",
   };
 
   const fallen = $derived(global !== undefined);
@@ -512,6 +513,7 @@
             {#if entries === undefined}
               <option value="chord">{t("inspector.kind.chord")}</option>
               <option value="exec">{t("inspector.kind.exec")}</option>
+              <option value="launch">{t("inspector.kind.launch")}</option>
             {:else}
               {#each GROUPS as group (group.id)}
                 <optgroup label={t(group.label)}>

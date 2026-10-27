@@ -110,7 +110,10 @@ export interface Subscribed {
   view: View;
 }
 
-export type Action = { type: "chord"; keys: string } | { type: "exec"; cmd: string };
+export type Action =
+  | { type: "chord"; keys: string }
+  | { type: "exec"; cmd: string }
+  | { type: "launch"; cmd: string };
 
 /** The layer of the stack that supplied a key (spec §6.1). */
 export type Layer = "global" | "app";

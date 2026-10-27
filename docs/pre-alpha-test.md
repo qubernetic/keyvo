@@ -117,7 +117,7 @@ The profiles live in [`contrib/profiles/`](../contrib/profiles/):
 
 | File | Matches | Accent | Keys (context page) |
 |---|---|---|---|
-| `global.toml` | no app profile matches | blue `#4e8bd6` | 1 Notify (exec, `notify-send`), 2 Fail (exec, `exit 1`), 3 Type (chord `shift+k, e, y`), 4 Slow (exec, `sleep 15`), 5 OK (exec, `true`); page `general` key 1 General, page `third` key 1 Third |
+| `global.toml` | no app profile matches | blue `#4e8bd6` | 1 Notify (exec, `notify-send`), 2 Fail (exec, `exit 1`), 3 Type (chord `shift+k, e, y`), 4 Slow (exec, `sleep 15`), 5 OK (exec, `true`); page `general` key 1 General, page `third` key 1 Third, key 2 Launch (launch, `sleep 60`) |
 | `konsole.toml` | `org.kde.konsole`, `konsole` | green `#3fae5a` | 1 New tab (chord `ctrl+shift+t`), 2 Find (chord `ctrl+shift+f`), 4 OK, 5 Fail, 6 Slow |
 | `vscode.toml` | `code`, `com.visualstudio.code` | orange `#e0a83b` | 1 Palette (chord `ctrl+shift+p`), 2 Save (chord `ctrl+s`), 7 OK, 8 Fail, 9 Slow; page `files` key 1 Open (chord `ctrl+p`), key 2 Sidebar (chord `ctrl+b`) |
 
@@ -848,6 +848,25 @@ Dolphin for Brave. Run by the owner in #130.
 - [ ] #151 Long press on VS Code page 2: the lock; focus Brave: the pad keeps VS Code page 2; left: VS Code context; long press: Brave's context page.
 - [ ] #151 Both buttons held from anywhere: the global context page, auto mode.
 - [ ] #151 The app on the GNOME runtime: the tab strip reads `apps  general  context  2` for VS Code with `apps` and `general` muted; the selected tab follows every press on the pad; clicking `general` edits the global profile's general page.
+
+### A launch action that opens an application and lets it go (#155)
+
+On the host with the Keypad and the daemon, the owner's own profiles with
+the `setsid -f` prefix removed and the twelve application keys (`flatpak
+run` for KCalc, Mailspring, Discord, Signal, Obsidian, Spotify; `konsole
+--workdir`, `dolphin`, `systemsettings`, `code`) switched to `action = {
+type = "launch", cmd = "..." }`. With the example profiles of
+`contrib/profiles/` the global `third` page's key 2 (Launch, `sleep 60`)
+shows the same look: running for about a second, then success; `pgrep -a
+sleep` lists it for a minute. In the mock (`just app-dev`) the trace strip
+replays a `started, pid 4711` line.
+
+- [ ] #155 Global `apps` page, KCalc: the tile shows the running arc for about a second, then success; KCalc stays open for more than 30 s and after `keyvo-daemon` is stopped. The trace drawer reads `started, pid <n>`.
+- [ ] #155 A `launch` key with `flatpak run org.does.not.Exist`: the tile turns error within about a second; the drawer shows the exit code.
+- [ ] #155 VS Code already running, the Konsole profile's `code` key: success, the existing window comes up.
+- [ ] #155 Global context page, Konsole and Dolphin keys: success, the windows stay.
+- [ ] #155 An `exec` key (`xdg-open`, `spectacle --region`): unchanged.
+- [ ] #155 The app: the Inspector offers Launch, writes `type = "launch"` to the file, and the catalogue's Calculator recipe dragged onto a key produces a `launch` key.
 
 ### Polish, harden and the critique re-run (#130)
 

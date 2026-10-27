@@ -9,7 +9,7 @@ import { eventsOf, nth, responses } from "./lib/fixtures";
 import type { TraceRecord } from "./lib/protocol";
 
 /** The fixture entries: chord sent, exec exited 101, exec failed, dry run,
- * unbound. */
+ * unbound, launch started. */
 const ENTRIES = eventsOf("trace").map((event) => event.entry);
 
 function drawer(entry: TraceRecord, onclose = vi.fn()) {
@@ -64,6 +64,14 @@ describe("TraceDrawer", () => {
     expect(value(result, "Status")).toBe("exited");
     expect(value(result, "Exit code")).toBe("101");
     expect(value(result, "Duration")).toBe("2318 ms");
+  });
+
+  it("shows a launch that was let go as started with its pid", () => {
+    const { dialog } = drawer(nth(ENTRIES, 5));
+    const action = section(dialog, "Resolved action");
+    expect(value(action, "Type")).toBe("launch");
+    expect(value(action, "Command")).toBe("flatpak run org.kde.kcalc");
+    expect(value(section(dialog, "Result"), "Status")).toBe("started, pid 4711");
   });
 
   it("shows an exec ended by a signal", () => {

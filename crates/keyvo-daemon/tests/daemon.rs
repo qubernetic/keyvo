@@ -472,6 +472,128 @@ async fn an_exec_past_the_timeout_fails_with_the_error_look() {
     daemon.stop().await;
 }
 
+/// A short `exec_timeout` under a shorter `launch_settle`, so a launched
+/// child visibly outlives the timeout.
+const LAUNCH_CONFIG: &str = "\
+[timing]
+divert_settle = 0
+divert_spacing = 0
+render_coalesce = 5
+reconnect_interval = 20
+reload_settle = 20
+exec_timeout = 300
+launch_settle = 100
+";
+
+const LAUNCHER: &str = r#"
+schema_version = 1
+
+[profile]
+id = "global"
+name = "Global"
+
+[[pages]]
+[pages.keys.1]
+label = "App"
+action = { type = "launch", cmd = "sleep 5" }
+
+[pages.keys.2]
+label = "Broken"
+action = { type = "launch", cmd = "exit 3" }
+
+[pages.keys.3]
+label = "Handed over"
+action = { type = "launch", cmd = "true" }
+"#;
+
+/// Whether process `pid` runs: it exists and is not a zombie.
+fn alive(pid: u32) -> bool {
+    std::fs::read_to_string(format!("/proc/{pid}/stat"))
+        .ok()
+        .and_then(|stat| {
+            stat.rsplit_once(") ")
+                .map(|(_, rest)| !rest.starts_with('Z'))
+        })
+        .unwrap_or(false)
+}
+
+async fn launcher() -> (Daemon, Pad) {
+    let pad = Pad::new(&startup());
+    let mut daemon = Daemon::start_on(
+        LAUNCH_CONFIG,
+        &[("global", LAUNCHER)],
+        vec![pad.clone()],
+        FakeInputInjector::new(),
+        FakeWindowWatcher::failing("no focus source"),
+    );
+    assert_eq!(daemon.painted().await, (1..=9).collect::<Vec<_>>());
+    (daemon, pad)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_launch_still_running_after_the_settle_has_started_and_lives_on() {
+    let (mut daemon, pad) = launcher().await;
+    let pressed = std::time::Instant::now();
+    pad.hold(&[1]);
+    pad.hold(&[]);
+    let record = daemon.trace().await;
+    assert!(
+        pressed.elapsed() < Duration::from_secs(1),
+        "{:?}",
+        pressed.elapsed()
+    );
+    let Outcome::Started { pid } = record.result else {
+        panic!("not started: {record:?}");
+    };
+    let success = image_of(LAUNCHER, 1, Look::Success);
+    while pad.images().last() != Some(&success) {
+        daemon.painted().await;
+    }
+    // Past `exec_timeout` the child still runs: nothing killed it.
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert!(alive(pid));
+    // Its own group: the shell and whatever it started go together.
+    let killed = std::process::Command::new("sh")
+        .args(["-c", &format!("kill -9 -{pid}")])
+        .status()
+        .unwrap();
+    assert!(killed.success());
+    let deadline = std::time::Instant::now() + PATIENCE;
+    while alive(pid) {
+        assert!(std::time::Instant::now() < deadline, "pid {pid} still runs");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_launch_that_exits_within_the_settle_reports_its_code() {
+    let (mut daemon, pad) = launcher().await;
+    pad.hold(&[2]);
+    pad.hold(&[]);
+    let record = daemon.trace().await;
+    assert!(
+        matches!(record.result, Outcome::Exited { code: Some(3), .. }),
+        "{record:?}"
+    );
+    let error = image_of(LAUNCHER, 2, Look::Error);
+    while pad.images().last() != Some(&error) {
+        daemon.painted().await;
+    }
+    pad.hold(&[3]);
+    pad.hold(&[]);
+    let record = daemon.trace().await;
+    assert!(
+        matches!(record.result, Outcome::Exited { code: Some(0), .. }),
+        "{record:?}"
+    );
+    let success = image_of(LAUNCHER, 3, Look::Success);
+    while pad.images().last() != Some(&success) {
+        daemon.painted().await;
+    }
+    daemon.stop().await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_chord_key_sends_its_events_without_a_look() {
     let (mut daemon, pad, injector) = started(GLOBAL).await;

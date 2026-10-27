@@ -3,6 +3,10 @@
 //! variables of the press in its environment. Past `[timing].exec_timeout`
 //! the whole group is killed and the action fails.
 //!
+//! `launch` actions run the same way in a new session and are let go once
+//! they outlive `[timing].launch_settle`: an application keeps running past
+//! `exec_timeout` and past the daemon.
+//!
 //! Pre-alpha environment: `KEYVO_KEY`, `KEYVO_PROFILE`, `KEYVO_PAGE`,
 //! `KEYVO_PRESS`, `KEYVO_LAYER` and `KEYVO_SOCKET`. The window and project
 //! variables come with their slices.
@@ -80,6 +84,70 @@ pub async fn run(cmd: &str, env: &[(&'static str, String)], timeout: Duration) -
             }
         }
     }
+}
+
+/// Runs the `launch` command `cmd` like [`run`], but in a new session, and
+/// watches it at most `settle`. A command that ends by then is reported as
+/// [`run`] would; one still running is let go and has started. A task of
+/// the daemon reaps it when it ends, so it leaves no zombie and changes no
+/// result; once the daemon exits, the system reaps it.
+pub async fn launch(cmd: &str, env: &[(&'static str, String)], settle: Duration) -> Outcome {
+    let start = Instant::now();
+    let mut command = Command::new("sh");
+    command
+        .arg("-c")
+        .arg(cmd)
+        .envs(env.iter().map(|(name, value)| (name, value)))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null());
+    new_session(&mut command);
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            return Outcome::Failed {
+                error: format!("cannot start `sh`: {error}"),
+            };
+        }
+    };
+    match tokio::time::timeout(settle, child.wait()).await {
+        Ok(Ok(status)) => Outcome::Exited {
+            code: status.code(),
+            duration_ms: millis(start.elapsed()),
+        },
+        Ok(Err(error)) => Outcome::Failed {
+            error: format!("cannot wait for the command: {error}"),
+        },
+        Err(_) => {
+            let pid = child.id();
+            tokio::spawn(async move {
+                let _ = child.wait().await;
+            });
+            // A child not yet waited for always has its id.
+            pid.map_or_else(
+                || Outcome::Failed {
+                    error: "the command has no process id".into(),
+                },
+                |pid| Outcome::Started { pid },
+            )
+        }
+    }
+}
+
+/// Starts the command of `command` in a new session (`setsid`), so it
+/// leaves the daemon's process group and session and outlives both.
+fn new_session(command: &mut Command) {
+    #[cfg(target_os = "linux")]
+    // SAFETY: the closure runs in the forked child before `exec`; it only
+    // calls `setsid`, which is async-signal-safe, and allocates nothing.
+    unsafe {
+        command.pre_exec(|| {
+            rustix::process::setsid()
+                .map(drop)
+                .map_err(std::io::Error::from)
+        });
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = command;
 }
 
 /// Kills the process group led by `pid`, the command and everything it
@@ -211,5 +279,64 @@ mod tests {
         assert!(start.elapsed() < Duration::from_secs(1));
         tokio::time::sleep(Duration::from_millis(1500)).await;
         assert!(!marker.exists());
+    }
+
+    const SETTLE: Duration = Duration::from_millis(100);
+
+    #[tokio::test]
+    async fn a_launch_that_ends_within_the_settle_is_reported_like_exec() {
+        assert!(matches!(
+            launch("true", &[], LONG).await,
+            Outcome::Exited { code: Some(0), .. }
+        ));
+        assert!(matches!(
+            launch("exit 3", &[], LONG).await,
+            Outcome::Exited { code: Some(3), .. }
+        ));
+        // `sh` reports a command it cannot find with 127.
+        assert!(matches!(
+            launch("keyvo-no-such-command-155", &[], LONG).await,
+            Outcome::Exited {
+                code: Some(127),
+                ..
+            }
+        ));
+    }
+
+    /// The fields of `/proc/<pid>/stat` after the command name: the state
+    /// is the first, the session id the fourth.
+    #[cfg(target_os = "linux")]
+    fn stat(pid: u32) -> Option<Vec<String>> {
+        let text = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        let (_, rest) = text.rsplit_once(") ")?;
+        Some(rest.split(' ').map(str::to_owned).collect())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_launch_still_running_after_the_settle_is_let_go_in_its_own_session() {
+        let start = std::time::Instant::now();
+        let outcome = launch("sleep 5", &[], SETTLE).await;
+        assert!(start.elapsed() < Duration::from_secs(1), "{outcome:?}");
+        let Outcome::Started { pid } = outcome else {
+            panic!("not started: {outcome:?}");
+        };
+        let fields = stat(pid).expect("a running child");
+        assert_ne!(fields[0], "Z", "{fields:?}");
+        // A new session led by the child, so it outlives the daemon's.
+        assert_eq!(fields[3], pid.to_string(), "{fields:?}");
+        for fd in [0, 1] {
+            let target = std::fs::read_link(format!("/proc/{pid}/fd/{fd}")).unwrap();
+            assert_eq!(target, Path::new("/dev/null"), "fd {fd}");
+        }
+        // The daemon reaps it when it ends: no zombie is left. The shell
+        // leads its own group; killing the group also ends a `sleep` it
+        // forked.
+        kill_group(Some(pid));
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while stat(pid).is_some() {
+            assert!(std::time::Instant::now() < deadline, "{:?}", stat(pid));
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
     }
 }

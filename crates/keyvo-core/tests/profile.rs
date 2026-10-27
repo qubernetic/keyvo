@@ -116,7 +116,7 @@ const INVALID: &[(&str, usize, usize, &str)] = &[
         "unknown-action.toml",
         9,
         19,
-        "unknown variant `recipe`, expected `chord` or `exec`",
+        "unknown variant `recipe`, expected one of `chord`, `exec`, `launch`",
     ),
     (
         "unknown-field.toml",
@@ -209,5 +209,39 @@ fn an_action_table_needs_the_fields_of_its_type() {
     assert_eq!(
         profile.pages[0].keys[&KeySlot::new(1).unwrap()].action,
         Some(Action::Exec { cmd: "make".into() })
+    );
+}
+
+#[test]
+fn a_launch_action_is_a_command_line_like_exec() {
+    let table = [
+        (r#"{ type = "launch" }"#, "missing field `cmd`"),
+        (
+            r#"{ type = "launch", cmd = "kcalc", keys = "a" }"#,
+            "unknown field `keys`",
+        ),
+    ];
+    for (action, message) in table {
+        let text = format!(
+            "schema_version = 1\n[profile]\nid = \"t\"\nname = \"T\"\n[[pages]]\n[pages.keys.1]\naction = {action}\n"
+        );
+        let diagnostic = Profile::from_toml(&text, Path::new("t.toml")).unwrap_err();
+        assert!(
+            diagnostic.message.starts_with(message),
+            "{action}: {diagnostic}"
+        );
+    }
+    let text = "schema_version = 1\n[profile]\nid = \"t\"\nname = \"T\"\n[[pages]]\n[pages.keys.1]\naction = { type = \"launch\", cmd = \"flatpak run org.kde.kcalc\" }\n";
+    let profile = Profile::from_toml(text, Path::new("t.toml")).unwrap();
+    let launch = Action::Launch {
+        cmd: "flatpak run org.kde.kcalc".into(),
+    };
+    assert_eq!(
+        profile.pages[0].keys[&KeySlot::new(1).unwrap()].action,
+        Some(launch.clone())
+    );
+    assert_eq!(
+        serde_json::to_value(&launch).unwrap(),
+        serde_json::json!({ "type": "launch", "cmd": "flatpak run org.kde.kcalc" })
     );
 }

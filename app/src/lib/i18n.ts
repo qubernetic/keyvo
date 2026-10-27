@@ -160,6 +160,7 @@ export const messages = {
 
   "action.chord": "chord {keys}",
   "action.exec": "exec {cmd}",
+  "action.launch": "launch {cmd}",
   "layer": "{layer} layer",
 
   "trace.strip": "Recent events",
@@ -173,6 +174,7 @@ export const messages = {
   "trace.dryRun": "dry run, nothing executed",
   "trace.running": "running",
   "trace.exited": "exited {code} after {ms} ms",
+  "trace.started": "started, pid {pid}",
   "trace.failed": "failed: {error}",
 
   "drawer.debug": "Debug log",
@@ -217,6 +219,7 @@ export const messages = {
   "inspector.kind.none": "No action",
   "inspector.kind.chord": "Chord",
   "inspector.kind.exec": "Exec",
+  "inspector.kind.launch": "Launch",
   "inspector.subtitle": "{file} line {line}",
   "inspector.notOnPage": "{file}, not on this page yet",
   "inspector.fromGlobal": "from global",
@@ -247,6 +250,7 @@ export const messages = {
   "catalogue.apps": "Apps",
   "catalogue.chord": "Chord",
   "catalogue.exec": "Exec",
+  "catalogue.launch": "Launch",
   "catalogue.unread": "The presets could not be read: {error}",
   "catalogue.problems": "Recipe packs left out",
   "inspector.whatItDoes": "What it does",

@@ -186,7 +186,7 @@ pub struct KeyState {
     pub badge: Option<String>,
 }
 
-/// What a key press does (pre-alpha: `chord` and `exec`).
+/// What a key press does (pre-alpha: `chord`, `exec` and `launch`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
 pub enum Action {
@@ -200,15 +200,21 @@ pub enum Action {
         /// The command line.
         cmd: String,
     },
+    /// Open an application: run a command like `exec`, in its own session,
+    /// and let it go once it outlives `[timing].launch_settle`.
+    Launch {
+        /// The command line.
+        cmd: String,
+    },
 }
 
 impl Action {
     /// Whether the key shows the automatic `running`, `success` and
     /// `error` states while and after the action runs (spec §7.2): `exec`
-    /// does, a chord is instant and does not.
+    /// and `launch` do, a chord is instant and does not.
     #[must_use]
     pub fn has_feedback(&self) -> bool {
-        matches!(self, Self::Exec { .. })
+        matches!(self, Self::Exec { .. } | Self::Launch { .. })
     }
 }
 
@@ -223,6 +229,7 @@ impl<'de> Deserialize<'de> for Action {
         enum Type {
             Chord,
             Exec,
+            Launch,
         }
 
         struct ActionVisitor;
@@ -255,14 +262,17 @@ impl<'de> Deserialize<'de> for Action {
                     (None, _, _) => Err(de::Error::missing_field("type")),
                     (Some(Type::Chord), Some(keys), None) => Ok(Action::Chord { keys }),
                     (Some(Type::Exec), None, Some(cmd)) => Ok(Action::Exec { cmd }),
+                    (Some(Type::Launch), None, Some(cmd)) => Ok(Action::Launch { cmd }),
                     (Some(Type::Chord), _, Some(_)) => {
                         Err(de::Error::unknown_field("cmd", &["type", "keys"]))
                     }
-                    (Some(Type::Exec), Some(_), _) => {
+                    (Some(Type::Exec | Type::Launch), Some(_), _) => {
                         Err(de::Error::unknown_field("keys", &["type", "cmd"]))
                     }
                     (Some(Type::Chord), None, None) => Err(de::Error::missing_field("keys")),
-                    (Some(Type::Exec), None, None) => Err(de::Error::missing_field("cmd")),
+                    (Some(Type::Exec | Type::Launch), None, None) => {
+                        Err(de::Error::missing_field("cmd"))
+                    }
                 }
             }
         }

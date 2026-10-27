@@ -171,6 +171,12 @@ pub struct Timing {
     #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub exec_timeout: Duration,
+    /// How long a `launch` action is watched for an early exit (spec §8): a
+    /// command still running after this long is let go and counts as
+    /// started. Default 1000 ms.
+    #[serde(with = "millis")]
+    #[schemars(with = "u64")]
+    pub launch_settle: Duration,
     /// Wait between two attempts to open the Keypad after it is gone (spec
     /// §5.1). Default 1000 ms.
     #[serde(with = "millis")]
@@ -214,6 +220,7 @@ impl Default for Timing {
             divert_spacing: Duration::from_millis(20),
             reply_timeout: Duration::from_millis(1000),
             exec_timeout: Duration::from_secs(30),
+            launch_settle: Duration::from_millis(1000),
             reconnect_interval: Duration::from_millis(1000),
             reload_settle: Duration::from_millis(100),
             accept_backoff: Duration::from_millis(100),

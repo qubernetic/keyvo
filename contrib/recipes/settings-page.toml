@@ -1,7 +1,8 @@
 # keyvo recipe pack: open a page of the desktop's settings.
 # KDE Plasma 6 System Settings opens on the module named after it. On GNOME
 # the same pages are `gnome-control-center sound`, `display`, `bluetooth`,
-# `network`, `power` and `keyboard`.
+# `network`, `power` and `keyboard`. Every variant is a `launch`: the
+# settings window stays open, so keyvo lets it go.
 schema_version = 1
 
 [recipe]
@@ -13,29 +14,29 @@ label = "Settings"
 [[variants]]
 id     = "sound"
 name   = "Sound"
-action = { type = "exec", cmd = "systemsettings kcm_pulseaudio" }
+action = { type = "launch", cmd = "systemsettings kcm_pulseaudio" }
 
 [[variants]]
 id     = "display"
 name   = "Display"
-action = { type = "exec", cmd = "systemsettings kcm_kscreen" }
+action = { type = "launch", cmd = "systemsettings kcm_kscreen" }
 
 [[variants]]
 id     = "bluetooth"
 name   = "Bluetooth"
-action = { type = "exec", cmd = "systemsettings kcm_bluetooth" }
+action = { type = "launch", cmd = "systemsettings kcm_bluetooth" }
 
 [[variants]]
 id     = "network"
 name   = "Wi-Fi and networking"
-action = { type = "exec", cmd = "systemsettings kcm_networkmanagement" }
+action = { type = "launch", cmd = "systemsettings kcm_networkmanagement" }
 
 [[variants]]
 id     = "power"
 name   = "Power management"
-action = { type = "exec", cmd = "systemsettings kcm_powerdevilprofilesconfig" }
+action = { type = "launch", cmd = "systemsettings kcm_powerdevilprofilesconfig" }
 
 [[variants]]
 id     = "keyboard"
 name   = "Keyboard"
-action = { type = "exec", cmd = "systemsettings kcm_keyboard" }
+action = { type = "launch", cmd = "systemsettings kcm_keyboard" }

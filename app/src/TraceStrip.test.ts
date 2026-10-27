@@ -15,7 +15,7 @@ import { PAD_TRACE, STRIP_LINE } from "./lib/pad";
 import type { TraceRecord } from "./lib/protocol";
 
 /** The fixture entries, newest first: chord sent, exec exited 101, exec
- * failed, dry run, unbound. */
+ * failed, dry run, unbound, launch started. */
 const FIXTURE = eventsOf("trace").map((event) => event.entry);
 
 /** `count` entries one second apart from 15:04:05 local time on, newest first. */
