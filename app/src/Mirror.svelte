@@ -173,6 +173,10 @@
     overflow: hidden;
   }
 
+  .key:hover {
+    border-color: var(--kv-fg);
+  }
+
   .key:focus-visible {
     outline: 2px solid var(--kv-fg);
     outline-offset: 2px;

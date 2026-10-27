@@ -241,6 +241,42 @@ describe("contrast", () => {
   });
 });
 
+describe("hover", () => {
+  const hovered = all.filter(
+    (rule) => rule.file === "styles/controls.css" && rule.selector.includes(":hover"),
+  );
+
+  it.each([
+    'button:where(:not(:disabled, [aria-disabled="true"]))',
+    "input",
+    "select",
+    "textarea",
+    '[role="menuitem"]',
+  ])(
+    "%s moves its border to the text colour on hover (DESIGN.md Hover)",
+    (control) => {
+      // The selector list is split by hand: a `:where(:not(a, b))` carries
+      // commas of its own.
+      const rule = hovered.find((candidate) =>
+        candidate.selector.replace(/\s+/g, " ").includes(`${control}:hover`),
+      );
+      expect(rule, control).toBeDefined();
+      expect(rule?.declarations.get("border-color")).toBe("var(--kv-fg)");
+      expect([...(rule?.declarations.keys() ?? [])]).toEqual(["border-color"]);
+    },
+  );
+
+  it("transitions the border colour only, in 150 ms, easing out", () => {
+    const transitions = all
+      .filter((rule) => !rule.selector.startsWith("*"))
+      .flatMap((rule) => [...rule.declarations].filter(([name]) => name === "transition"));
+    expect(transitions.length).toBeGreaterThan(0);
+    for (const [, value] of transitions) {
+      expect(value).toMatch(/^border-color 150ms cubic-bezier\(0\.22, 1, 0\.36, 1\)$/);
+    }
+  });
+});
+
 describe("targets and motion", () => {
   it("buttons, inputs and selects are at least 32 px high", () => {
     const sized = all.find(

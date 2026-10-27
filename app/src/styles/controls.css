@@ -80,6 +80,25 @@ textarea:disabled {
   color: var(--kv-fg);
 }
 
+/* Hover moves the border to the text colour and nothing else (DESIGN.md
+   "Hover / Focus"); :where() keeps the rule below a selected or current
+   control's accent border, and a disabled control does not react. */
+button:where(:not(:disabled, [aria-disabled="true"])):hover,
+input:hover,
+select:hover,
+textarea:hover,
+[role="menuitem"]:hover {
+  border-color: var(--kv-fg);
+}
+
+button,
+input,
+select,
+textarea,
+[role="menuitem"] {
+  transition: border-color 150ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
