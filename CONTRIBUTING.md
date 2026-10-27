@@ -177,7 +177,9 @@ GitHub carries the matching label:
   `/dev/uinput`) take sandbox-complete issues only.
 - **Hardware-bound** (`hardware`): a step needs the device, `/dev/uinput`,
   Solaar, udev, systemd, KWin or the Windows VM. The PR carries the
-  `## User test` checklist and the maintainer runs it on the host. Keep these
+  `## User test` checklist and the maintainer runs it on the host; the same
+  block goes, in the same PR, into the test guide of the milestone under
+  test (`docs/beta-test.md` section 5 for the beta). Keep these
   issues small: they verify a sandbox-complete issue on the device, record the
   measured numbers in `docs/hardware-notes.md` and fix only what the device
   contradicts. Code that grows inside a hardware-bound issue moves to a new

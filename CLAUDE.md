@@ -82,7 +82,7 @@ keyvo/
 ├── schemas/            # generated JSON Schemas of profiles, recipe packs and config.toml; a keyvo-core test keeps them current
 ├── tests/protocol-fixtures/  # shared fixtures for Rust/TS clients: socket/ NDJSON, editor/, hid/ golden HID++ scripts
 └── docs/               # spec.md, roadmap.md, socket-api.md, adr/, design/, research/, plans/,
-                        #   hardware-notes.md, pre-alpha-test.md; planned: diagrams/
+                        #   hardware-notes.md, pre-alpha-test.md, beta-test.md; planned: diagrams/
 ```
 
 "Planned" marks what the pre-alpha has not built yet (`docs/roadmap.md` names the milestone).
@@ -159,6 +159,7 @@ Known traps:
 - `docs/plans/`: per-issue implementation plans; `2026-09-09-project-plan.md` is the master plan
 - `docs/research/`: protocol findings, captures decoded, prior-art analyses
 - `docs/hardware-notes.md`: measured device behaviour (date, firmware version, method) and the first-light checklist
-- `docs/pre-alpha-test.md`: the owner's pre-alpha home session (#70, #52) and the collected User test checklists of the epic's slice PRs; a slice PR merged into `epic/34-pre-alpha` adds its User test items there
+- `docs/pre-alpha-test.md`: the owner's pre-alpha home session (#70, #52) and the collected User test checklists of the epic's slice PRs; a slice PR merged into `epic/34-pre-alpha` adds its User test items there; frozen at e00b452 except the #179 block
+- `docs/beta-test.md`: the owner's beta sessions (#180) and the collected User test checklists of the beta epic's slice PRs; a slice PR into `epic/180-beta` adds its User test block to its section 5
 - `CONTRIBUTING.md`: process, TDD, hardware test policy, DCO
 - `SECURITY.md`: threat model (socket trusts the same user, like ssh-agent)

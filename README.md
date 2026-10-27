@@ -141,6 +141,8 @@ just run -- preview vscode --page 2 -o grid.png   # an id from ~/.config/keyvo/p
   the device.
 - [Pre-alpha test guide](docs/pre-alpha-test.md): the hardware session on
   the host, with the example profiles.
+- [Beta test guide](docs/beta-test.md): the beta's hardware sessions and
+  the slice checklists of the beta epic.
 - [Project plan](docs/plans/2026-09-09-project-plan.md): decisions, architecture,
   milestones.
 - [Research](docs/research/): protocol findings and prior-art analyses.

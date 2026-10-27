@@ -1,5 +1,8 @@
 # Pre-alpha home test
 
+> Frozen at e00b452 (the pre-alpha epic merged into `develop`), except the
+> #179 block; the beta's checks go into [beta-test.md](beta-test.md).
+
 One session on the host with the Keypad attached: the no-strip check (#70,
 once #72 is merged), the end-to-end check (#52), and the User test
 checklists of every slice merged into `epic/34-pre-alpha`. Every step
