@@ -2,13 +2,16 @@
 // (§6): every token has a fixed default until the theme bridge (M4a-1)
 // reads it from the desktop; every rule that colours text sets the text
 // and its background together, from tokens only; every such pair passes
-// 4.5:1; every form control, the option list included, has its pair; and
+// 4.5:1 in the default set and in every mock set, the focus ring 3:1;
+// every form control, the option list included, has its pair; and
 // the document's color-scheme matches the token set, so the webview's
 // native popups follow it.
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+
+import { THEMES } from "../lib/mock/themes";
 
 const STYLES = dirname(fileURLToPath(import.meta.url));
 const SRC = join(STYLES, "..");
@@ -111,11 +114,18 @@ function luminance(hex: string): number {
   return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0);
 }
 
-/** WCAG 2 contrast ratio of two tokens' colours. */
-function contrast(a: string, b: string): number {
-  const [light, dark] = [luminance(token(a) ?? ""), luminance(token(b) ?? "")].sort(
-    (x, y) => y - x,
-  );
+/** The token sets the checks run over: the default of tokens.css and the
+ * applied sets of the mock (lib/mock/themes.ts), the bridge's stand-in. */
+const SETS: [string, (name: string) => string | undefined][] = [
+  ["default", token],
+  ...Object.entries(THEMES).map(
+    ([name, set]): [string, (name: string) => string | undefined] => [name, (key) => set[key]],
+  ),
+];
+
+/** WCAG 2 contrast ratio of two tokens' colours in a set. */
+function contrast(set: (name: string) => string | undefined, a: string, b: string): number {
+  const [light, dark] = [luminance(set(a) ?? ""), luminance(set(b) ?? "")].sort((x, y) => y - x);
   return ((light ?? 0) + 0.05) / ((dark ?? 0) + 0.05);
 }
 
@@ -227,17 +237,27 @@ describe("contrast", () => {
     }
   });
 
-  it("every text pair passes 4.5:1", () => {
+  it("runs over the default set and the four mock sets", () => {
+    expect(SETS.map(([name]) => name)).toEqual([
+      "default",
+      "breeze-dark",
+      "breeze-light",
+      "adwaita-dark",
+      "adwaita-light",
+    ]);
+  });
+
+  it.each(SETS)("every text pair passes 4.5:1 in the %s set", (_, set) => {
     const failing = pairs
-      .filter(({ fg, bg }) => fg !== "" && bg !== "" && contrast(fg, bg) < 4.5)
+      .filter(({ fg, bg }) => fg !== "" && bg !== "" && contrast(set, fg, bg) < 4.5)
       .map(({ rule, fg, bg }) => `${rule.file}: ${rule.selector}: ${fg} on ${bg}`);
     expect(pairs.length).toBeGreaterThan(CONTROLS.length);
     expect(failing).toEqual([]);
   });
 
   it("the focus ring passes 3:1 on both backgrounds", () => {
-    expect(contrast("--kv-accent", "--kv-bg")).toBeGreaterThanOrEqual(3);
-    expect(contrast("--kv-accent", "--kv-bg-alt")).toBeGreaterThanOrEqual(3);
+    expect(contrast(token, "--kv-accent", "--kv-bg")).toBeGreaterThanOrEqual(3);
+    expect(contrast(token, "--kv-accent", "--kv-bg-alt")).toBeGreaterThanOrEqual(3);
   });
 });
 

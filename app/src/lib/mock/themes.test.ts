@@ -5,7 +5,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { applyTheme, DEFAULT_THEME, THEMES, themeOf } from "./themes";
+import {
+  applyTheme,
+  contrast,
+  DEFAULT_THEME,
+  MEASURED,
+  mix,
+  mutedOf,
+  type ThemeName,
+  THEMES,
+  themeOf,
+} from "./themes";
 
 const tokensCss = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../../styles/tokens.css"),
@@ -40,10 +50,20 @@ describe("the mock themes", () => {
     const root = document.createElement("div");
     applyTheme("breeze-light", root);
     expect(root.style.getPropertyValue("--kv-bg")).toBe("#eff0f1");
-    expect(root.style.getPropertyValue("--kv-accent")).toBe("#3daee9");
+    expect(root.style.getPropertyValue("--kv-fg")).toBe("#232629");
     applyTheme("adwaita-dark", root);
     expect(root.style.getPropertyValue("--kv-bg")).toBe("#222226");
     expect(root.style.getPropertyValue("--kv-accent")).toBe("#81d0ff");
+  });
+
+  it("applies the measured values except the derived muted text", () => {
+    for (const [name, measured] of Object.entries(MEASURED)) {
+      const applied: Record<string, string> = { ...THEMES[name as ThemeName] };
+      delete applied["--kv-fg-muted"];
+      const rest: Record<string, string> = { ...measured };
+      delete rest["--kv-fg-muted"];
+      expect(applied, name).toEqual(rest);
+    }
   });
 
   it("keeps the feedback states of the pad theme in every set", () => {
@@ -60,6 +80,49 @@ describe("the mock themes", () => {
     expect(root.style.getPropertyValue("--kv-motion")).toBe("reduced");
     applyTheme("breeze-dark", root, () => false);
     expect(root.style.getPropertyValue("--kv-motion")).toBe("full");
+  });
+
+  it.each(["breeze-dark", "adwaita-dark"] as const)(
+    "%s keeps its measured muted text, which passes 4.5:1",
+    (name) => {
+      const muted = MEASURED[name]["--kv-fg-muted"] ?? "";
+      expect(THEMES[name]["--kv-fg-muted"]).toBe(muted);
+      expect(contrast(muted, MEASURED[name]["--kv-bg"] ?? "")).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(muted, MEASURED[name]["--kv-bg-alt"] ?? "")).toBeGreaterThanOrEqual(4.5);
+    },
+  );
+
+  it.each(["breeze-light", "adwaita-light"] as const)(
+    "%s derives its muted text: the largest mix of the text toward the window that passes 4.5:1",
+    (name) => {
+      const { "--kv-fg": fg = "", "--kv-bg": bg = "", "--kv-bg-alt": alt = "" } = MEASURED[name];
+      const measured = MEASURED[name]["--kv-fg-muted"] ?? "";
+      expect(Math.min(contrast(measured, bg), contrast(measured, alt))).toBeLessThan(4.5);
+      const muted = THEMES[name]["--kv-fg-muted"] ?? "";
+      expect(muted).not.toBe(measured);
+      expect(contrast(muted, bg)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(muted, alt)).toBeGreaterThanOrEqual(4.5);
+      const step = [...Array(101).keys()].find((percent) => mix(fg, bg, percent) === muted);
+      expect(step).toBeGreaterThan(0);
+      const next = mix(fg, bg, (step ?? 0) + 1);
+      expect(Math.min(contrast(next, bg), contrast(next, alt))).toBeLessThan(4.5);
+    },
+  );
+
+  it("mutedOf takes a set's own values", () => {
+    const set = { "--kv-bg": "#ffffff", "--kv-bg-alt": "#ffffff", "--kv-fg": "#000000" };
+    expect(mutedOf({ ...set, "--kv-fg-muted": "#595959" })).toBe("#595959");
+    const derived = mutedOf({ ...set, "--kv-fg-muted": "#aaaaaa" });
+    expect(contrast(derived, "#ffffff")).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("mixes in OKLCH as color-mix() does", () => {
+    expect(mix("#3daee9", "#232629", 0)).toBe("#3daee9");
+    expect(mix("#3daee9", "#232629", 100)).toBe("#232629");
+    // OKLab lightness 0.5 is linear 0.125, sRGB 99.
+    expect(mix("#000000", "#ffffff", 50)).toBe("#636363");
+    expect(contrast("#000000", "#ffffff")).toBeCloseTo(21);
+    expect(contrast("#ffffff", "#000000")).toBeCloseTo(21);
   });
 
   it("defaults to breeze-dark for a missing or unknown theme", () => {
