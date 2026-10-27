@@ -106,7 +106,7 @@ The profiles live in [`contrib/profiles/`](../contrib/profiles/):
 |---|---|---|---|
 | `global.toml` | no app profile matches | blue `#4e8bd6` | 1 Notify (exec, `notify-send`), 2 Fail (exec, `exit 1`), 3 Type (chord `shift+k, e, y`), 4 Slow (exec, `sleep 15`), 5 OK (exec, `true`); page `general` key 1 General, page `third` key 1 Third |
 | `konsole.toml` | `org.kde.konsole`, `konsole` | green `#3fae5a` | 1 New tab (chord `ctrl+shift+t`), 2 Find (chord `ctrl+shift+f`), 4 OK, 5 Fail, 6 Slow |
-| `vscode.toml` | `code`, `com.visualstudio.code` | orange `#e0a83b` | 1 Palette (chord `ctrl+shift+p`), 2 Save (chord `ctrl+s`), 7 OK, 8 Fail, 9 Slow |
+| `vscode.toml` | `code`, `com.visualstudio.code` | orange `#e0a83b` | 1 Palette (chord `ctrl+shift+p`), 2 Save (chord `ctrl+s`), 7 OK, 8 Fail, 9 Slow; page `files` key 1 Open (chord `ctrl+p`), key 2 Sidebar (chord `ctrl+b`) |
 
 If `~/.config/keyvo` exists already, move it aside first
 (`mv ~/.config/keyvo ~/.config/keyvo.before-test`) and move it back after
@@ -210,8 +210,8 @@ is for `keyvo ctl`, T3 for the app.
 
 4. **Konsole switch.** Focus a Konsole window. Expected: within a
    fraction of a second the pad shows the Konsole profile (green bars, New
-   tab, Find, OK, Fail, Slow), and T1 logs `showing profile konsole page
-   1 in auto mode`.
+   tab, Find, OK, Fail, Slow), and T1 logs `showing profile konsole index
+   1 (page 1) in auto mode`.
 
 5. **Editor switch.** Focus VS Code. Expected: orange bars, Palette,
    Save, and OK, Fail, Slow on keys 7 to 9; the log names `vscode`. Focus
@@ -262,8 +262,9 @@ is for `keyvo ctl`, T3 for the app.
    a device selector showing `Keypad`, a `...` menu button), the
    navigation rail on the left with Pad selected, and the Pad beside it:
    the Keypad drawing with nine tiles matching the pad in its cutouts,
-   under it the page tabs of the profile (`context`, `general`, `third`
-   on the global profile, the pad's page selected) and `Accent` with a
+   under it the page tabs of the page list (`third  general  context` on
+   the global profile, `third` and `general` muted, the pad's page
+   selected; #151) and `Accent` with a
    blue swatch and its `#rrggbb`. The app window itself is held
    (`[focus].hold_classes`, #121), so the profile of the window before it
    stays and a line reads `keyvo-app focused, holding <profile>`. Switch
@@ -516,13 +517,15 @@ The global profile has the pages context, general and third; key 1 shows
 Notify, General and Third on them. Keep a window no profile matches
 focused (Dolphin). The daemon now has a focus source (#64), so the
 original first item's `focus switching off` warning does not appear.
+Since #151 the buttons walk the page list (spec §6.3): on the global
+profile `[-1 third, 0 general, 1 context]`, without wrapping.
 
 - [ ] #63 `bin/keyvo-daemon`: key 1 shows Notify.
-- [ ] #63 Tap either page button: key 1 shows General and the log says `showing profile global page 2 in auto mode`. Tap again: back to Notify.
+- [ ] #63 Tap the left button: key 1 shows General and the log says `showing profile global index 0 (page 2) in auto mode`. Left again: Third. Right twice: back to Notify. Right again: nothing.
 - [ ] #63 Hold a page button for over 1 s: before you let go, the log says `... in manual mode` and the pad does not change.
-- [ ] #63 In manual mode, tap right repeatedly: Notify, General, Third, Notify. Tap left: it pages backwards.
-- [ ] #63 Hold both page buttons together: key 1 shows Notify and the log says `showing profile global page 1 in auto mode`. Releasing them does nothing more.
-- [ ] #63 Tap the right button within 1 s of letting go of a long press: a short tap still pages.
+- [ ] #63 In manual mode, tap left repeatedly: General, Third, then nothing. Tap right: it walks back to Notify and stops there.
+- [ ] #63 Hold both page buttons together: key 1 shows Notify and the log says `showing profile global index 1 (page 1) in auto mode`. Releasing them does nothing more.
+- [ ] #63 Tap the left button within 1 s of letting go of a long press: a short tap still pages.
 - [ ] #63 Ctrl-C: the daemon exits at once.
 
 ### KWin focus watcher (#64)
@@ -817,6 +820,21 @@ The mock dev server of #113 in a host browser. Run by the owner in #130.
 The mock dev server of #113 in a host browser. Run by the owner in #130.
 
 - [ ] #150 `just app-dev`, click key 3 while the pad shows Konsole, wait for the focus cycle: the line reads `Editing Konsole, key 3; the pad shows VS Code, page 1.`, then `... the pad shows Global, page 1.`; the header's dropdown says `VS Code, on the pad` and `Global, on the pad` at the same moments.
+
+### One page list per profile, the global pages to the left (#151)
+
+On the host with the Keypad and the daemon, the owner's own profiles
+(VS Code and Brave with a second page each, the global profile with the
+pages `context`, `general` and `apps`). With the example profiles of
+`contrib/profiles/` the same steps hold with `third` for `apps` and
+Dolphin for Brave. Run by the owner in #130.
+
+- [ ] #151 Focus VS Code: context page. Right: VS Code page 2. Right again: nothing. Left, left: context, then the global general page. Left again: the global `apps` page. Left again: nothing.
+- [ ] #151 On the global general page, switch to Brave within 10 s: still the general page. Wait 10 s, switch to Konsole: Konsole's context page.
+- [ ] #151 Focus Konsole: right does nothing; left: general; left: apps.
+- [ ] #151 Long press on VS Code page 2: the lock; focus Brave: the pad keeps VS Code page 2; left: VS Code context; long press: Brave's context page.
+- [ ] #151 Both buttons held from anywhere: the global context page, auto mode.
+- [ ] #151 The app on the GNOME runtime: the tab strip reads `apps  general  context  2` for VS Code with `apps` and `general` muted; the selected tab follows every press on the pad; clicking `general` edits the global profile's general page.
 
 ### First-light records (#75)
 

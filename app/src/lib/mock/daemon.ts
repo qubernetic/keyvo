@@ -72,7 +72,7 @@ export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemo
       .filter((profile) => profile.id !== GLOBAL && profile.match.class.includes(focused))
       .sort((a, b) => b.priority - a.priority);
     const profile = matching[0] ?? store.find(GLOBAL);
-    return { profile: profile?.id ?? GLOBAL, page: contextPage(profile), mode: "auto" };
+    return { profile: profile?.id ?? GLOBAL, page: contextPage(profile), mode: "auto", index: 1 };
   }
 
   /** Key `key` of page `page` of `id` with the layer that supplies it: the

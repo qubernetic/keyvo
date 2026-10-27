@@ -38,11 +38,12 @@ fn reply(index: usize) -> Reply {
         .unwrap()
 }
 
-fn view(profile: &str, page: usize, mode: Mode) -> View {
+fn view(profile: &str, page: usize, index: isize, mode: Mode) -> View {
     View {
         profile: profile.into(),
         page,
         mode,
+        index,
     }
 }
 
@@ -61,7 +62,7 @@ fn an_empty_mirror_knows_nothing() {
 fn status_fills_the_view_the_device_and_the_context() {
     let mut mirror = Mirror::new(10);
     mirror.answer(&reply(0));
-    assert_eq!(mirror.view(), Some(&view("terminal", 1, Mode::Auto)));
+    assert_eq!(mirror.view(), Some(&view("terminal", 1, 1, Mode::Auto)));
     assert_eq!(mirror.device().unwrap().keys, Some(9));
     assert_eq!(mirror.context().unwrap().class, "org.kde.konsole");
 
@@ -74,14 +75,14 @@ fn status_fills_the_view_the_device_and_the_context() {
 fn subscribed_sets_the_view_and_a_press_adds_its_entry() {
     let mut mirror = Mirror::new(10);
     mirror.answer(&reply(2));
-    assert_eq!(mirror.view(), Some(&view("global", 1, Mode::Auto)));
+    assert_eq!(mirror.view(), Some(&view("global", 1, 1, Mode::Auto)));
 
     mirror.answer(&reply(3));
     assert_eq!(mirror.trace().len(), 1);
     assert!(mirror.trace()[0].trigger.simulated);
 
     mirror.answer(&reply(5));
-    assert_eq!(mirror.view(), Some(&view("global", 1, Mode::Auto)));
+    assert_eq!(mirror.view(), Some(&view("global", 1, 1, Mode::Auto)));
 }
 
 #[test]
@@ -97,7 +98,7 @@ fn every_fixture_event_lands_in_the_mirror() {
         "every fixture event changes something"
     );
 
-    assert_eq!(mirror.view(), Some(&view("global", 1, Mode::Manual)));
+    assert_eq!(mirror.view(), Some(&view("global", 1, 1, Mode::Manual)));
     let device = mirror.device().unwrap();
     assert!(!device.connected);
     assert_eq!(device.error.as_deref(), Some("device disconnected"));

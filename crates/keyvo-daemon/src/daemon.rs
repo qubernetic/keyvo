@@ -458,8 +458,9 @@ impl<I: InputInjector> Controller<'_, I> {
         let view = self.engine.view();
         if view != *before {
             tracing::info!(
-                "showing profile {} page {} in {} mode",
+                "showing profile {} index {} (page {}) in {} mode",
                 view.profile,
+                view.index,
                 view.page,
                 view.mode.as_str()
             );

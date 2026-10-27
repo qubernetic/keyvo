@@ -47,7 +47,7 @@ describe("the mock daemon", () => {
     expect(status.device.connected).toBe(true);
     expect(status.device.geometry?.rects).toHaveLength(9);
     expect(status.config_dir).toBe(fixture.config_dir);
-    expect(status.view).toEqual({ profile: "global", page: 1, mode: "auto" });
+    expect(status.view).toEqual({ profile: "global", page: 1, mode: "auto", index: 1 });
     expect(status.context?.class).toBe("org.kde.dolphin");
   });
 
@@ -151,7 +151,7 @@ describe("the mock daemon", () => {
     const updates: Update[] = [];
     const stop = await daemon.subscribe(20, (update) => updates.push(update));
     expect(updates).toEqual([
-      { kind: "subscribed", view: { profile: "global", page: 1, mode: "auto" } },
+      { kind: "subscribed", view: { profile: "global", page: 1, mode: "auto", index: 1 } },
     ]);
 
     vi.advanceTimersByTime(TRACE_MS);
@@ -172,7 +172,7 @@ describe("the mock daemon", () => {
       );
     expect(views()).toEqual(["konsole"]);
     expect(contexts()).toEqual(["org.kde.konsole"]);
-    expect((await daemon.status()).view).toEqual({ profile: "konsole", page: 1, mode: "auto" });
+    expect((await daemon.status()).view).toEqual({ profile: "konsole", page: 1, mode: "auto", index: 1 });
     expect((await daemon.press(1, "short")).profile).toBe("konsole");
 
     vi.advanceTimersByTime(3 * FOCUS_MS);
@@ -211,7 +211,7 @@ describe("the mock daemon", () => {
       },
     ]);
     const status = await daemon.status();
-    expect(status.view).toEqual({ profile: "konsole", page: 1, mode: "auto" });
+    expect(status.view).toEqual({ profile: "konsole", page: 1, mode: "auto", index: 1 });
     expect(status.context?.held).toBe(true);
     expect((await daemon.press(1, "short")).profile).toBe("konsole");
     stop();

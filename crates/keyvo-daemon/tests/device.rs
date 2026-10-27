@@ -218,6 +218,7 @@ fn a_new_view_paints_the_union_even_where_keys_stay_the_same() {
         profile: "global".into(),
         page,
         mode: Mode::Manual,
+        index: 1,
     };
     for page in [1, 2] {
         actor

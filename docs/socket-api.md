@@ -103,7 +103,7 @@ No fields. The result:
 | `version` | string | The daemon's version. |
 | `config_dir` | string | The configuration directory the daemon loads (`--config-dir` or the default, spec §7.1). A client that edits profiles (the app) edits this tree. |
 | `device` | object | `connected` (bool); `keys` (the key count) and `geometry` when connected; `error` (why not) when the daemon knows. |
-| `view` | object | What the pad shows: `profile` (id), `page` (from 1), `mode` (`auto` or `manual`). |
+| `view` | object | What the pad shows: `profile` (id of the profile that owns the page, the global one at index 0 and below), `page` (from 1, inside `profile`), `mode` (`auto` or `manual`), `index` (integer: the position in the shown profile's page list, spec §6.1: 1 its context page, 2 and up its other pages, 0 the global `general` page, -1 and below the global pages after it). |
 | `context` | object, optional | The last focus report: `class`, `title`, `pid` when known, `source` (`watcher` or `notify_context`), and `held: true` when the class is in `[focus].hold_classes` (spec §6.1: the view stays that of the window before; absent otherwise). Left out before the first report. |
 | `trace` | integer | The entries in the trace ring buffer. |
 
@@ -218,15 +218,15 @@ The schema of a pack file is `schemas/recipe.schema.json`.
 ## Events
 
 ```json
-{"v":1,"event":"profile","profile":"terminal","page":1,"mode":"auto"}
+{"v":1,"event":"profile","profile":"terminal","page":1,"mode":"auto","index":1}
 ```
 
 | `event` | Fields | When |
 |---|---|---|
 | `key` | `key` (1..9), `edge` (`press` or `release`) | A key on the device went down or up. Page buttons show up as `page` and `mode` events instead. |
-| `profile` | `profile`, `page`, `mode` | Another profile shows. |
-| `page` | `profile`, `page`, `mode` | Another page shows. |
-| `mode` | `profile`, `page`, `mode` | The mode changed. |
+| `profile` | `profile`, `page`, `mode`, `index` | Another profile shows. |
+| `page` | `profile`, `page`, `mode`, `index` | Another page shows, or another list position. |
+| `mode` | `profile`, `page`, `mode`, `index` | The mode changed. |
 | `device` | `connected`, `keys` and `geometry`, or `error` | The Keypad was claimed or lost; the fields of `status`'s `device`. |
 | `context` | `class`, `title`, `pid` (optional), `source`, `held` (only when `true`) | A focus source reported a window. A report does not always switch the profile; a `held` one (a class in `[focus].hold_classes`, default the keyvo app) never does, so no `profile`, `page` or `mode` event follows it. |
 | `trace` | `entry` | A press was resolved (dry run, unbound, chord) or an `exec` ended. |

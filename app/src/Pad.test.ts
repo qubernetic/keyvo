@@ -1,7 +1,7 @@
 // The Pad screen (pad screen brief §5.2, §6) against a fake daemon fed with
 // the shared socket fixtures (tests/protocol-fixtures/socket/): the
 // drawing with the pad's tiles, the pin a selected key sets and the
-// "pad moved" line, the page tabs of the pinned profile, the held caption,
+// "pad moved" line, the page list tabs (#151), the held caption,
 // the dry-run presses, the notices and the event list. The inspector
 // against a fake editor, for what the Pad hands it: the pinned page's tile,
 // the global key under a fall-through key, Press; Inspector.test.ts tests
@@ -45,7 +45,7 @@ function summary(id: string, pages: (string | null)[], accent?: string): Profile
 }
 
 const PROFILES = [
-  summary("global", ["context", "two", "three"]),
+  summary("global", ["context", "general", "apps"]),
   summary("terminal", ["context", "git", null], "#2ecc71"),
   summary("empty", []),
 ];
@@ -311,16 +311,55 @@ describe("the pin", () => {
 });
 
 describe("the page tabs", () => {
-  it("show the pad's profile while following, its page selected, and the accent", async () => {
+  const names = () =>
+    within(screen.getByRole("tablist", { name: "Pages" }))
+      .getAllByRole("tab")
+      .map((tab) => tab.textContent?.trim());
+
+  it("show the pad's page list while following: the global pages muted, then the profile's", async () => {
     await mounted();
     const list = screen.getByRole("tablist", { name: "Pages" });
-    expect(within(list).getAllByRole("tab").map((tab) => tab.textContent?.trim())).toEqual([
-      "context",
-      "git",
-      "Page 3",
+    expect(names()).toEqual(["apps", "general", "context", "git", "Page 3"]);
+    expect(within(list).getAllByRole("tab").map((tab) => tab.classList.contains("global"))).toEqual([
+      true,
+      true,
+      false,
+      false,
+      false,
     ]);
+    expect(within(list).getByRole("tab", { name: "general, a page of global" })).toBeInTheDocument();
     expect(within(list).getByRole("tab", { selected: true })).toHaveTextContent("context");
     expect(screen.getByRole("img", { name: "Accent #2ecc71" })).toBeInTheDocument();
+  });
+
+  it("select the tab at the index the daemon reports, the list staying the pad's", async () => {
+    const { daemon } = await mounted();
+    // The fixture's page event: the global general page at index 0.
+    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
+    await waitFor(() => expect(screen.getByRole("tab", { selected: true })).toHaveTextContent("general"));
+    expect(names()).toEqual(["apps", "general", "context", "git", "Page 3"]);
+    await daemon.send({
+      kind: "event",
+      event: { event: "page", profile: "terminal", page: 2, mode: "auto", index: 2 },
+    });
+    await waitFor(() => expect(screen.getByRole("tab", { selected: true })).toHaveTextContent("git"));
+  });
+
+  it("a global tab pins that page of the global profile and keeps the list", async () => {
+    const { onpin } = await mounted();
+    await fireEvent.click(screen.getByRole("tab", { name: "general, a page of global" }));
+    expect(onpin).toHaveBeenLastCalledWith({ profile: "global", page: 2 });
+    expect(names()).toEqual(["apps", "general", "context", "git", "Page 3"]);
+    expect(screen.getByRole("tab", { selected: true })).toHaveTextContent("general");
+    expect(
+      screen.getByText("Editing global, page 2; the pad shows terminal, page 1."),
+    ).toBeInTheDocument();
+  });
+
+  it("show the global profile's own list for its pinned context page", async () => {
+    await mounted({ pinned: { profile: "global", page: 1 } });
+    expect(names()).toEqual(["apps", "general", "context"]);
+    expect(screen.getByRole("tab", { selected: true })).toHaveTextContent("context");
   });
 
   it("a tab pins its page, and the inspector edits it", async () => {
@@ -341,11 +380,16 @@ describe("the page tabs", () => {
     expect(onpin).toHaveBeenLastCalledWith({ profile: "terminal", page: 3 });
   });
 
-  it("show the pinned profile's pages, none for a profile without pages", async () => {
+  it("show the pinned profile's list, only the global pages for a profile without pages", async () => {
     await mounted({ pinned: { profile: "empty", page: 1 } });
     const list = screen.getByRole("tablist", { name: "Pages" });
-    expect(within(list).queryAllByRole("tab")).toHaveLength(0);
-    expect(screen.getByRole("button", { name: "Add a page" })).toHaveAttribute("aria-disabled", "true");
+    expect(names()).toEqual(["apps", "general"]);
+    expect(within(list).queryByRole("tab", { selected: true })).toBeNull();
+    const add = screen.getByRole("button", { name: "Add a page" });
+    expect(add).toHaveAttribute("aria-disabled", "true");
+    expect(within(list).getAllByRole("tab").at(-1)?.compareDocumentPosition(add)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
     // The drawing keeps the pad.
     expect(screen.getByRole("grid", { name: "Keypad mirror: profile terminal, page 1" })).toBeInTheDocument();
   });

@@ -6,8 +6,8 @@ import { describe, expect, it } from "vitest";
 import { difference, follow, kept, pinOnSelect, pinPage, pinProfile, target, type Pin } from "./pin";
 import type { View } from "./protocol";
 
-const PAD: View = { profile: "terminal", page: 2, mode: "auto" };
-const MOVED: View = { profile: "vscode", page: 1, mode: "auto" };
+const PAD: View = { profile: "terminal", page: 2, mode: "auto", index: 2 };
+const MOVED: View = { profile: "vscode", page: 1, mode: "auto", index: 1 };
 
 describe("the pin", () => {
   it("follows the pad by default", () => {
@@ -33,7 +33,7 @@ describe("the pin", () => {
   it("keeps a profile or page the user chose when a key is selected", () => {
     const pinned = pinProfile("vscode");
     expect(pinOnSelect(pinned, PAD)).toBe(pinned);
-    const page = pinPage(pinOnSelect(undefined, PAD) as Pin, 3);
+    const page = pinPage("terminal", 3);
     expect(pinOnSelect(page, PAD)).toBe(page);
   });
 
@@ -62,8 +62,8 @@ describe("the pin", () => {
     expect(pinProfile("vscode")).toEqual({ profile: "vscode", page: 1 });
   });
 
-  it("moves a pin to another page of its profile", () => {
-    expect(pinPage(pinProfile("vscode"), 3)).toEqual({ profile: "vscode", page: 3 });
+  it("pins the page a tab names, of the profile that owns it", () => {
+    expect(pinPage("global", 2)).toEqual({ profile: "global", page: 2 });
   });
 
   it("clears on follow", () => {

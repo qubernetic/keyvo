@@ -79,6 +79,7 @@ fn status_sends_the_fixture_request_and_returns_the_fixture_answer() {
             profile: "terminal".into(),
             page: 1,
             mode: Mode::Auto,
+            index: 1,
         }
     );
     let written = String::from_utf8(client.into_inner().written).unwrap();

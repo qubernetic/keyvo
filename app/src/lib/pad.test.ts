@@ -17,7 +17,7 @@ function traces(): TraceRecord[] {
 describe("fromStatus", () => {
   it("takes the view, the device and its geometry, and the context", () => {
     const state = fromStatus(STATUS);
-    expect(state.view).toEqual({ profile: "terminal", page: 1, mode: "auto" });
+    expect(state.view).toEqual({ profile: "terminal", page: 1, mode: "auto", index: 1 });
     expect(state.device).toMatchObject({ connected: true, keys: 9 });
     expect(state.geometry?.tile).toEqual({ width: 118, height: 118 });
     expect(state.geometry?.rects).toHaveLength(9);
@@ -63,16 +63,38 @@ describe("apply", () => {
   it("the subscribed view replaces the status view", () => {
     const state = apply(fromStatus(STATUS), {
       kind: "subscribed",
-      view: { profile: "global", page: 2, mode: "manual" },
+      view: { profile: "global", page: 2, mode: "manual", index: 0 },
     });
-    expect(state.view).toEqual({ profile: "global", page: 2, mode: "manual" });
+    expect(state.view).toEqual({ profile: "global", page: 2, mode: "manual", index: 0 });
+  });
+
+  it("the list owner is the view's profile from index 1 on and stays below", () => {
+    let state = fromStatus(STATUS);
+    expect(state.owner).toBe("terminal");
+    const view = (profile: string, page: number, index: number) =>
+      apply(state, { kind: "event", event: { event: "page", profile, page, mode: "auto", index } });
+    state = view("global", 2, 0);
+    expect(state.owner).toBe("terminal");
+    state = view("vscode", 2, 2);
+    expect(state.owner).toBe("vscode");
+    state = apply(initial(), {
+      kind: "subscribed",
+      view: { profile: "global", page: 3, mode: "auto", index: -1 },
+    });
+    expect(state.owner).toBe("global");
   });
 
   it("profile, page and mode events carry the whole view", () => {
     let state = initial();
     for (const event of [...eventsOf("profile"), ...eventsOf("page"), ...eventsOf("mode")]) {
       state = apply(state, { kind: "event", event });
-      expect(state.view).toEqual({ profile: event.profile, page: event.page, mode: event.mode });
+      expect(state.view).toStrictEqual({
+        profile: event.profile,
+        page: event.page,
+        mode: event.mode,
+        index: event.index,
+      });
+      expect(typeof state.view?.index).toBe("number");
     }
   });
 

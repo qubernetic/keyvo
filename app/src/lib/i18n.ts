@@ -123,6 +123,7 @@ export const messages = {
 
   "pad.held": "{class} focused, holding {profile}",
   "pad.pages": "Pages",
+  "pad.globalPage": "{page}, a page of {profile}",
   "pad.add": "+",
   "pad.addPage": "Add a page",
   "soon.addPage": "Adding a page arrives with M4a-4 on the roadmap.",

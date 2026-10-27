@@ -51,9 +51,10 @@ export function pinProfile(id: string): Pin {
   return { profile: id, page: 1 };
 }
 
-/** Moves the pin to page `page` of its profile. */
-export function pinPage(pinned: Pin, page: number): Pin {
-  return { profile: pinned.profile, page };
+/** Pins page `page` of profile `id`, as a page tab does: the global
+ * profile's for a tab at index 0 and below (#151). */
+export function pinPage(id: string, page: number): Pin {
+  return { profile: id, page };
 }
 
 /** Unpins: the inspector follows the pad again. */

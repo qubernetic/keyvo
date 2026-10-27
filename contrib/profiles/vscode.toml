@@ -3,7 +3,8 @@
 # copy it to ~/.config/keyvo/profiles/vscode.toml.
 #
 # The orange accent tells it apart from the global (blue) and the Konsole
-# (green) profile at a glance.
+# (green) profile at a glance. Its second page `files` is index 2 of its
+# page list (#151): the right page button from the context page shows it.
 schema_version = 1
 
 [profile]
@@ -39,3 +40,16 @@ action = { type = "exec", cmd = "exit 1" }
 icon   = "lucide:hammer"
 label  = "Slow"
 action = { type = "exec", cmd = "sleep 15" }
+
+[[pages]]
+name = "files"
+
+[pages.keys.1]                # opens the file finder
+icon   = "lucide:file-search"
+label  = "Open"
+action = { type = "chord", keys = "ctrl+p" }
+
+[pages.keys.2]                # toggles the sidebar
+icon   = "lucide:panel-left"
+label  = "Sidebar"
+action = { type = "chord", keys = "ctrl+b" }

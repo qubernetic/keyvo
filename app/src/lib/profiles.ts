@@ -102,6 +102,58 @@ export function pageName(profile: ProfileSummary, page: number): string {
   return profile.pages[page - 1] ?? t("profiles.pageNumber", { page });
 }
 
+/** One entry of a profile's page list (spec §6.3). */
+export interface PageTab {
+  /** The list position: 1 the context page, 0 and below the global pages. */
+  index: number;
+  /** The profile that owns the page. */
+  profile: string;
+  /** Counted from 1 inside `profile`. */
+  page: number;
+  name: string;
+}
+
+/** The global profile's page named `general`, from 1; none without one. */
+function generalPage(global: ProfileSummary | undefined): number | undefined {
+  const index = global?.pages.indexOf("general") ?? -1;
+  return index === -1 ? undefined : index + 1;
+}
+
+/** Whether page `page` of the global profile sits at index 0 or below of
+ * every list: its `general` page or one after it. */
+export function leftOfContext(global: ProfileSummary | undefined, page: number): boolean {
+  const general = generalPage(global);
+  return general !== undefined && page >= general && page <= (global?.pages.length ?? 0);
+}
+
+/** The page list the pad walks for `owner` in index order, as
+ * keyvo_core::state builds it: the global pages after `general` in file
+ * order at -1, -2, ..., `general` at 0, the owner's context page at 1 and
+ * its other pages from 2 in file order. */
+export function pageList(owner: ProfileSummary, global: ProfileSummary | undefined): PageTab[] {
+  const tab = (profile: ProfileSummary, page: number, index: number): PageTab => ({
+    index,
+    profile: profile.id,
+    page,
+    name: pageName(profile, page),
+  });
+  const general = generalPage(global);
+  const left: PageTab[] = [];
+  if (global !== undefined && general !== undefined) {
+    for (let page = global.pages.length; page >= general; page--) {
+      left.push(tab(global, page, general - page));
+    }
+  }
+  const context = contextPage(owner);
+  const others = owner.pages
+    .map((_, at) => at + 1)
+    .filter((page) => page !== context)
+    .filter((page) => owner.id !== GLOBAL || !leftOfContext(global, page));
+  // A profile without pages adds no tab of its own.
+  const own = owner.pages.length === 0 ? [] : [context, ...others];
+  return [...left, ...own.map((page, at) => tab(owner, page, at + 1))];
+}
+
 /** The header form: every field as the text in its input. */
 export interface HeaderForm {
   name: string;

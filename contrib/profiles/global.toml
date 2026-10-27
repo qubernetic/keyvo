@@ -4,8 +4,9 @@
 #
 # The context page has one key per feedback look: success, error, running
 # (and the long-run badge after 10 s), and a chord. Keys 1 to 4 follow the
-# User test of #62, the three pages the one of #63: a short page-button
-# press toggles context and general, manual mode pages through all three.
+# User test of #62. The three pages make the global part of every page
+# list (#151): `general` at index 0, `third` after it at -1, so the left
+# page button walks from any context page to general, then to third.
 #
 # No profile matches the keyvo app's own window (`keyvo-app`), yet clicking
 # into it does not switch here: `[focus].hold_classes` holds the Konsole or

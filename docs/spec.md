@@ -799,31 +799,52 @@ and `[timing].reply_timeout`.
 
 ```
 mode           ∈ { auto, manual }
-page           : auto → { context, general }; manual → page_index
-active_profile : chosen by WindowWatcher rules (auto) or user (manual)
+page_list      : per shown profile: ..., -1, 0 = global pages; 1 = context; 2, 3, ... = its others
+index          : the position in the shown profile's page_list, in both modes
+active_profile : chosen by WindowWatcher rules (auto), locked by the user (manual)
 overlay_stack  : ordered overlays pushed via the socket API (e.g. Claude Code status)
 ```
+
+The *page list* of the shown profile (#151, decided by the owner on
+2026-10-27 after the prior-art report
+`docs/research/2026-10-27-page-navigation-prior-art.md`):
+
+| Index | Page |
+|---|---|
+| ..., -2, -1 | the global profile's pages after its `general` page, in file order: the first after `general` at -1, the next at -2 |
+| 0 | the global profile's page named `general` |
+| 1 | the shown profile's context page (its page named `context`, else its first page); for the global profile itself, its context page |
+| 2, 3, ... | the shown profile's other pages in file order; a page named `general` in an app profile is an ordinary page here; for the global profile, its pages before `general` other than the context page |
+
+A profile with one page has the list `[..., -1, 0, 1]`; without a global
+`general` page the list starts at 1.
 
 Rendering is a **stack**: global layer < app profile < project layer <
 overlays (ADR-0009). The project layer (§7.4) is the nearest `.keyvo/`
 directory above the working directory of the focused window's context (§6.2)
 and overrides single keys of the global and app layers. Overlays apply to the
-*context* page only, never to the *general* page, so media keys stay reachable
+*context* page (index 1) only, never to the *general* page, so media keys stay reachable
 while an agent is working. A profile may declare an
-optional `general_hint`: a single key on the general page that mirrors the
+optional `general_hint`: a single key on the general page (index 0) that mirrors the
 top overlay's state (decided in the grill).
 
 As built (pre-alpha, `keyvo_core::state`, no overlays or project layer
 yet): the state machine starts in auto mode on the global profile's
-context page. A profile's *context page* is its page named `context`,
-else its first page; the *general page* is the global profile's page
-named `general`. The daemon reports every change of profile, page or
-mode as a `Switched` event and in the log, then repaints the keys that
-differ. The stack has two layers (`keyvo_core::stack`): under every page
+context page, index 1. A profile's *context page* is its page named
+`context`, else its first page; the *general page* is the global
+profile's page named `general`. The view the daemon reports is the
+profile that owns the page, the page counted from 1 inside it, the mode
+and the `index`: at index 0 and below the profile is the global one and
+the page its page number, so the VS Code list's index 0 reports
+`global`, page 2, index 0. The daemon reports every change of profile,
+page, index or mode as a `Switched` event and in the log (`showing
+profile vscode index 2 (page 2) in auto mode`), then repaints the keys
+that differ. The stack has two layers (`keyvo_core::stack`): under every page
 of an app profile lies the global profile's context page, so a key the app
 profile does not define shows and runs the global key, with the app
 profile's accent; a key the app profile defines hides the global one, even
-without an action. The global profile has nothing under it. The trace
+without an action. The global profile has nothing under it; the pages
+at index 0 and below are the global profile's own and render as such. The trace
 entry (`layer`), `KEYVO_LAYER` and the GUI's mirror name the layer that
 supplied the key. `keyvo preview` renders one profile alone. Key states (`running`, `success`, `error`) belong to a key of one
 page of one profile: an `exec` started on one profile keeps its look
@@ -986,30 +1007,38 @@ follows it.
 
 ### 6.3 Page buttons
 
-- `auto` mode: either page button toggles context ↔ general.
-- `manual` mode: page buttons page through the active profile's pages.
-- Long-press on either page button toggles `auto ↔ manual`.
-- On app switch while on the *general* page in auto mode, keyvo returns to
-  the context page, **unless** a page button was used within the last
-  `page_grace` (10 s); then the user's choice sticks (decided).
+- In both modes the left button shows index - 1 of the shown profile's
+  page list (§6.1), the right button index + 1. The list does not wrap: a
+  press past either end does nothing (no event, no repaint).
+- A focus change that selects another profile shows index 1 of the new
+  profile, except under `page_grace`.
+- `[timing].page_grace` (10 s): an app switch within `page_grace` of a
+  page button's use keeps the index; if the new profile's list has no such
+  index, the nearest end of its list. An app switch later than that shows
+  index 1. A title change in the same app keeps the index (#151; this
+  replaces the earlier rule that applied to the general page only).
+- Manual mode is a focus lock: a long press (`[timing].long_press`) on
+  either page button toggles it and keeps the shown profile and index;
+  focus changes are recorded and not shown; the buttons walk the same
+  list. Leaving manual mode shows index 1 of the profile the focused
+  window selects.
 - Manual mode is visually distinguishable (dimmed/dashed frame or a corner
   "lock" badge, theme-controlled).
 - Both page buttons held together is reserved as an always-available escape
   chord (return to the global profile, context page, auto mode).
 - As built (pre-alpha, `keyvo_core::state`): a page button acts on its
   release when it was held shorter than `long_press`, and toggles the mode
-  once `long_press` is reached, without waiting for the release. In auto
-  mode a short press of either button toggles context and general; with
-  no general page it does nothing. Entering manual mode keeps the profile
-  and page the pad shows; there the right button pages forward and the
-  left back, both wrapping around, and focus changes are recorded but not
-  shown. Leaving manual mode shows the context page of the profile the
-  focused window selects. An app switch is a focus change to another
-  window class; a title change in the same app keeps the general page.
-  Every press and release of a page button counts as its use for
-  `page_grace`. The second button held escapes; neither button then acts
-  again until it is pressed anew. Until a later focus change the global
-  profile shows. The visual mark for manual mode comes later.
+  once `long_press` is reached, without waiting for the release. A short
+  press walks the list as above in either mode. An app switch is a focus
+  change to another window class; a title change in the same app keeps
+  the index even when it selects another profile, clamped to that
+  profile's list. Every press and release of a page button counts as its
+  use for `page_grace`. A reload keeps the index, clamped to the list as
+  it is now; a locked profile that is gone gives way to the global
+  context page, still locked. The second button held escapes to the
+  global profile, index 1, auto mode; neither button then acts again
+  until it is pressed anew. Until a later focus change the global profile
+  shows. The visual mark for manual mode comes later.
 
 ---
 
@@ -1197,9 +1226,9 @@ mouse.dpi            = 1200
   file, line and column and paints nothing new. In auto mode the focused
   window selects its profile again, as the rules may have changed (a new
   profile file for the focused app shows at once); manual mode keeps its
-  profile while it exists, else the global context page shows, and a page
-  that is gone falls back to page 1. A general page that is gone shows
-  the context page. Key states carry over. When the directory does not
+  profile while it exists, else the global context page shows. The page
+  list index stays, clamped to the list as it is now: an index whose page
+  is gone shows the nearest end of the list (§6.3). Key states carry over. When the directory does not
   load at start, the daemon runs with its `config.toml` (when that one is
   valid) and the built-in global profile. A missing directory turns
   hot-reload off with a warning. The `[timing]` values of the device
@@ -1376,6 +1405,10 @@ As built (pre-alpha, `keyvo_core::socket` and `keyvo_daemon::socket`):
   a `context` event with `held: true` and is the `context` of `status`;
   the view does not change, so no `profile`, `page` or `mode` event
   follows.
+- The view in `status`, in the `subscribe` result and in the `profile`,
+  `page` and `mode` events is `profile`, `page`, `mode` and `index`, the
+  position in the shown profile's page list (§6.1, #151); a change of the
+  index alone is a `page` event.
 - Clients ignore unknown fields in responses and events, so a later daemon
   may add fields within version 1.
 - Every response echoes the request's `id` and carries `ok` with `result`
@@ -1776,11 +1809,24 @@ then subscribes with a replay of the newest 20 trace entries;
   A click on a tile then pins the pad's page again when the pin came
   from a key selection; a profile or page chosen in the dropdown, a tab
   or "Edit keys on the Pad" stays pinned (#143).
-- **Page tabs** (`app/src/PageTabs.svelte`). The pinned profile's pages,
-  else the pad's, as a tablist by name (`Page <n>` for an unnamed one),
-  arrows wrapping, `Home` and `End`; a tab pins its page. A profile with
-  no pages shows no tab. "+" (add a page) is disabled with its M4a-4
-  sentence. At the right, the profile's accent as a 12 px swatch with the
+- **Page tabs** (`app/src/PageTabs.svelte`, #151). The page list (§6.1)
+  in index order as a tablist by name (`Page <n>` for an unnamed one):
+  the global profile's pages at index 0 and below as muted tabs with a
+  dashed rim, labelled `<page>, a page of <global profile>`, then the
+  shown profile's pages, context first. The list is the one of the
+  pinned profile, else of the profile the pad walks; a pin on a global
+  page at index 0 and below keeps the list it was chosen from, a pin on
+  the global context page shows the global profile's own list. The
+  profile the pad walks is the view's profile from index 1 on and the one
+  seen before at index 0 and below (the global profile when none was);
+  the daemon reports no change while a focus switch within `page_grace`
+  keeps the pad on a global page, so the tabs right of it can still name
+  the profile before. While following, the selected tab is the `index`
+  the daemon reports; while pinned, the pinned page's tab. Arrows
+  wrapping, `Home` and `End`; a tab pins its page of the profile that
+  owns it, so clicking `general` edits the global profile's general page.
+  A profile with no pages adds no tab of its own. "+" (add a page), after
+  the shown profile's tabs, is disabled with its M4a-4 sentence. At the right, the profile's accent as a 12 px swatch with the
   label "Accent" and its `#rrggbb`; none when the profile has no accent.
   The hardware page buttons page the pad only.
 - **Held caption.** While the focused window is held (§6.1,
@@ -2158,7 +2204,7 @@ Status of the v0.1 questions after the grill and the research.
 | 2 | Keep-alive period; do stale keys revert to logo | resolved → HID++ `0x0008`, Options+ 3000 ms / ~1 s ping; revert timing → M0 measurement list items 2–4 (plan §5) |
 | 3 | Native animated format; max fps | resolved → frame push only; fps → item 9 |
 | 4 | Overlays on context page only, or all pages | resolved → context page only, plus optional `general_hint` |
-| 5 | Return to context page on app switch from general page | resolved → yes, unless a page button was used within 10 s |
+| 5 | Return to context page on app switch from general page | resolved → yes, unless a page button was used within 10 s; since #151 for any page list index, which an app switch after 10 s sets back to 1 (§6.3) |
 | 6 | Focus hysteresis values | resolved → 150 ms hysteresis, 50 ms render coalescing, in `[timing]` |
 | 7 | Embedded Lua | resolved → not in v1 (ADR-0003) |
 | 8 | GNOME strategy | resolved → KDE Wayland + X11 in v1; GNOME/Hyprland/Sway via the `notify_context` contract, community backends |
@@ -2180,6 +2226,14 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha design pass (2026-10-27)**: §6.1 and §6.3 one page
+  list per profile: the global pages after `general` at -1, -2, ...,
+  `general` at 0, the shown profile's context page at 1, its other pages
+  from 2; both buttons walk it in both modes without wrapping;
+  `page_grace` keeps any index across an app switch; manual mode is a
+  focus lock. The view gains `index`; §8 the socket state and the
+  `profile`, `page` and `mode` events carry it; §10 the Pad's tabs show
+  the list, the global tabs muted (#151).
 - **v0.3, pre-alpha design pass (2026-10-27)**: §10 Pad: the "pad moved"
   line names the profile the pad shows by its name, as the header does,
   not by its id (#150).

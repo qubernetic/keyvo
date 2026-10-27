@@ -3,6 +3,7 @@
 // side; and the one-line summary of a trace entry.
 import type { Update } from "./daemon";
 import { t } from "./i18n";
+import { GLOBAL } from "./profiles";
 import type {
   Action,
   Context,
@@ -31,6 +32,11 @@ export function clock(ms: number): string {
 
 export interface PadState {
   view?: View;
+  /** The profile whose page list the pad walks (spec §6.3): the view's
+   * profile from index 1 on; at index 0 and below the view shows a global
+   * page, and the owner stays the one seen before (the global profile when
+   * none was). */
+  owner?: string;
   device?: DeviceStatus;
   /** The last geometry a Keypad reported; it stays when the Keypad goes,
    * as the daemon keeps painting for it. */
@@ -58,11 +64,15 @@ export function initial(): PadState {
   return { held: [], trace: [], reloads: 0 };
 }
 
+/** `state` showing `view`, with the list owner that follows from it. */
+function showing(state: PadState, view: View): PadState {
+  return { ...state, view, owner: view.index >= 1 ? view.profile : (state.owner ?? GLOBAL) };
+}
+
 /** The state of the `status` reply received at `now`. */
 export function fromStatus(status: Status, now = Date.now()): PadState {
   return {
-    ...initial(),
-    view: status.view,
+    ...showing(initial(), status.view),
     device: status.device,
     geometry: status.device.geometry,
     context: status.context,
@@ -112,7 +122,7 @@ export function moved(rows: number[][], key: number, arrow: string): number {
 export function apply(state: PadState, update: Update, now = Date.now()): PadState {
   switch (update.kind) {
     case "subscribed":
-      return { ...state, view: update.view, closed: undefined };
+      return { ...showing(state, update.view), closed: undefined };
     case "closed":
       return { ...state, closed: update.reason };
     case "event":
@@ -131,7 +141,12 @@ export function apply(state: PadState, update: Update, now = Date.now()): PadSta
     case "profile":
     case "page":
     case "mode":
-      return { ...state, view: { profile: event.profile, page: event.page, mode: event.mode } };
+      return showing(state, {
+        profile: event.profile,
+        page: event.page,
+        mode: event.mode,
+        index: event.index,
+      });
     case "device": {
       const { event: _, ...device } = event;
       return {

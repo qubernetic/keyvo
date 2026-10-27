@@ -26,6 +26,7 @@ fn view(profile: &str, page: usize) -> View {
         profile: profile.into(),
         page,
         mode: Mode::Auto,
+        index: 1,
     }
 }
 

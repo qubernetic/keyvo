@@ -1,15 +1,21 @@
 //! The context state machine (spec §6.1, §6.3): which profile and page the
 //! pad shows, from the focused window and the two page buttons.
 //!
+//! - The page list: for the shown profile the pad walks one ordered list.
+//!   Index 0 is the global profile's page named `general`, the global pages
+//!   after it in file order take -1, -2, ...; index 1 is the shown
+//!   profile's context page, its other pages follow from 2 in file order.
+//!   A short press of the left button shows index - 1, of the right one
+//!   index + 1; the list does not wrap.
 //! - `auto` mode: the focused window selects the profile
 //!   ([`Profiles::select`]) once its report has stood for
-//!   `[timing].focus_hysteresis`; the pad shows that profile's context page
-//!   or the global profile's general page, and a short page-button press
-//!   toggles between them. An app switch (another window class) on the
-//!   general page returns to the context page, unless a page button was
-//!   used within `[timing].page_grace`.
-//! - `manual` mode: the profile and page stay whatever the focus does;
-//!   right pages forward, left back, both wrap around.
+//!   `[timing].focus_hysteresis`; an app switch (another window class)
+//!   shows index 1 of the new profile, unless a page button was used within
+//!   `[timing].page_grace`: then the index stays, clamped to the new list.
+//!   A title change in the same app keeps the index.
+//! - `manual` mode is a focus lock: the shown profile and index stay
+//!   whatever the focus does, the buttons walk the same list. Leaving it
+//!   shows index 1 of the profile the focused window selects.
 //! - A page button held for `[timing].long_press` toggles the mode; both
 //!   held together escape to the global profile's context page in auto
 //!   mode.
@@ -31,13 +37,13 @@ use crate::layout::Profiles;
 use crate::press::{PressDetector, PressKind};
 use crate::profile::{GLOBAL_ID, Profile};
 
-/// Who chooses the profile and page.
+/// Who chooses the profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
     /// The focused window chooses.
     Auto,
-    /// The user pages through one profile; focus changes are ignored.
+    /// The profile is locked; focus changes are recorded, not shown.
     Manual,
 }
 
@@ -64,19 +70,16 @@ pub enum PageButton {
 /// What the pad shows.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct View {
-    /// The id of the profile whose page is painted.
+    /// The id of the profile whose page is painted: the global one at index
+    /// 0 and below.
     pub profile: String,
-    /// The page, counted from 1.
+    /// The page, counted from 1 inside `profile`.
     pub page: usize,
     /// The mode.
     pub mode: Mode,
-}
-
-/// The page auto mode shows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AutoPage {
-    Context,
-    General,
+    /// The position in the shown profile's page list: 1 its context page,
+    /// 0 the global `general` page.
+    pub index: isize,
 }
 
 /// The mode and page state of the pad.
@@ -88,9 +91,11 @@ pub struct State {
     mode: Mode,
     /// The profile the focused window selects.
     selected: String,
-    auto_page: AutoPage,
-    /// The profile and page manual mode stays on.
-    manual: (String, usize),
+    /// The profile whose page list the pad walks: the selected one in auto
+    /// mode, the locked one in manual mode.
+    shown: String,
+    /// The position in the shown profile's page list.
+    index: isize,
     /// The focused window as last applied.
     window: Option<WindowContext>,
     /// A newer window and when it applies.
@@ -109,7 +114,7 @@ impl State {
     /// Auto mode on the global profile's context page, before any focus
     /// report, with the `[timing]` and `[focus]` of `config`.
     #[must_use]
-    pub fn new(config: &Config, profiles: &Profiles) -> Self {
+    pub fn new(config: &Config, _profiles: &Profiles) -> Self {
         let timing = &config.timing;
         Self {
             hysteresis: timing.focus_hysteresis,
@@ -117,8 +122,8 @@ impl State {
             long_press: timing.long_press,
             mode: Mode::Auto,
             selected: GLOBAL_ID.to_owned(),
-            auto_page: AutoPage::Context,
-            manual: (GLOBAL_ID.to_owned(), context_page(profiles.global())),
+            shown: GLOBAL_ID.to_owned(),
+            index: 1,
             window: None,
             pending: None,
             hold: config.focus.clone(),
@@ -139,28 +144,15 @@ impl State {
     /// shows as the global one.
     #[must_use]
     pub fn view(&self, profiles: &Profiles) -> View {
-        let (profile, page) = match self.mode {
-            Mode::Manual => {
-                let profile = profiles
-                    .get(&self.manual.0)
-                    .unwrap_or_else(|| profiles.global());
-                (profile, self.manual.1)
-            }
-            Mode::Auto => {
-                if let (AutoPage::General, Some(page)) = (self.auto_page, general_page(profiles)) {
-                    (profiles.global(), page)
-                } else {
-                    let profile = profiles
-                        .get(&self.selected)
-                        .unwrap_or_else(|| profiles.global());
-                    (profile, context_page(profile))
-                }
-            }
-        };
+        let shown = self.shown(profiles);
+        let list = PageList::of(profiles, shown);
+        let index = list.clamp(self.index);
+        let (profile, page) = list.get(index).unwrap_or((shown, 1));
         View {
             profile: profile.profile.id.clone(),
             page,
             mode: self.mode,
+            index,
         }
     }
 
@@ -196,11 +188,11 @@ impl State {
     }
 
     /// `button` went down at `now`. The second button held escapes.
-    pub fn press(&mut self, button: PageButton, now: Instant, profiles: &Profiles) {
+    pub fn press(&mut self, button: PageButton, now: Instant, _profiles: &Profiles) {
         self.page_used = Some(now);
         self.held.insert(button);
         if self.held.len() > 1 {
-            self.escape(profiles);
+            self.escape();
         } else {
             self.buttons.press(button, now);
         }
@@ -213,7 +205,7 @@ impl State {
         self.held.remove(&button);
         match self.buttons.release(button, now) {
             Some(PressKind::Short) => self.step(button, profiles),
-            Some(PressKind::Long) => self.toggle_mode(profiles),
+            Some(PressKind::Long) => self.toggle_mode(),
             None => {}
         }
     }
@@ -226,7 +218,7 @@ impl State {
             self.apply(window, now, profiles);
         }
         for _ in self.buttons.poll(now) {
-            self.toggle_mode(profiles);
+            self.toggle_mode();
         }
     }
 
@@ -242,23 +234,31 @@ impl State {
 
     /// The profiles were reloaded: the focused window (while one that holds
     /// the context is in front, the one before it) selects again, as its
-    /// rules may have changed; manual mode stays unless its profile is gone
-    /// (then the global context page) or its page is (then page 1).
+    /// rules may have changed; manual mode keeps its profile unless it is
+    /// gone (then the global context page). An index the list no longer has
+    /// becomes the nearest end.
     pub fn reload(&mut self, profiles: &Profiles) {
         self.selected = self.window.as_ref().map_or_else(
             || GLOBAL_ID.to_owned(),
             |window| profiles.select(window).profile.id.clone(),
         );
-        if general_page(profiles).is_none() {
-            self.auto_page = AutoPage::Context;
-        }
-        match profiles.get(&self.manual.0) {
-            None => {
-                self.manual = (GLOBAL_ID.to_owned(), context_page(profiles.global()));
+        match self.mode {
+            Mode::Auto => self.shown.clone_from(&self.selected),
+            Mode::Manual => {
+                if profiles.get(&self.shown).is_none() {
+                    GLOBAL_ID.clone_into(&mut self.shown);
+                    self.index = 1;
+                }
             }
-            Some(profile) if self.manual.1 > profile.pages.len() => self.manual.1 = 1,
-            Some(_) => {}
         }
+        self.index = PageList::of(profiles, self.shown(profiles)).clamp(self.index);
+    }
+
+    /// The shown profile in `profiles`, the global one when it is gone.
+    fn shown<'a>(&self, profiles: &'a Profiles) -> &'a Profile {
+        profiles
+            .get(&self.shown)
+            .unwrap_or_else(|| profiles.global())
     }
 
     fn apply(&mut self, window: WindowContext, now: Instant, profiles: &Profiles) {
@@ -269,76 +269,114 @@ impl State {
         let in_grace = self
             .page_used
             .is_some_and(|used| now.saturating_duration_since(used) < self.page_grace);
-        if self.auto_page == AutoPage::General && app_switch && !in_grace {
-            self.auto_page = AutoPage::Context;
-        }
         profiles
             .select(&window)
             .profile
             .id
             .clone_into(&mut self.selected);
         self.window = Some(window);
-    }
-
-    fn step(&mut self, button: PageButton, profiles: &Profiles) {
-        match self.mode {
-            Mode::Auto => {
-                self.auto_page =
-                    if self.auto_page == AutoPage::Context && general_page(profiles).is_some() {
-                        AutoPage::General
-                    } else {
-                        AutoPage::Context
-                    };
-            }
-            Mode::Manual => {
-                let pages = profiles
-                    .get(&self.manual.0)
-                    .map_or(0, |profile| profile.pages.len());
-                if pages > 0 {
-                    let index = self.manual.1.clamp(1, pages) - 1;
-                    let next = match button {
-                        PageButton::Right => (index + 1) % pages,
-                        PageButton::Left => (index + pages - 1) % pages,
-                    };
-                    self.manual.1 = next + 1;
-                }
-            }
+        if self.mode == Mode::Auto {
+            self.shown.clone_from(&self.selected);
+            self.index = if app_switch && !in_grace {
+                1
+            } else {
+                PageList::of(profiles, self.shown(profiles)).clamp(self.index)
+            };
         }
     }
 
-    fn toggle_mode(&mut self, profiles: &Profiles) {
+    /// A short press: the next index towards `button`, nothing past an end.
+    fn step(&mut self, button: PageButton, profiles: &Profiles) {
+        let list = PageList::of(profiles, self.shown(profiles));
+        let next = match button {
+            PageButton::Left => self.index - 1,
+            PageButton::Right => self.index + 1,
+        };
+        if list.clamp(next) == next {
+            self.index = next;
+        }
+    }
+
+    /// A long press: auto mode locks the shown profile and index; the lock
+    /// released shows index 1 of the profile the focused window selects.
+    fn toggle_mode(&mut self) {
         match self.mode {
-            Mode::Auto => {
-                let view = self.view(profiles);
-                self.manual = (view.profile, view.page);
-                self.mode = Mode::Manual;
-            }
+            Mode::Auto => self.mode = Mode::Manual,
             Mode::Manual => {
-                self.auto_page = AutoPage::Context;
                 self.mode = Mode::Auto;
+                self.shown.clone_from(&self.selected);
+                self.index = 1;
             }
         }
     }
 
     /// Both page buttons: the global context page in auto mode; the held
     /// buttons do nothing more until they are pressed again.
-    fn escape(&mut self, profiles: &Profiles) {
+    fn escape(&mut self) {
         self.mode = Mode::Auto;
-        self.auto_page = AutoPage::Context;
         GLOBAL_ID.clone_into(&mut self.selected);
-        self.manual = (GLOBAL_ID.to_owned(), context_page(profiles.global()));
+        GLOBAL_ID.clone_into(&mut self.shown);
+        self.index = 1;
         self.buttons = PressDetector::new(self.long_press);
+    }
+}
+
+/// The page list of one shown profile (spec §6.3), lowest index first.
+struct PageList<'a> {
+    /// The index of the first entry: 1 minus the global pages from
+    /// `general` on, 1 when the global profile has no `general` page.
+    lowest: isize,
+    /// The profile and page (counted from 1) of each index.
+    pages: Vec<(&'a Profile, usize)>,
+}
+
+impl<'a> PageList<'a> {
+    fn of(profiles: &'a Profiles, shown: &'a Profile) -> Self {
+        let global = profiles.global();
+        let general = named_page(global, "general");
+        // The global pages from the last one down to `general`: indices
+        // ..., -1, 0.
+        let mut pages: Vec<_> = general
+            .map(|general| (general..=global.pages.len()).rev())
+            .into_iter()
+            .flatten()
+            .map(|page| (global, page))
+            .collect();
+        let lowest = 1 - isize::try_from(pages.len()).unwrap_or(0);
+        let context = context_page(shown);
+        let is_global = shown.profile.id == GLOBAL_ID;
+        pages.push((shown, context));
+        pages.extend(
+            (1..=shown.pages.len())
+                .filter(|&page| page != context)
+                // The global profile's pages from `general` on are left of
+                // its context page already.
+                .filter(|&page| !is_global || general.is_none_or(|general| page < general))
+                .map(|page| (shown, page)),
+        );
+        Self { lowest, pages }
+    }
+
+    /// The highest index.
+    fn highest(&self) -> isize {
+        self.lowest + isize::try_from(self.pages.len()).unwrap_or(1) - 1
+    }
+
+    /// `index` moved into the list: the nearest end when it is outside.
+    fn clamp(&self, index: isize) -> isize {
+        index.clamp(self.lowest, self.highest())
+    }
+
+    /// The profile and page at `index`.
+    fn get(&self, index: isize) -> Option<(&'a Profile, usize)> {
+        let at = usize::try_from(index - self.lowest).ok()?;
+        self.pages.get(at).copied()
     }
 }
 
 /// The page named `context`, else the first; counted from 1.
 pub(crate) fn context_page(profile: &Profile) -> usize {
     named_page(profile, "context").unwrap_or(1)
-}
-
-/// The global profile's page named `general`, counted from 1.
-fn general_page(profiles: &Profiles) -> Option<usize> {
-    named_page(profiles.global(), "general")
 }
 
 fn named_page(profile: &Profile, name: &str) -> Option<usize> {

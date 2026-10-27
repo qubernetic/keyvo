@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   contextPage,
   fromHeaderForm,
+  leftOfContext,
   ordered,
+  pageList,
   pageName,
   sameHeader,
   toHeaderForm,
@@ -54,6 +56,56 @@ describe("contextPage", () => {
     expect(contextPage({ ...summary("global", 0), pages: ["general", "context"] })).toBe(2);
     expect(contextPage({ ...summary("global", 0), pages: ["general", null] })).toBe(1);
     expect(contextPage(undefined)).toBe(1);
+  });
+});
+
+describe("pageList", () => {
+  const global = { ...summary("global", 0), pages: ["context", "general", "apps"] };
+  const tabs = (owner: ProfileSummary, of = global) =>
+    pageList(owner, of).map((tab) => [tab.index, tab.profile, tab.page, tab.name]);
+
+  it("puts the global pages from general on left of the shown profile's pages", () => {
+    const vscode = { ...summary("vscode", 0), pages: ["context", null] };
+    expect(tabs(vscode)).toEqual([
+      [-1, "global", 3, "apps"],
+      [0, "global", 2, "general"],
+      [1, "vscode", 1, "context"],
+      [2, "vscode", 2, "Page 2"],
+    ]);
+  });
+
+  it("starts at the context page, the others in file order after it", () => {
+    const code = { ...summary("code", 0), pages: ["edit", "context", "general"] };
+    expect(tabs(code)).toEqual([
+      [-1, "global", 3, "apps"],
+      [0, "global", 2, "general"],
+      [1, "code", 2, "context"],
+      [2, "code", 1, "edit"],
+      [3, "code", 3, "general"],
+    ]);
+  });
+
+  it("walks the global pages after general in file order to the left", () => {
+    const wide = { ...global, pages: ["context", "notes", "general", "apps", "media"] };
+    expect(tabs(wide, wide)).toEqual([
+      [-2, "global", 5, "media"],
+      [-1, "global", 4, "apps"],
+      [0, "global", 3, "general"],
+      [1, "global", 1, "context"],
+      [2, "global", 2, "notes"],
+    ]);
+  });
+
+  it("is the shown profile's pages alone without a global general page", () => {
+    const konsole = summary("konsole", 0);
+    expect(tabs(konsole, { ...global, pages: ["context"] })).toEqual([[1, "konsole", 1, "context"]]);
+    expect(pageList(konsole, undefined).map((tab) => tab.index)).toEqual([1]);
+    expect(tabs({ ...konsole, pages: [] }).map(([index]) => index)).toEqual([-1, 0]);
+  });
+
+  it("tells the global pages left of a context page", () => {
+    expect([1, 2, 3, 4].map((page) => leftOfContext(global, page))).toEqual([false, true, true, false]);
+    expect(leftOfContext(undefined, 2)).toBe(false);
   });
 });
 
