@@ -915,7 +915,7 @@ when the daemon starts):
 
 | Key | Default | Meaning |
 |---|---|---|
-| `hold_classes` | `["keyvo-app"]` | window classes, compared ASCII-case-insensitively as the whole name, that never change the context; an empty list holds nothing |
+| `hold_classes` | `["keyvo-app", "io.github.qubernetic.keyvo"]` | window classes (the app's is `keyvo-app` on the host and its application id under Flatpak), compared ASCII-case-insensitively as the whole name, that never change the context; an empty list holds nothing |
 
 While a window of one of these classes has focus, the context and the
 profile stay those of the last other window: a held report cancels a

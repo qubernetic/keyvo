@@ -27,9 +27,10 @@
       "properties": {
         "hold_classes": {
           "default": [
-            "keyvo-app"
+            "keyvo-app",
+            "io.github.qubernetic.keyvo"
           ],
-          "description": "Window classes, compared without case; an empty list holds nothing.\nDefault `[\"keyvo-app\"]`, the keyvo app's own window.",
+          "description": "Window classes, compared without case; an empty list holds nothing.\nDefault `[\"keyvo-app\", \"io.github.qubernetic.keyvo\"]`, the keyvo\napp's own window: its class is the binary name on the host and the\napplication id under Flatpak.",
           "items": {
             "type": "string"
           },
@@ -228,7 +229,8 @@
       "$ref": "#/$defs/Focus",
       "default": {
         "hold_classes": [
-          "keyvo-app"
+          "keyvo-app",
+          "io.github.qubernetic.keyvo"
         ]
       },
       "description": "Which focused windows switch the context (spec §6.1)."

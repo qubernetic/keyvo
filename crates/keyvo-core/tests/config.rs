@@ -102,12 +102,18 @@ fn the_socket_limits_default_to_64_kib_lines_and_32_connections() {
 
 #[test]
 fn the_keyvo_app_holds_the_context_unless_set() {
+    // The app's window class is `keyvo-app` on the host and the
+    // application id under Flatpak.
     assert_eq!(
         Focus::default(),
         Focus {
-            hold_classes: vec!["keyvo-app".to_owned()],
+            hold_classes: vec![
+                "keyvo-app".to_owned(),
+                "io.github.qubernetic.keyvo".to_owned()
+            ],
         }
     );
+    assert!(Focus::default().holds("io.github.qubernetic.keyvo"));
     let config = parse("valid/focus.toml").unwrap();
     assert_eq!(
         config.focus.hold_classes,
