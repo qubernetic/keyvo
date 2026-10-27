@@ -67,6 +67,19 @@ describe("the drawing", () => {
     });
   });
 
+  it("places the snippet's nine calls in its own cutouts without a geometry", () => {
+    const { calls, tile } = recorder();
+    const { container } = render(Device, { tile });
+    expect(calls.map((call) => call.key)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    calls.forEach((call, index) => {
+      const cutout = nth(CUTOUTS, index);
+      expect(Math.abs(percent(call.style, "left") - (cutout.x / 512) * 100)).toBeLessThan(0.5);
+      expect(Math.abs(percent(call.style, "top") - (cutout.y / 610) * 100)).toBeLessThan(0.5);
+    });
+    expect(root(container).style.aspectRatio).toMatch(/^512 ?\/ ?610$/);
+    expect(screen.getByRole("img", { name: t("device.keypad") })).toBeInTheDocument();
+  });
+
   it("wraps the cells in the caller's rows and still places them by key", () => {
     render(DeviceRows, { geometry });
     const rows = screen.getAllByRole("row");

@@ -10,7 +10,9 @@
   // while it shows the pinned page (#143). The inspector gets the pinned page's
   // tile, the global key under a key that falls through, and Press, a dry
   // run of the selected key whose result shows under the drawing. The
-  // unreachable, no-device and configuration notices go through Notice.
+  // unreachable, no-device and configuration notices go through Notice;
+  // without a geometry the drawing is the device with empty wells (#165),
+  // with one it keeps the last frame while the daemon is away.
   // The trace strip sits under the inspector; the actions catalogue is the
   // right column from 1200 px and collapses into the inspector's Action
   // select below it; its presets are the daemon's recipe packs. An entry
@@ -153,14 +155,21 @@
   /** Writes of the key editor, so the tiles follow them without a daemon. */
   let edits = $state(0);
 
-  // The tiles of the page the pad shows, again after every reload and edit.
+  /** What the tiles follow. Derived, so an update that reassigns `pad`
+   * without changing them (the closed one above all) fetches nothing. */
+  const view = $derived(pad.view);
+  const geometry = $derived(pad.geometry);
+  const reloaded = $derived(pad.reloads);
+  const reachable = $derived(unreachable === undefined);
+
+  // The tiles of the page the pad shows, again after every reload and edit;
+  // none while the daemon cannot be reached, so the mirror keeps its last
+  // frame until it is back (#67, #165).
   let fetched = 0;
   $effect(() => {
-    const view = pad.view;
-    const geometry = pad.geometry;
-    void pad.reloads;
+    void reloaded;
     void edits;
-    if (view === undefined || geometry === undefined) return;
+    if (!reachable || view === undefined || geometry === undefined) return;
     const mine = ++fetched;
     // Under the session lock the pad shows the lock page.
     const answer = untrack(() =>
@@ -186,7 +195,6 @@
    * could not be read; read again after every reload and reconnect. */
   let recipes: Recipes = $state.raw({ recipes: [] });
   let recipesError: string | undefined = $state();
-  const reachable = $derived(unreachable === undefined);
   /** The daemon answered: there is a pad to select a key on. */
   const connected = $derived(reachable && !connecting);
   const reloads = $derived(pad.reloads);
@@ -237,9 +245,9 @@
   let fetchedPinned = 0;
   $effect(() => {
     const pin = moved === undefined ? undefined : shown;
-    const geometry = pad.geometry;
-    void pad.reloads;
+    void reloaded;
     void edits;
+    if (!reachable) return;
     const mine = ++fetchedPinned;
     if (pin === undefined || geometry === undefined) {
       pinnedTiles = [];
@@ -368,7 +376,16 @@
 
   <div class="workspace">
     <div class="drawing">
-      {#if pad.geometry !== undefined}
+      {#if pad.geometry === undefined && connecting}
+        <!-- §5.2: skeleton tiles, no spinner. -->
+        <ul class="skeleton" aria-busy="true" aria-label={t("home.connecting")}>
+          {#each SKELETON as tile (tile)}
+            <li><span class="bar"></span></li>
+          {/each}
+        </ul>
+      {:else}
+        <!-- Without a geometry (unreachable, or no Keypad has reported one)
+             the device with nine empty wells and "No pad" (#165). -->
         <Mirror
           geometry={pad.geometry}
           {tiles}
@@ -380,15 +397,6 @@
           onpress={(key, kind) => void press(key, kind)}
           ondrop={assignTo}
         />
-      {:else if connecting}
-        <!-- §5.2: skeleton tiles, no spinner. -->
-        <ul class="skeleton" aria-busy="true" aria-label={t("home.connecting")}>
-          {#each SKELETON as tile (tile)}
-            <li><span class="bar"></span></li>
-          {/each}
-        </ul>
-      {:else if pad.view !== undefined}
-        <p class="note">{t("home.noGeometry")}</p>
       {/if}
       {#if tilesError !== undefined}
         <p class="note">{t("home.tilesError", { error: tilesError })}</p>
@@ -438,7 +446,9 @@
         {active}
         {connected}
         revision={pad.reloads}
-        onpress={selected === undefined ? undefined : () => void press(selected ?? 0, "short")}
+        onpress={selected === undefined || !connected
+          ? undefined
+          : () => void press(selected ?? 0, "short")}
         onedited={() => edits++}
         {assign}
         entries={columns.right ? undefined : catalogue}

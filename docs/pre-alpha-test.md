@@ -918,6 +918,17 @@ window.
 - [ ] #164 With the Keypad and the daemon (the #130 finding): pin `KCalc test` in the header, open Profiles, switch to Konsole: the editor stays on `KCalc test`, the dropdown says it is pinned (the glyph pressed), and the list marks Konsole `on the pad`.
 - [ ] #164 Rename a profile to a name of about 60 characters: the header's dropdown stays about 24 characters wide and ends in an ellipsis, the device selector does not move; its tooltip and the opened option list show the whole name. Restore the name.
 
+### The device with empty wells while no pad is reachable (#165)
+
+The mock dev server of #113 in a host browser, then the app on the GNOME
+runtime with the Keypad and the daemon, the daemon stopped under it (the
+owner's two findings on #165).
+
+- [ ] #165 `just app-dev` with `?mock-error=unreachable`: under the Error notice the drawing column shows the Keypad with nine empty wells (no key numbers, no tiles) and the muted caption `No pad`; clicking a well does nothing. The inspector reads `No pad connected.`, no page tabs, and the line under the drawing is empty.
+- [ ] #165 With the daemon and the Keypad: the mirror shows the live tiles. Select a key: Press is enabled. Stop the daemon (Ctrl+C in its terminal): the Error notice appears, the mirror keeps the last tiles (not the key numbers), there is no `Tiles not rendered` note, and Press is disabled. Start the daemon and Retry: the tiles follow the pad again and Press is enabled.
+- [ ] #165 Start the app with no daemon running: the empty wells and `No pad`; start the daemon and Retry: the mirror appears with the tiles.
+- [ ] #165 The daemon running without the Keypad plugged in (no geometry reported yet): the empty wells and `No pad` under the missing-Keypad note; plug the Keypad in: the mirror appears.
+
 ### Polish, harden and the critique re-run (#130)
 
 The closing pass of the GUI design pass: the mock items ran on the mock

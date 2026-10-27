@@ -127,6 +127,7 @@ export const messages = {
 
   "pad.held": "{class} focused, holding {profile}",
   "pad.locked": "Session locked; the pad shows the lock.",
+  "pad.noPad": "No pad",
   "pad.pages": "Pages",
   "pad.globalPage": "{page}, a page of {profile}",
   "pad.add": "+",
@@ -151,7 +152,6 @@ export const messages = {
   "home.schemaErrorLine": "Schema error in {file}, line {line}: {message}",
   "home.missing": "The Keypad is missing; last seen at {time}.",
   "home.missingNever": "The Keypad is missing; not seen since the app started.",
-  "home.noGeometry": "The mirror appears once a Keypad has reported its geometry.",
   "home.mirror": "Keypad mirror",
   "home.mirrorView": "Keypad mirror: profile {profile}, page {page}",
   "home.key": "Key {key}: {parts}",

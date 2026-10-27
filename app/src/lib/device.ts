@@ -112,6 +112,18 @@ export function placement(device: Drawing, geometry: Geometry): Placement[] | un
   });
 }
 
+/** The geometry of the drawing itself: its view box as the panel, its
+ * cutouts as the keys, the first cutout's size as the tile. For the device
+ * with empty wells while no pad has reported a geometry (#165). */
+export function cutoutGeometry(device: Drawing): Geometry {
+  const first = device.cutouts[0];
+  return {
+    panel: { width: device.width, height: device.height },
+    tile: { width: first?.width ?? 0, height: first?.height ?? 0 },
+    rects: device.cutouts,
+  };
+}
+
 /** The tiles of `geometry` on the plain panel, at the daemon's rects. */
 export function panelPlacement(geometry: Geometry): Placement[] {
   return geometry.rects.map((rect, index) =>
