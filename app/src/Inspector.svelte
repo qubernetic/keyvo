@@ -6,7 +6,9 @@
   // and "Override here". The tile row (image, Label, Icon, Colour) and the
   // Action with its field are written to the profile file the moment a
   // field changes, after a snapshot, one write after the other; undo and
-  // redo for the session. An invalid field says why under itself; a
+  // redo for the session. An invalid field says why under itself (a chord
+  // is checked with the daemon's grammar, the wrong token named, and its
+  // syntax is a hint line under the field, #167); a
   // refused write is a Notice with its place and the typed value stays. A
   // tool assigned from the actions catalogue sets the action type with an
   // empty field, written once the field is entered; a preset is written at
@@ -142,7 +144,15 @@
     heading: `kv-inspector-${uid}`,
     color: `kv-inspector-${uid}-color`,
     action: `kv-inspector-${uid}-action`,
+    hint: `kv-inspector-${uid}-hint`,
   };
+  /** The action field's message, then the chord syntax under a chord. */
+  const actionDescribedBy = $derived(
+    [
+      ...(invalid?.field === "action" ? [ids.action] : []),
+      ...(form.actionType === "chord" ? [ids.hint] : []),
+    ].join(" ") || undefined,
+  );
 
   /** The time of a result, 24 h. */
   function now(): string {
@@ -536,13 +546,16 @@
                   ? t("editor.chordExample")
                   : t("editor.commandExample")}
                 aria-invalid={invalid?.field === "action" ? true : undefined}
-                aria-describedby={invalid?.field === "action" ? ids.action : undefined}
+                aria-describedby={actionDescribedBy}
                 bind:value={form.action}
                 onchange={commit}
               />
             </label>
             {#if invalid?.field === "action"}
               <p id={ids.action} role="alert" class="invalid">{invalid.message}</p>
+            {/if}
+            {#if form.actionType === "chord"}
+              <p id={ids.hint} class="hint">{t("editor.chordHint")}</p>
             {/if}
           </div>
         {/if}
@@ -638,6 +651,14 @@
   /* A label inside a field is sized once: the field already carries the
      label size, and nesting the two shrank the Command label to 9.6 px. */
   .field label {
+    font-size: 1em;
+  }
+
+  /* The syntax under a field, in the label size of its field. */
+  .hint {
+    margin: 0;
+    background: var(--kv-bg);
+    color: var(--kv-fg-muted);
     font-size: 1em;
   }
 

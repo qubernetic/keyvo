@@ -162,6 +162,41 @@ describe("Inspector, the key editor's cases", () => {
     await waitFor(() => expect(editor.file).toBe(editorFile(nth(STEPS.steps, 1).file)));
   });
 
+  it("explains the chord syntax under the Chord field, and the command field has no hint", async () => {
+    await mounted();
+    const hint = "Keys joined with +, for example ctrl+shift+g; modifiers ctrl, alt, shift, super.";
+    expect(screen.getByText(hint)).toBeInTheDocument();
+    expect(field("Chord")).toHaveAccessibleDescription(hint);
+    await fireEvent.change(action(), { target: { value: "exec" } });
+    expect(screen.queryByText(hint)).not.toBeInTheDocument();
+    expect(field("Command")).toHaveAccessibleDescription("Enter the command to write it.");
+  });
+
+  it("names the wrong token of a chord under the field and writes nothing until it parses", async () => {
+    const editor = await mounted(accepting());
+    await type(field("Chord"), "ctrl+nope");
+    await settled();
+    expect(screen.getByRole("alert")).toHaveTextContent("nope is not a key name.");
+    expect(field("Chord")).toHaveAttribute("aria-invalid", "true");
+    expect(field("Chord")).toHaveAccessibleDescription(
+      "nope is not a key name. Keys joined with +, for example ctrl+shift+g; modifiers ctrl, alt, shift, super.",
+    );
+    expect(field("Chord")).toHaveValue("ctrl+nope");
+    expect(editor.editor.editKey).not.toHaveBeenCalled();
+    await type(field("Chord"), "g+ctrl");
+    await settled();
+    expect(screen.getByRole("alert")).toHaveTextContent("g is not a modifier");
+    await type(field("Chord"), "ctrl+shift+v");
+    await waitFor(() =>
+      expect(editor.editor.editKey).toHaveBeenLastCalledWith(TARGET, {
+        ...STEPS.fields,
+        action: { type: "chord", keys: "ctrl+shift+v" },
+      }),
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(field("Chord")).not.toHaveAttribute("aria-invalid");
+  });
+
   it("offers Launch next to Chord and Exec and writes it from the command field", async () => {
     const editor = await mounted(accepting());
     const kinds = within(action())
@@ -636,6 +671,13 @@ describe("the inspector's rules", () => {
     // rendered at 9.6 px (owner, 2026-10-27).
     const nested = /\.field label \{([^}]*)\}/.exec(css)?.[1] ?? "";
     expect(nested).toMatch(/font-size: 1em/);
+  });
+
+  it("sets a hint in the label size and muted, like the label above the field", () => {
+    const hint = /\.hint \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(hint).toMatch(/font-size: 1em/);
+    expect(hint).toMatch(/color: var\(--kv-fg-muted\)/);
+    expect(css).toMatch(/<p id=\{ids\.hint\} class="hint">/);
   });
 
   it("reserves one line for the result, so the first message shifts nothing", () => {
