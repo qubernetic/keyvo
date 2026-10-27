@@ -13,6 +13,7 @@ A=~/.cache/archify-v3.2.0/archify/bin/archify.mjs
 node $A finalize workflow docs/diagrams/src/options-plus-display-pipeline.workflow.json docs/diagrams/options-plus-display-pipeline.html --quality showcase --json
 node $A finalize sequence docs/diagrams/src/options-plus-page-paint.sequence.json docs/diagrams/options-plus-page-paint.html --quality showcase --json
 node $A finalize lifecycle docs/diagrams/src/page-navigation-list.lifecycle.json docs/diagrams/page-navigation-list.html --quality showcase --json
+node $A finalize lifecycle docs/diagrams/src/page-navigation-as-built.lifecycle.json docs/diagrams/page-navigation-as-built.html --quality showcase --json
 ```
 
 Run the commands from the repository root; `meta.output` in every source is
@@ -31,4 +32,5 @@ boundary of ADR-0008, not keyvo's design.
 
 | Diagram | Type | What it shows | Source of the facts |
 |---|---|---|---|
-| `page-navigation-list.html` | lifecycle | keyvo's own design: the page list the page buttons walk on VS Code with a second page (the global pages at -1 and 0, the context page at 1, page 2), the app switch after `page_grace`, the lock and the escape (#151). The source is committed; the HTML is rendered by the owner, since the agent sandbox has no Chromium for the browser-check gate | spec §6.1 and §6.3 |
+| `page-navigation-list.html` | lifecycle | keyvo's own design: the page list the page buttons walk on VS Code with a second page (the global pages at -1 and 0, the context page at 1, page 2), the app switch after `page_grace`, the lock and the escape (#151) | spec §6.1 and §6.3 |
+| `page-navigation-as-built.html` | lifecycle | the behaviour #151 replaced, on the owner's seven profiles of 2026-10-27: the toggle to the global general page, manual-mode paging with wrap, the grace on the general page only; kept as the record of what the decision changed (#162) | spec §6.1 and §6.3 as built before #151, `keyvo_core::state` at `93aa019` |
