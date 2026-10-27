@@ -153,14 +153,21 @@
   /** Writes of the key editor, so the tiles follow them without a daemon. */
   let edits = $state(0);
 
-  // The tiles of the page the pad shows, again after every reload and edit.
+  /** What the tiles follow. Derived, so an update that reassigns `pad`
+   * without changing them (the closed one above all) fetches nothing. */
+  const view = $derived(pad.view);
+  const geometry = $derived(pad.geometry);
+  const reloaded = $derived(pad.reloads);
+  const reachable = $derived(unreachable === undefined);
+
+  // The tiles of the page the pad shows, again after every reload and edit;
+  // none while the daemon cannot be reached, so the mirror keeps its last
+  // frame until it is back (#67, #165).
   let fetched = 0;
   $effect(() => {
-    const view = pad.view;
-    const geometry = pad.geometry;
-    void pad.reloads;
+    void reloaded;
     void edits;
-    if (view === undefined || geometry === undefined) return;
+    if (!reachable || view === undefined || geometry === undefined) return;
     const mine = ++fetched;
     // Under the session lock the pad shows the lock page.
     const answer = untrack(() =>
@@ -186,7 +193,6 @@
    * could not be read; read again after every reload and reconnect. */
   let recipes: Recipes = $state.raw({ recipes: [] });
   let recipesError: string | undefined = $state();
-  const reachable = $derived(unreachable === undefined);
   /** The daemon answered: there is a pad to select a key on. */
   const connected = $derived(reachable && !connecting);
   const reloads = $derived(pad.reloads);
@@ -237,9 +243,9 @@
   let fetchedPinned = 0;
   $effect(() => {
     const pin = moved === undefined ? undefined : shown;
-    const geometry = pad.geometry;
-    void pad.reloads;
+    void reloaded;
     void edits;
+    if (!reachable) return;
     const mine = ++fetchedPinned;
     if (pin === undefined || geometry === undefined) {
       pinnedTiles = [];
