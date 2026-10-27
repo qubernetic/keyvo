@@ -314,7 +314,7 @@
         <p class="note">{t("profiles.select")}</p>
       {/if}
     {:else}
-      <div class="heading">
+      <div class="heading row">
         <h2 id={`kv-heading-${uid}`}>{selected.name}</h2>
         <button
           type="button"
@@ -335,8 +335,8 @@
 
       {#if header !== undefined}
         <form class="fields" onsubmit={(event) => event.preventDefault()}>
-          <label for={`kv-name-${uid}`}>{t("profiles.name")}</label>
-          <div class="control">
+          <div class="field">
+            <label for={`kv-name-${uid}`}>{t("profiles.name")}</label>
             <input
               id={`kv-name-${uid}`}
               type="text"
@@ -351,8 +351,8 @@
             {/if}
           </div>
 
-          <label for={`kv-accent-${uid}`}>{t("profiles.accent")}</label>
-          <div class="control">
+          <div class="field">
+            <label for={`kv-accent-${uid}`}>{t("profiles.accent")}</label>
             <span class="accent">
               <span class="swatch" aria-hidden="true" style:background-color={swatch}></span>
               <input
@@ -371,28 +371,30 @@
             {/if}
           </div>
 
-          <span class="label">{t("profiles.priority")}</span>
-          <span class="value">
-            {selected.priority}
-            <span class="hint">{t("profiles.priorityHint")}</span>
-          </span>
+          <!-- Read values until M4a-4 writes them: the value, then what it
+               means or when it can change. -->
+          <div class="field">
+            <label for={`kv-priority-${uid}`}>{t("profiles.priority")}</label>
+            <span class="value">
+              <output id={`kv-priority-${uid}`} aria-live="off">{selected.priority}</output>
+              <span class="hint">{t("profiles.priorityHint")}</span>
+            </span>
+          </div>
 
-          <span class="label">{t("profiles.enabled")}</span>
-          <span class="value">
-            <Soon
-              label={t("profiles.enabled")}
-              text={t("profiles.on")}
-              soon="soon.enabled"
-              toggle
-              checked
-            />
-          </span>
+          <div class="field">
+            <label for={`kv-enabled-${uid}`}>{t("profiles.enabled")}</label>
+            <span class="value">
+              <!-- Every profile is on until the schema can switch one off. -->
+              <output id={`kv-enabled-${uid}`} aria-live="off">{t("profiles.on")}</output>
+              <span class="hint">{t("soon.enabled")}</span>
+            </span>
+          </div>
         </form>
       {/if}
       <p role="status" aria-label={t("profiles.result")} class="note">{note ?? ""}</p>
 
       <section class="part" aria-labelledby={`kv-match-${uid}`}>
-        <div class="head">
+        <div class="head row">
           <h3 id={`kv-match-${uid}`}>{t("profiles.match")}</h3>
           {#if selected.id !== GLOBAL}
             <Soon label={t("profiles.addRule")} text={t("profiles.addRuleText")} soon="soon.match" />
@@ -585,24 +587,31 @@
     color: var(--kv-fg-muted);
   }
 
-  .fields {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    gap: 8px 12px;
+  /* The heading rows end where the form ends, so their button sits at the
+     end of the content, not at the column's edge. */
+  .row {
     max-width: 48ch;
   }
 
-  .fields label,
-  .label {
-    background: var(--kv-bg);
-    color: var(--kv-fg-muted);
+  /* DESIGN.md "Inputs / Fields", as the Inspector: each label above its
+     field, muted and smaller. */
+  .fields {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 48ch;
   }
 
-  .control {
+  .field {
     display: flex;
     flex-direction: column;
     gap: 2px;
+  }
+
+  .field > label {
+    background: var(--kv-bg);
+    color: var(--kv-fg-muted);
+    font-size: 0.85em;
   }
 
   .accent {

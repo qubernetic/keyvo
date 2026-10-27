@@ -1941,17 +1941,22 @@ write of the screen.
   command `open_profile`; the path comes from the id, never from the
   page); under it the file path, once. For the built-in global profile,
   which has no file until its first edit, the button is
-  `aria-disabled` and a note says so.
-- **Header form.** At most `48ch` wide. Name, and Accent as a swatch and
+  `aria-disabled` and a note says so. The row is as wide as the header
+  form (`48ch`), so the button ends where the content ends; the "Match
+  rules" row with "+ rule" likewise.
+- **Header form.** At most `48ch` wide, one column: each label above its
+  field (`docs/DESIGN.md` "Inputs / Fields", as the Inspector). Name, and
+  Accent as a swatch and
   its `#rrggbb` text, each written the moment it changes through the
   shell's `edit_profile` (`keyvo_core::edit::ProfileDocument::set_profile`):
   a snapshot, then the atomic write of §7.1, every byte outside the
   edited value kept, an empty accent removed, a new one added at the end
   of `[profile]`. An empty name or an accent that is not `#rrggbb` is not
   written; the field is marked invalid and the message under it says
-  why. Priority shows as read with "higher wins the window"; Enabled is a
-  disabled switch, shown on, with its M4a-4 sentence (the schema has no
-  `enabled` yet and the editor writes name and accent only). The result
+  why. Priority shows as read with "higher wins the window"; Enabled
+  likewise shows as read, "On", with its M4a-4 sentence beside it (the
+  schema has no `enabled` yet and the editor writes name and accent
+  only). The result
   line under the form says what was written or opened. Header writes are
   not on the Pad's undo stack; the snapshot keeps the file before each
   one.
@@ -2160,6 +2165,11 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha design pass (2026-10-27)**: §10 Profiles: the header
+  form is one column with each label above its field; Enabled shows as
+  read ("On" with its M4a-4 sentence), no longer a disabled switch; the
+  heading row and the "Match rules" row are capped at the form's `48ch`
+  (#139).
 - **v0.3, pre-alpha slice 7 (2026-10-26)**: §10 Profiles as the profile
   manager: the list with the 12 px accent square and "on the pad", "+"
   with the templates as Soon controls; the heading row with the file

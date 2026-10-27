@@ -179,9 +179,16 @@ priority and match rules.*
 
 **As built (pre-alpha, #109).** `app/src/Profiles.svelte` follows the
 above with what has a backend today: name and accent are written (the
-editor's `ProfileFields`); priority shows as read with its hint; Enabled,
-the templates behind "+", "+ rule" and each rule row's Edit are disabled
-controls with their M4a-4 sentence (`Soon.svelte`). Each rule kind is
+editor's `ProfileFields`); priority shows as read with its hint, and
+Enabled as read too ("On" with its M4a-4 sentence beside it); the
+templates behind "+", "+ rule" and each rule row's Edit are disabled
+controls with their M4a-4 sentence (`Soon.svelte`). The header form
+shares the Inspector's vocabulary (DESIGN.md "Inputs / Fields"): one
+column at `48ch`, each label above its field, muted at 0.85 em with a
+2 px gap, the fields 8 px apart, the accent swatch and its text in one
+row under the label. The heading row and the "Match rules" row are
+capped at the same `48ch`, so "Open in editor" and "+ rule" sit at the
+end of the content (#139). Each rule kind is
 named once with its patterns under it. The thumbnails are the device
 drawing (`Device.svelte`) with the page's rendered tiles; the selected
 one is the page "Edit keys on the Pad" pins. An invalid field carries its
