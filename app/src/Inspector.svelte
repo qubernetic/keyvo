@@ -455,7 +455,10 @@
             </label>
             <div class="field">
               <span aria-hidden="true">{t("inspector.icon")}</span>
-              <IconPicker label={t("inspector.icon")} value={form.icon} onpick={pickIcon} />
+              <!-- A search typed for one key does not carry over to another. -->
+              {#key identity}
+                <IconPicker label={t("inspector.icon")} value={form.icon} onpick={pickIcon} />
+              {/key}
             </div>
             <div class="field">
               <span aria-hidden="true">{t("inspector.colour")}</span>

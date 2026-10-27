@@ -4,7 +4,7 @@
 // them (crates/keyvo-client/tests/editor.rs), so each test asserts the
 // bytes on disk after the GUI's edit. The cases of the key editor it
 // replaces on the Pad come first, then the inspector's own.
-import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,6 +74,11 @@ function field(name: string): HTMLInputElement {
 async function type(input: HTMLElement, value: string) {
   await fireEvent.input(input, { target: { value } });
   await fireEvent.change(input);
+}
+
+/** Lets the answers already given land in the form. */
+async function settled() {
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function action(): HTMLSelectElement {
@@ -275,6 +280,54 @@ describe("Inspector, the key editor's cases", () => {
     await editor.view.rerender({ revision: 1 });
     await waitFor(() => expect(editor.editor.key).toHaveBeenCalledTimes(2));
     expect(field("Label")).toHaveValue("Pas");
+  });
+
+  describe("keeps the typed icon search", () => {
+    /** Types `hou` into Icon; the list holds its matches only. */
+    async function search(): Promise<HTMLInputElement> {
+      const icon = screen.getByRole("combobox", { name: "Icon" }) as HTMLInputElement;
+      await fireEvent.input(icon, { target: { value: "hou" } });
+      expect(icon).toHaveValue("hou");
+      return icon;
+    }
+
+    function searched(icon: HTMLInputElement) {
+      expect(icon).toHaveValue("hou");
+      const rows = within(screen.getByRole("listbox", { name: "Icon" }))
+        .getAllByRole("option")
+        .map((option) => option.textContent.trim());
+      expect(rows).toContain("house");
+      expect(rows.every((name) => name.includes("hou"))).toBe(true);
+    }
+
+    it("through a new revision of the same key", async () => {
+      const editor = await mounted();
+      const icon = await search();
+      await editor.view.rerender({ revision: 1 });
+      await waitFor(() => expect(editor.editor.key).toHaveBeenCalledTimes(2));
+      await settled();
+      searched(icon);
+    });
+
+    it("through an acknowledged write of another field", async () => {
+      const editor = await mounted(accepting());
+      const icon = await search();
+      await fireEvent.input(field("Label"), { target: { value: "Pas" } });
+      await fireEvent.change(field("Label"));
+      await waitFor(() => expect(editor.editor.editKey).toHaveBeenCalledTimes(1));
+      await settled();
+      searched(icon);
+    });
+
+    it("but not through a read of another key", async () => {
+      const editor = await mounted();
+      const committed = (screen.getByRole("combobox", { name: "Icon" }) as HTMLInputElement).value;
+      await search();
+      await editor.view.rerender({ target: { ...TARGET, key: 5 } });
+      await waitFor(() => expect(editor.editor.key).toHaveBeenLastCalledWith({ ...TARGET, key: 5 }));
+      await settled();
+      expect(screen.getByRole("combobox", { name: "Icon" })).toHaveValue(committed);
+    });
   });
 });
 
