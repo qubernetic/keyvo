@@ -107,10 +107,10 @@ describe("the mock daemon", () => {
     const daemon = mockDaemon(store);
     const third = await daemon.tiles("global", 3, 9, TILE);
     expect(third[0]).toEqual({ image: SNAPSHOTS.label, label: "Third", layer: "global" });
-    expect(third[1]).toEqual({ image: SNAPSHOTS.background });
+    expect(third[2]).toEqual({ image: SNAPSHOTS.background });
     const page = store.page("global", 3);
-    page.keys.set(2, { icon: "lucide:x" });
-    expect((await daemon.tiles("global", 3, 9, TILE))[1]).toEqual({
+    page.keys.set(3, { icon: "lucide:x" });
+    expect((await daemon.tiles("global", 3, 9, TILE))[2]).toEqual({
       image: SNAPSHOTS.icon,
       layer: "global",
     });

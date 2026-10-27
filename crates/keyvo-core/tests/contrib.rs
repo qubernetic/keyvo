@@ -178,6 +178,49 @@ fn every_recipe_has_a_bundled_icon_and_a_label() {
     }
 }
 
+/// A variant that opens an application or a settings page, or records
+/// until it is stopped, stays open past `[timing].exec_timeout`, so it is a
+/// `launch` (#155); a command that exits soon stays an `exec`.
+#[test]
+fn the_variants_that_stay_open_are_launches() {
+    let launches: BTreeSet<String> = packs()
+        .into_iter()
+        .flat_map(|pack| {
+            pack.variants
+                .into_iter()
+                .filter(|v| matches!(v.action, Action::Launch { .. }))
+                .map(move |v| format!("{}/{}", pack.id, v.id))
+        })
+        .collect();
+    let expected: BTreeSet<String> = [
+        "calculator/flatpak",
+        "calculator/kcalc",
+        "settings-page/bluetooth",
+        "settings-page/display",
+        "settings-page/keyboard",
+        "settings-page/network",
+        "settings-page/power",
+        "settings-page/sound",
+        "spectacle/recording",
+    ]
+    .map(str::to_owned)
+    .into();
+    assert_eq!(launches, expected);
+}
+
+#[test]
+fn the_third_global_page_has_a_launch_key() {
+    let loaded = loaded();
+    let third = &loaded.profiles.global().pages[2];
+    assert!(
+        third.keys.values().any(|key| key.action
+            == Some(Action::Launch {
+                cmd: "sleep 60".into()
+            })),
+        "{third:?}"
+    );
+}
+
 /// The user test of #119 presses "Volume up" and expects the success look,
 /// which only an `exec` shows.
 #[test]
