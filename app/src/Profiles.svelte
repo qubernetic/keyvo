@@ -14,6 +14,7 @@
   import type { Daemon, Tile } from "./lib/daemon";
   import { describe, problemOf, type Problem } from "./lib/editor";
   import { t, type MessageKey } from "./lib/i18n";
+  import { clock } from "./lib/pad";
   import type { Pin } from "./lib/pin";
   import {
     fromHeaderForm,
@@ -171,7 +172,7 @@
         const edited = await files.editProfile(at, result.fields);
         if (at === id) header = { path: edited.path, fields: edited.fields };
         problem = undefined;
-        note = t("profiles.wrote", { id: at, path: edited.path });
+        note = t("profiles.wrote", { id: at, path: edited.path, time: clock(Date.now()) });
         edits++;
       } catch (error) {
         problem = problemOf(error);

@@ -65,7 +65,7 @@
   }
 
   function assign(entry: CatalogueEntry) {
-    if (selected !== undefined) onassign(entry.key);
+    if (connected && selected !== undefined) onassign(entry.key);
   }
 
   /** `/` to the search, unless a field has the focus: there it is typed. */
@@ -124,10 +124,13 @@
               <span class="icon" aria-hidden="true">
                 {#if svg !== undefined}{@html svg}{/if}
               </span>
+              <!-- Without a daemon there is nothing to assign to or drop on:
+                   the entries read disabled and do not drag. -->
               <button
                 type="button"
                 class="entry"
-                draggable="true"
+                draggable={connected}
+                aria-disabled={connected ? undefined : "true"}
                 aria-label={entry.name}
                 aria-describedby={ids.hint}
                 ondragstart={(event) => dragstart(event, entry)}

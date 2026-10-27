@@ -361,7 +361,7 @@ describe("the profile header", () => {
     // Every profile is on until the schema can switch one off.
     const enabled = within(form).getByText("Enabled").parentElement as HTMLElement;
     expect(enabled).toHaveTextContent(
-      "Enabled On Switching a profile off arrives with M4a-4 on the roadmap.",
+      "Enabled On Switching a profile off is not built yet.",
     );
     expect(within(enabled).queryByRole("button")).toBeNull();
     expect(within(enabled).queryByRole("switch")).toBeNull();
@@ -406,8 +406,10 @@ describe("the profile header", () => {
       await waitFor(() => expect(fake.file).toBe(editorFile(step.file)));
     }
     expect(fake.files.editProfile).toHaveBeenCalledTimes(STEPS.steps.length);
+    // The note carries the time, as the inspector's does, so a second
+    // write of the same value is seen to have happened.
     expect(screen.getByRole("status", { name: "Profile result" })).toHaveTextContent(
-      `Wrote the header of terminal to ${CONFIG}/${STEPS.path}`,
+      new RegExp(`^Wrote the header of terminal to ${CONFIG}/${STEPS.path} at \\d\\d:\\d\\d:\\d\\d$`),
     );
     // The list follows the write.
     await waitFor(() =>

@@ -17,7 +17,13 @@ import { nth, recipeReplies } from "./lib/fixtures";
 const ENTRIES = catalogueOf(nth(recipeReplies(), 0).recipes);
 
 function catalogue(
-  props: { selected?: number; active?: boolean; problems?: string[]; unread?: string } = {},
+  props: {
+    selected?: number;
+    active?: boolean;
+    connected?: boolean;
+    problems?: string[];
+    unread?: string;
+  } = {},
 ) {
   const onassign = vi.fn<(entry: string) => void>();
   const result = render(Catalogue, { props: { entries: ENTRIES, onassign, ...props } });
@@ -118,6 +124,16 @@ describe("the entries", () => {
     // marked disabled; the hint says what a click needs.
     expect(exec).not.toHaveAttribute("aria-disabled");
     expect(exec).toHaveAccessibleDescription("Select a key to assign it, or drag it onto a key.");
+    await fireEvent.click(exec);
+    expect(onassign).not.toHaveBeenCalled();
+  });
+
+  it("marks every entry disabled while no daemon is connected", async () => {
+    const { onassign } = catalogue({ connected: false, selected: 3 });
+    const exec = screen.getByRole("button", { name: "Exec" });
+    expect(exec).toHaveAttribute("aria-disabled", "true");
+    expect(exec).toHaveAttribute("draggable", "false");
+    expect(exec).toHaveAccessibleDescription("Connect the daemon to assign actions.");
     await fireEvent.click(exec);
     expect(onassign).not.toHaveBeenCalled();
   });

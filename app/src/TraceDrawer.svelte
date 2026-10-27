@@ -29,7 +29,11 @@
     return {
       title: "drawer.trigger",
       rows: [
-        { term: "drawer.time", value: new Date(entry.timestamp_ms).toLocaleString() },
+        // The date with a 24 h time, as the strip's times are 24 h.
+        {
+          term: "drawer.time",
+          value: new Date(entry.timestamp_ms).toLocaleString(undefined, { hourCycle: "h23" }),
+        },
         { term: "drawer.key", value: String(entry.key) },
         { term: "drawer.press", value: entry.trigger.press },
         {
