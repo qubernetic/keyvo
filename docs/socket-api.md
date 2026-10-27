@@ -251,6 +251,8 @@ with `status` set to one of the following:
 - `pending`
 - `sent`, with `events` (`code`, `down`)
 - `exited`, with `code` and `duration_ms`
+- `started`, with `pid`: a `launch` still running after
+  `[timing].launch_settle`, let go; its end is not reported
 - `failed`, with `error`
 
 The daemon keeps the newest `[trace].ring` entries (default 1000) in

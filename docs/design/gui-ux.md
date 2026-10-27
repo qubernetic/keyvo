@@ -165,7 +165,9 @@ holds, what is special in the right column.
   writes its default "What it does" with its label and icon at once
   (§4.3). The search covers group, name and variant names. v1 groups:
   General (Open
-  folder, Open website, New email, then the raw tools Chord and Exec),
+  folder, Open website, New email, then the raw tools Chord, Exec and
+  Launch: Exec runs a command and reports its exit, Launch opens an
+  application and lets it go),
   System (Lock the desktop, Volume, Brightness, Open a settings page),
   Apps (one entry per app, Spectacle, Calculator, VS Code, Konsole and so
   on; dropped on a tile the inspector asks "What it does"). Later: Dialpad

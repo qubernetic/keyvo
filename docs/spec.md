@@ -865,6 +865,7 @@ Defaults, all configurable under `[timing]` in `config.toml`:
 | `divert_spacing` | 20 ms | wait between two `0x1B04` divert requests, §5.6 (Julusian PR #22) |
 | `reply_timeout` | 1000 ms | how long an HID++ request waits for its matching reply, §5.1 and §5.2 (captured replies come within about 1 ms) |
 | `exec_timeout` | 30000 ms | an `exec` action still running after this long is killed with its process group and fails, §8 |
+| `launch_settle` | 1000 ms | how long a `launch` action is watched for an early exit; a command still running after this long is let go and has started, §8 |
 | `reconnect_interval` | 1000 ms | wait between two attempts to open the Keypad after it is gone or not found, §5.1 |
 | `reload_settle` | 100 ms | quiet time after the last change in the configuration directory before the daemon reloads it, §7.2 |
 | `accept_backoff` | 100 ms | wait after a failed `accept` on the control socket before the next one, so a full file table does not spin the daemon, §8 |
@@ -1170,7 +1171,8 @@ mouse.dpi            = 1200
   (integer, default 0); `[[pages]]` with an optional `name` and
   `keys.1` to `keys.9`, each with `icon`, `label`, `color`, `action` and
   `states.<name>` (`icon`, `label`, `color`, `badge`). Colors are
-  `#rrggbb`. Actions are `chord` (`keys`) and `exec` (`cmd`). The other
+  `#rrggbb`. Actions are `chord` (`keys`), `exec` (`cmd`) and `launch`
+  (`cmd`, an application keyvo starts and lets go, §8). The other
   keys of the example above (`general_hint`, `on_fail`, the `recipe` action,
   `[dialpad]`, `[desk_state]`) are rejected as unknown until their issues
   add them.
@@ -1195,15 +1197,18 @@ mouse.dpi            = 1200
   per-kind bindings and `repeat` come with M1-9.
 - Action types (v1): `chord` (key combo, sequences with `,`, per-step
   delays, hold/release), `exec` (non-blocking subprocess with `KEYVO_*`
-  env, §8), `http` (GET/POST), `text` (type a string), `page` / `profile` /
+  env whose exit is the result, §8), `launch` (open an application: the
+  same command line, let go once it outlives `[timing].launch_settle`, §8;
+  Stream Deck's "Open" next to "System: Run command"), `http` (GET/POST), `text` (type a string), `page` / `profile` /
   `mode` (internal), `recipe` (§7.5, resolved to one of the others at press
   time). Chord aliases (`ctrl`/`control`, `super`/`meta`) and shifted symbols
   (`ctrl+?`) are accepted; the full evdev keycode table is supported.
 - `on_fail` (optional, per key or per press kind): an action run when the
   primary action fails (non-zero exit, timeout, non-2xx, unresolved recipe).
   It is not retried and has no `on_fail` of its own.
-- Automatic states: an `exec` or `http` action switches the key's state to
-  `running` while it runs, then to `success` or `error`; the looks are the
+- Automatic states: an `exec`, `launch` or `http` action switches the key's
+  state to `running` while it runs, then to `success` or `error` (a
+  `launch` is `success` once it has started or exited 0); the looks are the
   theme's built-in feedback primitives (§9) unless the key's own
   `states.running`, `states.success` or `states.error` override them. A
   script may select a custom state by printing `KEYVO_STATE=<name>` on
@@ -1366,6 +1371,25 @@ the whole process group is killed and the result is `failed` with "timed
 out after <n> ms". A chord's result is `sent` with its key events, or
 `failed` with the injector's error.
 
+As built (pre-alpha, #155): a `launch` action runs the same `sh -c <cmd>`
+with the same environment, stdin and stdout on `/dev/null` and stderr in
+the daemon's log, but in a new session (`setsid`), so it leaves the
+daemon's process group and session and outlives the daemon. The daemon
+watches it for `[timing].launch_settle`. A command that ends within it is
+reported as an `exec` would be: `exited` with code 0 is `success` (an
+instance that is already running hands over and exits 0), another code is
+`error` (`sh` reports a missing command with 127; a Flatpak id that is not
+installed exits 1), and a spawn error is `failed`. A command still running
+then is let go: the result is `started` with the shell's `pid` and the key
+shows `success`. A task of the daemon still waits for the child, so its
+end leaves no zombie and changes no trace record; once the daemon exits,
+the system reaps it. `exec_timeout` does not apply. The `on_fail` branch
+is not built for any action yet (§7.2); it applies to a failed `launch` as
+to a failed `exec`. A daemon run as a systemd unit with the default
+`KillMode=control-group` would still stop a launched application with
+the unit, since `setsid` does not leave the cgroup; keyvo ships no unit
+yet.
+
 **Inward (script → daemon).** Unix domain socket at
 `$XDG_RUNTIME_DIR/keyvo/keyvo.sock`, mode `0600`, owned by the session
 user (named pipe on Windows). The daemon and every client resolve it the
@@ -1462,7 +1486,8 @@ buffer, the file and `keyvo ctl trace|tail` live in the daemon. Pre-alpha
 subset of a record: timestamp, trigger (press kind, simulated), profile id,
 page, key, the resolved action, and the result: `unbound`, `dry_run`,
 `pending`, `sent` with the chord's key events, `exited` with exit code and
-duration, or `failed` with the reason; one serialized record per line is in
+duration, `started` with the `pid` of a `launch` that was let go, or
+`failed` with the reason; one serialized record per line is in
 `crates/keyvo-core/tests/fixtures/trace/records.ndjson`. The daemon keeps
 the newest `[trace].ring` entries (default 1000, the only `[trace]` key so
 far) in memory: device and client presses, dry runs, and each `exec`
@@ -1851,7 +1876,8 @@ then subscribes with a replay of the newest 20 trace entries;
   group). The presets are the recipe packs of the daemon's `recipes`
   reply (§7.5, §8; the shell's `recipes` command, `daemon.recipes()`), in
   the reply's order, read when the Pad connects and again after every
-  reload; the raw tools Chord and Exec close General. When the packs
+  reload; the raw tools Chord, Exec and Launch (`lucide:app-window`)
+  close General. When the packs
   cannot be read the column says why under the entries and keeps the
   tools; each user pack the daemon left out is listed under "Recipe packs
   left out" with its `file:line:column: message`. Every entry is dragged
@@ -1943,8 +1969,8 @@ key editor of the app; the key grid exists once, on the Pad.
   refresh of the key (a new revision, a pad move, an acknowledged
   write); only another value (a pick, an undo, another key) or `Esc`
   sets the field again. Color is a colour swatch and its `#rrggbb` text, kept in step.
-- **Action.** A select (No action, Chord, Exec) and the kind's field, the
-  chord's keys or the `exec` command; the working directory and hold of
+- **Action.** A select (No action, Chord, Exec, Launch) and the kind's
+  field, the chord's keys or the `exec` or `launch` command; the working directory and hold of
   an `exec` wait for the action schema to carry them. The form is at most
   `48ch` wide.
 
@@ -2235,6 +2261,12 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha design pass (2026-10-27)**: §7.2 a new action type
+  `launch` opens an application and lets it go; §6.1 `[timing].launch_settle`
+  (1000 ms); §8 the as-built paragraph and the trace result `started` with
+  the `pid`; §10 the Inspector's kinds and the catalogue's raw tools gain
+  Launch; the recipe packs for the calculator, the settings pages and the
+  Spectacle recording are `launch` (#155).
 - **v0.3, pre-alpha design pass (2026-10-27)**: §6.1 and §6.3 one page
   list per profile: the global pages after `general` at -1, -2, ...,
   `general` at 0, the shown profile's context page at 1, its other pages
