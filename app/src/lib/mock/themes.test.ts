@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+  accentOf,
   applyTheme,
   contrast,
   DEFAULT_THEME,
@@ -56,12 +57,14 @@ describe("the mock themes", () => {
     expect(root.style.getPropertyValue("--kv-accent")).toBe("#81d0ff");
   });
 
-  it("applies the measured values except the derived muted text", () => {
+  it("applies the measured values except the derived muted text and accent", () => {
     for (const [name, measured] of Object.entries(MEASURED)) {
       const applied: Record<string, string> = { ...THEMES[name as ThemeName] };
       delete applied["--kv-fg-muted"];
+      delete applied["--kv-accent"];
       const rest: Record<string, string> = { ...measured };
       delete rest["--kv-fg-muted"];
+      delete rest["--kv-accent"];
       expect(applied, name).toEqual(rest);
     }
   });
@@ -109,11 +112,40 @@ describe("the mock themes", () => {
     },
   );
 
-  it("mutedOf takes a set's own values", () => {
+  it.each(["breeze-dark", "adwaita-dark", "adwaita-light"] as const)(
+    "%s keeps its measured accent, which passes 3:1 as the focus ring",
+    (name) => {
+      const accent = MEASURED[name]["--kv-accent"] ?? "";
+      expect(THEMES[name]["--kv-accent"]).toBe(accent);
+      expect(contrast(accent, MEASURED[name]["--kv-bg"] ?? "")).toBeGreaterThanOrEqual(3);
+      expect(contrast(accent, MEASURED[name]["--kv-bg-alt"] ?? "")).toBeGreaterThanOrEqual(3);
+    },
+  );
+
+  it("breeze-light derives its accent: the smallest mix toward the text that passes 3:1", () => {
+    const {
+      "--kv-fg": fg = "",
+      "--kv-bg": bg = "",
+      "--kv-bg-alt": alt = "",
+      "--kv-accent": measured = "",
+    } = MEASURED["breeze-light"];
+    expect(contrast(measured, alt)).toBeLessThan(3);
+    const accent = THEMES["breeze-light"]["--kv-accent"] ?? "";
+    expect(contrast(accent, bg)).toBeGreaterThanOrEqual(3);
+    expect(contrast(accent, alt)).toBeGreaterThanOrEqual(3);
+    const step = [...Array(101).keys()].find((percent) => mix(measured, fg, percent) === accent);
+    expect(step).toBeGreaterThan(0);
+    const previous = mix(measured, fg, (step ?? 0) - 1);
+    expect(Math.min(contrast(previous, bg), contrast(previous, alt))).toBeLessThan(3);
+  });
+
+  it("mutedOf and accentOf take a set's own values", () => {
     const set = { "--kv-bg": "#ffffff", "--kv-bg-alt": "#ffffff", "--kv-fg": "#000000" };
     expect(mutedOf({ ...set, "--kv-fg-muted": "#595959" })).toBe("#595959");
     const derived = mutedOf({ ...set, "--kv-fg-muted": "#aaaaaa" });
     expect(contrast(derived, "#ffffff")).toBeGreaterThanOrEqual(4.5);
+    expect(accentOf({ ...set, "--kv-accent": "#0461be" })).toBe("#0461be");
+    expect(accentOf({ ...set, "--kv-accent": "#ffffff" })).not.toBe("#ffffff");
   });
 
   it("mixes in OKLCH as color-mix() does", () => {

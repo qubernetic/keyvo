@@ -2,9 +2,9 @@
 // the --kv-* properties as the theme bridge (M4a-1) would read them from
 // the Breeze colour schemes and the libadwaita defaults, so a layout can be
 // judged in light and dark on the dev server. `?theme=` picks one. The
-// applied sets follow the bridge's muted rule (§7, "Derived muted text"):
-// the muted text is derived where the measured one falls short of 4.5:1
-// on both surfaces.
+// applied sets follow the bridge's rules (§7, "Derived muted text and
+// ring"): the muted text and the accent are derived where the measured
+// ones fall short of 4.5:1 and 3:1 on both surfaces.
 
 export type ThemeName = "breeze-dark" | "breeze-light" | "adwaita-dark" | "adwaita-light";
 
@@ -77,9 +77,10 @@ export const MEASURED: Record<ThemeName, Record<string, string>> = {
   },
 };
 
-/** The muted text needs 4.5:1 (WCAG 2.2, 1.4.3) on both `--kv-bg` and
- * `--kv-bg-alt`. */
+/** The muted text needs 4.5:1, the focus ring 3:1 (WCAG 2.2, 1.4.3 and
+ * 1.4.11), on both `--kv-bg` and `--kv-bg-alt`. */
 const TEXT = 4.5;
+const RING = 3;
 
 function channels(hex: string): number[] {
   return [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16) / 255);
@@ -176,7 +177,18 @@ export function mutedOf(set: Record<string, string>): string {
   return mixes.filter((colour) => passes(colour, set, TEXT)).pop() ?? fg;
 }
 
-/** The sets the mock applies: the measured ones under the muted rule,
+/** The ring rule: the desktop's accent where it passes 3:1 on both
+ * surfaces, else the accent mixed toward the text at the smallest whole
+ * percent that passes. */
+export function accentOf(set: Record<string, string>): string {
+  const measured = set["--kv-accent"] ?? "";
+  if (passes(measured, set, RING)) return measured;
+  const fg = set["--kv-fg"] ?? "";
+  const mixes = PERCENTS.map((percent) => mix(measured, fg, percent));
+  return mixes.find((colour) => passes(colour, set, RING)) ?? fg;
+}
+
+/** The sets the mock applies: the measured ones under the two rules,
  * computed here and not with color-mix() so a test can measure them. */
 export const THEMES: Record<ThemeName, Record<string, string>> = {
   "breeze-dark": applied(MEASURED["breeze-dark"]),
@@ -186,7 +198,7 @@ export const THEMES: Record<ThemeName, Record<string, string>> = {
 };
 
 function applied(set: Record<string, string>): Record<string, string> {
-  return { ...set, "--kv-fg-muted": mutedOf(set) };
+  return { ...set, "--kv-fg-muted": mutedOf(set), "--kv-accent": accentOf(set) };
 }
 
 function isTheme(name: string | null): name is ThemeName {

@@ -2,7 +2,7 @@
 // (§6): every token has a fixed default until the theme bridge (M4a-1)
 // reads it from the desktop; every rule that colours text sets the text
 // and its background together, from tokens only; every such pair passes
-// 4.5:1 in the default set and in every mock set, the focus ring 3:1;
+// 4.5:1 and the focus ring 3:1, in the default set and in every mock set;
 // every form control, the option list included, has its pair; and
 // the document's color-scheme matches the token set, so the webview's
 // native popups follow it.
@@ -255,9 +255,9 @@ describe("contrast", () => {
     expect(failing).toEqual([]);
   });
 
-  it("the focus ring passes 3:1 on both backgrounds", () => {
-    expect(contrast(token, "--kv-accent", "--kv-bg")).toBeGreaterThanOrEqual(3);
-    expect(contrast(token, "--kv-accent", "--kv-bg-alt")).toBeGreaterThanOrEqual(3);
+  it.each(SETS)("the focus ring passes 3:1 on both backgrounds in the %s set", (_, set) => {
+    expect(contrast(set, "--kv-accent", "--kv-bg")).toBeGreaterThanOrEqual(3);
+    expect(contrast(set, "--kv-accent", "--kv-bg-alt")).toBeGreaterThanOrEqual(3);
   });
 });
 
