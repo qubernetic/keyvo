@@ -118,7 +118,7 @@ keyvo/
 ├── schemas/            # generated JSON Schemas of profiles and config.toml
 ├── tests/protocol-fixtures/  # shared fixtures for Rust/TS clients: socket/ NDJSON, editor/, hid/ golden HID++ scripts
 └── docs/               # spec.md, roadmap.md, socket-api.md, adr/, design/, research/, plans/,
-                        #   hardware-notes.md, pre-alpha-test.md; planned: diagrams/, mdBook
+                        #   hardware-notes.md, pre-alpha-test.md, beta-test.md; planned: diagrams/, mdBook
 ```
 
 "Planned" marks what the pre-alpha has not built yet; the milestone that
@@ -2361,6 +2361,9 @@ of an installed application on that runtime (the bare runtime has no
 application id, and GTK's glycin icon loader cannot spawn its sandbox
 without one; `docs/pre-alpha-test.md` section 2). The list below
 is the order of the remaining milestone work.
+
+The beta epic (`docs/roadmap.md`, Beta; #180) takes M4b and parts of M1
+and M3; its hardware checks are in `docs/beta-test.md`.
 
 1. **M0: Protocol (hardware truth)**. TS quick-test with Julusian's
    library, Windows VM + USB capture toolkit, HID++ 2.0 core, keypad
