@@ -50,7 +50,7 @@ anti-reference. The sketch of `docs/ui-concepts/v3/` is superseded.*
 +-----------+------------------------------------------------+--------------+
 | Pad       |   device drawing with the live mirror in it    | Actions      |
 | Profiles  |   Pages [context] [git] [+]      Accent [sw]   |  [search]    |
-| Behaviors |   The pad moved to vscode, page 1   (Follow)   |  v General   |
+| Behaviors |   Editing git, key 5; pad on vscode  (Follow)  |  v General   |
 |           |------------------------------------------------|  v System    |
 |           |   Key 5: Exec  file line 42    [Press] [Clear] |  v Apps      |
 |           |   [tile] Label, Icon, Colour; Action, fields   |              |
@@ -116,8 +116,16 @@ holds, what is special in the right column.
   page the pad only; the app's page selection stays where the user put it.
 - **Pinned inspector**: the header's profile dropdown and the page tab pin
   the inspector; the mirror keeps following the pad. When the two differ,
-  one line under the tabs says "The pad moved to vscode, page 1" with a
-  Follow control. The daemon holds the context while the keyvo window has
+  one line under the tabs names what is pinned, then where the pad is:
+  "Editing Mailspring, key 3; the pad shows discord, page 1." (without a
+  selected key "Editing Mailspring, page 1; ..."), with a Follow control.
+  While they differ the mirror draws no selection outline, since its
+  tiles are another page's; the inspector's own tile preview still shows
+  the pinned key. A pin set by selecting a key goes back to the pad's
+  page when a tile of the mirror is clicked, and the outline returns
+  (#143); a profile or page the user chose in the dropdown, a tab or
+  "Edit keys on the Pad" stays, and a click selects that key number on
+  it. The daemon holds the context while the keyvo window has
   focus (`[focus].hold_classes`, #117), so the line is rare; the status
   area then reads "keyvo-app focused, holding org.kde.konsole".
 - **Inspector** (below the drawing, full width of the column): the header
