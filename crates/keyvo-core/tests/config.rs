@@ -30,7 +30,8 @@ fn defaults_match_spec_6_1_and_9() {
             focus_hysteresis: ms(150),
             render_coalesce: ms(50),
             long_press: ms(1000),
-            page_grace: ms(10_000),
+            page_return_global: ms(10_000),
+            page_return_own: ms(0),
             keep_alive_period: ms(1000),
             keep_alive_timeout: ms(3000),
             ack_timeout: ms(50),
@@ -165,6 +166,12 @@ fn invalid_fixtures_report_file_line_and_column() {
             "unknown field `long_pres`",
         ),
         (
+            // Removed by #157: page_return_global and page_return_own.
+            "invalid/page-grace-removed.toml",
+            Position { line: 2, column: 1 },
+            "unknown field `page_grace`",
+        ),
+        (
             "invalid/focus-hold-class-number.toml",
             Position {
                 line: 2,
@@ -225,6 +232,16 @@ fn a_keep_alive_period_not_below_the_timeout_is_refused() {
     // Just below is fine.
     let text = "[timing]\nkeep_alive_period = 2999\n";
     assert!(Config::from_toml(text, Path::new("config.toml")).is_ok());
+}
+
+#[test]
+fn the_page_return_keys_parse() {
+    let text = "[timing]\npage_return_global = 0\npage_return_own = 30000\n";
+    let timing = Config::from_toml(text, Path::new("config.toml"))
+        .unwrap()
+        .timing;
+    assert_eq!(timing.page_return_global, ms(0));
+    assert_eq!(timing.page_return_own, ms(30_000));
 }
 
 #[test]
@@ -309,7 +326,8 @@ fn durations_serialize_as_milliseconds_and_read_back() {
     let config = parse("valid/partial.toml").unwrap();
     let text = toml::to_string(&config).unwrap();
     assert!(text.contains("long_press = 800\n"), "{text}");
-    assert!(text.contains("page_grace = 10000\n"), "{text}");
+    assert!(text.contains("page_return_global = 10000\n"), "{text}");
+    assert!(text.contains("page_return_own = 0\n"), "{text}");
     assert_eq!(
         Config::from_toml(&text, Path::new("config.toml")),
         Ok(config)

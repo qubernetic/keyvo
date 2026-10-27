@@ -841,6 +841,51 @@ async fn the_page_buttons_walk_the_page_list_of_a_two_page_profile() {
     daemon.stop().await;
 }
 
+/// The `page_return_global` of [`a_global_page_returns_after_the_last_key_press`].
+const PAGE_RETURN: Duration = Duration::from_millis(600);
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_global_page_returns_after_the_last_key_press() {
+    let global = with_general();
+    let terminal = terminal_with_two_pages();
+    let pad = Pad::new(&startup());
+    let watcher = FakeWindowWatcher::new();
+    let mut daemon = Daemon::start_on(
+        &format!("{CONFIG}page_return_global = {}\n", PAGE_RETURN.as_millis()),
+        &[("global", &global), ("terminal", &terminal)],
+        vec![pad.clone()],
+        FakeInputInjector::new(),
+        watcher.clone(),
+    );
+    daemon.painted().await;
+    assert!(watcher.focus(WindowContext::new("org.kde.konsole", "~")));
+    assert_eq!(daemon.switched().await, view("terminal", 1, 1, Mode::Auto));
+    pad.buttons(&[0x01a1]);
+    pad.buttons(&[]);
+    assert_eq!(daemon.switched().await, view("global", 2, 0, Mode::Auto));
+    daemon.shows(&pad, &union_on(&global, 2)).await;
+    // A key press half way restarts the clock: the return comes the full
+    // time after it, with the event and the repaint.
+    tokio::time::sleep(PAGE_RETURN / 2).await;
+    let pressed = std::time::Instant::now();
+    pad.hold(&[2]);
+    pad.hold(&[]);
+    assert_eq!(daemon.switched().await, view("terminal", 1, 1, Mode::Auto));
+    assert!(pressed.elapsed() >= PAGE_RETURN, "{:?}", pressed.elapsed());
+    daemon.shows(&pad, &union_over(&terminal, &global)).await;
+    // The own pages do not return with `page_return_own` at its default 0.
+    pad.buttons(&[0x01a2]);
+    pad.buttons(&[]);
+    assert_eq!(daemon.switched().await, view("terminal", 2, 2, Mode::Auto));
+    let quiet = tokio::time::timeout(PAGE_RETURN * 3, daemon.switched()).await;
+    assert!(quiet.is_err(), "{quiet:?}");
+    assert_eq!(
+        daemon.status().await.view,
+        view("terminal", 2, 2, Mode::Auto)
+    );
+    daemon.stop().await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_held_page_button_switches_the_mode_and_both_escape() {
     let (mut daemon, pad, _) = started(&with_general()).await;

@@ -152,9 +152,16 @@
           "minimum": 0,
           "type": "integer"
         },
-        "page_grace": {
+        "page_return_global": {
           "default": 10000,
-          "description": "After a page-button use, an app switch keeps the general page for\nthis long (spec §6.3). Default 10000 ms.",
+          "description": "On a global page (list index 0 or below), the pad returns to the\nshown profile's context page after this long without a page-button\nor key press (spec §6.3); 0 keeps the page. Default 10000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "page_return_own": {
+          "default": 0,
+          "description": "On one of the shown profile's further pages (list index 2 or\nabove), the pad returns to its context page after this long without\na page-button or key press (spec §6.3); 0 keeps the page. Default 0\n(off).",
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
@@ -250,7 +257,8 @@
         "keep_alive_timeout": 3000,
         "launch_settle": 1000,
         "long_press": 1000,
-        "page_grace": 10000,
+        "page_return_global": 10000,
+        "page_return_own": 0,
         "reconnect_interval": 1000,
         "reload_settle": 100,
         "render_coalesce": 50,

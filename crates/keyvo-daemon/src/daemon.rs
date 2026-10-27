@@ -12,9 +12,10 @@
 //! - The [`WindowWatcher`] reports the focused window and the page buttons
 //!   arrive as diverted controls; both go to the context state machine,
 //!   which the controller wakes at its next deadline (focus hysteresis,
-//!   page-button long press). A changed profile, page or mode repaints and
-//!   is reported as [`Event::Switched`]. Without a watcher the daemon runs
-//!   on, without focus switching.
+//!   page-button long press, page return; a key press restarts the page
+//!   return). A changed profile, page or mode repaints and is reported as
+//!   [`Event::Switched`]. Without a watcher the daemon runs on, without
+//!   focus switching.
 //! - A change in the configuration directory reloads it after
 //!   `[timing].reload_settle` of quiet. A directory that does not load
 //!   keeps the last good state.
@@ -25,8 +26,8 @@
 //!   in-memory ring buffer of `[trace].ring` entries.
 //!
 //! The `[timing]` values of the device actor, `long_press`,
-//! `focus_hysteresis`, `page_grace` and `[focus].hold_classes` are read at
-//! start; the others and `[trace].ring` apply from the next reload.
+//! `focus_hysteresis` and `[focus].hold_classes` are read at start; the
+//! others and `[trace].ring` apply from the next reload.
 
 use std::collections::VecDeque;
 use std::future::Future;
@@ -391,7 +392,10 @@ impl<I: InputInjector> Controller<'_, I> {
                             self.emit(Event::Key { key: slot, edge });
                         }
                         match edge {
-                            Edge::Press => self.presses.press(key, now),
+                            Edge::Press => {
+                                self.engine.touch(now);
+                                self.presses.press(key, now);
+                            }
                             Edge::Release => {
                                 if let Some(kind) = self.presses.release(key, now) {
                                     self.pressed(key, kind);
@@ -445,7 +449,8 @@ impl<I: InputInjector> Controller<'_, I> {
         self.switched(&before);
     }
 
-    /// A pending focus change or a page-button long press is due.
+    /// A pending focus change, a page-button long press or the page return
+    /// is due.
     fn poll_state(&mut self) {
         let before = self.engine.view();
         self.engine.poll(Instant::now().into_std());

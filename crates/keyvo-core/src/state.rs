@@ -10,9 +10,12 @@
 //! - `auto` mode: the focused window selects the profile
 //!   ([`Profiles::select`]) once its report has stood for
 //!   `[timing].focus_hysteresis`; an app switch (another window class)
-//!   shows index 1 of the new profile, unless a page button was used within
-//!   `[timing].page_grace`: then the index stays, clamped to the new list.
-//!   A title change in the same app keeps the index.
+//!   shows index 1 of the new profile. A title change in the same app keeps
+//!   the index.
+//! - The page return: in auto mode, an index of 0 or below shows index 1
+//!   again after `[timing].page_return_global` without a page-button press
+//!   or release or a key press, an index of 2 or above after
+//!   `[timing].page_return_own`; 0 turns a side off.
 //! - `manual` mode is a focus lock: the shown profile and index stay
 //!   whatever the focus does, the buttons walk the same list. Leaving it
 //!   shows index 1 of the profile the focused window selects.
@@ -86,7 +89,8 @@ pub struct View {
 #[derive(Debug, Clone)]
 pub struct State {
     hysteresis: Duration,
-    page_grace: Duration,
+    page_return_global: Duration,
+    page_return_own: Duration,
     long_press: Duration,
     mode: Mode,
     /// The profile the focused window selects.
@@ -104,8 +108,8 @@ pub struct State {
     hold: Focus,
     /// The focused window while it holds the context.
     in_front: Option<WindowContext>,
-    /// The last page-button press or release.
-    page_used: Option<Instant>,
+    /// The last page-button press or release or key press.
+    last_use: Option<Instant>,
     held: BTreeSet<PageButton>,
     buttons: PressDetector<PageButton>,
 }
@@ -118,7 +122,8 @@ impl State {
         let timing = &config.timing;
         Self {
             hysteresis: timing.focus_hysteresis,
-            page_grace: timing.page_grace,
+            page_return_global: timing.page_return_global,
+            page_return_own: timing.page_return_own,
             long_press: timing.long_press,
             mode: Mode::Auto,
             selected: GLOBAL_ID.to_owned(),
@@ -128,7 +133,7 @@ impl State {
             pending: None,
             hold: config.focus.clone(),
             in_front: None,
-            page_used: None,
+            last_use: None,
             held: BTreeSet::new(),
             buttons: PressDetector::new(timing.long_press),
         }
@@ -189,7 +194,7 @@ impl State {
 
     /// `button` went down at `now`. The second button held escapes.
     pub fn press(&mut self, button: PageButton, now: Instant, _profiles: &Profiles) {
-        self.page_used = Some(now);
+        self.last_use = Some(now);
         self.held.insert(button);
         if self.held.len() > 1 {
             self.escape();
@@ -201,7 +206,7 @@ impl State {
     /// `button` came up at `now`: a short press pages, a long one not yet
     /// fired toggles the mode.
     pub fn release(&mut self, button: PageButton, now: Instant, profiles: &Profiles) {
-        self.page_used = Some(now);
+        self.last_use = Some(now);
         self.held.remove(&button);
         match self.buttons.release(button, now) {
             Some(PressKind::Short) => self.step(button, profiles),
@@ -210,12 +215,21 @@ impl State {
         }
     }
 
-    /// Applies what is due at `now`: a pending window, a long press.
+    /// A key on the pad went down at `now`: the page return starts over.
+    pub const fn touch(&mut self, now: Instant) {
+        self.last_use = Some(now);
+    }
+
+    /// Applies what is due at `now`: the page return, a pending window, a
+    /// long press.
     pub fn poll(&mut self, now: Instant, profiles: &Profiles) {
+        if self.return_at().is_some_and(|at| at <= now) {
+            self.index = 1;
+        }
         if self.pending.as_ref().is_some_and(|(_, at)| *at <= now)
             && let Some((window, _)) = self.pending.take()
         {
-            self.apply(window, now, profiles);
+            self.apply(window, profiles);
         }
         for _ in self.buttons.poll(now) {
             self.toggle_mode();
@@ -226,18 +240,21 @@ impl State {
     #[must_use]
     pub fn next_deadline(&self) -> Option<Instant> {
         let focus = self.pending.as_ref().map(|(_, at)| *at);
-        match (focus, self.buttons.next_deadline()) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        }
+        [focus, self.buttons.next_deadline(), self.return_at()]
+            .into_iter()
+            .flatten()
+            .min()
     }
 
-    /// The profiles were reloaded: the focused window (while one that holds
-    /// the context is in front, the one before it) selects again, as its
-    /// rules may have changed; manual mode keeps its profile unless it is
-    /// gone (then the global context page). An index the list no longer has
+    /// The configuration and profiles were reloaded: the page return times
+    /// of `config` apply; the focused window (while one that holds the
+    /// context is in front, the one before it) selects again, as its rules
+    /// may have changed; manual mode keeps its profile unless it is gone
+    /// (then the global context page). An index the list no longer has
     /// becomes the nearest end.
-    pub fn reload(&mut self, profiles: &Profiles) {
+    pub fn reload(&mut self, config: &Config, profiles: &Profiles) {
+        self.page_return_global = config.timing.page_return_global;
+        self.page_return_own = config.timing.page_return_own;
         self.selected = self.window.as_ref().map_or_else(
             || GLOBAL_ID.to_owned(),
             |window| profiles.select(window).profile.id.clone(),
@@ -261,14 +278,25 @@ impl State {
             .unwrap_or_else(|| profiles.global())
     }
 
-    fn apply(&mut self, window: WindowContext, now: Instant, profiles: &Profiles) {
+    /// When the page return is due: auto mode on a page other than the
+    /// context page, with the return time of its side set.
+    fn return_at(&self) -> Option<Instant> {
+        let after = match self.index {
+            1 => return None,
+            index if index < 1 => self.page_return_global,
+            _ => self.page_return_own,
+        };
+        if self.mode != Mode::Auto || after.is_zero() {
+            return None;
+        }
+        self.last_use.map(|used| used + after)
+    }
+
+    fn apply(&mut self, window: WindowContext, profiles: &Profiles) {
         let app_switch = self
             .window
             .as_ref()
             .is_none_or(|old| old.class != window.class);
-        let in_grace = self
-            .page_used
-            .is_some_and(|used| now.saturating_duration_since(used) < self.page_grace);
         profiles
             .select(&window)
             .profile
@@ -277,7 +305,7 @@ impl State {
         self.window = Some(window);
         if self.mode == Mode::Auto {
             self.shown.clone_from(&self.selected);
-            self.index = if app_switch && !in_grace {
+            self.index = if app_switch {
                 1
             } else {
                 PageList::of(profiles, self.shown(profiles)).clamp(self.index)

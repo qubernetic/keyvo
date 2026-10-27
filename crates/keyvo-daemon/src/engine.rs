@@ -37,8 +37,9 @@ pub struct Engine {
 impl Engine {
     /// The global profile's context page in auto mode, before any device
     /// told its key count. The state machine's `[timing]` values
-    /// (`focus_hysteresis`, `page_grace`, `long_press`) and
-    /// `[focus].hold_classes` are read here.
+    /// (`focus_hysteresis`, `long_press`) and `[focus].hold_classes` are
+    /// read here; `page_return_global` and `page_return_own` here and on
+    /// every reload.
     #[must_use]
     pub fn new(loaded: Loaded) -> Self {
         let state = State::new(&loaded.config, &loaded.profiles);
@@ -67,7 +68,8 @@ impl Engine {
     /// over.
     pub fn reload(&mut self, loaded: Loaded) {
         self.loaded = loaded;
-        self.state.reload(&self.loaded.profiles);
+        self.state
+            .reload(&self.loaded.config, &self.loaded.profiles);
     }
 
     /// The profile, page and mode the pad shows.
@@ -114,7 +116,13 @@ impl Engine {
         self.state.release(button, now, &self.loaded.profiles);
     }
 
-    /// Applies a focus change or a page-button long press due at `now`.
+    /// A key on the pad went down at `now`: the page return starts over.
+    pub const fn touch(&mut self, now: Instant) {
+        self.state.touch(now);
+    }
+
+    /// Applies a focus change, a page-button long press or the page return
+    /// due at `now`.
     pub fn poll(&mut self, now: Instant) {
         self.state.poll(now, &self.loaded.profiles);
     }
