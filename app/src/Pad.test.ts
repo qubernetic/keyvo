@@ -790,6 +790,70 @@ describe("the actions catalogue", () => {
     await waitFor(() => expect(within(action()).getByRole("option", { name: "Konsole" })).toBeEnabled());
   });
 
+  describe("below 1200 px, the Browse actions popover (#167)", () => {
+    function browse(): HTMLElement {
+      return screen.getByRole("button", { name: "Browse actions" });
+    }
+
+    function popover(): HTMLElement {
+      return screen.getByRole("dialog", { name: "Actions" });
+    }
+
+    it("is not offered from 1200 px, where the catalogue is a column", async () => {
+      await mounted({ columns: layout(1200) });
+      expect(screen.queryByRole("button", { name: "Browse actions" })).toBeNull();
+    });
+
+    it("opens the catalogue with its search and icons beside the Action select", async () => {
+      await mounted({ columns: layout(1199) });
+      await fireEvent.click(key(5));
+      await waitFor(() => expect(action()).toBeInTheDocument());
+      expect(browse()).toHaveAttribute("aria-expanded", "false");
+      expect(browse().closest(".field")?.querySelector("select")).toBe(action());
+      await fireEvent.click(browse());
+      expect(browse()).toHaveAttribute("aria-expanded", "true");
+      const search = within(popover()).getByRole("searchbox", { name: "Search actions" });
+      expect(search).toHaveFocus();
+      const general = within(popover()).getByRole("list", { name: "General" });
+      expect(general.querySelectorAll(".icon svg").length).toBeGreaterThan(0);
+      // The select keeps its entries.
+      expect(within(action()).getAllByRole("group")).toHaveLength(3);
+      await fireEvent.input(search, { target: { value: "konsole" } });
+      expect(within(popover()).getByRole("button", { name: "Konsole" })).toBeInTheDocument();
+    });
+
+    it("opens on / with the focus in its search, also before a key is selected", async () => {
+      await mounted({ columns: layout(1199) });
+      await fireEvent.keyDown(window, { key: "/" });
+      expect(within(popover()).getByRole("searchbox", { name: "Search actions" })).toHaveFocus();
+      expect(within(popover()).getByText("Select a key to assign it, or drag it onto a key.")).toBeInTheDocument();
+    });
+
+    it("assigns a click to the selected key, closes and gives the focus back", async () => {
+      await mounted({ columns: layout(1199) });
+      await fireEvent.click(key(5));
+      await waitFor(() => expect(action()).toBeInTheDocument());
+      await fireEvent.click(browse());
+      await fireEvent.click(within(popover()).getByRole("button", { name: "Exec" }));
+      await waitFor(() => expect(action()).toHaveValue("exec"));
+      expect(screen.queryByRole("dialog", { name: "Actions" })).toBeNull();
+      expect(browse()).toHaveFocus();
+    });
+
+    it("closes on Escape and on Close", async () => {
+      await mounted({ columns: layout(1199) });
+      await fireEvent.click(key(5));
+      await waitFor(() => expect(action()).toBeInTheDocument());
+      await fireEvent.click(browse());
+      await fireEvent.keyDown(window, { key: "Escape" });
+      expect(screen.queryByRole("dialog", { name: "Actions" })).toBeNull();
+      expect(browse()).toHaveFocus();
+      await fireEvent.click(browse());
+      await fireEvent.click(within(popover()).getByRole("button", { name: "Close the actions" }));
+      expect(screen.queryByRole("dialog", { name: "Actions" })).toBeNull();
+    });
+  });
+
   it("lists the presets of the daemon's recipes reply", async () => {
     const { daemon } = await mounted({ columns: layout(1200) });
     expect(daemon.daemon.recipes).toHaveBeenCalledTimes(1);

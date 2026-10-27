@@ -140,6 +140,8 @@ export const messages = {
   "pad.moved": "Editing {pinned}, key {key}; the pad shows {profile}, page {page}.",
   "pad.movedPage": "Editing {pinned}, page {pinnedPage}; the pad shows {profile}, page {page}.",
   "pad.follow": "Follow",
+  "pad.browse": "Browse actions",
+  "pad.closeBrowse": "Close the actions",
   "pad.pinnedTab": "{name}, pinned",
   "pad.startWith": "Start it with",
   "pad.daemonCommand": "keyvo-daemon",

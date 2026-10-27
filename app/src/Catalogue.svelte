@@ -8,6 +8,8 @@
   // the selected tile. The search covers group, name and variant names.
   // Under the entries: why the presets could not be read, and each user
   // pack the daemon left out.
+  import { onMount } from "svelte";
+
   import { dragData, DRAG_TYPE, GROUPS, search, type CatalogueEntry, type GroupId } from "./lib/catalogue";
   import { t } from "./lib/i18n";
   import { tileIcon } from "./lib/tileIcons";
@@ -19,6 +21,7 @@
     connected = true,
     problems = [],
     unread,
+    focus = false,
     onassign,
   }: {
     entries: readonly CatalogueEntry[];
@@ -33,6 +36,9 @@
     problems?: readonly string[];
     /** Why the recipe packs could not be read. */
     unread?: string;
+    /** Takes the focus into the search when it mounts: the popover below
+     * 1200 px. */
+    focus?: boolean;
     /** Assigns the entry with key `entry` to the selected tile. */
     onassign: (entry: string) => void;
   } = $props();
@@ -54,6 +60,10 @@
         : t("catalogue.assign", { key: selected }),
   );
   const ids = { heading: `kv-catalogue-${uid}`, hint: `kv-catalogue-${uid}-hint` };
+
+  onMount(() => {
+    if (focus) field?.focus();
+  });
 
   function toggle(group: GroupId) {
     collapsed = collapsed.includes(group)
