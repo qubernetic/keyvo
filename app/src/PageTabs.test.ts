@@ -1,11 +1,12 @@
-// The page tabs under the drawing (pad screen brief §5.2, decision Q5): the
-// pinned profile's pages by name, the "+" not built yet, the accent at the
-// right.
+// The page tabs under the drawing (pad screen brief §5.2, decision Q5; #151):
+// the page list the pad walks, the global pages at index 0 and below muted
+// and marked as the global profile's, then the shown profile's pages by
+// name, the "+" not built yet after them, the accent at the right.
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { describe, expect, it, vi } from "vitest";
 
 import PageTabs from "./PageTabs.svelte";
-import type { ProfileSummary } from "./lib/profiles";
+import { pageList, type ProfileSummary } from "./lib/profiles";
 
 const VSCODE: ProfileSummary = {
   id: "vscode",
@@ -18,52 +19,101 @@ const VSCODE: ProfileSummary = {
   file: true,
 };
 
-function tabs(profile: ProfileSummary = VSCODE, page = 2) {
-  const onpage = vi.fn<(page: number) => void>();
-  render(PageTabs, { props: { profile, page, onpage } });
+const GLOBAL: ProfileSummary = {
+  id: "global",
+  name: "Global",
+  priority: 0,
+  match: { class: [] },
+  pages: ["context", "general", "apps"],
+  path: "/home/u/.config/keyvo/profiles/global.toml",
+  file: true,
+};
+
+function tabs(profile: ProfileSummary = VSCODE, selected: number | null = 2) {
+  const onpage = vi.fn<(profile: string, page: number) => void>();
+  render(PageTabs, {
+    props: { profile, global: GLOBAL, tabs: pageList(profile, GLOBAL), selected: selected ?? undefined, onpage },
+  });
   return { onpage, list: screen.getByRole("tablist", { name: "Pages" }) };
 }
 
+const texts = (list: HTMLElement) => within(list).getAllByRole("tab").map((tab) => tab.textContent?.trim());
+
 describe("the page tabs", () => {
-  it("names each page, numbers an unnamed one, and selects the pinned page", () => {
+  it("show the list in order: the global pages, then the shown profile's", () => {
     const { list } = tabs();
-    const all = within(list).getAllByRole("tab");
-    expect(all.map((tab) => tab.textContent?.trim())).toEqual(["context", "Page 2", "git"]);
-    expect(within(list).getByRole("tab", { selected: true })).toHaveTextContent("Page 2");
-    expect(all.map((tab) => tab.getAttribute("tabindex"))).toEqual(["-1", "0", "-1"]);
+    expect(texts(list)).toEqual(["apps", "general", "context", "Page 2", "git"]);
   });
 
-  it("a click pins the page", async () => {
+  it("mark the global pages at index 0 and below as the global profile's, muted", () => {
+    const { list } = tabs();
+    const all = within(list).getAllByRole("tab");
+    expect(all.map((tab) => tab.getAttribute("aria-label"))).toEqual([
+      "apps, a page of Global",
+      "general, a page of Global",
+      "context",
+      "Page 2",
+      "git",
+    ]);
+    expect(all.map((tab) => tab.classList.contains("global"))).toEqual([true, true, false, false, false]);
+    expect(all[0]).toHaveAttribute("title", "apps, a page of Global");
+    expect(all[2]).not.toHaveAttribute("title");
+  });
+
+  it("select the tab at the given index", () => {
+    const { list } = tabs();
+    expect(within(list).getByRole("tab", { selected: true })).toHaveTextContent("Page 2");
+    const all = within(list).getAllByRole("tab");
+    expect(all.map((tab) => tab.getAttribute("tabindex"))).toEqual(["-1", "-1", "-1", "0", "-1"]);
+  });
+
+  it("select a global tab at index 0", () => {
+    const { list } = tabs(VSCODE, 0);
+    expect(within(list).getByRole("tab", { selected: true })).toHaveTextContent("general");
+  });
+
+  it("let the first tab take the focus when none is selected", () => {
+    const { list } = tabs(VSCODE, null);
+    expect(within(list).queryByRole("tab", { selected: true })).toBeNull();
+    const all = within(list).getAllByRole("tab");
+    expect(all.map((tab) => tab.getAttribute("tabindex"))).toEqual(["0", "-1", "-1", "-1", "-1"]);
+  });
+
+  it("a click pins the page of the profile that owns it", async () => {
     const { list, onpage } = tabs();
     await fireEvent.click(within(list).getByRole("tab", { name: "git" }));
-    expect(onpage).toHaveBeenCalledWith(3);
+    expect(onpage).toHaveBeenLastCalledWith("vscode", 3);
+    await fireEvent.click(within(list).getByRole("tab", { name: "general, a page of Global" }));
+    expect(onpage).toHaveBeenLastCalledWith("global", 2);
   });
 
   it("the arrows wrap, Home and End go to the ends", async () => {
     const { list, onpage } = tabs();
     await fireEvent.keyDown(list, { key: "ArrowRight" });
-    expect(onpage).toHaveBeenLastCalledWith(3);
+    expect(onpage).toHaveBeenLastCalledWith("vscode", 3);
     await fireEvent.keyDown(list, { key: "ArrowLeft" });
-    expect(onpage).toHaveBeenLastCalledWith(1);
+    expect(onpage).toHaveBeenLastCalledWith("vscode", 1);
     await fireEvent.keyDown(list, { key: "Home" });
-    expect(onpage).toHaveBeenLastCalledWith(1);
+    expect(onpage).toHaveBeenLastCalledWith("global", 3);
     await fireEvent.keyDown(list, { key: "End" });
-    expect(onpage).toHaveBeenLastCalledWith(3);
+    expect(onpage).toHaveBeenLastCalledWith("vscode", 3);
     await fireEvent.keyDown(list, { key: "a" });
     expect(onpage).toHaveBeenCalledTimes(4);
   });
 
-  it("the arrows wrap past the last page", async () => {
+  it("the arrows wrap past either end", async () => {
     const { list, onpage } = tabs(VSCODE, 3);
     await fireEvent.keyDown(list, { key: "ArrowRight" });
-    expect(onpage).toHaveBeenLastCalledWith(1);
+    expect(onpage).toHaveBeenLastCalledWith("global", 3);
   });
 
-  it("offers adding a page as a control not built yet", async () => {
-    tabs();
+  it("offers adding a page after the shown profile's tabs, as a control not built yet", async () => {
+    const { list } = tabs();
     const add = screen.getByRole("button", { name: "Add a page" });
     expect(add).toHaveAttribute("aria-disabled", "true");
     expect(add).toHaveTextContent("+");
+    const last = within(list).getAllByRole("tab").at(-1);
+    expect(last?.compareDocumentPosition(add)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     add.focus();
     await Promise.resolve();
     expect(add).toHaveAccessibleDescription(/M4a-4/);
@@ -84,8 +134,10 @@ describe("the page tabs", () => {
     expect(screen.queryByText("Accent")).toBeNull();
   });
 
-  it("shows only the + for a profile with no pages", async () => {
-    const { list, onpage } = tabs({ ...VSCODE, pages: [] }, 1);
+  it("shows only the + for an empty list", async () => {
+    const onpage = vi.fn<(profile: string, page: number) => void>();
+    render(PageTabs, { props: { profile: VSCODE, global: GLOBAL, tabs: [], selected: 1, onpage } });
+    const list = screen.getByRole("tablist", { name: "Pages" });
     expect(within(list).queryAllByRole("tab")).toHaveLength(0);
     expect(screen.getByRole("button", { name: "Add a page" })).toBeInTheDocument();
     await fireEvent.keyDown(list, { key: "End" });

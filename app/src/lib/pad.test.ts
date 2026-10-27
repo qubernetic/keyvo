@@ -68,6 +68,22 @@ describe("apply", () => {
     expect(state.view).toEqual({ profile: "global", page: 2, mode: "manual", index: 0 });
   });
 
+  it("the list owner is the view's profile from index 1 on and stays below", () => {
+    let state = fromStatus(STATUS);
+    expect(state.owner).toBe("terminal");
+    const view = (profile: string, page: number, index: number) =>
+      apply(state, { kind: "event", event: { event: "page", profile, page, mode: "auto", index } });
+    state = view("global", 2, 0);
+    expect(state.owner).toBe("terminal");
+    state = view("vscode", 2, 2);
+    expect(state.owner).toBe("vscode");
+    state = apply(initial(), {
+      kind: "subscribed",
+      view: { profile: "global", page: 3, mode: "auto", index: -1 },
+    });
+    expect(state.owner).toBe("global");
+  });
+
   it("profile, page and mode events carry the whole view", () => {
     let state = initial();
     for (const event of [...eventsOf("profile"), ...eventsOf("page"), ...eventsOf("mode")]) {

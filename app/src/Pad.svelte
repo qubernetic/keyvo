@@ -1,7 +1,7 @@
 <script lang="ts">
   // The Pad screen (pad screen brief §5.2, §6; screen id `home`): the
-  // device drawing with the live mirror (Mirror.svelte), the page tabs of
-  // the pinned profile, the "pad moved" line, the held caption, and the
+  // device drawing with the live mirror (Mirror.svelte), the page list
+  // tabs (#151), the "pad moved" line, the held caption, and the
   // pinned inspector. Selecting a key pins the inspector to the pad's
   // profile and page (lib/pin.ts), so it never changes under the user; the
   // drawing keeps following the pad, and outlines the selected key only
@@ -38,7 +38,7 @@
   } from "./lib/pad";
   import type { Editor, Target } from "./lib/editor";
   import { difference, follow, pinOnSelect, pinPage, target, type Pinned } from "./lib/pin";
-  import { contextPage, GLOBAL, type ProfileSummary } from "./lib/profiles";
+  import { contextPage, GLOBAL, leftOfContext, pageList, type ProfileSummary } from "./lib/profiles";
   import type { DeviceStatus, PressKind, Recipes, TraceRecord, View } from "./lib/protocol";
   import { layout, RIGHT_FROM, type Columns } from "./lib/shell";
 
@@ -208,8 +208,24 @@
   const shown = $derived(
     pinned ?? (pad.view === undefined ? undefined : { profile: pad.view.profile, page: pad.view.page }),
   );
-  const shownProfile = $derived(profiles.find((profile) => profile.id === shown?.profile));
   const moved = $derived(difference(pinned, pad.view));
+  const globalProfile = $derived(profiles.find((profile) => profile.id === GLOBAL));
+  /** The profile whose page list the tabs show (spec §6.3, #151): the
+   * pinned one, unless the pin is a global page every list holds at index 0
+   * and below; else the one the pad walks. */
+  const owner = $derived(
+    pinned !== undefined && !(pinned.profile === GLOBAL && leftOfContext(globalProfile, pinned.page))
+      ? pinned.profile
+      : (pad.owner ?? pad.view?.profile),
+  );
+  const ownerProfile = $derived(profiles.find((profile) => profile.id === owner));
+  const pageTabs = $derived(ownerProfile === undefined ? [] : pageList(ownerProfile, globalProfile));
+  /** The selected tab: the pinned page's, else the index the daemon reports. */
+  const selectedTab = $derived(
+    pinned === undefined
+      ? pad.view?.index
+      : pageTabs.find((tab) => tab.profile === pinned.profile && tab.page === pinned.page)?.index,
+  );
 
   /** The tiles of the pinned page while the pad shows another one. */
   let pinnedTiles: Tile[] = $state([]);
@@ -270,8 +286,8 @@
     assign = { entry, target: at, seq: (assign?.seq ?? 0) + 1 };
   }
 
-  function choosePage(page: number) {
-    if (shown !== undefined) onpin?.(pinPage(shown, page));
+  function choosePage(profile: string, page: number) {
+    onpin?.(pinPage(profile, page));
   }
 
   async function press(key: number, kind: PressKind) {
@@ -374,8 +390,14 @@
       {#if held !== undefined}
         <p role="status" aria-label={t("pad.context")} class="note">{held}</p>
       {/if}
-      {#if shownProfile !== undefined && shown !== undefined}
-        <PageTabs profile={shownProfile} page={shown.page} onpage={choosePage} />
+      {#if ownerProfile !== undefined}
+        <PageTabs
+          profile={ownerProfile}
+          global={globalProfile}
+          tabs={pageTabs}
+          selected={selectedTab}
+          onpage={choosePage}
+        />
       {/if}
       {#if moved !== undefined}
         <p class="moved">
