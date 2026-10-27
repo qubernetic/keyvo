@@ -555,3 +555,18 @@ describe("a preset", () => {
     expect(editor.editKey).not.toHaveBeenCalled();
   });
 });
+
+describe("the inspector's rules", () => {
+  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "Inspector.svelte"), "utf8");
+
+  it("sizes a label inside a field once, at the label size", () => {
+    // `.field` and `label` both carry 0.85em; nested, the Command label
+    // rendered at 9.6 px (owner, 2026-10-27).
+    const nested = /\.field label \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(nested).toMatch(/font-size: 1em/);
+  });
+
+  it("reserves one line for the result, so the first message shifts nothing", () => {
+    expect(css).toMatch(/\.result \{[^}]*min-height: 1\.4em/);
+  });
+});

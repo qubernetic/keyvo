@@ -211,6 +211,7 @@ export const messages = {
 
   "inspector.title": "Inspector",
   "inspector.select": "Select a key to edit it.",
+  "inspector.noPad": "No pad connected.",
   "inspector.key": "Key {key}: {kind}",
   "inspector.kind.none": "No action",
   "inspector.kind.chord": "Chord",
@@ -239,6 +240,7 @@ export const messages = {
   "catalogue.noMatch": "No action matches",
   "catalogue.assign": "Assign to key {key}, or drag it onto a key.",
   "catalogue.selectFirst": "Select a key to assign it, or drag it onto a key.",
+  "catalogue.noPad": "Connect the daemon to assign actions.",
   "catalogue.general": "General",
   "catalogue.system": "System",
   "catalogue.apps": "Apps",

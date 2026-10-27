@@ -794,6 +794,16 @@ The mock dev server of #113 in a host browser, then the daemon with the Keypad. 
 - [ ] #142 The Actions column still opens within a second.
 - [ ] #142 With the daemon and the Keypad: set a key to `icon = "lucide:house"` in its profile by hand, save: the pad shows the house; `lucide:home` draws the same tile.
 
+### The pad screen polished after the design pass (#141)
+
+No Keypad needed for the first four; the mock dev server of #113 in a host browser, then the app on the GNOME runtime. Run by the owner in #130.
+
+- [ ] #141 `just app-dev` at 1363x798 and at 960 px, `?theme=breeze-dark`, `?theme=breeze-light`, `?theme=adwaita-light`: under Recent events the newest entry reads in full (`07:54:58 Key 1, app layer: chord ctrl+p, sent`), the older ones take what is left; the chevron still opens every entry.
+- [ ] #141 `?mock-error=unreachable`: the Error notice, "No pad connected." under Inspector, "Connect the daemon to assign actions." above the Actions column, and no "Select a key" anywhere; Retry keeps the notice (the mock stays unreachable). With the app on the GNOME runtime and no daemon: the same notice; start `keyvo-daemon`, Retry: the three prompts are back.
+- [ ] #141 Hover over a catalogue entry, a rail item, a page tab, a field and a mirror tile: the border turns to the text colour and nothing else moves; the current rail item and the selected tile keep their accent border under the cursor; with the desktop's reduced motion on, the change is instant.
+- [ ] #141 In the four themes, in the mirror and in the Profiles thumbnails: every tile sits inside the rim of its cutout with the rim's corner, the same shape in Breeze and in Adwaita and at both window sizes; no light square shows in the corners of a tile; a cutout without a tile shows its number in the drawing's glyph colour.
+- [ ] #141 With the daemon and the Keypad on the GNOME runtime: the same four checks against the real tiles, then section 5 step 11 (the inspector writes a label, icon and colour; the lucide id under Icon is not monospace).
+
 ### First-light records (#75)
 
 - [ ] #75 Read `docs/hardware-notes.md`, "Measurements", against the first-light report on #40 and its logs: every number and log citation matches.

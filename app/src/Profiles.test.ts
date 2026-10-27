@@ -548,3 +548,11 @@ describe("what is not built yet", () => {
     expect(props.fake.files.editProfile).not.toHaveBeenCalled();
   });
 });
+
+describe("the thumbnail tiles", () => {
+  it("take the corner of their cutout from the drawing, as the mirror does", () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "Profiles.svelte"), "utf8");
+    const rule = /\.thumb img \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toMatch(/border-radius: var\(--kv-tile-radius, var\(--kv-radius\)\)/);
+  });
+});

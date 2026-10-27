@@ -22,20 +22,27 @@ export const DEVICE_COLOURS: Readonly<Record<string, string>> = {
   "--kv-device-glyph": "color-mix(in oklab, var(--kv-device-light), white 30%)",
 };
 
-/** A drawing: its view box and its `key-N` cutouts, key 1 first. */
+/** A drawing: its view box, its `key-N` cutouts, key 1 first, the corner
+ * radius of the cutouts and the stroke of their rim, in view box units
+ * (0 when the drawing has none). */
 export interface Drawing {
   width: number;
   height: number;
   cutouts: Rect[];
+  corner: number;
+  stroke: number;
 }
 
-/** Where one key's tile goes, in percent of the drawing or the panel. */
+/** Where one key's tile goes, in percent of the drawing or the panel, and
+ * the tile's corner radius in percent of its own width, when the drawing
+ * gives one. */
 export interface Placement {
   key: number;
   left: number;
   top: number;
   width: number;
   height: number;
+  corner?: number;
 }
 
 function attribute(tag: string, name: string): number {
@@ -43,10 +50,14 @@ function attribute(tag: string, name: string): number {
   return value === undefined ? Number.NaN : Number(value);
 }
 
-/** The view box and the cutouts of the drawing `svg`. */
+/** The view box, the cutouts, their corner and their rim of the drawing
+ * `svg`: the corner is the `rx` of the key rects, the rim the
+ * `stroke-width` of the `keys` group that holds them. */
 export function drawing(svg: string): Drawing {
   const box = /<svg\b[^>]*\sviewBox="([^"]+)"/.exec(svg)?.[1]?.trim().split(/[\s,]+/).map(Number);
-  const cutouts = [...svg.matchAll(/<rect\b[^>]*\sid="key-(\d+)"[^>]*>/g)]
+  const keys = [...svg.matchAll(/<rect\b[^>]*\sid="key-(\d+)"[^>]*>/g)];
+  const group = /<g\b[^>]*\sid="keys"[^>]*>/.exec(svg)?.[0] ?? "";
+  const cutouts = keys
     .map((match) => ({
       key: Number(match[1]),
       rect: {
@@ -58,7 +69,15 @@ export function drawing(svg: string): Drawing {
     }))
     .sort((a, b) => a.key - b.key)
     .map((cutout) => cutout.rect);
-  return { width: box?.[2] ?? Number.NaN, height: box?.[3] ?? Number.NaN, cutouts };
+  const corner = keys[0] === undefined ? 0 : attribute(keys[0][0], "rx");
+  const stroke = attribute(group, "stroke-width");
+  return {
+    width: box?.[2] ?? Number.NaN,
+    height: box?.[3] ?? Number.NaN,
+    cutouts,
+    corner: Number.isNaN(corner) ? 0 : corner,
+    stroke: Number.isNaN(stroke) ? 0 : stroke,
+  };
 }
 
 /** `rect` in percent of a `width` by `height` surface. */
@@ -72,13 +91,25 @@ function percent(key: number, rect: Rect, width: number, height: number): Placem
   };
 }
 
-/** The tiles of `geometry` in the cutouts of `device`, by index; undefined
- * when the two differ in count and the tiles belong on the plain panel. */
+/** The tiles of `geometry` in the cutouts of `device`, by index, each
+ * inset by half the rim stroke so the rim stays whole around it, with the
+ * corner the rim leaves inside; undefined when the two differ in count and
+ * the tiles belong on the plain panel. */
 export function placement(device: Drawing, geometry: Geometry): Placement[] | undefined {
   if (device.cutouts.length !== geometry.rects.length) return undefined;
-  return device.cutouts.map((cutout, index) =>
-    percent(index + 1, cutout, device.width, device.height),
-  );
+  const inset = device.stroke / 2;
+  return device.cutouts.map((cutout, index) => {
+    const inner = {
+      x: cutout.x + inset,
+      y: cutout.y + inset,
+      width: cutout.width - device.stroke,
+      height: cutout.height - device.stroke,
+    };
+    return {
+      ...percent(index + 1, inner, device.width, device.height),
+      corner: (Math.max(device.corner - inset, 0) / inner.width) * 100,
+    };
+  });
 }
 
 /** The tiles of `geometry` on the plain panel, at the daemon's rects. */
@@ -104,12 +135,14 @@ export function fallBack(cutouts: number, keys: number): void {
 }
 
 /** The tiles of `places` as inline styles, by key: absolute, in percent
- * of the nearest positioned ancestor, the component's tile layer. */
+ * of the nearest positioned ancestor, the component's tile layer, and the
+ * corner as `--kv-tile-radius` for the tile's own rules to read. */
 export function styles(places: readonly Placement[]): Map<number, string> {
   return new Map(
     places.map((place) => [
       place.key,
-      `position: absolute; left: ${place.left}%; top: ${place.top}%; width: ${place.width}%; height: ${place.height}%`,
+      `position: absolute; left: ${place.left}%; top: ${place.top}%; width: ${place.width}%; height: ${place.height}%` +
+        (place.corner === undefined ? "" : `; --kv-tile-radius: ${place.corner}%`),
     ]),
   );
 }

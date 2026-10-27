@@ -3,6 +3,9 @@
 // opening the drawer on itself; the chevron expands the strip in place to
 // the entries the Pad keeps.
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 
 import TraceStrip from "./TraceStrip.svelte";
@@ -44,6 +47,25 @@ describe("the trace strip", () => {
     expect(within(nth(shown, 0)).getByText("15:04:09", { selector: "time" })).toBeInTheDocument();
     expect(within(nth(shown, 1)).getByText("15:04:08", { selector: "time" })).toBeInTheDocument();
     expect(nth(shown, 0)).toHaveTextContent(/Key 1, app layer: chord ctrl\+p, sent/);
+  });
+
+  it("reads the newest entry in full and lets the older ones give way", () => {
+    const { region } = strip(entries(5));
+    const shown = items(region);
+    expect(nth(shown, 0)).toHaveClass("newest");
+    expect(nth(shown, 1)).not.toHaveClass("newest");
+    // The newest never shrinks below its text; the others share what is
+    // left and shrink to nothing before it loses a character.
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "TraceStrip.svelte"), "utf8");
+    const newest = /\.strip:not\(\.expanded\) li\.newest \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(newest).toMatch(/flex: 0 1 auto/);
+    expect(newest).toMatch(/max-width: 100%/);
+    const older = /\.strip:not\(\.expanded\) li:not\(\.newest\) \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(older).toMatch(/flex: 1 1 0/);
+    expect(older).toMatch(/min-width: 0/);
+    // An older entry squeezed to nothing clips its time instead of letting
+    // it run past the strip (and past the window at 960 px).
+    expect(older).toMatch(/overflow: hidden/);
   });
 
   it("opens the drawer on the entry that was clicked", async () => {

@@ -399,9 +399,24 @@ describe("the notices", () => {
     expect(alert).toHaveTextContent("Start it with keyvo-daemon.");
     expect(within(alert).getByText("keyvo-daemon").tagName).toBe("CODE");
     expect(daemon.daemon.subscribe).not.toHaveBeenCalled();
+    // Nothing to select: no "Select a key" anywhere, the two columns say why.
+    expect(screen.queryAllByText(/Select a key/)).toEqual([]);
+    expect(screen.getByRole("status", { name: t("home.result") })).toHaveTextContent("");
+    expect(screen.getByText("No pad connected.")).toBeInTheDocument();
+    expect(screen.getByText("Connect the daemon to assign actions.")).toBeInTheDocument();
     await fireEvent.click(within(alert).getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(key(5)).toHaveAccessibleName("Key 5: Test, exec cargo test"));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("Select a key to edit it.")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: t("home.result") })).toHaveTextContent(
+      t("pad.resultHint"),
+    );
+  });
+
+  it("says nothing to select while it connects", () => {
+    pad();
+    expect(screen.queryAllByText(/Select a key/)).toEqual([]);
+    expect(screen.getByRole("status", { name: t("home.result") })).toHaveTextContent("");
   });
 
   it("keeps the last frame when the subscription ends and says why", async () => {

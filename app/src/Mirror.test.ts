@@ -2,6 +2,9 @@
 // the cutouts at the fixture geometry's percent rects, click selects and
 // does not press, the keyboard of the grid, and the marks of a tile.
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 
 import Mirror from "./Mirror.svelte";
@@ -73,15 +76,28 @@ describe("the mirror", () => {
     expect(rows.map((row) => within(row).getAllByRole("gridcell").length)).toEqual([3, 3, 3]);
     expect(within(grid).getByRole("img", { name: t("device.keypad") })).toBeInTheDocument();
     expect(cell(1)).toHaveStyle({ position: "absolute" });
-    expect(percent(cell(1), "left")).toBeCloseTo((57 / 512) * 100, 1);
-    expect(percent(cell(9), "top")).toBeCloseTo((334 / 610) * 100, 1);
-    expect(percent(cell(9), "width")).toBeCloseTo((117 / 512) * 100, 1);
+    // Inside the 2 unit rim of the cutouts: inset by 1, 115 wide.
+    expect(percent(cell(1), "left")).toBeCloseTo((58 / 512) * 100, 1);
+    expect(percent(cell(9), "top")).toBeCloseTo((335 / 610) * 100, 1);
+    expect(percent(cell(9), "width")).toBeCloseTo((115 / 512) * 100, 1);
     // Never above 1:1: the drawing is capped at the panel's pixel width.
     const device = grid.querySelector(".device") as HTMLElement;
     expect(device).toHaveStyle({ width: "100%", maxWidth: `${GEOMETRY.panel.width}px` });
     expect(key(1).querySelector("img")).toHaveAttribute("src", "data:image/png;base64,1");
     expect(key(1).querySelector("img")).toHaveAttribute("alt", "");
     expect(key(4)).toHaveAccessibleName("Key 4: Palette, chord ctrl+p, app layer");
+  });
+
+  it("gives each tile the corner of its cutout and the well behind it", () => {
+    const { grid } = mirror();
+    expect(cell(5).getAttribute("style")).toMatch(/--kv-tile-radius: 19\.13\d*%/);
+    // The rules of the tile read the drawing's variables, not the theme's.
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "Mirror.svelte"), "utf8");
+    const rule = /\.key \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toMatch(/border-radius: var\(--kv-tile-radius, var\(--kv-radius\)\)/);
+    expect(rule).toMatch(/background: var\(--kv-device-well\)/);
+    expect(rule).toMatch(/color: var\(--kv-device-glyph\)/);
+    expect(grid).toBeInTheDocument();
   });
 
   it("shows the key number in a cutout without a tile", () => {
