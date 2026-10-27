@@ -126,6 +126,25 @@ pub fn resolve(stack: &Stack<'_>, key: KeySlot, trigger: Trigger, at: SystemTime
 }
 
 /// The record of a press of `key` on page `page` of the profile `profile`
+/// that is not resolved for `reason`, simulated or not: no layer, no
+/// action, [`Outcome::Blocked`].
+#[must_use]
+pub fn blocked(
+    profile: &str,
+    page: usize,
+    key: KeySlot,
+    trigger: Trigger,
+    at: SystemTime,
+    reason: &str,
+) -> TraceRecord {
+    let mut record = unbound(profile, page, key, trigger, at);
+    record.result = Outcome::Blocked {
+        reason: reason.to_owned(),
+    };
+    record
+}
+
+/// The record of a press of `key` on page `page` of the profile `profile`
 /// where no layer defines the key, as on a page the profile does not have.
 #[must_use]
 pub fn unbound(

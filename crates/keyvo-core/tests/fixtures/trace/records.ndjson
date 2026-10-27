@@ -3,3 +3,4 @@
 {"timestamp_ms":1792929600250,"trigger":{"press":"short","simulated":false},"profile":"demo","page":1,"key":9,"layer":"app","action":{"type":"exec","cmd":"gh pr view --web"},"result":{"status":"failed","error":"no such file or directory: gh"}}
 {"timestamp_ms":1792929600250,"trigger":{"press":"long","simulated":true},"profile":"demo","page":1,"key":5,"layer":"app","action":{"type":"exec","cmd":"cargo test"},"result":{"status":"dry_run"}}
 {"timestamp_ms":1792929600250,"trigger":{"press":"short","simulated":false},"profile":"demo","page":2,"key":1,"action":null,"result":{"status":"unbound"}}
+{"timestamp_ms":1792929600250,"trigger":{"press":"short","simulated":false},"profile":"demo","page":1,"key":5,"action":null,"result":{"status":"blocked","reason":"session locked"}}

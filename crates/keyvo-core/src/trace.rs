@@ -117,6 +117,12 @@ pub enum Outcome {
         /// What went wrong.
         error: String,
     },
+    /// The press was not resolved and nothing ran: `session locked` while
+    /// the session is locked (spec §8). No look, no `on_fail`.
+    Blocked {
+        /// Why.
+        reason: String,
+    },
 }
 
 impl Outcome {
