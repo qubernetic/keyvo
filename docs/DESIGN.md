@@ -154,13 +154,13 @@ A tonal pair of surfaces and a tonal pair of text, one accent and six
 semantic colours, all borrowed from the desktop.
 
 ### Primary
-- **Accent** (`--kv-accent`, pre-alpha `#4c9aff`): the desktop's accent colour. It marks the current rail item, the selected tab, the selected profile, the selected key and the focus ring, always as a 1 to 2 px outline. It never fills a surface and never colours text.
+- **Accent** (`--kv-accent`, pre-alpha `#4c9aff`): the desktop's accent colour. It marks the current rail item, the selected tab, the selected profile, the selected key and the focus ring, always as a 1 to 2 px outline. It never fills a surface and never colours text. Where the desktop's accent is under 3:1 on a surface (light Breeze), the bridge mixes it toward `--kv-fg` until the ring reaches 3:1 (gui-ux.md §7, the ring rule).
 
 ### Neutral
 - **Window** (`--kv-bg`, pre-alpha `#1e1f22`): the page and the editor column; also the "pressed in" surface of a selected control.
 - **Panel** (`--kv-bg-alt`, pre-alpha `#26282c`): the header, the rail, the drawer, menus and the resting surface of every control.
 - **Text** (`--kv-fg`, pre-alpha `#f2f3f5`): values, headings, control labels.
-- **Muted text** (`--kv-fg-muted`, pre-alpha `#a8adb5`): field labels, metadata, disabled controls, and the only border colour of the system.
+- **Muted text** (`--kv-fg-muted`, pre-alpha `#a8adb5`): field labels, metadata, disabled controls, and the only border colour of the system. It is the desktop's inactive text only where that reaches 4.5:1 on both surfaces; otherwise the theme bridge mixes `--kv-fg` toward `--kv-bg` just as far as 4.5:1 allows (gui-ux.md §7, the muted rule), so the light Breeze and Adwaita schemes get a darker muted text than they ship.
 
 ### Semantic (tertiary; used sparingly and never alone)
 - **Sandbox** (`--kv-sandbox`, pre-alpha `#b48ef0`): the header turns to it while the simulator is sandboxed (gui-ux.md §1); it is the one case where a surface takes a non-neutral colour.

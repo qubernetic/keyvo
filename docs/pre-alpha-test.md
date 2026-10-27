@@ -758,6 +758,14 @@ The app with the daemon in the GNOME runtime. Run by the owner in #130.
 - [ ] #137 Section 5 step 14: name and accent edits round-trip (the file byte-identical outside the field); `Edit keys on the Pad` opens the Pad pinned to the profile and the selected page.
 - [ ] #137 Every dropdown opened and read in the light and the dark desktop theme (carried from #52).
 
+### Muted text and focus ring that pass in every theme set (#144)
+
+The mock dev server of #113 in a host browser. Run by the owner in #130.
+
+- [ ] #144 `just app-dev`, open `?theme=breeze-light`, then `?theme=adwaita-light`: on the Profiles screen the file path, and on the Pad the hints and the empty-state sentences, read as muted but dark enough; disabled controls stay legible. Tab through the header: the focus ring is a clearly visible blue on both surfaces in `breeze-light`.
+- [ ] #144 Run the browser detector of `docs/design/critique-2026-10.md` on both light themes: it reports no `low-contrast` on body text.
+- [ ] #144 `?theme=breeze-dark` and `?theme=adwaita-dark` look as before (their measured values are kept).
+
 ### First-light records (#75)
 
 - [ ] #75 Read `docs/hardware-notes.md`, "Measurements", against the first-light report on #40 and its logs: every number and log citation matches.

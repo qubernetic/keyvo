@@ -504,12 +504,38 @@ desktop changes.
 - The pad's theme file is separate (it renders tiles); the GUI reads it only for
   the feedback-state tokens so that the mirror and the screens agree.
 
+### Derived muted text and ring
+
+The bridge does not pass two of the desktop's colours through when they fall
+short of the contrast §6 promises; it derives them, once per theme change,
+from the colours it read:
+
+- **Muted rule.** `--kv-fg-muted` is the desktop's inactive text
+  (`ForegroundInactive`, libadwaita's 55 % foreground) when it reaches 4.5:1
+  on both `--kv-bg` and `--kv-bg-alt`. Otherwise it is `--kv-fg` mixed
+  toward `--kv-bg` in OKLCH, at the largest mix in 1 % steps that still
+  passes 4.5:1 on both surfaces: as muted as the theme allows, never
+  unreadable.
+- **Ring rule.** `--kv-accent` is the desktop's accent when it reaches 3:1
+  (the focus ring) on both surfaces. Otherwise it is the accent mixed
+  toward `--kv-fg` in OKLCH, at the smallest mix in 1 % steps that passes
+  3:1 on both: the desktop's hue, darkened or lightened only as far as
+  the ring needs.
+
+Mixing in OKLCH follows `color-mix(in oklch, ...)` (shorter hue arc, a grey's
+hue taken from the other colour), clipped to sRGB. The result is computed,
+not written as `color-mix()` in CSS, so the test suite can measure it. Until
+the bridge exists, `app/src/lib/mock/themes.ts` applies both rules to the
+measured sets below (`mutedOf`, `accentOf`).
+
 ### Measured token sets (mock dev server)
 
 Until the bridge exists (M4a-1), the mock dev server (`just app-dev`,
 `app/src/lib/mock/themes.ts`) sets the tokens from four sets measured from
 the sources above, picked with `?theme=` (default `breeze-dark`), so a
-layout is judged in light and dark. Measured on 2026-10-26.
+layout is judged in light and dark. Measured on 2026-10-26; the rows marked
+*applied* are what the mock sets after the rules of "Derived muted text and
+ring" (the file keeps the measured sets as `MEASURED`).
 
 | Token | `breeze-dark` | `breeze-light` | `adwaita-dark` | `adwaita-light` |
 |---|---|---|---|---|
@@ -518,7 +544,9 @@ layout is judged in light and dark. Measured on 2026-10-26.
 | `--kv-bg-alt` | `#292c30` | `#e3e5e7` | `#2e2e32` | `#ebebed` |
 | `--kv-fg` | `#fcfcfc` | `#232629` | `#ffffff` | `#323237` |
 | `--kv-fg-muted` | `#a1a9b1` | `#707d8a` | `#9c9c9d` | `#8c8c8f` |
+| `--kv-fg-muted`, *applied* | `#a1a9b1` | `#636668` (derived) | `#9c9c9d` | `#6a6a6e` (derived) |
 | `--kv-accent` | `#3daee9` | `#3daee9` | `#81d0ff` | `#0461be` |
+| `--kv-accent`, *applied* | `#3daee9` | `#4088b6` (derived) | `#81d0ff` | `#0461be` |
 | `--kv-font` | `"Noto Sans", sans-serif` | same | `"Adwaita Sans", sans-serif` | same |
 | `--kv-font-size` | `10pt` | `10pt` | `11pt` | `11pt` |
 | `--kv-radius` | `5px` | `5px` | `9px` | `9px` |
@@ -557,13 +585,16 @@ Sources:
   (`keyvo_core::render::Theme`); `--kv-contrast` is `normal` (none of the
   four is a high-contrast scheme).
 
-Contrast of the measured sets against the WCAG thresholds that
-`app/src/styles/tokens.test.ts` holds the default set to (text 4.5:1,
-focus ring 3:1): the dark sets pass every pair. In `breeze-light` the
-muted text is 3.7:1 on `--kv-bg` and 3.3:1 on `--kv-bg-alt`, and the
-accent 2.2:1 and 2.0:1; in `adwaita-light` the muted text is 3.2:1 and
-2.8:1. These are findings for the design pass (#106), not corrections of
-the measured values.
+Contrast against the WCAG thresholds that `app/src/styles/tokens.test.ts`
+holds the default set and the four applied sets to (every text pair 4.5:1,
+the focus ring 3:1 on both surfaces): the dark sets pass as measured and
+keep every measured value. The light sets do not: in `breeze-light` the
+measured muted text is 3.7:1 on `--kv-bg` and 3.3:1 on `--kv-bg-alt` and
+the accent 2.2:1 and 2.0:1, in `adwaita-light` the muted text 3.2:1 and
+2.8:1 (the P1 of `critique-2026-10.md`). The measured values stay recorded
+as measured; the rules replace them in the applied set: `breeze-light`
+muted `#636668` is 5.1:1 and 4.6:1, its accent `#4088b6` 3.4:1 and 3.1:1;
+`adwaita-light` muted `#6a6a6e` is 5.2:1 and 4.5:1 (#140).
 
 ## 8. Trace drawer and debug log
 
