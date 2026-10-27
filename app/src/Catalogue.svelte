@@ -130,7 +130,6 @@
                 draggable="true"
                 aria-label={entry.name}
                 aria-describedby={ids.hint}
-                aria-disabled={selected === undefined ? "true" : undefined}
                 ondragstart={(event) => dragstart(event, entry)}
                 onclick={() => assign(entry)}
               >

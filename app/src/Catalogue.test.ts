@@ -96,7 +96,9 @@ describe("the entries", () => {
   it("a click assigns nothing while no tile is selected and says why", async () => {
     const { onassign } = catalogue();
     const exec = screen.getByRole("button", { name: "Exec" });
-    expect(exec).toHaveAttribute("aria-disabled", "true");
+    // Dragging works without a selection, so the entry is not dimmed or
+    // marked disabled; the hint says what a click needs.
+    expect(exec).not.toHaveAttribute("aria-disabled");
     expect(exec).toHaveAccessibleDescription("Select a key to assign it, or drag it onto a key.");
     await fireEvent.click(exec);
     expect(onassign).not.toHaveBeenCalled();
