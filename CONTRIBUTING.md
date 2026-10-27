@@ -106,7 +106,8 @@ switches between the measured token sets of `docs/design/gui-ux.md` §7
 measured ones fail the contrast checks),
 `?mock-error=unreachable` shows the Pad's error state, `?mock-error=write`
 makes every key write fail with a file, line and column, `?mock-profiles=empty`
-adds a profile with no pages, and every fourth focus step is the keyvo app,
+adds a profile with no pages, `?mock-locked` locks the session (the lock
+tile on the mirror, blocked presses), and every fourth focus step is the keyvo app,
 which holds the context the way `[focus].hold_classes` does. Edits stay in memory until
 a reload. The mock never reaches a build without the variable, and it is not
 the final check: WebKitGTK renders differently, so a layout change is still

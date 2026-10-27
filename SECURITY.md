@@ -111,6 +111,21 @@ user is trusted, and nothing else is.
   by KWin's unique bus name; until then keyvo uses these values only to
   choose the profile and passes them on in `status` and `context` events
   as they came.
+- The pad is inert while the session is locked (`docs/spec.md` §6.1,
+  §6.2). The daemon lives in the session and the lock screen only takes
+  the input devices it knows, so without this anyone at a locked machine
+  could start programs from the Keypad. The daemon watches its session in
+  systemd-logind (`LockedHint`, `Lock`, `Unlock`); while it is locked the
+  pad shows the lock and nothing else, every key press resolves nothing
+  and is traced as `blocked` (`session locked`), and the page buttons do
+  nothing. A socket `press` is blocked the same way, `dry_run` included.
+  The socket itself still answers, as before, to the same user: a
+  process of that user may still query the daemon, reload it or report a
+  window, as it may stop the daemon. When logind cannot be reached the
+  daemon logs "lock detection off" once and the pad stays live under a
+  lock, as before this check; X11 and Windows lock sources are not built
+  yet. The KWin lock-screen window is not used as a signal; any process of
+  the user can assert a window (see below).
 - The daemon never runs as root. Device access comes from a udev rule that
   grants the user (or the `input` group) access to the Keypad's `hidraw` nodes
   and to `/dev/uinput`. Running the daemon with elevated privileges is

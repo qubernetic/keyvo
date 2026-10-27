@@ -145,7 +145,12 @@ holds, what is special in the right column.
   "Edit keys on the Pad" stays, and a click selects that key number on
   it. The daemon holds the context while the keyvo window has
   focus (`[focus].hold_classes`, #117), so the line is rare; the status
-  area then reads "keyvo-app focused, holding org.kde.konsole".
+  area then reads "keyvo-app focused, holding org.kde.konsole". While
+  the session is locked (#158) the mirror shows the lock page the pad
+  shows (the lock on key 5, every other key blank) and the same status
+  line reads "Session locked; the pad shows the lock." (i18n key
+  `pad.locked`); the inspector keeps editing the pinned page, since an
+  edit is a file write, and the line goes with the unlock.
 - **Inspector** (below the drawing, full width of the column): the header
   "Key 5: Exec" with the file path and line as the subtitle ("from global"
   for a fall-through key, with an "Override here" action), Press (dry run)

@@ -883,6 +883,24 @@ for Brave and the `third` page's Launch key for KCalc and Spotify.
 - [ ] #157 `config.toml` with `[timing] page_return_own = 5000`: VS Code page 2 returns after 5 s without activity; with `page_return_global = 0`: `general` stays.
 - [ ] #157 Long press on `general` (the lock), wait 15 s: `general` stays; long press again: the context page.
 
+### The pad locks with the session (#158)
+
+On the host with the Keypad and the daemon (KDE Wayland), the daemon
+started from a terminal of the session so its log shows `watching the
+session lock of /org/freedesktop/login1/session/<id>; locked: false`. A
+daemon that logs `lock detection off` instead runs without lock
+detection; note the line. In the mock (`just app-dev`, `?mock-locked`)
+the mirror shows the lock tile, the line reads `Session locked; the pad
+shows the lock.`, and Press on a key gives `Key <n>: blocked, session
+locked`.
+
+- [ ] #158 Press the global context page's Lock key: the screen locks and the pad shows the lock on key 5, every other key blank, the accent bar kept. `bin/keyvo ctl subscribe` shows `{"event":"session","locked":true}`.
+- [ ] #158 Under the lock press keys 1, 5 and 9 and both page buttons: nothing happens on the screen or the pad; the subscriber shows a `trace` per key with `blocked` and `session locked`, no `page` event.
+- [ ] #158 Unlock with the password: within about a second the pad shows the focused window's profile; the trace drawer of the app lists the blocked presses.
+- [ ] #158 Lock, then click another application's window on the lock screen's preview (or alt-tab is not possible: skip): on unlock the pad shows that application's profile.
+- [ ] #158 `loginctl lock-session` from a terminal, then `bin/keyvo ctl status`: `"locked":true`; after the unlock, `false`.
+- [ ] #158 The app on the GNOME runtime: under the lock the mirror shows the lock tile and the line `Session locked; the pad shows the lock.`; after the unlock the line goes.
+
 ### Polish, harden and the critique re-run (#130)
 
 The closing pass of the GUI design pass: the mock items ran on the mock
