@@ -181,6 +181,8 @@
   let recipes: Recipes = $state.raw({ recipes: [] });
   let recipesError: string | undefined = $state();
   const reachable = $derived(unreachable === undefined);
+  /** The daemon answered: there is a pad to select a key on. */
+  const connected = $derived(reachable && !connecting);
   const reloads = $derived(pad.reloads);
   let fetchedRecipes = 0;
   $effect(() => {
@@ -366,7 +368,7 @@
         </p>
       {/if}
       <p role="status" aria-label={t("home.result")} class="result">
-        {result ?? t("pad.resultHint")}
+        {result ?? (connected ? t("pad.resultHint") : "")}
         {#if pressed !== undefined}
           {@const entry = pressed}
           <button
@@ -387,6 +389,7 @@
         global={fallThrough}
         tile={editingTile}
         {active}
+        {connected}
         revision={pad.reloads}
         onpress={selected === undefined ? undefined : () => void press(selected ?? 0, "short")}
         onedited={() => edits++}
@@ -404,6 +407,7 @@
           unread={recipesError}
           {selected}
           {active}
+          {connected}
           onassign={(entry) => {
             if (selected !== undefined) assignTo(selected, entry);
           }}

@@ -15,6 +15,7 @@
     entries,
     selected,
     active = true,
+    connected = true,
     problems = [],
     unread,
     onassign,
@@ -24,6 +25,9 @@
     selected?: number;
     /** False while another screen shows: `/` is not ours. */
     active?: boolean;
+    /** False while the daemon is unreachable or not yet reached: nothing
+     * to assign to, and the hint says so. */
+    connected?: boolean;
     /** One `file:line:column: message` per user pack the daemon left out. */
     problems?: readonly string[];
     /** Why the recipe packs could not be read. */
@@ -40,7 +44,11 @@
   const found = $derived(search(entries, text));
   const searching = $derived(text.trim() !== "");
   const hint = $derived(
-    selected === undefined ? t("catalogue.selectFirst") : t("catalogue.assign", { key: selected }),
+    !connected
+      ? t("catalogue.noPad")
+      : selected === undefined
+        ? t("catalogue.selectFirst")
+        : t("catalogue.assign", { key: selected }),
   );
   const ids = { heading: `kv-catalogue-${uid}`, hint: `kv-catalogue-${uid}-hint` };
 

@@ -63,6 +63,7 @@
     tile,
     revision = 0,
     active = true,
+    connected = true,
     onpress,
     onedited,
     assign,
@@ -78,6 +79,9 @@
     global?: Target;
     /** The key's tile as the pinned page renders it. */
     tile?: Tile;
+    /** False while the daemon is unreachable or not yet reached: there is
+     * no key to select, and the empty state says so instead. */
+    connected?: boolean;
     /** Bumped when the files may have changed on disk (a reload). */
     revision?: number;
     /** False while another screen shows: Ctrl+Z and Ctrl+Shift+Z are not ours. */
@@ -389,7 +393,7 @@
 <section class="inspector" aria-labelledby={ids.heading}>
   {#if target === undefined}
     <h2 id={ids.heading}>{t("inspector.title")}</h2>
-    <p class="note">{t("inspector.select")}</p>
+    <p class="note">{t(connected ? "inspector.select" : "inspector.noPad")}</p>
   {:else}
     <div class="header">
       <h2 id={ids.heading}>{t("inspector.key", { key: target.key, kind })}</h2>
