@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { drawing, inline, panelPlacement, placement, styles } from "./device";
+import { cutoutGeometry, drawing, inline, panelPlacement, placement, styles } from "./device";
 import { nth, responses } from "./fixtures";
 import type { Geometry, Status } from "./protocol";
 
@@ -49,6 +49,26 @@ describe("placement", () => {
     const geometry = fixtureGeometry();
     const twelve = { ...geometry, rects: [...geometry.rects, ...geometry.rects.slice(0, 3)] };
     expect(placement(drawing(KEYPAD), twelve)).toBeUndefined();
+  });
+});
+
+describe("cutoutGeometry", () => {
+  it("makes the Keypad's view box the panel and its nine cutouts the keys", () => {
+    const keypad = drawing(KEYPAD);
+    const geometry = cutoutGeometry(keypad);
+    expect(geometry.panel).toEqual({ width: 512, height: 610 });
+    expect(geometry.tile).toEqual({ width: 117, height: 117 });
+    expect(geometry.rects).toEqual(keypad.cutouts);
+    expect(placement(keypad, geometry)).toHaveLength(9);
+  });
+
+  it("has no keys and an empty tile for a drawing without cutouts", () => {
+    const geometry = cutoutGeometry(drawing('<svg viewBox="0 0 100 50"></svg>'));
+    expect(geometry).toEqual({
+      panel: { width: 100, height: 50 },
+      tile: { width: 0, height: 0 },
+      rects: [],
+    });
   });
 });
 

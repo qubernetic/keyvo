@@ -3,7 +3,8 @@
   // inline, coloured from --kv-device, with the caller's tiles in its key
   // cutouts, scaled with it up to the panel's pixel width. A geometry the
   // drawing has no cutout for each key of goes on the plain proportional
-  // panel instead. Either way `tile` gets one call per key with the key
+  // panel instead; without a geometry the keys are the drawing's own
+  // cutouts (the empty wells while no pad is reachable). Either way `tile` gets one call per key with the key
   // and the percent style of its place (left, top, width, height), and
   // `row`, when given, wraps the calls of each geometry row; the places
   // are percentages of this component's root, so the cells may sit
@@ -12,6 +13,7 @@
 
   import keypad from "./assets/device/keypad.svg?raw";
   import {
+    cutoutGeometry,
     DEVICE_COLOURS,
     drawing,
     fallBack,
@@ -25,12 +27,14 @@
   import type { Geometry } from "./lib/protocol";
 
   let {
-    geometry,
+    geometry: given,
     tile,
     row,
     svg = keypad,
   }: {
-    geometry: Geometry;
+    /** The daemon's geometry; without one the keys are the drawing's own
+     * cutouts (#165). */
+    geometry?: Geometry;
     /** One call per key: the key, from 1, and its place as inline style. */
     tile: Snippet<[number, string]>;
     /** Wraps the cells of one row of the geometry. */
@@ -41,6 +45,7 @@
 
   const id = $props.id();
   const device = $derived(drawing(svg));
+  const geometry = $derived(given ?? cutoutGeometry(device));
   const fitted = $derived(placement(device, geometry));
   const places = $derived(styles(fitted ?? panelPlacement(geometry)));
   const rows = $derived(grid(geometry));
