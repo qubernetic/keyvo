@@ -56,12 +56,20 @@ describe("the groups", () => {
     expect(rule).not.toMatch(/font-size/);
   });
 
-  it("show General, System and Apps expanded, each with the reply's entries", () => {
+  it("open with General expanded and System and Apps collapsed (#166)", () => {
     catalogue();
     expect(screen.getByRole("region", { name: "Actions" })).toBeInTheDocument();
-    for (const name of ["General", "System", "Apps"]) {
-      expect(group(name)).toHaveAttribute("aria-expanded", "true");
-    }
+    expect(group("General")).toHaveAttribute("aria-expanded", "true");
+    expect(group("System")).toHaveAttribute("aria-expanded", "false");
+    expect(group("Apps")).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("list", { name: "System" })).toBeNull();
+    expect(screen.queryByRole("list", { name: "Apps" })).toBeNull();
+  });
+
+  it("show the reply's entries in each expanded group", async () => {
+    catalogue();
+    await fireEvent.click(group("System"));
+    await fireEvent.click(group("Apps"));
     expect(entries("General")).toEqual(["New email", "Open folder", "Open website", "Chord", "Exec", "Launch"]);
     expect(entries("System")).toEqual([
       "Brightness down",
@@ -78,11 +86,11 @@ describe("the groups", () => {
   it("collapse and expand on their heading button", async () => {
     catalogue();
     await fireEvent.click(group("System"));
-    expect(group("System")).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("list", { name: "System" })).toBeNull();
-    await fireEvent.click(group("System"));
     expect(group("System")).toHaveAttribute("aria-expanded", "true");
     expect(entries("System")).toHaveLength(7);
+    await fireEvent.click(group("System"));
+    expect(group("System")).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("list", { name: "System" })).toBeNull();
   });
 
   it("hold only the raw tools without recipes", () => {
@@ -95,6 +103,7 @@ describe("the groups", () => {
 describe("the entries", () => {
   it("make a tool and a preset draggable with the entry's key in the drag data", async () => {
     catalogue({ selected: 7 });
+    await fireEvent.click(group("Apps"));
     for (const [name, key] of [
       ["Exec", "tool:exec"],
       ["Launch", "tool:launch"],
@@ -114,6 +123,7 @@ describe("the entries", () => {
     expect(chord).toHaveAccessibleDescription("Assign to key 7, or drag it onto a key.");
     await fireEvent.click(chord);
     expect(onassign).toHaveBeenLastCalledWith("tool:chord");
+    await fireEvent.click(group("Apps"));
     await fireEvent.click(screen.getByRole("button", { name: "Spectacle" }));
     expect(onassign).toHaveBeenLastCalledWith("recipe:spectacle");
   });
@@ -178,9 +188,11 @@ describe("the search", () => {
 
   it("shows the matches of a collapsed group while searching", async () => {
     catalogue();
-    await fireEvent.click(group("Apps"));
+    expect(group("Apps")).toHaveAttribute("aria-expanded", "false");
     await fireEvent.input(screen.getByRole("searchbox"), { target: { value: "code" } });
     expect(entries("Apps")).toEqual(["VS Code"]);
+    await fireEvent.input(screen.getByRole("searchbox"), { target: { value: "" } });
+    expect(screen.queryByRole("list", { name: "Apps" })).toBeNull();
   });
 
   it("says No action matches under the field", async () => {
