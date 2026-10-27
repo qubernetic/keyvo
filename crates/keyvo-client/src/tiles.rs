@@ -71,13 +71,17 @@ fn stack<'a>(profiles: &'a Profiles, view: &View) -> Result<Stack<'a>, TileError
     Ok(Stack::new(profiles, profile, view.page)?)
 }
 
-/// The `keys` keys of the page `view` shows, in key order.
+/// The `keys` keys of the page `view` shows, in key order; under the
+/// session lock none says anything, as the pad shows the lock.
 ///
 /// # Errors
 ///
 /// As [`Tiles::page`].
 pub fn keys(profiles: &Profiles, view: &View, keys: u8) -> Result<Vec<KeySummary>, TileError> {
     let stack = stack(profiles, view)?;
+    if view.locked {
+        return Ok(vec![KeySummary::default(); usize::from(keys)]);
+    }
     Ok((1..=keys)
         .map(|n| {
             KeySlot::new(n)
@@ -112,7 +116,8 @@ impl Tiles {
         }
     }
 
-    /// The `keys` keys of the page `view` shows, at `size`, in key order.
+    /// The `keys` keys of the page `view` shows, at `size`, in key order;
+    /// under the session lock the lock page in the profile's accent.
     ///
     /// # Errors
     ///
@@ -125,7 +130,13 @@ impl Tiles {
         keys: u8,
         size: TileSize,
     ) -> Result<Vec<Tile>, TileError> {
-        render::page(&stack(profiles, view)?, keys)
+        let stack = stack(profiles, view)?;
+        let specs = if view.locked {
+            render::lock_page(stack.profile().profile.accent, keys)
+        } else {
+            render::page(&stack, keys)
+        };
+        specs
             .iter()
             .map(|spec| Ok(self.renderer.tile(spec, size)?))
             .collect()

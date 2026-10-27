@@ -50,6 +50,24 @@ fn a_page_renders_like_the_daemon_paints_it() {
 }
 
 #[test]
+fn a_locked_view_renders_the_lock_page_and_names_no_key() {
+    let profiles = profiles();
+    let locked = View {
+        locked: true,
+        ..view("global", 1)
+    };
+    let accent = profiles.get("global").unwrap().profile.accent;
+    let tiles = Tiles::new().page(&profiles, &locked, 9, SIZE).unwrap();
+    let specs = render::lock_page(accent, 9);
+    assert_eq!(tiles.len(), 9);
+    for (tile, spec) in tiles.iter().zip(&specs) {
+        assert_eq!(tile.rgb(), Renderer::new().tile(spec, SIZE).unwrap().rgb());
+    }
+    let keys = tiles::keys(&profiles, &locked, 9).unwrap();
+    assert_eq!(keys, vec![KeySummary::default(); 9]);
+}
+
+#[test]
 fn the_keys_of_a_page_carry_label_and_action_in_key_order() {
     let keys = tiles::keys(&profiles(), &view("global", 1), 9).unwrap();
     assert_eq!(keys.len(), 9);

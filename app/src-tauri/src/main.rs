@@ -222,17 +222,24 @@ fn outline(profile: String) -> Result<Outline, String> {
 /// configuration directory in key order, rendered at `tile`; key count and
 /// tile size come from the geometry of the daemon's `status` reply. Each
 /// is the tile as a PNG data URL (`image`), with the key's `label`,
-/// `action` and `layer` (`keyvo_client::tiles::KeySummary`).
+/// `action` and `layer` (`keyvo_client::tiles::KeySummary`). With `locked`
+/// the lock page the pad shows under the session lock, which names no key.
 #[tauri::command]
-fn tiles(profile: String, page: usize, keys: u8, tile: TileSize) -> Result<Vec<Value>, String> {
+fn tiles(
+    profile: String,
+    page: usize,
+    keys: u8,
+    tile: TileSize,
+    locked: Option<bool>,
+) -> Result<Vec<Value>, String> {
     let profiles = profiles()?;
     let view = View {
         profile,
         page,
         mode: keyvo_core::state::Mode::Auto,
-        // The tiles depend on the profile and page alone.
+        // The tiles depend on the profile, the page and the lock alone.
         index: 1,
-        locked: false,
+        locked: locked.unwrap_or(false),
     };
     let summaries =
         keyvo_client::tiles::keys(&profiles, &view, keys).map_err(|error| error.to_string())?;
