@@ -323,7 +323,8 @@ is for `keyvo ctl`, T3 for the app.
       Tab onto it shows `Coming soon` and the sentence naming M4a-5, and
       the screen does not change. `Ctrl+4` does nothing.
     - The header's Profile dropdown lists Global first, then the
-      profiles by priority, the one on the pad as `<name>, on the pad`.
+      profiles by priority, the one on the pad as `<name>, on the pad`;
+      the pin glyph beside it is not pressed while nothing is pinned.
       `Sandbox` is a greyed switch whose focus names M4a-4. The gear
       opens Preferences on the right with the tabs General, Devices,
       Integrations, Projects, each one sentence naming its roadmap item;
@@ -358,9 +359,11 @@ is for `keyvo ctl`, T3 for the app.
     - With the global profile on the pad (it has three pages), select
       key 5, then click the `general` tab: the key editor edits key 5 of
       page 2 while the drawing stays on the pad's page 1, and a line
-      says `Editing Global, key 5; the pad shows Global, page 1.` with
-      `Follow`; key 5 of the drawing has no accent outline. Click
-      `Follow`: the line goes and the editor is on key 5 of page 1.
+      starts with `Follow` and then says `Editing Global, key 5; the pad
+      shows Global, page 1.`; the `general` tab carries the pin glyph and
+      the header's pin glyph is pressed; key 5 of the drawing has no
+      accent outline. Click `Follow`: the line goes, the pin glyph is
+      released and the editor is on key 5 of page 1.
     - Break a profile: put `label = 7` on a key of
       `~/.config/keyvo/profiles/global.toml`. An error notice shows
       `Schema error in <path of global.toml>, line <n>, column <n>: ...`.
@@ -900,6 +903,20 @@ locked`.
 - [ ] #158 Lock, then click another application's window on the lock screen's preview (or alt-tab is not possible: skip): on unlock the pad shows that application's profile.
 - [ ] #158 `loginctl lock-session` from a terminal, then `bin/keyvo ctl status`: `"locked":true`; after the unlock, `false`.
 - [ ] #158 The app on the GNOME runtime: under the lock the mirror shows the lock tile and the line `Session locked; the pad shows the lock.`; after the unlock the line goes.
+
+### The pin state in the header, Follow first (#164)
+
+The mock dev server of #113 in a host browser (its focus cycle moves the
+pad every ten seconds), then the app on the GNOME runtime with the
+Keypad, the daemon and the owner's own profiles, the app in a side
+window.
+
+- [ ] #164 `just app-dev`: the pin glyph beside the Profile dropdown is not pressed; its tooltip reads `Following the pad. Press to pin <profile>, page 1.`. Pick VS Code in the dropdown: the glyph is pressed, its tooltip reads `Pinned to VS Code, page 1. Press to follow the pad.`; the dropdown stays on VS Code while the focus cycle moves the pad and the `on the pad` mark moves.
+- [ ] #164 Still pinned, wait for the pad to show another profile: the line under the tabs starts with `Follow`, then `Editing VS Code, page 1; the pad shows <profile>, page 1.`; VS Code's first tab carries the pin glyph. Click the pressed pin glyph in the header: the line goes, the glyph is released and the dropdown follows the pad again.
+- [ ] #164 Click a tile while following: the glyph is pressed (the key pinned the pad's place). Wait for the focus cycle: the line starts with `Follow`, the pinned page's tab carries the pin glyph, the mirror draws no outline. Click `Follow` in the line: the glyph is released.
+- [ ] #164 Profiles (`Ctrl+2`) while following: the selection moves with the focus cycle. Click a profile in the list: the header's dropdown names it and the glyph is pressed; the focus cycle moves the `on the pad` mark and nothing else. Click the header's glyph: the selection goes back to the pad's profile and follows it again.
+- [ ] #164 With the Keypad and the daemon (the #130 finding): pin `KCalc test` in the header, open Profiles, switch to Konsole: the editor stays on `KCalc test`, the dropdown says it is pinned (the glyph pressed), and the list marks Konsole `on the pad`.
+- [ ] #164 Rename a profile to a name of about 60 characters: the header's dropdown stays about 24 characters wide and ends in an ellipsis, the device selector does not move; its tooltip and the opened option list show the whole name. Restore the name.
 
 ### Polish, harden and the critique re-run (#130)
 

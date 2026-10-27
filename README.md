@@ -71,8 +71,9 @@ keyboard map in its menu), a Profiles screen that manages the profiles
 (the list by priority with the one on the pad marked, name and accent
 written at once, priority, match rules, and page thumbnails with "Edit
 keys on the Pad"), and the Pad: a live mirror of the pad's page in a drawing of the Keypad, the
-pages of the pinned profile as tabs with its accent, a line with Follow
-when the pad moved away from the profile being edited, a broken profile
+pages of the pinned profile as tabs with its accent, a pin glyph in the
+header that shows and resets the pin, a line led by Follow when the pad
+moved away from the profile being edited, a broken profile
 shown with file and line, a strip of the recent presses under the
 inspector, each opening a trace drawer with what the press resolved to and
 what came of it, an actions catalogue to drag a preset (Spectacle,
