@@ -6,7 +6,9 @@
   // and "Override here". The tile row (image, Label, Icon, Colour) and the
   // Action with its field are written to the profile file the moment a
   // field changes, after a snapshot, one write after the other; undo and
-  // redo for the session. An invalid field says why under itself; a
+  // redo for the session. An invalid field says why under itself (a chord
+  // is checked with the daemon's grammar, the wrong token named, and its
+  // syntax is a hint line under the field, #167); a
   // refused write is a Notice with its place and the typed value stays. A
   // tool assigned from the actions catalogue sets the action type with an
   // empty field, written once the field is entered; a preset is written at
@@ -14,7 +16,7 @@
   // column is collapsed, the Action select carries its entries. A key that
   // carries a preset (lib/catalogue.ts recipeOf) shows its "What it does"
   // select above the Action; another variant rewrites the action.
-  import { untrack } from "svelte";
+  import { untrack, type Snippet } from "svelte";
 
   import IconPicker from "./IconPicker.svelte";
   import Notice from "./Notice.svelte";
@@ -69,6 +71,7 @@
     assign,
     entries,
     recipes = [],
+    browse,
   }: {
     editor: Editor;
     /** The key to edit: the selected key of the pinned page; none until
@@ -99,6 +102,9 @@
     /** The daemon's recipe packs: what an assigned preset writes and the
      * "What it does" of a key that carries one. */
     recipes?: readonly Recipe[];
+    /** Beside the Action select: the Pad's Browse actions button, while
+     * the catalogue column is collapsed (#167). */
+    browse?: Snippet;
   } = $props();
 
   const uid = $props.id();
@@ -142,7 +148,16 @@
     heading: `kv-inspector-${uid}`,
     color: `kv-inspector-${uid}-color`,
     action: `kv-inspector-${uid}-action`,
+    hint: `kv-inspector-${uid}-hint`,
+    select: `kv-inspector-${uid}-select`,
   };
+  /** The action field's message, then the chord syntax under a chord. */
+  const actionDescribedBy = $derived(
+    [
+      ...(invalid?.field === "action" ? [ids.action] : []),
+      ...(form.actionType === "chord" ? [ids.hint] : []),
+    ].join(" ") || undefined,
+  );
 
   /** The time of a result, 24 h. */
   function now(): string {
@@ -502,29 +517,33 @@
             </select>
           </label>
         {/if}
-        <label>
-          {t("inspector.action")}
-          <select
-            aria-label={t("inspector.action")}
-            value={form.actionType}
-            onchange={(event) => switched(event.currentTarget.value)}
-          >
-            <option value="none">{t("inspector.kind.none")}</option>
-            {#if entries === undefined}
-              <option value="chord">{t("inspector.kind.chord")}</option>
-              <option value="exec">{t("inspector.kind.exec")}</option>
-              <option value="launch">{t("inspector.kind.launch")}</option>
-            {:else}
-              {#each GROUPS as group (group.id)}
-                <optgroup label={t(group.label)}>
-                  {#each entries.filter((entry) => entry.group === group.id) as entry (entry.key)}
-                    <option value={entry.kind === "tool" ? entry.id : entry.key}>{entry.name}</option>
-                  {/each}
-                </optgroup>
-              {/each}
-            {/if}
-          </select>
-        </label>
+        <div class="field">
+          <label for={ids.select}>{t("inspector.action")}</label>
+          <span class="choice">
+            <select
+              id={ids.select}
+              aria-label={t("inspector.action")}
+              value={form.actionType}
+              onchange={(event) => switched(event.currentTarget.value)}
+            >
+              <option value="none">{t("inspector.kind.none")}</option>
+              {#if entries === undefined}
+                <option value="chord">{t("inspector.kind.chord")}</option>
+                <option value="exec">{t("inspector.kind.exec")}</option>
+                <option value="launch">{t("inspector.kind.launch")}</option>
+              {:else}
+                {#each GROUPS as group (group.id)}
+                  <optgroup label={t(group.label)}>
+                    {#each entries.filter((entry) => entry.group === group.id) as entry (entry.key)}
+                      <option value={entry.kind === "tool" ? entry.id : entry.key}>{entry.name}</option>
+                    {/each}
+                  </optgroup>
+                {/each}
+              {/if}
+            </select>
+            {@render browse?.()}
+          </span>
+        </div>
         {#if form.actionType !== "none"}
           <div class="field">
             <label>
@@ -536,13 +555,16 @@
                   ? t("editor.chordExample")
                   : t("editor.commandExample")}
                 aria-invalid={invalid?.field === "action" ? true : undefined}
-                aria-describedby={invalid?.field === "action" ? ids.action : undefined}
+                aria-describedby={actionDescribedBy}
                 bind:value={form.action}
                 onchange={commit}
               />
             </label>
             {#if invalid?.field === "action"}
               <p id={ids.action} role="alert" class="invalid">{invalid.message}</p>
+            {/if}
+            {#if form.actionType === "chord"}
+              <p id={ids.hint} class="hint">{t("editor.chordHint")}</p>
             {/if}
           </div>
         {/if}
@@ -641,9 +663,27 @@
     font-size: 1em;
   }
 
-  .colour {
+  /* The syntax under a field, in the label size of its field. */
+  .hint {
+    margin: 0;
+    background: var(--kv-bg);
+    color: var(--kv-fg-muted);
+    font-size: 1em;
+  }
+
+  .colour,
+  .choice {
     display: flex;
     gap: 8px;
+  }
+
+  .choice select {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .choice :global(button) {
+    flex: none;
   }
 
   .colour input[type="color"] {

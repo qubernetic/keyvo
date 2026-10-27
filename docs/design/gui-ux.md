@@ -176,7 +176,11 @@ holds, what is special in the right column.
   search over the bundled lucide names, the first 60 matches shown and the
   rest counted) and Colour (swatch and text); then
   the Action select and the kind's fields, or a preset's "What it does"
-  select above them. Forms capped at 48ch. Every change writes through
+  select above them. A chord is checked with the daemon's grammar before
+  the write and the message under the field names the wrong token; a
+  hint line in the label size under Chord says the syntax ("Keys joined
+  with +, for example ctrl+shift+g; modifiers ctrl, alt, shift, super.",
+  #167). Forms capped at 48ch. Every change writes through
   `toml_edit` immediately (§4.1), the result line with a time stamp under
   the fields. Empty: "Select a key to edit it."
 - **Actions catalogue** (right, from a 1200 px window; below it the
@@ -184,7 +188,10 @@ holds, what is special in the right column.
   (`/`, "Search actions", empty: "No action matches"), then the groups,
   each collapsible on its heading; the column opens with General
   expanded and System and Apps collapsed, and the search shows every
-  match, collapsed or not (#166). Drag an entry onto a tile to assign it,
+  match, collapsed or not (#166). Below 1200 px a "Browse actions"
+  button beside the Action select, or `/`, opens the same catalogue as a
+  popover at the right edge with its icons, search and drag; a click
+  assigns and closes it, Escape closes it (#167). Drag an entry onto a tile to assign it,
   click to assign it to the selected tile; a raw tool sets the action
   type with an empty field, written once the field is entered; a preset
   writes its default "What it does" with its label and icon at once
@@ -258,7 +265,9 @@ capped at the same `48ch`, so "Open in editor" and "+ rule" sit at the
 end of the content (#139); the Pages heading row too, with "Edit keys on
 the Pad", the screen's one primary action, at its end, where a 760 px
 window shows it without scrolling (#166). Each rule kind is
-named once with its patterns under it. The thumbnails are the device
+named once with its patterns under it; under the Window class a muted
+line says it is the class KWin reports and that `keyvo ctl status`
+prints the focused one (#167). The thumbnails are the device
 drawing (`Device.svelte`) with the page's rendered tiles; the selected
 one is the page "Edit keys on the Pad" pins. An invalid field carries its
 own message under it. The list column sits beside the editor from

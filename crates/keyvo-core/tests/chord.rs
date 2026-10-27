@@ -217,3 +217,29 @@ fn every_code_of_the_table_is_listed_once_in_order() {
         assert!(all.contains(&KeyCode::from_name(name).unwrap()), "{name}");
     }
 }
+
+/// The shared chord fixture (`tests/protocol-fixtures/chord/`), which the
+/// app's chord check (`app/src/lib/chord.ts`) runs too.
+#[test]
+fn the_shared_fixture_parses_as_the_app_expects() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/protocol-fixtures/chord/chords.json"
+    ))
+    .unwrap();
+    for text in fixture["valid"].as_array().unwrap() {
+        let text = text.as_str().unwrap();
+        assert!(Chord::parse(text).is_ok(), "{text}");
+    }
+    for case in fixture["invalid"].as_array().unwrap() {
+        let text = case["chord"].as_str().unwrap();
+        let (error, token) = match Chord::parse(text).unwrap_err() {
+            ChordError::Empty => ("empty", None),
+            ChordError::MissingKey => ("missing_key", None),
+            ChordError::UnknownKey(token) => ("unknown_key", Some(token)),
+            ChordError::NotAModifier(token) => ("not_a_modifier", Some(token)),
+            ChordError::ExpectedSeparator(token) => ("expected_separator", Some(token)),
+        };
+        assert_eq!(error, case["error"], "{text}");
+        assert_eq!(token.as_deref(), case["token"].as_str(), "{text}");
+    }
+}

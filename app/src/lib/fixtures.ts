@@ -150,3 +150,18 @@ export function responses(): Reply[] {
     message.kind === "response" && message.response.ok ? [message.response.result] : [],
   );
 }
+
+/** One bad chord of tests/protocol-fixtures/chord/chords.json: the error
+ * as keyvo_core::chord::ChordError names it, and the token it names. */
+export interface BadChord {
+  chord: string;
+  error: "empty" | "missing_key" | "unknown_key" | "not_a_modifier" | "expected_separator";
+  token?: string;
+}
+
+/** tests/protocol-fixtures/chord/chords.json, which keyvo-core's chord
+ * tests run too. */
+export function chordCases(): { valid: string[]; invalid: BadChord[] } {
+  const path = join(dirname(fileURLToPath(import.meta.url)), "../../../tests/protocol-fixtures/chord/chords.json");
+  return JSON.parse(readFileSync(path, "utf8")) as { valid: string[]; invalid: BadChord[] };
+}

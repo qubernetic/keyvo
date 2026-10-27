@@ -15,7 +15,9 @@
   // with one it keeps the last frame while the daemon is away.
   // The trace strip sits under the inspector; the actions catalogue is the
   // right column from 1200 px and collapses into the inspector's Action
-  // select below it; its presets are the daemon's recipe packs. An entry
+  // select below it, where "Browse actions" beside the select, or `/`, opens
+  // it as a popover with its icons and search (#167); its presets are the
+  // daemon's recipe packs. An entry
   // dropped on a tile, or clicked in the catalogue with a tile selected,
   // selects that tile and hands it to the inspector: a tool sets the action
   // type, a preset writes its default variant.
@@ -300,6 +302,38 @@
     assign = { entry, target: at, seq: (assign?.seq ?? 0) + 1 };
   }
 
+  /** Below 1200 px: the catalogue as a popover, open (#167). */
+  let browsing = $state(false);
+  let browseButton: HTMLButtonElement | undefined = $state();
+  const popover = $derived(browsing && !columns.right);
+
+  function closeBrowse() {
+    browsing = false;
+    if (browseButton?.isConnected === true) browseButton.focus();
+  }
+
+  /** `/` opens the popover below 1200 px, unless a field has the focus;
+   * open, the catalogue's own `/` takes the search. Escape closes it. */
+  function keydown(event: KeyboardEvent) {
+    if (!active || columns.right) return;
+    if (event.key === "Escape" && popover && !event.defaultPrevented) {
+      event.preventDefault();
+      closeBrowse();
+      return;
+    }
+    if (event.key !== "/" || popover || event.ctrlKey || event.altKey || event.metaKey) return;
+    const focus = event.target;
+    if (
+      focus instanceof HTMLInputElement ||
+      focus instanceof HTMLSelectElement ||
+      focus instanceof HTMLTextAreaElement
+    ) {
+      return;
+    }
+    event.preventDefault();
+    browsing = true;
+  }
+
   function choosePage(profile: string, page: number) {
     onpin?.(pinPage(profile, page));
   }
@@ -352,6 +386,22 @@
       : t("home.mirrorView", { profile: pad.view.profile, page: pad.view.page }),
   );
 </script>
+
+<svelte:window onkeydown={keydown} />
+
+{#snippet browse()}
+  <button
+    bind:this={browseButton}
+    type="button"
+    aria-label={t("pad.browse")}
+    aria-haspopup="dialog"
+    aria-expanded={popover}
+    aria-keyshortcuts="/"
+    onclick={() => (browsing = !browsing)}
+  >
+    {t("pad.browse")}
+  </button>
+{/snippet}
 
 <section class="pad">
   {#if unreachable !== undefined}
@@ -453,6 +503,7 @@
         {assign}
         entries={columns.right ? undefined : catalogue}
         recipes={recipes.recipes}
+        browse={columns.right ? undefined : browse}
       />
       <TraceStrip entries={pad.trace} {connecting} onopen={(entry) => ontrace?.(entry)} />
     </div>
@@ -467,6 +518,33 @@
           {connected}
           onassign={(entry) => {
             if (editing !== undefined) hand(entry, editing);
+          }}
+        />
+      </div>
+    {:else if popover}
+      <!-- Below 1200 px the catalogue floats at the right edge, a dialog
+           that is not modal, so the mirror stays a drop target (#167). -->
+      <div class="popover" role="dialog" aria-modal="false" aria-label={t("catalogue.title")}>
+        <button
+          type="button"
+          class="close"
+          aria-label={t("pad.closeBrowse")}
+          onclick={closeBrowse}
+        >
+          {t("drawer.closeShort")}
+        </button>
+        <Catalogue
+          entries={catalogue}
+          problems={recipes.problems}
+          unread={recipesError}
+          {selected}
+          {active}
+          {connected}
+          focus
+          onassign={(entry) => {
+            if (editing === undefined) return;
+            hand(entry, editing);
+            closeBrowse();
           }}
         />
       </div>
@@ -526,6 +604,28 @@
 
   .catalogue {
     flex: none;
+  }
+
+  /* A floating panel like the drawer (DESIGN.md "Floating"), narrower. */
+  .popover {
+    position: fixed;
+    top: 0;
+    inset-inline-end: 0;
+    bottom: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-sizing: border-box;
+    padding: 16px;
+    overflow: auto;
+    border-inline-start: 1px solid var(--kv-fg-muted);
+    background: var(--kv-bg-alt);
+    color: var(--kv-fg);
+  }
+
+  .popover .close {
+    align-self: flex-end;
   }
 
   .skeleton {

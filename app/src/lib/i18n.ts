@@ -104,6 +104,7 @@ export const messages = {
   "profiles.result": "Profile result",
   "profiles.match": "Match rules",
   "profiles.class": "Window class",
+  "profiles.classHint": "The class KWin reports for the window; keyvo ctl status prints the focused one.",
   "profiles.title": "Title regex",
   "profiles.globalMatch": "The global profile is under every window.",
   "profiles.noMatch": "No match rules: focus never selects this profile.",
@@ -139,6 +140,8 @@ export const messages = {
   "pad.moved": "Editing {pinned}, key {key}; the pad shows {profile}, page {page}.",
   "pad.movedPage": "Editing {pinned}, page {pinnedPage}; the pad shows {profile}, page {page}.",
   "pad.follow": "Follow",
+  "pad.browse": "Browse actions",
+  "pad.closeBrowse": "Close the actions",
   "pad.pinnedTab": "{name}, pinned",
   "pad.startWith": "Start it with",
   "pad.daemonCommand": "keyvo-daemon",
@@ -275,6 +278,12 @@ export const messages = {
   "editor.wrote": "Wrote key {key} to {path}",
   "editor.badColor": "The color {color} is not written #rrggbb.",
   "editor.noKeys": "Enter the chord's keys to write it.",
+  "editor.chordMissingKey": "A + or , at the end needs a key after it.",
+  "editor.chordUnknownKey": "{token} is not a key name.",
+  "editor.chordNotModifier":
+    "{token} is not a modifier; only the last name is a key (ctrl, shift, alt, altgr, super).",
+  "editor.chordSeparator": "Expected +, a comma or the end after {token}.",
+  "editor.chordHint": "Keys joined with +, for example ctrl+shift+g; modifiers ctrl, alt, shift, super.",
   "editor.noCommand": "Enter the command to write it.",
 } as const;
 

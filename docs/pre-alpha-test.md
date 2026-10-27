@@ -333,7 +333,8 @@ is for `keyvo ctl`, T3 for the app.
       keyboard map in the same place (one drawer at a time); `Esc`
       closes it.
     - Narrow the window: below 1200 px the Pad's Actions column
-      collapses into the inspector's Action select, below 1100 px the
+      collapses into the inspector's Action select (with `Browse actions`
+      beside it, #167), below 1100 px the
       rail shows icons only, below 1000 px the Profiles list moves above
       the editor. The window does not shrink below 960 x 640.
     - Open the device selector in the header and the Action selector of
@@ -938,6 +939,19 @@ then the app on the GNOME runtime with the Keypad and the daemon.
 - [ ] #166 `just app-dev` at 1363x798: the Actions column opens with General expanded and System and Apps collapsed; the drawing stays in place when the catalogue column scrolls. Expand System and Apps: only the catalogue column scrolls. Type `vol` into Search actions: the System matches show although System was collapsed; clear the search: System is as it was.
 - [ ] #166 `just app-dev` at 1200x760, Profiles, the Terminal profile: `Edit keys on the Pad` sits at the right end of the Pages heading row, above the thumbnails, without scrolling the editor; a click opens the Pad pinned to the selected page.
 - [ ] #166 With the daemon and the Keypad on the GNOME runtime at 960x640: the same three checks against the real profiles.
+
+### Chords checked before the write, the fields' hints (#167)
+
+The mock dev server of #113 in a host browser at the window sizes named,
+then the app on the GNOME runtime with the Keypad, the daemon and the
+owner's own profiles.
+
+- [ ] #167 `just app-dev` at 1363x798, the Pad: select key 2, choose Chord in the Action select. Under the empty Chord field the muted line reads `Keys joined with +, for example ctrl+shift+g; modifiers ctrl, alt, shift, super.`, in the size of the field's label. Type `ctrl+nope` and leave the field: the line above the hint reads `nope is not a key name.`, the field is marked invalid, and nothing is written (the result line does not change).
+- [ ] #167 Still on key 2: `g+ctrl` says `g is not a modifier; only the last name is a key (ctrl, shift, alt, altgr, super).`; `ctrl+` says `A + or , at the end needs a key after it.`; `ctrl+shift+v` is written (the result line names the file) and the message goes. Choose Exec: the hint goes with the Chord field.
+- [ ] #167 Profiles (`Ctrl+2`), Konsole: under the Window class patterns `org.kde.konsole` and `konsole` a muted line reads `The class KWin reports for the window; keyvo ctl status prints the focused one.`; Title regex has no such line.
+- [ ] #167 Narrow the window to 1100x760, the Pad, select key 5: beside the Action select a `Browse actions` button. Click it: the Actions panel opens at the right edge with the search focused, the icons beside the entries and General expanded; type `kons`: Konsole shows. Click Exec: the panel closes, the Action select reads Exec and the focus is back on `Browse actions`.
+- [ ] #167 At 1100x760 click the mirror's background (no field focused) and press `/`: the Actions panel opens with the focus in its search; Escape closes it. Open it again and drag Spectacle onto key 7: key 7 gets the preset. Widen the window past 1200 px: the panel and the button go and the Actions column is back.
+- [ ] #167 With the daemon and the Keypad on the GNOME runtime: `ctrl+nope` on a real key is refused in the app with the same message and the daemon log shows no reload for it; `bin/keyvo ctl status` while Konsole is focused prints `"class":"org.kde.konsole"` (or `konsole`), as the Profiles hint says.
 
 ### Polish, harden and the critique re-run (#130)
 
