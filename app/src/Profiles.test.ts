@@ -7,6 +7,9 @@
 // thumbnails, "Edit keys on the Pad", and the controls not built yet.
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { isDeepStrictEqual } from "node:util";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 
 import Profiles from "./Profiles.svelte";
@@ -495,5 +498,13 @@ describe("what is not built yet", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Empty profile" }));
     expect(await listed()).toHaveLength(LIST.length);
     expect(props.fake.files.editProfile).not.toHaveBeenCalled();
+  });
+});
+
+describe("the thumbnail tiles", () => {
+  it("take the corner of their cutout from the drawing, as the mirror does", () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "Profiles.svelte"), "utf8");
+    const rule = /\.thumb img \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toMatch(/border-radius: var\(--kv-tile-radius, var\(--kv-radius\)\)/);
   });
 });

@@ -155,15 +155,19 @@
     display: contents;
   }
 
+  /* A tile is part of the device, not a control of the app: its corner is
+     the cutout's (--kv-tile-radius from Device, the theme radius on the
+     plain panel) and the well of the drawing shows through the transparent
+     corners of the rendered image, whatever the theme. */
   .key {
     position: relative;
     width: 100%;
     height: 100%;
     padding: 0;
     border: 2px solid transparent;
-    border-radius: var(--kv-radius);
-    background: var(--kv-bg-alt);
-    color: var(--kv-fg-muted);
+    border-radius: var(--kv-tile-radius, var(--kv-radius));
+    background: var(--kv-device-well);
+    color: var(--kv-device-glyph);
     font: inherit;
     cursor: pointer;
     overflow: hidden;

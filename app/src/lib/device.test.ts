@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { drawing, inline, panelPlacement, placement } from "./device";
+import { drawing, inline, panelPlacement, placement, styles } from "./device";
 import { nth, responses } from "./fixtures";
 import type { Geometry, Status } from "./protocol";
 
@@ -88,5 +88,34 @@ describe("inline", () => {
     const other = inline(KEYPAD, "d8", "The Keypad");
     expect(other).toContain('id="d8-kp-body"');
     expect(other).not.toContain('id="d7-kp-body"');
+  });
+});
+
+describe("the rim and the corner of a cutout", () => {
+  const keypad = drawing(KEYPAD);
+
+  it("reads the corner radius and the rim stroke of the key cutouts", () => {
+    expect(keypad.corner).toBe(23);
+    expect(keypad.stroke).toBe(2);
+  });
+
+  it("insets each tile by half the rim stroke, so the rim stays whole", () => {
+    const place = nth(placement(keypad, fixtureGeometry()) ?? [], 0);
+    expect(place.left).toBeCloseTo((58 / 512) * 100, 3);
+    expect(place.top).toBeCloseTo((61 / 610) * 100, 3);
+    expect(place.width).toBeCloseTo((115 / 512) * 100, 3);
+    expect(place.height).toBeCloseTo((115 / 610) * 100, 3);
+  });
+
+  it("carries the corner inside the rim as a percent of the tile", () => {
+    const place = nth(placement(keypad, fixtureGeometry()) ?? [], 4);
+    expect(place.corner).toBeCloseTo((22 / 115) * 100, 3);
+  });
+
+  it("names the corner as --kv-tile-radius in the place style, the plain panel none", () => {
+    const fitted = styles(placement(keypad, fixtureGeometry()) ?? []);
+    expect(fitted.get(1)).toMatch(/; --kv-tile-radius: 19\.13\d*%$/);
+    const plain = styles(panelPlacement(fixtureGeometry()));
+    expect(plain.get(1)).not.toContain("--kv-tile-radius");
   });
 });

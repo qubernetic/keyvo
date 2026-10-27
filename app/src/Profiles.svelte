@@ -688,6 +688,7 @@
 
   .thumb img {
     display: block;
+    border-radius: var(--kv-tile-radius, var(--kv-radius));
     object-fit: cover;
   }
 
