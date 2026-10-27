@@ -1769,7 +1769,9 @@ then subscribes with a replay of the newest 20 trace entries;
   moves the drawing and never the inspector. While the pin and the pad
   differ, a line under the page tabs says `Editing <pinned profile>, key
   <key>; the pad shows <profile>, page <page>.` (`page <page>` of the pin
-  instead of the key while none is selected) with Follow, which unpins
+  instead of the key while none is selected), both profiles by the name
+  the header's dropdown shows (the id while the list does not know the
+  profile, #150), with Follow, which unpins
   and keeps the key number, and the mirror draws no selection outline.
   A click on a tile then pins the pad's page again when the pin came
   from a key selection; a profile or page chosen in the dropdown, a tab
@@ -2178,6 +2180,9 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha design pass (2026-10-27)**: §10 Pad: the "pad moved"
+  line names the profile the pad shows by its name, as the header does,
+  not by its id (#150).
 - **v0.3, pre-alpha design pass (2026-10-27)**: §10 the Icon picker keeps
   a typed search through a refresh of the key and starts afresh on
   another key (#149).

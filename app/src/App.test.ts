@@ -256,7 +256,7 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: /^Key 4: / })).toBeInTheDocument();
     await send({ event: "profile", profile: "global", page: 1, mode: "auto" });
     expect(dropdown().value).toBe("terminal");
-    expect(await screen.findByText("Editing Terminal, key 4; the pad shows global, page 1.")).toBeInTheDocument();
+    expect(await screen.findByText("Editing Terminal, key 4; the pad shows Global, page 1.")).toBeInTheDocument();
     await fireEvent.click(screen.getByRole("button", { name: "Follow" }));
     expect(dropdown().value).toBe("global");
     expect(screen.queryByText(/the pad shows/)).toBeNull();
@@ -325,7 +325,7 @@ describe("App", () => {
     await fireEvent.click(await screen.findByRole("button", { name: "Edit keys on the Pad" }));
     expect(screen.getByRole("button", { name: "Pad" })).toHaveAttribute("aria-current", "page");
     expect(dropdown().value).toBe("vscode");
-    expect(await screen.findByText("Editing VS Code, page 1; the pad shows terminal, page 1.")).toBeInTheDocument();
+    expect(await screen.findByText("Editing VS Code, page 1; the pad shows Terminal, page 1.")).toBeInTheDocument();
   });
 
   it("gives every control an aria-label", async () => {

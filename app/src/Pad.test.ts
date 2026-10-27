@@ -124,16 +124,24 @@ interface Options {
   daemon?: ReturnType<typeof fake>;
   keys?: ReturnType<typeof editor>;
   pinned?: Pinned;
+  profiles?: ProfileSummary[];
   ontrace?: (entry: TraceRecord) => void;
   /** The window's columns; the default window shows them all. */
   columns?: Columns;
 }
 
 /** The Pad with the pin held the way App holds it: `onpin` sets the prop. */
-function pad({ daemon = fake(), keys = editor(), pinned, ontrace, columns = layout(1200) }: Options = {}) {
+function pad({
+  daemon = fake(),
+  keys = editor(),
+  pinned,
+  profiles = PROFILES,
+  ontrace,
+  columns = layout(1200),
+}: Options = {}) {
   const onpin = vi.fn<(next: Pinned) => void>();
   const result = render(Pad, {
-    props: { daemon: daemon.daemon, editor: keys, profiles: PROFILES, pinned, onpin, ontrace, columns },
+    props: { daemon: daemon.daemon, editor: keys, profiles, pinned, onpin, ontrace, columns },
   });
   onpin.mockImplementation((next) => void result.rerender({ pinned: next }));
   return { daemon, keys, onpin };
@@ -275,6 +283,21 @@ describe("the pin", () => {
     await waitFor(() => expect(keys.key).toHaveBeenLastCalledWith({ profile: "global", page: 2, key: 2 }));
     expect(screen.queryByText(/the pad shows/)).toBeNull();
     expect(selection()).toEqual([key(2).closest('[role="gridcell"]')]);
+  });
+
+  it("names the profile the pad shows, as the header does, not its id", async () => {
+    const named = (id: string, name: string) => ({ ...summary(id, ["context"]), name });
+    const profiles = [named("global", "Global"), named("terminal", "Konsole"), named("vscode", "VS Code")];
+    const { daemon } = await mounted({ profiles });
+    await fireEvent.click(key(3));
+    await daemon.send({ kind: "event", event: { ...nth(eventsOf("profile"), 0), profile: "vscode" } });
+    await screen.findByText("Editing Konsole, key 3; the pad shows VS Code, page 1.");
+    expect(screen.getByRole("grid", { name: "Keypad mirror: profile vscode, page 1" })).toBeInTheDocument();
+    await daemon.send({ kind: "event", event: { ...nth(eventsOf("profile"), 0), profile: "global" } });
+    await screen.findByText("Editing Konsole, key 3; the pad shows Global, page 1.");
+    // A profile the list does not know yet keeps its id.
+    await daemon.send({ kind: "event", event: { ...nth(eventsOf("profile"), 0), profile: "new" } });
+    await screen.findByText("Editing Konsole, key 3; the pad shows new, page 1.");
   });
 
   it("says nothing about a move while the pin and the pad agree", async () => {

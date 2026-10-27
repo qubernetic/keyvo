@@ -123,8 +123,10 @@ holds, what is special in the right column.
 - **Pinned inspector**: the header's profile dropdown and the page tab pin
   the inspector; the mirror keeps following the pad. When the two differ,
   one line under the tabs names what is pinned, then where the pad is:
-  "Editing Mailspring, key 3; the pad shows discord, page 1." (without a
+  "Editing Mailspring, key 3; the pad shows Discord, page 1." (without a
   selected key "Editing Mailspring, page 1; ..."), with a Follow control.
+  Both profiles go by the name the header's dropdown shows, the id only
+  for a profile the list does not know yet (#150).
   While they differ the mirror draws no selection outline, since its
   tiles are another page's; the inspector's own tile preview still shows
   the pinned key. A pin set by selecting a key goes back to the pad's
