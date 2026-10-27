@@ -375,7 +375,7 @@
   {/if}
 
   <div class="workspace">
-    <div class="drawing">
+    <div class="drawing scroll">
       {#if pad.geometry === undefined && connecting}
         <!-- §5.2: skeleton tiles, no spinner. -->
         <ul class="skeleton" aria-busy="true" aria-label={t("home.connecting")}>
@@ -437,7 +437,7 @@
         {/if}
       </p>
     </div>
-    <div class="inspector">
+    <div class="inspector scroll">
       <Inspector
         {editor}
         target={editing}
@@ -457,7 +457,7 @@
       <TraceStrip entries={pad.trace} {connecting} onopen={(entry) => ontrace?.(entry)} />
     </div>
     {#if columns.right}
-      <div class="catalogue">
+      <div class="catalogue scroll">
         <Catalogue
           entries={catalogue}
           problems={recipes.problems}
@@ -479,6 +479,7 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    height: 100%;
   }
 
   .hint {
@@ -486,11 +487,24 @@
     margin: 4px 0;
   }
 
+  /* The columns share the height under the notices (#166); from the
+     960 px minimum the drawing and the inspector fit side by side. */
   .workspace {
     display: flex;
-    flex-wrap: wrap;
+    flex: 1 1 0;
     gap: 24px;
-    align-items: flex-start;
+    align-items: stretch;
+    min-height: 0;
+  }
+
+  /* DESIGN.md "Columns": every column scrolls on its own with a reserved
+     gutter and the theme's thin scroll bar, so no control sits under it. */
+  .scroll {
+    min-height: 0;
+    padding-inline-end: 8px;
+    overflow: auto;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
   }
 
   /* The drawing takes the column's width up to the panel's pixel width. */

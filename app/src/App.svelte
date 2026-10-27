@@ -143,13 +143,12 @@
     grid-column: 1 / -1;
   }
 
-  /* DESIGN.md "Columns": a reserved gutter and the theme's thin scroll bar. */
+  /* Each screen owns its height and its columns scroll on their own
+     (DESIGN.md "Columns"), so main never shows a second bar (#166). */
   main {
     min-width: 0;
     min-height: 0;
-    overflow: auto;
-    scrollbar-gutter: stable;
-    scrollbar-width: thin;
+    overflow: hidden;
   }
 
   .screen {

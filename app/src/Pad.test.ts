@@ -957,3 +957,36 @@ describe("the style", () => {
     expect(css).not.toMatch(/(^|[\s;{])color:\s*var\(--kv-accent\)/);
   });
 });
+
+describe("the columns", () => {
+  /** The body of one rule of the Pad's style; jsdom applies none. */
+  function rule(selector: string): string {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "Pad.svelte"), "utf8");
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`\\n  ${escaped} \\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+  }
+
+  it("each scroll on their own, the drawing, the inspector and the catalogue (#166)", async () => {
+    await mounted({ columns: layout(1200) });
+    const scrolling = [
+      screen.getByRole("grid"),
+      screen.getByRole("heading", { name: "Inspector" }),
+      screen.getByRole("region", { name: "Actions" }),
+    ].map((element) => element.closest(".scroll"));
+    expect(scrolling).not.toContain(null);
+    expect(new Set(scrolling).size).toBe(3);
+    // DESIGN.md "Columns": a reserved gutter and the theme's thin bar.
+    expect(rule(".scroll")).toMatch(/min-height: 0;/);
+    expect(rule(".scroll")).toMatch(/overflow: auto;/);
+    expect(rule(".scroll")).toMatch(/scrollbar-gutter: stable;/);
+    expect(rule(".scroll")).toMatch(/scrollbar-width: thin;/);
+  });
+
+  it("fill the screen's height under the notices instead of growing it (#166)", () => {
+    expect(rule(".pad")).toMatch(/height: 100%;/);
+    expect(rule(".workspace")).toMatch(/flex: 1 1 0;/);
+    expect(rule(".workspace")).toMatch(/min-height: 0;/);
+    expect(rule(".workspace")).toMatch(/align-items: stretch;/);
+    expect(rule(".workspace")).not.toMatch(/flex-wrap: wrap/);
+  });
+});
