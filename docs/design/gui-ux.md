@@ -122,6 +122,14 @@ holds, what is special in the right column.
   falls through from the global layer is dimmed with a corner mark; the
   selected key has the accent outline; key feedback (§5.1) draws on the
   tile with an icon or a word.
+- No pad (#165): before any Keypad reported a geometry (the daemon
+  unreachable, or running without a Keypad) the drawing is still the
+  device, with nine empty wells in its own cutouts and the muted caption
+  "No pad" under it, so the column is never blank under the error
+  notice; nothing in it selects or presses. With a geometry seen once,
+  the mirror keeps its last frame while the daemon is away and fetches
+  no tiles until it is back. The inspector and the tabs keep their empty
+  states and Press is disabled while the Pad is not connected.
 - Under the drawing: the page list the pad walks (spec §6.1, #151) as
   named tabs, in index order. First the global profile's pages at index 0
   and below (`apps  general` on the owner's machine) as muted tabs with a

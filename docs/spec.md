@@ -1922,7 +1922,10 @@ then subscribes with a replay of the newest 20 trace entries;
   most the panel's pixel width, so never above 1:1. A geometry whose key
   count differs from the drawing's cutouts puts the tiles on a plain
   panel at the reported rects instead. The last geometry stays when the
-  Keypad goes; before any Keypad reported one, a note replaces the grid.
+  Keypad goes; before any Keypad reported one (the daemon unreachable, or
+  running without a Keypad), the drawing is the device with nine empty
+  wells in its own cutouts and the caption "No pad", nothing to select
+  (#165).
   A key the active app profile does not define shows the global key
   (§6.1), dimmed, with a "global" mark in its corner. The selected key has
   the accent outline, a key held on the device a dashed mark. A page the
@@ -2050,7 +2053,10 @@ then subscribes with a replay of the newest 20 trace entries;
   unreachable: when `status` fails or the subscription ends, an error
   notice says why (the socket path and the OS error as the shell reports
   them) and "Start it with `keyvo-daemon`", the mirror keeps its last
-  frame, and Retry connects again. The status strip of the earlier Home,
+  frame (no tiles are fetched while the daemon is away, so the closed
+  connection does not empty it; #67, #165), or shows the empty wells and
+  "No pad" when there never was one, the inspector and the tabs keep their
+  empty states, Press is disabled, and Retry connects again. The status strip of the earlier Home,
   its links and its page selector are gone; every fact shows once. The
   in-process simulator of §4.2 of the design and the header badge come
   later.
@@ -2066,8 +2072,9 @@ key editor of the app; the key grid exists once, on the Pad.
   `<file>, not on this page yet` for a key the page does not define.
   Press runs the key as a dry run on the page the pad shows, the result
   under the drawing (the "pad moved" line says when that is another page
-  than the pinned one); Clear writes the key with every field absent, on
-  the undo stack like any write.
+  than the pinned one), and is disabled while the Pad is not connected
+  (#165); Clear writes the key with every field absent, on the undo stack
+  like any write.
 - **Fall-through.** A key the pinned app profile does not define and the
   global profile does (its context page, §6.1) shows the global key's
   kind, file and line with "from global", and "Override here", which
@@ -2389,6 +2396,12 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha design pass (2026-10-27)**: the Pad without a pad
+  (#165). §10 without a geometry the drawing is the device with nine empty
+  wells and the caption "No pad" instead of an empty column (critique
+  re-run, priority issue 4); the mirror keeps its last frame when the
+  daemon closes the connection, as no tiles are fetched while it is
+  away; Press is disabled while the Pad is not connected.
 - **v0.3, pre-alpha design pass (2026-10-27)**: the pin state (#164).
   §10 the header's profile dropdown names its state (pinned or following
   the pad) and is capped at `24ch`; the pin glyph beside it is pressed
