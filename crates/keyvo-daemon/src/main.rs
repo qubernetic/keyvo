@@ -48,8 +48,11 @@ async fn main() -> anyhow::Result<()> {
         std::env::var_os("KEYVO_SOCKET").as_deref(),
         &runtime_dir,
     );
-    let watcher = keyvo_daemon::kwin::KWinWatcher::session(&runtime_dir);
-    keyvo_daemon::linux::serve(&config_dir, cli.device, &socket, watcher, shutdown()).await?;
+    let sources = keyvo_daemon::daemon::Sources {
+        window: keyvo_daemon::kwin::KWinWatcher::session(&runtime_dir),
+        session: keyvo_daemon::logind::LogindSessionWatcher::system(),
+    };
+    keyvo_daemon::linux::serve(&config_dir, cli.device, &socket, sources, shutdown()).await?;
     Ok(())
 }
 

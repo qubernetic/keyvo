@@ -14,6 +14,7 @@ use std::time::Duration;
 use keyvo_core::focus::FakeWindowWatcher;
 use keyvo_core::inject::FakeInputInjector;
 use keyvo_core::profile::KeySlot;
+use keyvo_core::session::{FakeSessionWatcher, Session};
 use keyvo_core::socket::{DeviceStatus, Edge, Event, Reply, Response, ServerMessage};
 use keyvo_daemon::daemon;
 use keyvo_daemon::socket::{Limits, Server};
@@ -79,6 +80,8 @@ struct Running {
     socket: PathBuf,
     pad: Pad,
     injector: FakeInputInjector,
+    /// Locks and unlocks the daemon's session.
+    session: FakeSessionWatcher,
     stop: oneshot::Sender<()>,
     daemon: JoinHandle<std::io::Result<()>>,
     server: JoinHandle<()>,
@@ -112,6 +115,8 @@ impl Running {
         let pad = Pad::new(&startup());
         let pads = Pads::new([pad.clone()]);
         let daemon_injector = injector.clone();
+        let session = FakeSessionWatcher::new();
+        let daemon_session = session.clone();
         let paths = daemon::Paths {
             config_dir: config_dir.clone(),
             socket: socket.clone(),
@@ -121,7 +126,10 @@ impl Running {
                 &paths,
                 pads,
                 daemon_injector,
-                FakeWindowWatcher::new(),
+                daemon::Sources {
+                    window: FakeWindowWatcher::new(),
+                    session: daemon_session,
+                },
                 events,
                 inbox,
                 async {
@@ -143,6 +151,7 @@ impl Running {
             socket,
             pad,
             injector,
+            session,
             stop,
             daemon,
             server,
@@ -638,6 +647,42 @@ async fn a_daemon_that_is_gone_answers_unavailable() {
     let error = response.result.unwrap_err();
     assert_eq!(error.message, "the daemon is shutting down");
     server.abort();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_subscriber_hears_the_lock_and_a_press_under_it_is_blocked() {
+    let running = Running::start().await;
+    let mut subscriber = running.client().await;
+    let response = subscriber
+        .ask(r#"{"v":1,"cmd":"subscribe","events":["session"]}"#)
+        .await;
+    assert_eq!(response["result"]["view"]["locked"], false);
+
+    assert!(running.session.report(Session::Locked));
+    assert_eq!(
+        serde_json::from_str::<Value>(&subscriber.recv().await).unwrap(),
+        serde_json::json!({"v": 1, "event": "session", "locked": true})
+    );
+    let mut client = running.client().await;
+    let status = client.ask(r#"{"v":1,"cmd":"status"}"#).await;
+    assert_eq!(status["result"]["view"]["locked"], true);
+    for dry_run in [false, true] {
+        let pressed = client
+            .ask(&format!(
+                r#"{{"v":1,"cmd":"press","key":6,"dry_run":{dry_run}}}"#
+            ))
+            .await;
+        assert_eq!(
+            pressed["result"]["entry"]["result"],
+            serde_json::json!({"status": "blocked", "reason": "session locked"})
+        );
+    }
+    // Global key 6 would have created the marker.
+    assert!(!running.marker.exists());
+
+    assert!(running.session.report(Session::Unlocked));
+    assert_eq!(subscriber.event().await, Event::Session { locked: false });
+    running.stop().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

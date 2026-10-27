@@ -11,11 +11,12 @@ use keyvo_core::chord::{KeyCode, KeyEvent};
 use keyvo_core::focus::WindowWatcher;
 use keyvo_core::hid::TransportError;
 use keyvo_core::inject::{InjectError, InputInjector};
+use keyvo_core::session::SessionWatcher;
 use keyvo_hid::hidraw::HidrawTransport;
 use keyvo_hid::sysfs;
 use tokio::sync::{broadcast, mpsc};
 
-use crate::daemon::{self, Event};
+use crate::daemon::{self, Event, Sources};
 use crate::device::Connector;
 use crate::socket::{Limits, Server};
 
@@ -25,9 +26,10 @@ const UINPUT_NAME: &str = "keyvo";
 const EVENT_BACKLOG: usize = 256;
 
 /// Runs the daemon on this machine until `shutdown`: the Keypad at
-/// `device` or found under sysfs, chords on uinput, the focused window from
-/// `watcher` (the binary passes [`crate::kwin::KWinWatcher`]), the
-/// configuration in `config_dir`, the control socket at `socket`. Every
+/// `device` or found under sysfs, chords on uinput, the focused window and
+/// the session lock from `sources` (the binary passes
+/// [`crate::kwin::KWinWatcher`] and [`crate::logind::LogindSessionWatcher`]),
+/// the configuration in `config_dir`, the control socket at `socket`. Every
 /// trace record is logged.
 ///
 /// # Errors
@@ -38,7 +40,7 @@ pub async fn serve(
     config_dir: &Path,
     device: Option<PathBuf>,
     socket: &Path,
-    watcher: impl WindowWatcher,
+    sources: Sources<impl WindowWatcher, impl SessionWatcher>,
     shutdown: impl Future<Output = ()>,
 ) -> io::Result<()> {
     let server = Server::bind(socket)?;
@@ -65,7 +67,7 @@ pub async fn serve(
         &paths,
         HidrawConnector::new(device),
         Injector::open(),
-        watcher,
+        sources,
         events,
         inbox,
         shutdown,
@@ -187,6 +189,7 @@ impl InputInjector for Injector {
 mod tests {
     use keyvo_core::chord::Chord;
     use keyvo_core::focus::{FakeWindowWatcher, WindowContext};
+    use keyvo_core::session::FakeSessionWatcher;
 
     use super::*;
 
@@ -255,7 +258,10 @@ mod tests {
                 dir.path(),
                 Some(absent),
                 &socket,
-                watcher.clone(),
+                Sources {
+                    window: watcher.clone(),
+                    session: FakeSessionWatcher::new(),
+                },
                 tokio::time::sleep(std::time::Duration::from_millis(200)),
             )
         );
@@ -275,7 +281,10 @@ mod tests {
             dir.path(),
             None,
             &socket,
-            FakeWindowWatcher::new(),
+            Sources {
+                window: FakeWindowWatcher::new(),
+                session: FakeSessionWatcher::failing("no logind"),
+            },
             std::future::ready(()),
         )
         .await
