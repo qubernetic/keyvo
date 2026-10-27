@@ -369,8 +369,9 @@ is for `keyvo ctl`, T3 for the app.
     - The heading row shows `Konsole` and `Open in editor`, the file
       `~/.config/keyvo/profiles/konsole.toml` under it, once. The form
       shows the name, the accent `#3fae5a` beside its swatch, priority
-      `0` with `higher wins the window`, and Enabled as a greyed switch
-      reading `On`. Change the name to `Terminal` and press Enter.
+      `0` with `higher wins the window`, and Enabled reading `On` with
+      the sentence that switching a profile off arrives with M4a-4,
+      each label above its field. Change the name to `Terminal` and press Enter.
       Expected: the heading and the list show `Terminal` at once, and
 
       ```bash
@@ -765,6 +766,14 @@ The mock dev server of #113 in a host browser. Run by the owner in #130.
 - [ ] #144 `just app-dev`, open `?theme=breeze-light`, then `?theme=adwaita-light`: on the Profiles screen the file path, and on the Pad the hints and the empty-state sentences, read as muted but dark enough; disabled controls stay legible. Tab through the header: the focus ring is a clearly visible blue on both surfaces in `breeze-light`.
 - [ ] #144 Run the browser detector of `docs/design/critique-2026-10.md` on both light themes: it reports no `low-contrast` on body text.
 - [ ] #144 `?theme=breeze-dark` and `?theme=adwaita-dark` look as before (their measured values are kept).
+
+### The profiles screen after the design pass (#139)
+
+The mock dev server of #113 in a host browser. Run by the owner in #130.
+
+- [ ] #139 `just app-dev`, Profiles, at 1363x798 and at 960 px, in a light and a dark theme: every label of the header form (Name, Accent, Priority, Enabled) sits above its field, muted and smaller, as in the Pad's Inspector; the accent swatch and its `#rrggbb` text share one row under the label.
+- [ ] #139 Same sizes: `Open in editor` sits at the end of the heading row and `+ rule` at the end of the `Match rules` row, both where the form ends (`48ch`), not at the column's edge; the rule list and the thumbnails keep their widths.
+- [ ] #139 Enabled reads as a value: `On` with the sentence that switching a profile off arrives with M4a-4, like Priority's `0  higher wins the window`; nothing there looks or acts like a switch.
 
 ### First-light records (#75)
 
