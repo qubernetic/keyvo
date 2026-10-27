@@ -15,6 +15,7 @@ import {
   toForm,
   viewOf,
   type Change,
+  type KeyFields,
   type Form,
 } from "./editor";
 import { editorSteps } from "./fixtures";
@@ -34,6 +35,24 @@ describe("the form", () => {
       toForm({ icon: "lucide:hammer", label: "Build", color: "#aa3300", action: { type: "exec", cmd: "make" } }),
     ).toEqual({ label: "Build", color: "#aa3300", icon: "lucide:hammer", actionType: "exec", action: "make" });
     expect(toForm({})).toEqual(BLANK);
+  });
+
+  it("writes a launch like an exec, from the same command field", () => {
+    const launch: KeyFields = { label: "Calc", action: { type: "launch", cmd: "flatpak run org.kde.kcalc" } };
+    expect(toForm(launch)).toEqual({
+      ...BLANK,
+      label: "Calc",
+      actionType: "launch",
+      action: "flatpak run org.kde.kcalc",
+    });
+    expect(fromForm(toForm(launch))).toEqual({ fields: launch });
+    expect(fromForm({ ...BLANK, actionType: "launch", action: " " })).toEqual({
+      invalid: "Enter the command to write it.",
+      field: "action",
+    });
+    expect(sameFields(launch, { label: "Calc", action: { type: "exec", cmd: "flatpak run org.kde.kcalc" } })).toBe(
+      false,
+    );
   });
 
   it("leaves empty inputs out and trims icon, color and action", () => {

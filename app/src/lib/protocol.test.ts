@@ -116,6 +116,10 @@ describe("server messages", () => {
       name: "Region",
       action: { type: "exec", cmd: "spectacle --region" },
     });
+    expect(bundled?.recipes.find((recipe) => recipe.id === "calculator")?.variants[1]?.action).toEqual({
+      type: "launch",
+      cmd: "flatpak run org.kde.kcalc",
+    });
     expect(bundled?.problems).toBeUndefined();
     expect(user?.problems).toHaveLength(1);
   });

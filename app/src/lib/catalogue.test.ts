@@ -42,7 +42,7 @@ describe("the entries", () => {
     expect(GROUPS.map((group) => t(group.label))).toEqual(["General", "System", "Apps"]);
     const names = (group: string) =>
       CATALOGUE.filter((candidate) => candidate.group === group).map((candidate) => candidate.name);
-    expect(names("general")).toEqual(["New email", "Open folder", "Open website", "Chord", "Exec"]);
+    expect(names("general")).toEqual(["New email", "Open folder", "Open website", "Chord", "Exec", "Launch"]);
     expect(names("system")).toEqual([
       "Brightness down",
       "Brightness up",
@@ -60,7 +60,9 @@ describe("the entries", () => {
     expect(TOOLS.map((tool) => [tool.key, tool.name])).toEqual([
       ["tool:chord", "Chord"],
       ["tool:exec", "Exec"],
+      ["tool:launch", "Launch"],
     ]);
+    expect(TOOLS.map((tool) => tool.icon)).toEqual(["square", "terminal", "app-window"]);
   });
 
   it("carry the recipe and draw it with its tile icon", () => {
@@ -103,8 +105,9 @@ describe("applied", () => {
     action: { type: "chord", keys: "ctrl+b" },
   });
 
-  it("sets the action type of Chord and Exec with an empty field and keeps the rest", () => {
+  it("sets the action type of Chord, Exec and Launch with an empty field and keeps the rest", () => {
     expect(applied(entry("exec"), form)).toEqual({ ...form, actionType: "exec", action: "" });
+    expect(applied(entry("launch"), form)).toEqual({ ...form, actionType: "launch", action: "" });
     expect(applied(entry("chord"), toForm({}))).toEqual({ ...toForm({}), actionType: "chord", action: "" });
   });
 
@@ -115,6 +118,16 @@ describe("applied", () => {
       color: "#ff0000",
       actionType: "exec",
       action: "spectacle --fullscreen",
+    });
+  });
+
+  it("writes the Calculator recipe as a launch", () => {
+    expect(applied(entry("calculator"), form)).toEqual({
+      label: "Calc",
+      icon: "lucide:calculator",
+      color: "#ff0000",
+      actionType: "launch",
+      action: "kcalc",
     });
   });
 
@@ -138,6 +151,8 @@ describe("the drag data", () => {
   it("carries an entry's key, which a drop reads back", () => {
     expect(dragData(entry("exec"))).toBe("tool:exec");
     expect(dropped("tool:exec")).toBe("tool:exec");
+    expect(dragData(entry("launch"))).toBe("tool:launch");
+    expect(dropped("tool:launch")).toBe("tool:launch");
     expect(dragData(entry("spectacle"))).toBe("recipe:spectacle");
     expect(dropped("recipe:spectacle")).toBe("recipe:spectacle");
   });
@@ -169,6 +184,15 @@ describe("recipeOf", () => {
     expect(recipeOf(RECIPES, { icon: "lucide:camera", label: "Snap", action })?.recipe.id).toBe(
       "screenshot",
     );
+  });
+
+  it("tells a launch from an exec of the same command", () => {
+    const launch = { type: "launch" as const, cmd: "flatpak run org.kde.kcalc" };
+    expect(recipeOf(RECIPES, { icon: "lucide:calculator", action: launch })).toEqual({
+      recipe: recipe("calculator"),
+      variant: "flatpak",
+    });
+    expect(recipeOf(RECIPES, { icon: "lucide:calculator", action: { ...launch, type: "exec" } })).toBeUndefined();
   });
 
   it("names none for another icon, another action or no action", () => {

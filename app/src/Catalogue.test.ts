@@ -62,7 +62,7 @@ describe("the groups", () => {
     for (const name of ["General", "System", "Apps"]) {
       expect(group(name)).toHaveAttribute("aria-expanded", "true");
     }
-    expect(entries("General")).toEqual(["New email", "Open folder", "Open website", "Chord", "Exec"]);
+    expect(entries("General")).toEqual(["New email", "Open folder", "Open website", "Chord", "Exec", "Launch"]);
     expect(entries("System")).toEqual([
       "Brightness down",
       "Brightness up",
@@ -87,7 +87,7 @@ describe("the groups", () => {
 
   it("hold only the raw tools without recipes", () => {
     render(Catalogue, { props: { entries: catalogueOf([]), onassign: vi.fn() } });
-    expect(entries("General")).toEqual(["Chord", "Exec"]);
+    expect(entries("General")).toEqual(["Chord", "Exec", "Launch"]);
     expect(screen.queryByRole("button", { name: "Apps" })).toBeNull();
   });
 });
@@ -97,6 +97,7 @@ describe("the entries", () => {
     catalogue({ selected: 7 });
     for (const [name, key] of [
       ["Exec", "tool:exec"],
+      ["Launch", "tool:launch"],
       ["Spectacle", "recipe:spectacle"],
     ] as const) {
       const button = screen.getByRole("button", { name });

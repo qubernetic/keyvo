@@ -101,7 +101,7 @@ export function describe(problem: Problem): string {
   return `${place}: ${problem.message}`;
 }
 
-export type ActionType = "none" | "chord" | "exec";
+export type ActionType = "none" | "chord" | "exec" | "launch";
 
 /** The editor's form: every field as the text in its input. */
 export interface Form {
@@ -158,8 +158,9 @@ export function fromForm(
       fields.action = { type: "chord", keys: action };
       break;
     case "exec":
+    case "launch":
       if (action === "") return { invalid: t("editor.noCommand"), field: "action" };
-      fields.action = { type: "exec", cmd: action };
+      fields.action = { type: form.actionType, cmd: action };
       break;
   }
   return { fields };

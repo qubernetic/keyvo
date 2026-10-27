@@ -162,6 +162,24 @@ describe("Inspector, the key editor's cases", () => {
     await waitFor(() => expect(editor.file).toBe(editorFile(nth(STEPS.steps, 1).file)));
   });
 
+  it("offers Launch next to Chord and Exec and writes it from the command field", async () => {
+    const editor = await mounted(accepting());
+    const kinds = within(action())
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+    expect(kinds).toEqual(["No action", "Chord", "Exec", "Launch"]);
+    await fireEvent.change(action(), { target: { value: "launch" } });
+    expect(field("Command")).toHaveValue("");
+    expect(editor.editor.editKey).not.toHaveBeenCalled();
+    await type(field("Command"), "flatpak run org.kde.kcalc");
+    await waitFor(() =>
+      expect(editor.editor.editKey).toHaveBeenLastCalledWith(TARGET, {
+        ...STEPS.fields,
+        action: { type: "launch", cmd: "flatpak run org.kde.kcalc" },
+      }),
+    );
+  });
+
   it("undoes and redoes the session's writes with Ctrl+Z and Ctrl+Shift+Z", async () => {
     const editor = await mounted();
     await edit();
@@ -511,6 +529,7 @@ describe("the actions catalogue", () => {
     const exec = screen.getByRole("option", { name: "Exec" }) as HTMLOptionElement;
     expect(exec).toHaveValue("exec");
     expect(exec).toBeEnabled();
+    expect(screen.getByRole("option", { name: "Launch" })).toHaveValue("launch");
     expect(screen.getByRole("option", { name: "Spectacle" })).toBeEnabled();
     await fireEvent.change(action(), { target: { value: "exec" } });
     expect(field("Command")).toHaveValue("");

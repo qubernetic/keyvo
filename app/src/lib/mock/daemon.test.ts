@@ -107,6 +107,12 @@ describe("the mock daemon", () => {
     const daemon = mockDaemon(store);
     const third = await daemon.tiles("global", 3, 9, TILE);
     expect(third[0]).toEqual({ image: SNAPSHOTS.label, label: "Third", layer: "global" });
+    expect(third[1]).toEqual({
+      image: SNAPSHOTS.iconLabel,
+      label: "Launch",
+      action: { type: "launch", cmd: "sleep 60" },
+      layer: "global",
+    });
     expect(third[2]).toEqual({ image: SNAPSHOTS.background });
     const page = store.page("global", 3);
     page.keys.set(3, { icon: "lucide:x" });
