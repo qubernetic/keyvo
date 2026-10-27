@@ -1882,8 +1882,11 @@ key editor of the app; the key grid exists once, on the Pad.
   Label, Icon and Color. Icon is a combobox (`app/src/IconPicker.svelte`)
   over the icons keyvo-core bundles for the renderer
   (`crates/keyvo-core/assets/lucide/`, read at build time by
-  `app/src/lib/tileIcons.ts`, the whole lucide set): typing filters, the
-  arrows move, Enter or a click picks, `Esc` closes, each row with its glyph and name; the pick is
+  `app/src/lib/tileIcons.ts`, the whole lucide set): typing filters on a
+  substring of the name, the list shows the first 60 matches and a line
+  counts the rest ("60 of 95, keep typing"; an empty search shows the
+  first 60 names), the arrows move over the shown rows, Enter or a click
+  picks, `Esc` closes, each row with its glyph and name; the pick is
   written as `lucide:<name>`, the value as written shows under the field, an emptied
   field removes the icon, and a value the picker does not bundle stays as
   written. Color is a colour swatch and its `#rrggbb` text, kept in step.
@@ -2174,7 +2177,8 @@ Status of the v0.1 questions after the grill and the research.
 
 - **v0.3, pre-alpha design pass (2026-10-27)**: §9 the whole lucide 1.61.0
   set is bundled, generated with its metadata aliases by
-  `tools/lucide/generate.py` (#142).
+  `tools/lucide/generate.py`; §10 the Icon picker shows the first 60
+  matches and counts the rest (#142).
 - **v0.3, pre-alpha design pass (2026-10-27)**: §10 Pad: while the pad
   shows another page than the pinned one, the mirror draws no selection
   outline, the "pad moved" line names the pinned profile and key before

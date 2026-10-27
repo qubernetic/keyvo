@@ -785,6 +785,15 @@ The mock dev server of #113 in a host browser. Run by the owner in #130.
 - [ ] #143 Click any tile while that line shows: the line goes, the inspector edits that key on the profile the pad shows, and the tile has the accent outline again.
 - [ ] #143 Profiles, pick a profile the pad does not show, `Edit keys on the Pad`: the line reads `Editing <name>, page 1; the pad shows <profile>, page 1.` (`key <n>` instead of `page 1` when a key was selected before); click a tile: the inspector edits that key number on the chosen profile, the line names it, and the drawing draws no outline.
 
+### The whole lucide set (#142)
+
+The mock dev server of #113 in a host browser, then the daemon with the Keypad. Run by the owner in #130.
+
+- [ ] #142 `just app-dev`, click a key, type `hou` in Icon: about a dozen rows with their glyphs, `house` among them; pick it: the tile shows the house.
+- [ ] #142 Type `arrow` in Icon: 60 rows and under them `60 of 95, keep typing`; the arrows move over the 60 rows and wrap. Empty the field and press the down arrow: the first 60 names and `60 of <about 1900>, keep typing`. (`plus` matches 51 names, so it shows no count line.)
+- [ ] #142 The Actions column still opens within a second.
+- [ ] #142 With the daemon and the Keypad: set a key to `icon = "lucide:house"` in its profile by hand, save: the pad shows the house; `lucide:home` draws the same tile.
+
 ### First-light records (#75)
 
 - [ ] #75 Read `docs/hardware-notes.md`, "Measurements", against the first-light report on #40 and its logs: every number and log citation matches.

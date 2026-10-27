@@ -20,15 +20,36 @@ function options(): string[] {
 }
 
 describe("IconPicker", () => {
-  it("lists every tile icon, each with its glyph and name", async () => {
+  it("lists the first 60 tile icons on an empty search, each with its glyph and name", async () => {
     const { input } = picker();
     expect(input).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
     await fireEvent.keyDown(input, { key: "ArrowDown" });
     expect(input).toHaveAttribute("aria-expanded", "true");
-    expect(options()).toEqual(TILE_ICONS);
-    const terminal = screen.getByRole("option", { name: "terminal" });
-    expect(terminal.querySelector("svg")).not.toBeNull();
+    expect(options()).toEqual(TILE_ICONS.slice(0, 60));
+    expect(screen.getByRole("option", { name: TILE_ICONS[0] }).querySelector("svg")).not.toBeNull();
+    expect(screen.getByText(`60 of ${TILE_ICONS.length}, keep typing`)).toBeInTheDocument();
+  });
+
+  it("shows at most 60 matches and names how many more match", async () => {
+    const { input } = picker();
+    const arrows = TILE_ICONS.filter((name) => name.includes("arrow"));
+    expect(arrows.length).toBeGreaterThan(60);
+    await fireEvent.input(input, { target: { value: "arrow" } });
+    expect(options()).toEqual(arrows.slice(0, 60));
+    expect(screen.getByText(`60 of ${arrows.length}, keep typing`)).toBeInTheDocument();
+    await fireEvent.input(input, { target: { value: "volume-" } });
+    expect(screen.queryByText(/keep typing/)).not.toBeInTheDocument();
+  });
+
+  it("moves over the shown rows only", async () => {
+    const { input } = picker();
+    const arrows = TILE_ICONS.filter((name) => name.includes("arrow"));
+    await fireEvent.input(input, { target: { value: "arrow" } });
+    await fireEvent.keyDown(input, { key: "ArrowUp" });
+    expect(screen.getByRole("option", { name: arrows[59] })).toHaveAttribute("aria-selected", "true");
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: arrows[0] })).toHaveAttribute("aria-selected", "true");
   });
 
   it("filters on typing, case-insensitive", async () => {

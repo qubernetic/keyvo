@@ -250,6 +250,7 @@ export const messages = {
 
   "picker.search": "Search the icons",
   "picker.noMatch": "No icon matches",
+  "picker.more": "{shown} of {total}, keep typing",
 
   "editor.colorExample": "#rrggbb",
   "editor.chordExample": "ctrl+shift+g",
