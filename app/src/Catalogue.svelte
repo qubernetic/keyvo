@@ -1,7 +1,8 @@
 <script lang="ts">
   // The actions catalogue column of the Pad (pad screen brief §5.2, §6,
   // decisions Q3 and Q8): the search field (`/` focuses it), then the
-  // groups General, System and Apps, each collapsible on its heading. An
+  // groups General, System and Apps, each collapsible on its heading, only
+  // General expanded when the column opens. An
   // entry, a preset of the daemon's recipe packs or a raw tool (Chord,
   // Exec), is dragged onto a tile of the mirror or clicked to assign it to
   // the selected tile. The search covers group, name and variant names.
@@ -39,7 +40,9 @@
   const uid = $props.id();
   let text = $state("");
   let field: HTMLInputElement | undefined = $state();
-  let collapsed: GroupId[] = $state([]);
+  // General opens expanded, System and Apps collapsed, so the column fits a
+  // 640 px window; the search still shows every match (#166).
+  let collapsed: GroupId[] = $state(["system", "apps"]);
 
   const found = $derived(search(entries, text));
   const searching = $derived(text.trim() !== "");

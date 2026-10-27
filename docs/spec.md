@@ -1884,7 +1884,11 @@ and the columns of `docs/design/gui-ux.md` §2:
 - **Columns.** Each screen lays out its own columns by the window width
   (`app/src/lib/shell.ts` `layout`): the Pad's catalogue column from
   1200 px, the Profiles list column beside the editor from 1000 px and
-  above it below. Every scrolling column reserves its scroll bar gutter
+  above it below. Each screen owns its height: `main` never scrolls, the
+  columns do, each on its own (the Pad's drawing, inspector and
+  catalogue; the Profiles list and editor, or the stacked Profiles screen
+  as one), so a window shows one scroll bar per column and none beside
+  them (#166). Every scrolling column reserves its scroll bar gutter
   (`scrollbar-gutter: stable`) and takes the theme's thin scroll bar, so
   no control sits under it. The Pad stays mounted while another screen
   shows, so the header follows the daemon; its `Ctrl+Z` then does
@@ -1996,7 +2000,8 @@ then subscribes with a replay of the newest 20 trace entries;
   Spectacle), case-insensitive, and says "No action matches" when none is
   left; then the groups General, System and Apps, each collapsible on its
   heading (`aria-expanded`; a search shows the matches of a collapsed
-  group). The presets are the recipe packs of the daemon's `recipes`
+  group). The column opens with General expanded and System and Apps
+  collapsed, so it fits a 640 px window (#166). The presets are the recipe packs of the daemon's `recipes`
   reply (§7.5, §8; the shell's `recipes` command, `daemon.recipes()`), in
   the reply's order, read when the Pad connects and again after every
   reload; the raw tools Chord, Exec and Launch (`lucide:app-window`)
@@ -2195,7 +2200,8 @@ write of the screen.
   device drawing (`app/src/Device.svelte`), captioned by the page's
   `name`, else `Page <n>`; without a reported geometry the thumbnails
   are the names and a note says the pictures wait for a Keypad. A click
-  selects a page, and "Edit keys on the Pad" opens the Pad pinned to the
+  selects a page, and "Edit keys on the Pad", at the `48ch` end of the
+  Pages heading row (#166), opens the Pad pinned to the
   profile and the selected page (`lib/pin.ts`). A newly selected profile
   starts on page 1; a profile with no pages says so.
 
@@ -2396,6 +2402,12 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha design pass (2026-10-27)**: one scroll owner per
+  screen (#166). §10 `main` no longer scrolls; the Pad's drawing,
+  inspector and catalogue and the Profiles list and editor each scroll on
+  their own (critique re-run, priority issue 5); the catalogue opens with
+  only General expanded; "Edit keys on the Pad" sits in the Pages
+  heading row.
 - **v0.3, pre-alpha design pass (2026-10-27)**: the Pad without a pad
   (#165). §10 without a geometry the drawing is the device with nine empty
   wells and the caption "No pad" instead of an empty column (critique

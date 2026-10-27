@@ -793,7 +793,8 @@ describe("the actions catalogue", () => {
   it("lists the presets of the daemon's recipes reply", async () => {
     const { daemon } = await mounted({ columns: layout(1200) });
     expect(daemon.daemon.recipes).toHaveBeenCalledTimes(1);
-    const apps = await screen.findByRole("list", { name: "Apps" });
+    await fireEvent.click(await screen.findByRole("button", { name: "Apps" }));
+    const apps = screen.getByRole("list", { name: "Apps" });
     expect(within(apps).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual([
       "Calculator",
       "Konsole",
@@ -832,6 +833,7 @@ describe("the actions catalogue", () => {
 
   it("Spectacle dropped on key 7 writes its default and offers What it does", async () => {
     const { keys } = await mounted({ columns: layout(1200) });
+    await fireEvent.click(await screen.findByRole("button", { name: "Apps" }));
     await screen.findByRole("button", { name: "Spectacle" });
     await fireEvent.drop(cell(7), { dataTransfer: transfer("recipe:spectacle") });
     const at = { profile: "terminal", page: 1, key: 7 };
@@ -857,7 +859,8 @@ describe("the actions catalogue", () => {
     const { keys } = await mounted({ columns: layout(1200) });
     await fireEvent.click(key(8));
     await waitFor(() => expect(action()).toHaveValue("none"));
-    await fireEvent.click(await screen.findByRole("button", { name: "Volume up" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "System" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Volume up" }));
     await waitFor(() =>
       expect(keys.editKey).toHaveBeenCalledWith(
         { profile: "terminal", page: 1, key: 8 },
@@ -904,7 +907,8 @@ describe("the actions catalogue", () => {
     await waitFor(() => expect(action()).toHaveValue("none"));
     await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
     await screen.findByText(/the pad shows global, page 2/);
-    await fireEvent.click(await screen.findByRole("button", { name: "Volume up" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "System" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Volume up" }));
     await waitFor(() =>
       expect(keys.editKey).toHaveBeenCalledWith(
         { profile: "terminal", page: 1, key: 8 },
@@ -951,5 +955,38 @@ describe("the style", () => {
     // jsdom applies no component styles: the rules themselves.
     expect(css).not.toMatch(/border-left(-width)?:\s*4px/);
     expect(css).not.toMatch(/(^|[\s;{])color:\s*var\(--kv-accent\)/);
+  });
+});
+
+describe("the columns", () => {
+  /** The body of one rule of the Pad's style; jsdom applies none. */
+  function rule(selector: string): string {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "Pad.svelte"), "utf8");
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`\\n  ${escaped} \\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+  }
+
+  it("each scroll on their own, the drawing, the inspector and the catalogue (#166)", async () => {
+    await mounted({ columns: layout(1200) });
+    const scrolling = [
+      screen.getByRole("grid"),
+      screen.getByRole("heading", { name: "Inspector" }),
+      screen.getByRole("region", { name: "Actions" }),
+    ].map((element) => element.closest(".scroll"));
+    expect(scrolling).not.toContain(null);
+    expect(new Set(scrolling).size).toBe(3);
+    // DESIGN.md "Columns": a reserved gutter and the theme's thin bar.
+    expect(rule(".scroll")).toMatch(/min-height: 0;/);
+    expect(rule(".scroll")).toMatch(/overflow: auto;/);
+    expect(rule(".scroll")).toMatch(/scrollbar-gutter: stable;/);
+    expect(rule(".scroll")).toMatch(/scrollbar-width: thin;/);
+  });
+
+  it("fill the screen's height under the notices instead of growing it (#166)", () => {
+    expect(rule(".pad")).toMatch(/height: 100%;/);
+    expect(rule(".workspace")).toMatch(/flex: 1 1 0;/);
+    expect(rule(".workspace")).toMatch(/min-height: 0;/);
+    expect(rule(".workspace")).toMatch(/align-items: stretch;/);
+    expect(rule(".workspace")).not.toMatch(/flex-wrap: wrap/);
   });
 });

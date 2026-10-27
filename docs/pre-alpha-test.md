@@ -759,7 +759,7 @@ No Keypad needed for the first three; the mock dev server of #113 in a host brow
 
 The mock dev server of #113 in a host browser for the first three, then the app. Run by the owner in #130.
 
-- [ ] #135 `just app-dev` in a window at least 1200 px wide: the Actions column at the right lists General, System and Apps; a heading collapses and expands its group. Type `ko` into Search actions: only Konsole is left; `zzz` says `No action matches`. Press `/` with the focus outside a field: the search takes it. Focus Spectacle: `Coming soon` with the #119 sentence, and a click does nothing.
+- [ ] #135 `just app-dev` in a window at least 1200 px wide: the Actions column at the right lists General (expanded), System and Apps (collapsed); a heading collapses and expands its group. Type `ko` into Search actions: only Konsole is left; `zzz` says `No action matches`. Press `/` with the focus outside a field: the search takes it. Focus Spectacle: `Coming soon` with the #119 sentence, and a click does nothing.
 - [ ] #135 Drag Exec onto key 7: key 7 gets the outline, the inspector reads `Key 7` with Exec in the Action select and an empty Command, and nothing is written yet; type a command and leave the field: the result line says it was written. Select key 2 and click Chord in the column: the same with an empty Chord field.
 - [ ] #135 Narrow the window below 1200 px: the column goes, and the Action select lists the three groups with the presets as `(coming soon)` options. Once the mock has sent a few trace entries, the trace strip under the inspector shows the three newest with their 24 h times, the chevron expands it to every entry and back, and an entry opens the drawer on itself.
 - [ ] #135 With the daemon and the Keypad, at 1363x798 and at 960 px: drag Exec onto key 7 and set the command: the file round-trips (only key 7's lines change) and the pad repaints.
@@ -768,7 +768,7 @@ The mock dev server of #113 in a host browser for the first three, then the app.
 
 The mock dev server of #113 in a host browser for the first two, then the app with the daemon and the Keypad. Run by the owner in #130.
 
-- [ ] #136 `just app-dev` in a window at least 1200 px wide: the Actions column lists the packs of `contrib/recipes/` (System: Brightness down to Volume up; Apps: Calculator, Konsole, Screenshot, Spectacle, VS Code) with Chord and Exec at the end of General. Type `region` into Search actions: only Spectacle is left.
+- [ ] #136 `just app-dev` in a window at least 1200 px wide: the Actions column lists the packs of `contrib/recipes/` (expand System and Apps on their headings; System: Brightness down to Volume up; Apps: Calculator, Konsole, Screenshot, Spectacle, VS Code) with Chord and Exec at the end of General. Type `region` into Search actions: only Spectacle is left.
 - [ ] #136 Drag Spectacle onto key 7: the result line says it was written, the tile shows the camera and `Capture`, and the inspector shows `What it does` set to `Full screen` above the Action; choose `Region`: the Command reads `spectacle --region`. Undo takes it back to `Full screen`. Narrow the window below 1200 px: the Action select lists the presets, and choosing `Volume up` there writes it into the selected key.
 - [ ] #136 With the daemon and the Keypad (#119's user tests): Spectacle with `Region` on key 7, then press key 7 on the pad: Spectacle opens the region capture. Drag Volume up onto key 8 and press it: the volume rises and Plasma's volume OSD shows. The profile file round-trips (only the lines of keys 7 and 8 change).
 
@@ -928,6 +928,16 @@ owner's two findings on #165).
 - [ ] #165 With the daemon and the Keypad: the mirror shows the live tiles. Select a key: Press is enabled. Stop the daemon (Ctrl+C in its terminal): the Error notice appears, the mirror keeps the last tiles (not the key numbers), there is no `Tiles not rendered` note, and Press is disabled. Start the daemon and Retry: the tiles follow the pad again and Press is enabled.
 - [ ] #165 Start the app with no daemon running: the empty wells and `No pad`; start the daemon and Retry: the mirror appears with the tiles.
 - [ ] #165 The daemon running without the Keypad plugged in (no geometry reported yet): the empty wells and `No pad` under the missing-Keypad note; plug the Keypad in: the mirror appears.
+
+### One scroll owner per screen (#166)
+
+The mock dev server of #113 in a host browser at the window sizes named,
+then the app on the GNOME runtime with the Keypad and the daemon.
+
+- [ ] #166 `just app-dev` at 960x640: Profiles shows one scroll bar beside the list and one beside the editor (stacked below 1000 px: one for the whole screen), never a second bar beside them; the Pad shows at most one scroll bar per column (drawing, inspector), none at the window's right edge, and the header and the rail never scroll away.
+- [ ] #166 `just app-dev` at 1363x798: the Actions column opens with General expanded and System and Apps collapsed; the drawing stays in place when the catalogue column scrolls. Expand System and Apps: only the catalogue column scrolls. Type `vol` into Search actions: the System matches show although System was collapsed; clear the search: System is as it was.
+- [ ] #166 `just app-dev` at 1200x760, Profiles, the Terminal profile: `Edit keys on the Pad` sits at the right end of the Pages heading row, above the thumbnails, without scrolling the editor; a click opens the Pad pinned to the selected page.
+- [ ] #166 With the daemon and the Keypad on the GNOME runtime at 960x640: the same three checks against the real profiles.
 
 ### Polish, harden and the critique re-run (#130)
 

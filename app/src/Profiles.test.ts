@@ -324,6 +324,26 @@ describe("the list column", () => {
     expect(document.querySelector(".profiles-screen")).toHaveClass("stacked");
   });
 
+  it("scrolls the list and the editor each on their own, the stacked screen as one (#166)", async () => {
+    const wide = mount();
+    await listed();
+    const list = screen.getByRole("list", { name: "Profiles" }).closest(".scroll");
+    const editor = screen.getByRole("heading", { level: 2, name: "Terminal" }).closest(".scroll");
+    expect(list).not.toBeNull();
+    expect(editor).not.toBeNull();
+    expect(list).not.toBe(editor);
+    expect(document.querySelector(".profiles-screen")).not.toHaveClass("scroll");
+    wide.rendered.unmount();
+    mount({ width: 960 });
+    await listed();
+    expect(document.querySelectorAll(".scroll")).toHaveLength(1);
+    expect(document.querySelector(".profiles-screen")).toHaveClass("scroll");
+    // The screen takes main's height, so main itself never scrolls.
+    expect(rule(".profiles-screen")).toMatch(/height: 100%;/);
+    expect(rule(".scroll")).toMatch(/overflow: auto;/);
+    expect(rule(".scroll")).toMatch(/scrollbar-gutter: stable;/);
+  });
+
   it("offers the templates behind + as controls not built yet", async () => {
     mount();
     await listed();
@@ -579,6 +599,19 @@ describe("the pages", () => {
     );
     await fireEvent.click(screen.getByRole("button", { name: "Edit keys on the Pad" }));
     expect(props.onedit).toHaveBeenCalledWith({ profile: "terminal", page: 2 });
+  });
+
+  it("put Edit keys on the Pad in the Pages heading row, above the fold (#166)", async () => {
+    mount();
+    await waitFor(() => expect(within(thumbnails()).getAllByRole("button")).toHaveLength(3));
+    const edit = screen.getByRole("button", { name: "Edit keys on the Pad" });
+    const row = edit.parentElement as HTMLElement;
+    expect(row).toHaveClass("row");
+    expect(row.querySelector("h3")).toHaveTextContent("Pages");
+    // The row comes before the thumbnails, so the button sits at the 48ch
+    // end like Open in editor and + rule.
+    expect(row.compareDocumentPosition(thumbnails()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(rule(".head > button")).toMatch(/white-space: nowrap;/);
   });
 
   it("start a newly selected profile on its first page", async () => {

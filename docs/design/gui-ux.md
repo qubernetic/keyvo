@@ -182,7 +182,9 @@ holds, what is special in the right column.
 - **Actions catalogue** (right, from a 1200 px window; below it the
   entries collapse into the inspector's Action select): a search field
   (`/`, "Search actions", empty: "No action matches"), then the groups,
-  each collapsible on its heading. Drag an entry onto a tile to assign it,
+  each collapsible on its heading; the column opens with General
+  expanded and System and Apps collapsed, and the search shows every
+  match, collapsed or not (#166). Drag an entry onto a tile to assign it,
   click to assign it to the selected tile; a raw tool sets the action
   type with an empty field, written once the field is entered; a preset
   writes its default "What it does" with its label and icon at once
@@ -204,6 +206,11 @@ holds, what is special in the right column.
   20 entries the Pad keeps. Debug log switch in the drawer header (Debug
   mode adds HID-level events), disabled with its sentence until the
   daemon sends them.
+- **Scrolling** (#166): the screen owns its height and the shell's main
+  area never scrolls. The drawing, the inspector and the catalogue are
+  columns side by side under the notices, each scrolling on its own with
+  the reserved gutter of DESIGN.md "Columns", so the drawing never
+  scrolls away under a long catalogue.
 - Status facts (device, profile, page, mode, top overlay, context with the
   project name or "unknown project" with the reason, d7) live in the
   header and the drawing's caption, each once; they are no longer a strip
@@ -232,8 +239,8 @@ priority and match rules.*
   "Open in editor" in the heading row, the match rules as one list of kind
   and pattern rows (class, title regex) with inline validation (editing
   the rows arrives with M4a-4), the pages as small thumbnails rendered by
-  keyvo-core, and "Edit keys on the Pad", which opens the Pad pinned to
-  this profile and page.
+  keyvo-core, and "Edit keys on the Pad" at the end of the Pages heading
+  row, which opens the Pad pinned to this profile and page.
 - No key grid, no key editor, no right column: the key grid exists once,
   on the Pad. Every change writes through `toml_edit` immediately (§4.1).
 
@@ -248,13 +255,17 @@ column at `48ch`, each label above its field, muted at 0.85 em with a
 2 px gap, the fields 8 px apart, the accent swatch and its text in one
 row under the label. The heading row and the "Match rules" row are
 capped at the same `48ch`, so "Open in editor" and "+ rule" sit at the
-end of the content (#139). Each rule kind is
+end of the content (#139); the Pages heading row too, with "Edit keys on
+the Pad", the screen's one primary action, at its end, where a 760 px
+window shows it without scrolling (#166). Each rule kind is
 named once with its patterns under it. The thumbnails are the device
 drawing (`Device.svelte`) with the page's rendered tiles; the selected
 one is the page "Edit keys on the Pad" pins. An invalid field carries its
 own message under it. The list column sits beside the editor from
 1000 px and above it below; the list and the editor each scroll with a
-reserved gutter and the thin scroll bar. Spec §10 has the detail.
+reserved gutter and the thin scroll bar (stacked, the screen scrolls as
+one), and the shell's main area never adds a second bar beside them
+(#166). Spec §10 has the detail.
 
 ### 3.3 Behaviors
 

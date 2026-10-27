@@ -4,6 +4,9 @@
 // states are tested in Pad.test.ts and Inspector.test.ts, the Profiles
 // screen's in Profiles.test.ts.
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { tick } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -374,5 +377,25 @@ describe("App", () => {
       if (control.closest("[hidden]") !== null) continue;
       expect(control.getAttribute("aria-label"), control.outerHTML).toBeTruthy();
     }
+  });
+});
+
+describe("the scroll owner", () => {
+  /** The body of one rule of the shell's style; jsdom applies none. */
+  function rule(selector: string): string {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "App.svelte"), "utf8");
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`\\n  ${escaped} \\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+  }
+
+  it("leaves the scrolling to the screen's columns: main never scrolls (#166)", () => {
+    // Two scroll bars side by side at 640 px (main and the editor) and the
+    // Pad's drawing scrolling under its catalogue were the finding.
+    expect(rule("main")).toMatch(/overflow: hidden;/);
+    expect(rule("main")).not.toMatch(/overflow: auto/);
+    expect(rule("main")).not.toMatch(/scrollbar-gutter/);
+    // Each screen is exactly as tall as main, so its columns own the height.
+    expect(rule(".screen")).toMatch(/height: 100%;/);
+    expect(rule(".screen")).toMatch(/box-sizing: border-box;/);
   });
 });
