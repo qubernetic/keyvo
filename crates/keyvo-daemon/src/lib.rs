@@ -15,6 +15,8 @@ pub mod kwin;
 #[cfg(target_os = "linux")]
 pub mod linux;
 #[cfg(target_os = "linux")]
+pub mod logind;
+#[cfg(target_os = "linux")]
 pub mod runtime;
 #[cfg(target_os = "linux")]
 pub mod socket;
