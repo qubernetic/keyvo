@@ -132,19 +132,24 @@ function mount(
     geometry?: Geometry | null;
     view?: View;
     width?: number;
+    pinned?: Pin;
   } = {},
 ) {
   const fake = options.files ?? files();
+  // The pin goes back in as the shell's, the way App.svelte holds it.
+  const onpin = vi.fn((next: Pin | undefined) => void rendered.rerender({ pinned: next }));
   const props = {
     daemon: daemon(),
     files: fake.files,
     columns: layout(options.width ?? 1200),
     view: options.view ?? VIEW,
+    pinned: options.pinned,
+    onpin,
     onedit: vi.fn((_pin: Pin) => {}),
     ...(options.geometry === null ? {} : { geometry: options.geometry ?? GEOMETRY }),
   };
-  render(Profiles, { props });
-  return { ...props, fake };
+  const rendered = render(Profiles, { props });
+  return { ...props, fake, rendered };
 }
 
 function list(): HTMLElement {
@@ -234,29 +239,56 @@ describe("the list column", () => {
     expect(fake.files.profile).toHaveBeenLastCalledWith("code");
   });
 
-  it("follows the pad until the user picks or edits, then keeps that profile", async () => {
-    const fake = files();
-    const view = render(Profiles, {
-      props: {
-        daemon: daemon(),
-        files: fake.files,
-        columns: layout(1200),
-        view: VIEW,
-        geometry: GEOMETRY,
-        onedit: vi.fn((_pin: Pin) => {}),
-      },
-    });
+  it("follows the pad while nothing is pinned; a field taking the focus pins the pad's place", async () => {
+    const { fake, onpin, rendered: view } = mount();
     await screen.findByRole("heading", { level: 2, name: "Terminal" });
     // The pad moves on: the selection follows it.
-    await view.rerender({ view: { ...VIEW, profile: "claude" } });
+    await view.rerender({ view: { ...VIEW, profile: "claude", page: 2 } });
     await screen.findByRole("heading", { level: 2, name: "Claude Code" });
-    // A field taking the focus is the user at work on this profile: the
-    // pad moving on changes nothing under them.
+    expect(onpin).not.toHaveBeenCalled();
+    // A field taking the focus is the user at work on this profile: it
+    // pins it, so the header says so and the pad moving on changes nothing.
     await fireEvent.focusIn(field("Name"));
+    expect(onpin).toHaveBeenLastCalledWith({ profile: "claude", page: 2 });
     await view.rerender({ view: VIEW });
     await waitFor(() => expect(fake.files.profile).toHaveBeenCalled());
     expect(screen.getByRole("heading", { level: 2, name: "Claude Code" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { level: 2, name: "Terminal" })).toBeNull();
+    // Focus again on the pinned profile pins nothing new.
+    await fireEvent.focusIn(field("Name"));
+    expect(onpin).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the pinned profile, not the pad's, and keeps it while the pad moves", async () => {
+    const { rendered: view } = mount({ pinned: { profile: "code", page: 1 } });
+    await screen.findByRole("heading", { level: 2, name: "VS Code" });
+    expect(within(list()).getByRole("button", { name: /^VS Code/ })).toHaveAttribute("aria-current", "true");
+    await view.rerender({ view: { ...VIEW, profile: "claude" } });
+    await waitFor(() => expect(within(list()).getByRole("button", { name: /, on the pad$/ })).toHaveAccessibleName(/^Claude Code/));
+    expect(screen.getByRole("heading", { level: 2, name: "VS Code" })).toBeInTheDocument();
+  });
+
+  it("a pick in the list pins that profile, as the header dropdown does", async () => {
+    const { onpin } = mount();
+    await pick(/^Notes/);
+    expect(onpin).toHaveBeenLastCalledWith({ profile: "notes", page: 1 });
+    expect(screen.getByRole("heading", { level: 2, name: "Notes" })).toBeInTheDocument();
+    // The pinned profile again keeps the pin as it is.
+    await fireEvent.click(within(list()).getByRole("button", { name: /^Notes/ }));
+    expect(onpin).toHaveBeenCalledTimes(1);
+  });
+
+  it("follows the pad again once the pin is gone (Follow in the header)", async () => {
+    const { rendered: view } = mount({ pinned: { profile: "code", page: 1 } });
+    await screen.findByRole("heading", { level: 2, name: "VS Code" });
+    await view.rerender({ pinned: undefined });
+    await screen.findByRole("heading", { level: 2, name: "Terminal" });
+  });
+
+  it("starts on the pinned page of the pinned profile", async () => {
+    mount({ pinned: { profile: "terminal", page: 2 } });
+    await waitFor(() => expect(within(thumbnails()).getAllByRole("button")).toHaveLength(3));
+    expect(within(thumbnails()).getByRole("button", { name: "general" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("selects the global profile when the pad shows none", async () => {

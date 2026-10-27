@@ -7,7 +7,9 @@
   // written the moment they change, after a snapshot), the match rules,
   // the pages as thumbnails keyvo-core renders, and "Edit keys on the Pad".
   // The key grid lives on the Pad only. What is not built yet is shown
-  // disabled (Soon.svelte).
+  // disabled (Soon.svelte). The selection is the shell's pin (#164).
+  import { untrack } from "svelte";
+
   import Device from "./Device.svelte";
   import Notice from "./Notice.svelte";
   import Soon from "./Soon.svelte";
@@ -15,7 +17,7 @@
   import { describe, problemOf, type Problem } from "./lib/editor";
   import { t, type MessageKey } from "./lib/i18n";
   import { clock } from "./lib/pad";
-  import type { Pin } from "./lib/pin";
+  import { pinPage, pinProfile, type Pin, type Pinned } from "./lib/pin";
   import {
     fromHeaderForm,
     GLOBAL,
@@ -39,6 +41,8 @@
     view,
     geometry,
     reloads = 0,
+    pinned,
+    onpin,
     onedit,
   }: {
     daemon: Daemon;
@@ -50,6 +54,10 @@
     geometry?: Geometry;
     /** Bumped by every configuration reload of the daemon. */
     reloads?: number;
+    /** The shell's pin, the header's profile; undefined follows the pad. */
+    pinned?: Pinned;
+    /** Sets the pin, which the shell holds. */
+    onpin?: (pinned: Pinned) => void;
     /** Opens the Pad pinned to a profile and page. */
     onedit?: (pin: Pin) => void;
   } = $props();
@@ -99,27 +107,40 @@
 
   let templating = $state(false);
 
-  /** The profile the user picked in the list, or started editing: a field
-   * taking the focus keeps the profile under the user when the pad moves
-   * on (critique P1 of #106, the editor pinned to its target). */
-  let chosen: string | undefined = $state();
-  /** The selected profile: the picked one, else the pad's one, else the
-   * global one, while the list has it. */
+  /** The selected profile: the pinned one, else the pad's one, else the
+   * global one, while the list has it. The selection is the shell's pin,
+   * the one the header names (#164): it follows the pad only while
+   * nothing is pinned. */
   const selected: ProfileSummary | undefined = $derived(
-    [chosen, view?.profile, GLOBAL]
+    [pinned?.profile, view?.profile, GLOBAL]
       .map((id) => profiles.find((profile) => profile.id === id))
       .find((profile) => profile !== undefined) ?? profiles[0],
   );
   const id = $derived(selected?.id);
 
-  /** The selected page (from 1); a newly selected profile starts on 1. */
+  /** A pick in the list pins that profile on page 1, as the header
+   * dropdown does; the pinned profile keeps its pin. */
+  function choose(profile: string) {
+    if (pinned?.profile !== profile) onpin?.(pinProfile(profile));
+  }
+
+  /** A field taking the focus is the user at work on the selected profile
+   * (critique P1 of #106): it pins it, on the pad's page when it is the
+   * pad's profile, so the pad moving on changes nothing under them. */
+  function hold() {
+    if (id === undefined || pinned !== undefined) return;
+    onpin?.(id === view?.profile ? pinPage(id, view.page) : pinProfile(id));
+  }
+
+  /** The selected page (from 1): a newly selected profile starts on its
+   * pinned page, else on 1. */
   let page = $state(1);
   let shownId: string | undefined;
   $effect(() => {
     const now = id;
     if (now === shownId) return;
     shownId = now;
-    page = 1;
+    page = untrack(() => (pinned !== undefined && pinned.profile === now ? pinned.page : 1));
   });
 
   // The header: the file and the fields as they are on disk.
@@ -296,7 +317,7 @@
             class="profile"
             aria-label={itemName(profile)}
             aria-current={profile.id === id ? "true" : undefined}
-            onclick={() => (chosen = profile.id)}
+            onclick={() => choose(profile.id)}
           >
             <span class="name">{profile.name}</span>
             {#if profile.accent !== undefined}
@@ -314,7 +335,7 @@
   <section
     class={["editor", { scroll: !stacked }]}
     aria-labelledby={`kv-heading-${uid}`}
-    onfocusin={() => (chosen = id)}
+    onfocusin={hold}
   >
     {#if selected === undefined}
       {#if !loading}

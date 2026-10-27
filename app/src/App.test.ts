@@ -332,6 +332,23 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Pad" })).toHaveTextContent("");
   });
 
+  it("keeps the header and the Profiles editor on one pin while the pad moves", async () => {
+    const { send } = app();
+    await listed();
+    await fireEvent.keyDown(window, { key: "2", ctrlKey: true });
+    await fireEvent.change(dropdown(), { target: { value: "vscode" } });
+    await send({ event: "profile", profile: "global", page: 1, mode: "auto", index: 1 });
+    expect(await screen.findByRole("heading", { level: 2, name: "VS Code" })).toBeInTheDocument();
+    expect(dropdown()).toHaveAccessibleName("Profile, pinned");
+    // A pick in the list pins too, and the header names it.
+    await fireEvent.click(screen.getByRole("button", { name: "Terminal (terminal), priority 0" }));
+    expect(dropdown().value).toBe("terminal");
+    // Follow in the header: both follow the pad again.
+    await fireEvent.click(screen.getByRole("button", { name: "Pin" }));
+    expect(dropdown()).toHaveAccessibleName("Profile, following the pad");
+    expect(await screen.findByRole("heading", { level: 2, name: "Global" })).toBeInTheDocument();
+  });
+
   it("opens the Pad pinned to a profile from Profiles", async () => {
     app();
     await listed();
