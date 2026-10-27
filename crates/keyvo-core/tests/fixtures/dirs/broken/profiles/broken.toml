@@ -1,0 +1,6 @@
+schema_version = 1
+
+[profile]
+id   = "broken"
+name = "Broken"
+accent = "green"

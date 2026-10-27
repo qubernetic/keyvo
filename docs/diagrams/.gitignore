@@ -1,0 +1,6 @@
+# archify build receipts; the sources are src/*.json and the HTML is tracked
+*.finalize.json
+*.finalize-summary.json
+*.delivery.json
+*.delivery-pending.json
+*.browser-check.json

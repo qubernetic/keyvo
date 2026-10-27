@@ -66,12 +66,84 @@ user is trusted, and nothing else is.
   `0600` in a directory owned by the user. Any process running as that user
   can send any command, including switching profiles, painting keys, and
   triggering actions. This is the intended scripting surface.
+- The daemon creates the socket's directory with mode `0700` and refuses to
+  start when the directory is not the user's own with that mode, or when
+  another daemon already answers on the socket. A socket file left behind
+  by a stopped daemon is replaced. Anything else in its place is not
+  touched.
+- The clients check the daemon the same way from their side: `keyvo ctl`
+  and the app refuse a socket whose directory is not private to the user
+  and a socket another uid listens on (`SO_PEERCRED`), before they send a
+  request. Another account cannot pose as the daemon, for example in the
+  `keyvo-<uid>` fallback under the shared temporary directory. Only the
+  listener's uid is checked, not its pid, because the pid depends on the
+  pid namespace: a sandboxed client sees the daemon as pid 0. The check
+  requires the user's uid to be mapped in the client's user namespace; a
+  client running as the overflow uid refuses the socket, because there
+  every unmapped uid reads the same.
+- A socket request with an unknown command or field is rejected before
+  anything runs, so a mistyped `dry_run` never executes a key's action.
+  Requests are parsed as untrusted input; a malformed line gets an error
+  response and never ends the daemon.
+- What a client can make the daemon hold is bounded: a request line over
+  `[daemon].socket_line_bytes` (64 KiB) gets an error and the connection
+  is closed, connections over `[daemon].socket_connections` (32) are
+  refused, and a failing `accept` (for example a full file table) backs off
+  `[timing].accept_backoff` instead of spinning. These limit accidents and
+  runaway scripts of the same user; they are not a boundary against that
+  user, who may also simply stop the daemon.
 - There is no authentication layer on the socket beyond file permissions, and
   none is planned for v1.
+- On KDE the daemon loads its own focus script into KWin
+  (`contrib/kwin/keyvo-focus.js`, `docs/spec.md` §6.2). The script is
+  written to `$XDG_RUNTIME_DIR/keyvo/` (or `keyvo-<uid>` in the temporary
+  directory), and the daemon refuses a directory that is not its user's
+  with mode `0700`, because the file runs inside the compositor. The
+  directory is checked and the script rewritten before every load, also
+  after a KWin restart, so KWin never reads a file another account could
+  have placed or changed. The script calls a private object on the session bus; any process of the
+  same user can call that object too and so assert a focused window, which
+  is no more than `notify_context` on the socket allows.
+- The window class, title and pid the daemon gets from the KWin script are
+  client-asserted: the daemon takes an `Activated` call from any sender on
+  the session bus, not only from KWin. Treat them as a hint for choosing a
+  profile, never as proof of which program has focus. M2 filters the calls
+  by KWin's unique bus name; until then keyvo uses these values only to
+  choose the profile and passes them on in `status` and `context` events
+  as they came.
+- The pad is inert while the session is locked (`docs/spec.md` §6.1,
+  §6.2). The daemon lives in the session and the lock screen only takes
+  the input devices it knows, so without this anyone at a locked machine
+  could start programs from the Keypad. The daemon watches its session in
+  systemd-logind (`LockedHint`, `Lock`, `Unlock`); while it is locked the
+  pad shows the lock and nothing else, every key press resolves nothing
+  and is traced as `blocked` (`session locked`), and the page buttons do
+  nothing. A socket `press` is blocked the same way, `dry_run` included.
+  The socket itself still answers, as before, to the same user: a
+  process of that user may still query the daemon, reload it or report a
+  window, as it may stop the daemon. When logind cannot be reached the
+  daemon logs "lock detection off" once and the pad stays live under a
+  lock, as before this check; X11 and Windows lock sources are not built
+  yet. The KWin lock-screen window is not used as a signal; any process of
+  the user can assert a window (see below).
 - The daemon never runs as root. Device access comes from a udev rule that
   grants the user (or the `input` group) access to the Keypad's `hidraw` nodes
   and to `/dev/uinput`. Running the daemon with elevated privileges is
   unsupported and reduces isolation.
+
+### The desktop app
+
+- The app (`app/`) is a client of the socket like `keyvo ctl` and has no
+  other way into the daemon. Its window may call the app's six own
+  commands and listen to their events; the capability names each of them
+  and grants no `core:default` and no plugin, so a script injected into the
+  page could not reach the filesystem, shell, window or other core APIs.
+  The content security policy loads only the app's own code and connects
+  only to the Tauri IPC (`docs/spec.md` §10).
+- Both app lockfiles are checked in CI: `app/src-tauri/Cargo.lock` by
+  `cargo deny` with `app/src-tauri/deny.toml` (the root policy plus
+  documented exceptions), `app/package-lock.json` by `npm audit
+  --audit-level=high`. Dependabot watches both.
 
 ### Actions run what the user configured
 
@@ -84,6 +156,17 @@ user is trusted, and nothing else is.
 - `http` actions make outbound requests to the URL written in the profile.
   keyvo has no inbound network listener in v1; nothing on the network can reach
   the daemon.
+- Recipe packs (`docs/spec.md` §7.5) carry `chord` and `exec` actions: the
+  bundled ones are built into keyvo, the user's are read from
+  `~/.config/keyvo/recipes/`, the same trust as the profile files beside them.
+  Reading a pack runs nothing; the daemon only lists the packs on the socket's
+  `recipes` request. A pack's command runs only after the user applied it to a
+  key, which writes the command into the profile as a plain `exec`, visible
+  and editable like any other, and then pressed that key. A user pack replaces
+  the bundled pack of its id, so a file dropped into that directory can change
+  what a catalogue entry writes; anything that can write there can already
+  write the profiles. User packs are capped at 8 KiB each and 64 files, so the
+  `recipes` answer stays under the client's line limit.
 
 ### The project layer is the first foreign input
 

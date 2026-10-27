@@ -1,0 +1,18 @@
+# A recipe pack with every field: two variants, a chord and an exec.
+schema_version = 1
+
+[recipe]
+group = "apps"
+name  = "Screenshot"
+icon  = "lucide:camera"
+label = "Shot"
+
+[[variants]]
+id     = "full"
+name   = "Full screen"
+action = { type = "exec", cmd = "spectacle --fullscreen" }
+
+[[variants]]
+id     = "key"
+name   = "Print key"
+action = { type = "chord", keys = "print" }

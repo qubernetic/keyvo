@@ -1,0 +1,24 @@
+schema_version = 1
+
+[profile]
+id    = "code"
+name  = "VS Code"
+match = { class = ["code"] }
+
+[[pages]]
+name = "edit"
+
+[pages.keys.1]
+label = "Format"
+
+[[pages]]
+name = "context"
+
+[pages.keys.1]
+label = "Build"
+
+[[pages]]
+name = "debug"
+
+[pages.keys.1]
+label = "Step"

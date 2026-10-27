@@ -1,0 +1,6 @@
+---
+source: crates/keyvo-core/tests/render.rs
+expression: tile.png().unwrap()
+extension: png
+snapshot_kind: binary
+---

@@ -1,10 +1,11 @@
 # keyvo task runner (ADR-0002, two-layer dev model).
 # Container recipes run inside the `rust` compose service; `run` and `test-hw`
-# execute the container-built binary on the host, where the hardware is.
+# execute the container-built binary on the host, where the hardware is;
+# `app-dev` serves the app against a mock daemon for a host browser.
 # Podman users: `COMPOSE_CMD="podman compose" just ...` or put it in `.env`.
 # Native mode: with AGENT_HORDE=1 the check and build recipes run the toolchain
 # directly (for a shell that already is the container, such as the project's
-# agent sandbox or `just shell`); the lifecycle and hardware recipes refuse.
+# agent sandbox or `just shell`); the lifecycle and host recipes refuse.
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 set dotenv-load := true
@@ -89,10 +90,41 @@ cov: _up
     {{ exec }} cargo llvm-cov nextest --workspace --profile ci --lcov --output-path coverage/lcov.info
     {{ exec }} cargo llvm-cov report --summary-only
 
+# ---- Desktop app (app/) ----------------------------------------------------
+
+# App checks: clean install from package-lock.json, svelte-check, vitest, and
+# both app lockfiles against advisories and licences (app/src-tauri/deny.toml)
+app-test: _up
+    {{ exec }} npm --prefix app ci --no-fund --no-audit
+    {{ exec }} npm --prefix app run check
+    {{ exec }} npm --prefix app test
+    {{ exec }} npm --prefix app audit --audit-level=high
+    {{ exec }} cargo deny --manifest-path app/src-tauri/Cargo.toml check
+
+# Build the frontend and the Tauri shell (outside the root workspace, needs the
+# dev image's webkit2gtk) and copy keyvo-app to bin/ (profile: dev or release)
+app-build profile="dev": _up
+    {{ exec }} npm --prefix app ci --no-fund --no-audit
+    {{ exec }} npm --prefix app run build
+    {{ exec }} cargo fmt --manifest-path app/src-tauri/Cargo.toml -- --check
+    {{ exec }} cargo clippy --manifest-path app/src-tauri/Cargo.toml --locked --all-targets -- -D warnings
+    {{ exec }} cargo build --manifest-path app/src-tauri/Cargo.toml --locked --profile {{ profile }} --features tauri/custom-protocol
+    @case "{{ profile }}" in dev) dir=debug ;; *) dir="{{ profile }}" ;; esac; \
+    mkdir -p bin; \
+    install -m 755 "app/src-tauri/target/$dir/keyvo-app" bin/; \
+    echo "binary in bin/: keyvo-app ($dir)"
+
 # The exact sequence CI runs (.github/workflows/ci.yml), tests in the nextest ci profile
 ci: fmt-check lint (test "--profile" "ci") deny cov
 
-# ---- Host (hardware) -------------------------------------------------------
+# ---- Host (hardware, app dev server) ---------------------------------------
+
+# Serve the app on the Vite dev server at http://localhost:1420 against the
+# in-memory mock of the daemon (app/src/lib/mock/), for a host browser:
+# ?theme=breeze-dark|breeze-light|adwaita-dark|adwaita-light, ?mock-error=unreachable
+app-dev: _host_only
+    npm --prefix app ci --no-fund --no-audit
+    cd app && VITE_KEYVO_MOCK=1 npm run dev
 
 # Run the container-built keyvo binary on the host: just run -- --version
 run *args: _host_only
@@ -104,7 +136,7 @@ test-hw *args: _host_only
     @echo "hidraw nodes:"; ls -l /dev/hidraw* 2>/dev/null || echo "  none"
     @echo "uinput:"; ls -l /dev/uinput 2>/dev/null || echo "  none"
     @echo "groups of $(id -un): $(id -nG)"
-    @echo "keyvo doctor lands with M0; nothing else to run yet"
+    @echo "keyvo doctor lands with M0; for the Keypad itself: just run -- probe"
 
 # ---- Docs ------------------------------------------------------------------
 
@@ -128,7 +160,7 @@ _up:
 _container_only:
     @if [ "{{ native }}" = "1" ]; then echo "not applicable in native mode (AGENT_HORDE=1): no container to manage" >&2; exit 1; fi
 
-# Refuse the host hardware recipes in native mode
+# Refuse the host recipes (hardware, app dev server) in native mode
 [private]
 _host_only:
-    @if [ "{{ native }}" = "1" ]; then echo "not applicable in native mode (AGENT_HORDE=1): hardware recipes run on the owner's host" >&2; exit 1; fi
+    @if [ "{{ native }}" = "1" ]; then echo "not applicable in native mode (AGENT_HORDE=1): host recipes run on the owner's host" >&2; exit 1; fi

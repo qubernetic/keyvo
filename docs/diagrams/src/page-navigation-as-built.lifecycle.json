@@ -1,0 +1,242 @@
+{
+  "schema_version": 3,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Which page the pad shows (as built, 2026-10-27)",
+    "subtitle": "The owner's seven profiles under spec 6.1 and 6.3 and keyvo_core::state: Global (context, general, apps), VS Code and Brave (context, general), Konsole, Dolphin, Mailspring and Discord (context only). Short press: a page button released within 1 s. Long press: held 1 s. page_grace 10 s.",
+    "output": "docs/diagrams/page-navigation-as-built.html",
+    "quality_profile": "showcase",
+    "visual_preset": "blueprint",
+    "legend": {
+      "entries": {
+        "start": {
+          "label": "Start, escape target"
+        },
+        "active": {
+          "label": "Context page, auto mode"
+        },
+        "decision": {
+          "label": "Focus change"
+        },
+        "success": {
+          "label": "The shared general page"
+        },
+        "waiting": {
+          "label": "Page reachable in manual mode only"
+        }
+      }
+    }
+  },
+  "mainPath": [
+    "global_ctx",
+    "focus",
+    "vscode_ctx",
+    "global_general"
+  ],
+  "states": [
+    {
+      "id": "global_ctx",
+      "type": "start",
+      "label": "Global, context",
+      "sublabel": "Region, Konsole, Git, Play, Lock",
+      "tag": "no profile matches",
+      "step": "01"
+    },
+    {
+      "id": "focus",
+      "type": "decision",
+      "label": "Window focus changes",
+      "sublabel": "class stands 150 ms, profile chosen",
+      "tag": "auto mode",
+      "step": "02"
+    },
+    {
+      "id": "vscode_ctx",
+      "type": "active",
+      "label": "VS Code, context",
+      "sublabel": "Palette, Terminal, Git, Zen",
+      "tag": "Brave: same shape",
+      "step": "03"
+    },
+    {
+      "id": "onepage_ctx",
+      "type": "active",
+      "label": "Konsole, Dolphin, Mail, Discord",
+      "sublabel": "one page each",
+      "tag": "context, their own classes"
+    },
+    {
+      "id": "global_general",
+      "type": "success",
+      "label": "Global, general",
+      "sublabel": "YouTube, HASS, Dockge, Plex",
+      "tag": "the only general page",
+      "step": "04"
+    },
+    {
+      "id": "vscode_general",
+      "type": "waiting",
+      "label": "VS Code, page 2",
+      "sublabel": "Split, Rename, Definition, Back",
+      "tag": "manual only; Brave alike"
+    },
+    {
+      "id": "global_apps",
+      "type": "waiting",
+      "label": "Global, page 3 (apps)",
+      "sublabel": "Mail, Discord, Signal, Spotify",
+      "tag": "manual mode only"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t01",
+      "from": "global_ctx",
+      "to": "focus",
+      "label": "other window"
+    },
+    {
+      "id": "t02",
+      "from": "focus",
+      "to": "vscode_ctx",
+      "label": "class code (Brave alike)"
+    },
+    {
+      "id": "t04",
+      "from": "focus",
+      "to": "onepage_ctx",
+      "label": "konsole, dolphin, mail, discord"
+    },
+    {
+      "id": "t05",
+      "from": "focus",
+      "to": "global_ctx",
+      "label": "any other class"
+    },
+    {
+      "id": "t06",
+      "from": "vscode_ctx",
+      "to": "focus",
+      "label": "other window"
+    },
+    {
+      "id": "t08",
+      "from": "onepage_ctx",
+      "to": "focus",
+      "label": "other window"
+    },
+    {
+      "id": "t09",
+      "from": "global_ctx",
+      "to": "global_general",
+      "label": "short press"
+    },
+    {
+      "id": "t10",
+      "from": "vscode_ctx",
+      "to": "global_general",
+      "label": "short press"
+    },
+    {
+      "id": "t12",
+      "from": "onepage_ctx",
+      "to": "global_general",
+      "label": "short press"
+    },
+    {
+      "id": "t13",
+      "from": "global_general",
+      "to": "focus",
+      "label": "short press, or app switch after 10 s"
+    },
+    {
+      "id": "t15",
+      "from": "vscode_ctx",
+      "to": "vscode_general",
+      "label": "long press, then right",
+      "variant": "security"
+    },
+    {
+      "id": "t16",
+      "from": "vscode_general",
+      "to": "vscode_ctx",
+      "label": "right or left",
+      "variant": "security"
+    },
+    {
+      "id": "t19",
+      "from": "global_ctx",
+      "to": "global_general",
+      "label": "long press, then right",
+      "variant": "security"
+    },
+    {
+      "id": "t20",
+      "from": "global_general",
+      "to": "global_apps",
+      "label": "manual: right",
+      "variant": "security"
+    },
+    {
+      "id": "t21",
+      "from": "global_apps",
+      "to": "global_ctx",
+      "label": "manual: right (wraps)",
+      "variant": "security"
+    },
+    {
+      "id": "t22",
+      "from": "vscode_general",
+      "to": "focus",
+      "label": "long press: auto"
+    },
+    {
+      "id": "t25",
+      "from": "vscode_general",
+      "to": "global_ctx",
+      "label": "both held: escape",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Auto mode: two pages per app at most",
+      "items": [
+        "The focused window chooses the profile; the pad shows that profile's context page.",
+        "A short press of either button on any context page shows the global general page; the next short press returns to the focused window's context page.",
+        "An app's own page 2 is never shown in auto mode, whatever it is named: this is the VS Code finding of 2026-10-27."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Manual mode: a focus lock with paging",
+      "items": [
+        "Solid red transitions need manual mode (a long press first); dashed ones are the escape with both buttons held.",
+        "A long press (1 s) toggles the mode and keeps the profile and page on the pad; focus changes are recorded but not shown.",
+        "Right pages forward, left back, wrapping within the shown profile: Global has three pages, VS Code and Brave two, the others one.",
+        "Leaving manual mode shows the context page of the window focused meanwhile.",
+        "Brave has the same shape as VS Code (context and a page 2 named general) and is drawn as the VS Code states."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Grace, hold and escape",
+      "items": [
+        "On the general page an app switch within 10 s (page_grace) of a press keeps the general page; a title change in the same app keeps it too.",
+        "The keyvo app's own window holds the context: focusing it changes nothing on the pad.",
+        "Both buttons held together escape from any state to Global, context, auto mode (drawn once, from VS Code page 2)."
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "What is on each page (the owner's profiles)",
+      "items": [
+        "Global context: Region, Konsole, Git, Paperclip, keyvo PRs, Horde, Play, Mute, Lock. Global general: YouTube, HASS, Dockge, Stagely, Claude, Codecov, GH status, Plex, Remote. Global apps: Mail, Discord, Signal, Obsidian, Spotify, KCalc, Downloads, Displays, Full shot.",
+        "VS Code context: Palette, Terminal, Find all, Git, Go to file, Sidebar, Format, Save all, Zen. VS Code page 2: Split, Close, Problem, Rename, Definition, Back, Comment, Quick fix, Konsole.",
+        "Brave context: New tab, Reopen, Find, Claude, GitHub, Paperclip, Stagely, HASS, Dockge. Brave page 2: YouTube, Claude, Codecov, GH status, Plex, Devtools, Reload, History, Downloads.",
+        "Konsole, Dolphin, Mailspring and Discord have a context page only; a key they lack comes from the global context page (the stack)."
+      ]
+    }
+  ]
+}

@@ -54,8 +54,8 @@ keyvo separates *where code is built* from *where it touches hardware*
 
 | Layer | Where | What runs there |
 |---|---|---|
-| Build, test, lint, coverage, docs, CI parity | devcontainer (docker compose, Rust + Node image) | `just setup dev test build lint fmt deny cov diagrams docs` |
-| Hardware execution | host | the binary built in the container, via `just run` and `just test-hw` |
+| Build, test, lint, coverage, docs, CI parity | devcontainer (docker compose, Rust + Node image) | `just setup dev down clean rebuild shell build test lint fmt fmt-check deny cov ci app-test app-build diagrams docs` |
+| Hardware execution | host | the binary built in the container, via `just run` and `just test-hw`; the app's mock dev server, via `just app-dev` |
 
 ```bash
 git clone https://github.com/qubernetic/keyvo.git
@@ -63,32 +63,60 @@ cd keyvo
 
 just setup        # build the dev image, start the container, fetch dependencies
 just dev          # start the dev container (detached)
+just down         # stop the container (keeps volumes and target/)
+just rebuild      # rebuild the image without cache (after Dockerfile changes)
 just test         # cargo nextest inside the container
 just build        # cargo build inside the container; host-runnable binaries in bin/
 just lint         # clippy on all targets with -D warnings
-just fmt          # rustfmt (just fmt-check only verifies)
+just fmt          # rustfmt
+just fmt-check    # rustfmt, verifies only
 just deny         # cargo-deny (licenses, advisories, bans, sources)
 just cov          # cargo-llvm-cov in the nextest ci profile (coverage/lcov.info plus a summary)
 just ci           # fmt-check, lint, test (nextest ci profile), deny, cov: the sequence CI runs
+just app-test     # desktop app: npm ci, svelte-check, vitest, npm audit, cargo deny on the app lock
+just app-build    # desktop app: frontend build, then the Tauri shell; bin/keyvo-app
+just app-dev      # host: the app on the Vite dev server against a mock daemon, http://localhost:1420
 just run -- probe # run the container-built binary on the host against real hardware
-just test-hw      # hardware checks on the host
-just diagrams     # regenerate docs/diagrams from the archify IR (lands with Issue #4)
-just docs         # build the mdBook (lands with Issue #3)
+just test-hw      # host checks: hidraw nodes, /dev/uinput, groups (keyvo doctor is planned)
+just diagrams     # placeholder: regenerating docs/diagrams from the archify IR lands with Issue #4
+just docs         # placeholder: the mdBook lands with Issue #3
 just shell        # interactive shell in the container
 just clean        # stop the container, drop the cargo volumes, delete target/ and bin/
 ```
 
 **Native mode.** With `AGENT_HORDE=1` in the environment the check and build
-recipes (`test`, `lint`, `fmt`, `fmt-check`, `deny`, `cov`, `ci`, `build`) run
+recipes (`test`, `lint`, `fmt`, `fmt-check`, `deny`, `cov`, `ci`, `build`,
+`app-test`, `app-build`) run
 the toolchain directly instead of through `docker compose exec`. It is for a
 shell that already is the container: the project's agent sandbox sets the
 variable for every agent, and it works the same inside `just shell`. The
 lifecycle recipes (`setup`, `dev`, `down`, `clean`, `rebuild`, `shell`) and the
-hardware recipes (`run`, `test-hw`) refuse to run in native mode. The host
+host recipes (`run`, `test-hw`, `app-dev`) refuse to run in native mode. The host
 never uses it: the host has no toolchain, and the hardware stays on the host.
 
+**Mock dev server.** For work on the app's layout, `just app-dev` runs on the
+host (it needs only Node, which the host has) and serves the real Svelte app on
+the Vite dev server at `http://localhost:1420` with `VITE_KEYVO_MOCK=1`: the
+app talks to the in-memory mock of `app/src/lib/mock/` instead of the Tauri
+shell, fed by `tests/protocol-fixtures/socket/`, `contrib/profiles/` and the
+renderer snapshots, so a change shows in a host browser in seconds without a
+container build, a daemon or a Keypad. `?theme=breeze-dark|breeze-light|adwaita-dark|adwaita-light`
+switches between the measured token sets of `docs/design/gui-ux.md` §7
+(with the muted text and the focus ring derived by its rules where the
+measured ones fail the contrast checks),
+`?mock-error=unreachable` shows the Pad's error state, `?mock-error=write`
+makes every key write fail with a file, line and column, `?mock-profiles=empty`
+adds a profile with no pages, `?mock-locked` locks the session (the lock
+tile on the mirror, blocked presses), and every fourth focus step is the keyvo app,
+which holds the context the way `[focus].hold_classes` does. Edits stay in memory until
+a reload. The mock never reaches a build without the variable, and it is not
+the final check: WebKitGTK renders differently, so a layout change is still
+verified in the Tauri shell (the GNOME runtime) before its User test.
+
 The container image is `rust:<version>-slim-trixie` plus Node LTS, `just`,
-`cargo-deny`, `cargo-llvm-cov`, `cargo-nextest` and `cargo-insta`; the Rust
+`cargo-deny`, `cargo-llvm-cov`, `cargo-nextest` and `cargo-insta`, and the
+Tauri 2 build packages (`libwebkit2gtk-4.1-dev` and its companions, unpinned
+from the base image's Debian repository) for the desktop app; the Rust
 version is pinned in `rust-toolchain.toml` and bumped together with the
 `Dockerfile`. The container runs as a non-root user with the host's UID and GID
 (passed by the `justfile`), so files under the bind-mounted `target/` stay owned
@@ -117,17 +145,33 @@ Pull request runs only restore the image and cargo registry caches; pushes to
 `develop` and `main` save them. A command that passes in `just ci` passes in CI;
 the workflow never repeats a tool version.
 
+The `app` job builds the same image and runs the command lines of
+`just app-test` (`npm ci`, `svelte-check`, `vitest`, `npm audit
+--audit-level=high` and `cargo deny` on `app/src-tauri/Cargo.toml`) and
+`just app-build` (`vite build`, then `cargo fmt --check`, `cargo clippy -D
+warnings` and `cargo build` on `app/src-tauri/Cargo.toml`). The Tauri shell is
+outside the root workspace, with its own `Cargo.lock` and `target/`, so `just
+ci` never needs webkit2gtk; the CI job is the proof that the shell compiles. The
+frontend dependencies are exact versions in `app/package.json`, locked by the
+committed `app/package-lock.json`. The root `deny.toml` never sees the app's
+lock, so `app/src-tauri/deny.toml` carries the same policy plus the exceptions
+the Tauri tree needs, each with its reason; a new exception is reviewed in its
+PR like a new MPL crate. Dependabot watches both app lockfiles (`cargo` in
+`/app/src-tauri`, `npm` in `/app`) next to the root ones.
+
 ### Sandbox-complete and hardware-bound issues
 
 Every planned issue in `docs/roadmap.md` carries a layer, and the issue on
 GitHub carries the matching label:
 
 - **Sandbox-complete** (`sandbox`): the whole change can be built, tested and
-  reviewed inside the devcontainer. The plan file under `docs/plans/` has a
-  "Proof" block naming the fixtures and the exact `just` commands with their
-  expected output (`just test`, `just lint`, `just fmt-check`, `just deny`,
-  `just cov`, `just ci`, or `docker compose exec rust cargo ...` where no
-  recipe exists). It never names `just run`, `just test-hw`, Solaar, udev,
+  reviewed inside the devcontainer. The issue has a "Proof" block naming the
+  fixtures and the exact `just` commands with their expected output
+  (`just test`, `just lint`, `just fmt-check`, `just deny`, `just cov`,
+  `just ci`, or `docker compose exec rust cargo ...` where no recipe exists).
+  The Proof block lives in the plan file under `docs/plans/` or in the GitHub
+  issue body; the project's agents use the issue body and commit no plan file
+  for the issue. It never names `just run`, `just test-hw`, Solaar, udev,
   systemd, the KWin script or the Windows VM. The project's agents (the
   `q-horde` account, working in a docker sandbox without `/dev/hidraw*` or
   `/dev/uinput`) take sandbox-complete issues only.
@@ -208,8 +252,17 @@ keyvo follows a strict Gitflow. Every contribution goes through these steps:
 | Bug fix | `fix/` | `develop` | `fix/57-brightness-unit` |
 | Hotfix on a release | `hotfix/` | `main` | `hotfix/89-daemon-crash` |
 | Release preparation | `release/` | `develop` | `release/0.1.0` |
+| Epic of several slices | `epic/` | `develop` | `epic/34-pre-alpha` |
 
 Branch names are lowercase, hyphen-separated, prefixed with the issue number.
+
+An epic branch `epic/<issue>-<slug>` collects the slices of one plan that
+would conflict if they merged into `develop` one by one (shared `Cargo.toml`,
+`Cargo.lock` or crate). Each slice branches from the epic branch, its PR
+targets the epic branch, and it merges there with a merge commit once the
+Reviewer approves it. The maintainer's merge gate applies to the epic PR into
+`develop` only; the `## User test` checklists of the slices are run before
+that PR merges.
 
 ### Commit format
 
@@ -296,6 +349,9 @@ Where the tests live:
 | `keyvo-hid` | Golden-buffer tests against captured frames; integration tests with `FakeHidTransport` | none |
 | `keyvo-daemon` | Integration tests with a fake D-Bus / X11 and the fake transport | none |
 | `keyvo-cli` | Snapshot tests of output; `--json` output is schema-checked | none |
+| `keyvo-client` | The client against the socket fixtures in `tests/protocol-fixtures/socket/`; tiles compared with the daemon's renderer output; the key editor on a configuration directory on disk against the steps in `tests/protocol-fixtures/editor/` | none |
+| `app/` frontend | vitest with jsdom (`just app-test`): the TypeScript protocol module and the Pad state against the same fixtures, component tests with a fake daemon fed the fixture events and a fake editor holding the editor steps' files (`app/src/lib/fixtures.ts`) | none |
+| `app/src-tauri` | No tests of its own: thin glue over `keyvo-client`, proven by the CI `app` build | none |
 | Renderer | [insta](https://insta.rs/) snapshot tests of rendered key images | none |
 | `just test-hw` | Hardware suite on the host: probe, paint, keep-alive, brightness, input | Keypad / Dialpad |
 

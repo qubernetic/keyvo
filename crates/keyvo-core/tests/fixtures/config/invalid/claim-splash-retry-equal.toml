@@ -1,0 +1,4 @@
+# A retry as long as the timeout would never retry (spec §6.1).
+[timing]
+claim_splash_timeout = 2000
+claim_splash_retry = 2000

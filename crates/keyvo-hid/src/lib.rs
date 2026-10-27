@@ -3,9 +3,18 @@
 //! FFI that lands later; `unsafe_op_in_unsafe_fn` is denied workspace-wide.
 
 #![deny(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn compiles() {}
-}
+pub mod display;
+pub mod dump;
+pub mod firmware;
+pub mod frame;
+pub mod hidpp;
+#[cfg(target_os = "linux")]
+pub mod hidraw;
+pub mod image;
+pub mod input;
+pub mod keep_alive;
+pub mod reprog;
+pub mod root;
+pub mod sysfs;

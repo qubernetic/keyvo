@@ -1,0 +1,238 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Options+ display update pipeline (reference)",
+    "subtitle": "Facts from docs/research/options-plus-display-pipeline.md (2026-10-25, Logi Plugin Service 6.4.2); sizes are the owner's MX Creative Keypad, firmware U1 66.00.B0017",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "output": "docs/diagrams/options-plus-display-pipeline.html",
+    "legend": {
+      "entries": {
+        "external": {
+          "label": "Trigger and device"
+        },
+        "backend": {
+          "label": "Draw engine"
+        },
+        "frontend": {
+          "label": "Service API"
+        },
+        "security": {
+          "label": "Protocol command"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "dotnet",
+      "label": "Plugin Service (.NET draw engine)"
+    },
+    {
+      "id": "helper",
+      "label": "Native helper LogiPluginServiceExt"
+    },
+    {
+      "id": "device",
+      "label": "MX Creative Keypad (0x19A1)"
+    }
+  ],
+  "phases": [
+    {
+      "id": "draw",
+      "label": "Draw into one canvas",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "encode",
+      "label": "Crop, encode, split",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "send",
+      "label": "One command per image",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "canvas_group",
+      "label": "480x480 black canvas, kept between updates",
+      "lane": "dotnet",
+      "fromCol": 1,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "queue_group",
+      "label": "Serialised by the fn2 response, not by a timer",
+      "lane": "helper",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "trigger",
+    "controls",
+    "crop",
+    "encode",
+    "message",
+    "command",
+    "render"
+  ],
+  "nodes": [
+    {
+      "id": "trigger",
+      "lane": "dotnet",
+      "col": 0,
+      "type": "external",
+      "label": "Redraw request",
+      "sublabel": "page: 9 dirty; button: 1 dirty",
+      "width": 160
+    },
+    {
+      "id": "controls",
+      "lane": "dotnet",
+      "col": 1,
+      "type": "backend",
+      "label": "DoDrawControls",
+      "sublabel": "116x116 per dirty button",
+      "tag": "black background",
+      "width": 160
+    },
+    {
+      "id": "crop",
+      "lane": "dotnet",
+      "col": 2,
+      "type": "backend",
+      "label": "Bounding-box crop",
+      "sublabel": "union: 435x434 at 23,6 or 118x118",
+      "tag": "never 480x480",
+      "width": 160
+    },
+    {
+      "id": "encode",
+      "lane": "dotnet",
+      "col": 3,
+      "type": "backend",
+      "label": "JPEG encode and bands",
+      "sublabel": "q100 4:2:0; bands over the limit",
+      "tag": "124928 B limit",
+      "width": 160
+    },
+    {
+      "id": "message",
+      "lane": "helper",
+      "col": 4,
+      "type": "frontend",
+      "label": "SetDisplayImage",
+      "sublabel": "queue of 2, stale frames dropped",
+      "width": 160
+    },
+    {
+      "id": "command",
+      "lane": "helper",
+      "col": 5,
+      "type": "security",
+      "label": "fn2 setImage over VLP",
+      "sublabel": "index 1, defer 0, count 1",
+      "tag": "one image",
+      "width": 160
+    },
+    {
+      "id": "render",
+      "lane": "device",
+      "col": 5,
+      "type": "external",
+      "label": "Render once",
+      "sublabel": "one 20 ms wipe, then fn2 response",
+      "width": 160
+    }
+  ],
+  "edges": [
+    {
+      "id": "trigger-controls",
+      "from": "trigger",
+      "to": "controls",
+      "variant": "default"
+    },
+    {
+      "id": "controls-crop",
+      "from": "controls",
+      "to": "crop",
+      "label": "Draw(list)",
+      "variant": "emphasis"
+    },
+    {
+      "id": "crop-encode",
+      "from": "crop",
+      "to": "encode",
+      "variant": "default"
+    },
+    {
+      "id": "encode-message",
+      "from": "encode",
+      "to": "message",
+      "label": "one message per band",
+      "variant": "emphasis"
+    },
+    {
+      "id": "command-render",
+      "from": "command",
+      "to": "render",
+      "variant": "emphasis"
+    },
+    {
+      "id": "message-command",
+      "from": "message",
+      "to": "command",
+      "label": "pop one",
+      "variant": "emphasis"
+    },
+    {
+      "id": "render-message",
+      "from": "render",
+      "to": "message",
+      "label": "fn2 response, next item",
+      "variant": "dashed",
+      "role": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Why there is no flicker",
+      "items": [
+        "Nine buttons and the gaps travel as one image; the device renders one command",
+        "A single-button change is one 118x118 image cropped from the same canvas",
+        "Key and background always agree, so no strip appears beside a key"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "What the protocol allows but Options+ never uses",
+      "items": [
+        "deferDisplayUpdate (byte 1 bit 0) is always 0; there is no flush command",
+        "count (byte 2) may be up to 255 images; Options+ sends 1",
+        "ClearScreen is a 4227-byte black 480x480 JPEG with no caller on the redraw path"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Measured on keyvo (2026-10-25)",
+      "items": [
+        "Nine key commands: host done in 35 ms, display cascades 35 ms per command",
+        "One 435x434 command: one wipe of about 20 ms",
+        "The ACK confirms receipt, the fn2 response confirms the render",
+        "Options+ pacing: a 33 ms retry timer (1000 / maxImageFps), images leave as soon as they are encoded"
+      ]
+    }
+  ]
+}

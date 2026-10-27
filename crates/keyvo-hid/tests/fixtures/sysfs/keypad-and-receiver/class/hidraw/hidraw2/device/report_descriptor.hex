@@ -1,0 +1,18 @@
+# MX Creative Keypad report descriptor, 140 bytes: the one hidraw node Linux
+# creates for 046d:c354 carries all five top-level collections.
+# Source: first light, 2026-10-25, firmware U1 66.00.B0017,
+# `00-item1-report-descriptor.hex` lines 1-9 of the first-light logs attached
+# to qubernetic/keyvo#40 (`xxd /sys/class/hidraw/hidraw6/device/report_descriptor`
+# on the owner's Keypad); copied byte for byte, one line per collection.
+#
+# Vendor 0xFF43 usage 0x1A02: report 0x11, 19 bytes in and out (HID++ long)
+06 43 ff 0a 02 1a a1 01 85 11 95 13 75 08 15 00 26 ff 00 09 02 81 00 09 02 91 00 c0
+# Vendor 0xFF43 usage 0x1A08: report 0x13, 31 bytes in and out (VLP short),
+# buffered bytes
+06 43 ff 0a 08 1a a1 01 85 13 96 1f 00 75 08 15 00 26 ff 00 09 08 82 02 01 09 08 92 02 01 c0
+# Vendor 0xFF43 usage 0x1A10: report 0x14, 4094 bytes out only (VLP long)
+06 43 ff 0a 10 1a a1 01 85 14 96 fe 0f 75 08 15 00 26 ff 00 09 10 92 02 01 c0
+# Generic Desktop System Control: report 0x04, a 2-bit selector and padding
+05 01 09 80 a1 01 85 04 95 01 75 02 15 01 25 03 09 82 09 81 09 83 81 00 75 06 81 03 c0
+# Consumer Control: report 0x05, one bit (usage 0x0224) and padding
+05 0c 09 01 a1 01 85 05 95 01 75 01 15 00 25 01 0a 24 02 81 02 95 07 81 03 c0

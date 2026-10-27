@@ -1,0 +1,60 @@
+# The renderer demo: every primitive on one page (spec §9), and a second
+# page. `keyvo preview` of this file is the snapshot in
+# tests/snapshots/render__demo-page-1.snap.png.
+schema_version = 1
+
+[profile]
+id     = "demo"
+name   = "Renderer demo"
+accent = "#4e8bd6"
+
+[[pages]]
+name = "context"
+
+[pages.keys.1]                # icon and label
+icon   = "lucide:hammer"
+label  = "Build"
+action = { type = "exec", cmd = "cargo build" }
+
+[pages.keys.2]                # icon and label on a key color
+icon   = "lucide:git-commit"
+label  = "Commit"
+color  = "#2f6f3e"
+action = { type = "chord", keys = "ctrl+shift+g" }
+
+[pages.keys.3]                # dark ink on a light key color
+icon   = "lucide:play"
+label  = "Run"
+color  = "#e0a83b"
+action = { type = "chord", keys = "f5" }
+
+[pages.keys.4]                # icon only
+icon   = "lucide:search"
+action = { type = "chord", keys = "ctrl+p" }
+
+[pages.keys.5]                # label only
+label  = "Test"
+action = { type = "exec", cmd = "cargo test" }
+
+[pages.keys.6]                # a label cut with an ellipsis
+icon   = "lucide:terminal"
+label  = "Run every integration test"
+action = { type = "exec", cmd = "cargo test --test '*'" }
+
+# key 7 is blank: background and accent only
+
+[pages.keys.8]                # an icon keyvo does not bundle: the help icon
+icon   = "lucide:no-such-icon"
+label  = "Missing"
+
+[pages.keys.9]
+icon   = "lucide:git-pull-request"
+label  = "PR"
+action = { type = "exec", cmd = "gh pr view --web" }
+
+[[pages]]
+name = "general"
+
+[pages.keys.5]
+icon  = "lucide:settings"
+label = "Settings"

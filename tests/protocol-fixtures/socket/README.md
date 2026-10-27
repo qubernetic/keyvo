@@ -1,0 +1,30 @@
+# Socket protocol fixtures
+
+One message per line, exactly as it travels on the socket
+(`docs/socket-api.md`, protocol version 1). Every client checks itself
+against these files: the Rust types in `keyvo_core::socket`
+(`crates/keyvo-core/tests/socket.rs`) parse every line and write it back to
+the same JSON, and the TypeScript client (`app/src/lib/protocol.test.ts`)
+runs the same check. `keyvo-client` (`crates/keyvo-client/tests/`) uses the
+response and event lines as the daemon's side of its exchanges, and the
+app's Home tests (`app/src/lib/home.test.ts`, `app/src/Home.test.ts`) feed
+the event lines to a fake daemon, and the trace drawer's tests
+(`app/src/TraceDrawer.test.ts`) render every `trace` entry and the pending
+`press` result.
+
+| File | Content |
+|---|---|
+| `requests.ndjson` | one request per command, every field written out |
+| `responses.ndjson` | the answers to them: `status` with and without a Keypad (both with `config_dir`, the first with the captured Keypad `geometry`), `subscribe`, a dry-run and a real `press`, `reload` and its failure, `notify_context`, the three request errors, and the `unavailable` refusal of a connection over the cap (`crates/keyvo-daemon/tests/socket.rs` checks the daemon sends it) |
+| `recipes.ndjson` | the `recipes` request, then two answers: the bundled packs of `contrib/recipes/` with the user pack `screenshot` (`crates/keyvo-core/tests/fixtures/recipes/valid/screenshot.toml`), which `crates/keyvo-daemon/tests/socket.rs` checks the daemon sends, and a hand-written answer naming a broken user pack in `problems`. Kept apart from `requests.ndjson` and `responses.ndjson`, since the daemon test rewrites the first answer; the app's protocol test (`app/src/lib/protocol.test.ts`) round-trips every line, and the app's mock answers `recipes` with the first answer |
+| `events.ndjson` | every event class; the view events carry `index` and `locked`, the `page` line at index 0 (the global general page); the connected `device` line carries the `geometry`; the last `context` line is the keyvo app holding the context (`held`); the `trace` lines (with their `layer`) are the records of `crates/keyvo-core/tests/fixtures/trace/records.ndjson`, the last one a press `blocked` under the session lock; the two `session` lines lock and unlock, before the two `config` lines, which stay last |
+
+The lines are written by hand from the protocol, not captured, except the
+first answer in `recipes.ndjson`: the daemon test writes it with
+`KEYVO_BLESS=1 just test recipes` after a pack changes; review the diff. Key order in
+an object carries no meaning; a client compares parsed values, not text.
+
+A client ignores unknown fields in responses and events at any depth, so a
+later daemon may add fields within version 1; the Rust check adds a field
+to every object of every response and event line and expects the same
+message. The daemon rejects unknown fields in requests.

@@ -1,0 +1,12 @@
+schema_version = 1
+
+[recipe]
+group = "system"
+name  = "Volume up"
+icon  = "lucide:volume-2"
+label = "Vol +"
+
+[[variants]]
+id     = "up"
+name   = "Volume up"
+action = { type = "dbus", call = "org.kde.kmix" }

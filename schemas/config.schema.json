@@ -1,0 +1,279 @@
+{
+  "$defs": {
+    "Daemon": {
+      "additionalProperties": false,
+      "description": "The `[daemon]` table (spec §8): limits of the control socket. They are\nread when the daemon starts; a reload does not change them.",
+      "properties": {
+        "socket_connections": {
+          "default": 32,
+          "description": "Connections served at once; one more gets an `unavailable` error\nand is closed. At least 1. Default 32.",
+          "format": "uint",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "socket_line_bytes": {
+          "default": 65536,
+          "description": "Longest request line in bytes, without its newline; a longer one\ngets an error response and the connection is closed. At least 1.\nDefault 65536.",
+          "format": "uint",
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "Focus": {
+      "additionalProperties": false,
+      "description": "The `[focus]` table (spec §6.1): the window classes that hold the\ncontext. While one of them has focus, the pad keeps the context and\nprofile of the last other window, so the keyvo app can configure the\nprofile it was opened from. Read when the daemon starts.",
+      "properties": {
+        "hold_classes": {
+          "default": [
+            "keyvo-app"
+          ],
+          "description": "Window classes, compared without case; an empty list holds nothing.\nDefault `[\"keyvo-app\"]`, the keyvo app's own window.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "Render": {
+      "additionalProperties": false,
+      "description": "The `[render]` table (spec §9).",
+      "properties": {
+        "feedback_hold": {
+          "default": 2000,
+          "description": "How long the `success` look stays before the key reverts. Default\n2000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "long_run_threshold": {
+          "default": 10000,
+          "description": "After this long the `running` spinner becomes a static badge.\nDefault 10000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "splash": {
+          "default": false,
+          "description": "Show the profile's accent on the whole grid for about 300 ms on a\nprofile switch. Default `false` (spec §16, question 16).",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "Timing": {
+      "additionalProperties": false,
+      "description": "The `[timing]` table (spec §6.1).",
+      "properties": {
+        "accept_backoff": {
+          "default": 100,
+          "description": "Wait after a failed `accept` on the control socket before the next\none, so a full file table does not spin the daemon (spec §8).\nDefault 100 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ack_timeout": {
+          "default": 50,
+          "description": "How long an image fragment waits for its ACK (spec §5.5). Default\n50 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "claim_splash_retry": {
+          "default": 500,
+          "description": "While the display shows the plug-in splash (mode `a4`), the claim\nre-sends `setMode(a0)` this often (spec §5.4); must be shorter than\n`claim_splash_timeout`. Default 500 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "claim_splash_timeout": {
+          "default": 10000,
+          "description": "How long the claim waits for the plug-in splash to end before it\nreports the display as not claimed (spec §5.4). Default 10000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "divert_settle": {
+          "default": 100,
+          "description": "Wait before the first page-button divert request (spec §5.6).\nDefault 100 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "divert_spacing": {
+          "default": 20,
+          "description": "Wait between two divert requests (spec §5.6). Default 20 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "exec_timeout": {
+          "default": 30000,
+          "description": "An `exec` action still running after this long is killed and fails\n(spec §8). Default 30000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "focus_hysteresis": {
+          "default": 150,
+          "description": "A focus change shorter than this does not repaint. Default 150 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "keep_alive_period": {
+          "default": 1000,
+          "description": "Time between two keep-alive pings (spec §5.3); must be shorter than\n`keep_alive_timeout`. Default 1000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "keep_alive_timeout": {
+          "default": 3000,
+          "description": "How long the device holds the claim without the next ping (spec\n§5.3). Default 3000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "launch_settle": {
+          "default": 1000,
+          "description": "How long a `launch` action is watched for an early exit (spec §8): a\ncommand still running after this long is let go and counts as\nstarted. Default 1000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "long_press": {
+          "default": 1000,
+          "description": "Hold duration that turns a press into `long`. Default 1000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "page_return_global": {
+          "default": 10000,
+          "description": "On a global page (list index 0 or below), the pad returns to the\nshown profile's context page after this long without a page-button\nor key press (spec §6.3); 0 keeps the page. Default 10000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "page_return_own": {
+          "default": 0,
+          "description": "On one of the shown profile's further pages (list index 2 or\nabove), the pad returns to its context page after this long without\na page-button or key press (spec §6.3); 0 keeps the page. Default 0\n(off).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reconnect_interval": {
+          "default": 1000,
+          "description": "Wait between two attempts to open the Keypad after it is gone (spec\n§5.1). Default 1000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reload_settle": {
+          "default": 100,
+          "description": "Quiet time after the last change in the configuration directory\nbefore it is reloaded (spec §7.2). Default 100 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "render_coalesce": {
+          "default": 50,
+          "description": "Repaints within this window are merged. Default 50 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reply_timeout": {
+          "default": 1000,
+          "description": "How long an HID++ request waits for its reply (spec §5.1). Default\n1000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "Trace": {
+      "additionalProperties": false,
+      "description": "The `[trace]` table (spec §8), pre-alpha subset: the ring buffer the\ndaemon keeps in memory; the file settings come with M1-8.",
+      "properties": {
+        "ring": {
+          "default": 1000,
+          "description": "Trace entries the daemon keeps in memory; the oldest goes first.\nDefault 1000.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The whole `config.toml`.",
+  "properties": {
+    "daemon": {
+      "$ref": "#/$defs/Daemon",
+      "default": {
+        "socket_connections": 32,
+        "socket_line_bytes": 65536
+      },
+      "description": "Limits of the daemon's control socket (spec §8)."
+    },
+    "focus": {
+      "$ref": "#/$defs/Focus",
+      "default": {
+        "hold_classes": [
+          "keyvo-app"
+        ]
+      },
+      "description": "Which focused windows switch the context (spec §6.1)."
+    },
+    "render": {
+      "$ref": "#/$defs/Render",
+      "default": {
+        "feedback_hold": 2000,
+        "long_run_threshold": 10000,
+        "splash": false
+      },
+      "description": "Rendering settings (spec §9)."
+    },
+    "timing": {
+      "$ref": "#/$defs/Timing",
+      "default": {
+        "accept_backoff": 100,
+        "ack_timeout": 50,
+        "claim_splash_retry": 500,
+        "claim_splash_timeout": 10000,
+        "divert_settle": 100,
+        "divert_spacing": 20,
+        "exec_timeout": 30000,
+        "focus_hysteresis": 150,
+        "keep_alive_period": 1000,
+        "keep_alive_timeout": 3000,
+        "launch_settle": 1000,
+        "long_press": 1000,
+        "page_return_global": 10000,
+        "page_return_own": 0,
+        "reconnect_interval": 1000,
+        "reload_settle": 100,
+        "render_coalesce": 50,
+        "reply_timeout": 1000
+      },
+      "description": "Timing constants, all in milliseconds (spec §6.1)."
+    },
+    "trace": {
+      "$ref": "#/$defs/Trace",
+      "default": {
+        "ring": 1000
+      },
+      "description": "Trace settings (spec §8)."
+    }
+  },
+  "title": "keyvo config",
+  "type": "object"
+}

@@ -1,0 +1,54 @@
+<!-- The MX Creative Dialpad, stylised. Drawn by the owner (Csaba Attila Biro, 2026-10-26, ChatGPT-assisted), licence Apache-2.0 as the repository; see README.md. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="kv-device kv-dialpad">
+  <defs>
+    <linearGradient id="dp-body" x1="0" x2="0.8" y1="0" y2="1">
+      <stop style="stop-color: var(--kv-device-light, #414348)"/>
+      <stop offset="1" style="stop-color: var(--kv-device-shade, #25272b)"/>
+    </linearGradient>
+    <linearGradient id="dp-metal" x1="0" y1="0" x2="0.9" y2="1">
+      <stop style="stop-color: var(--kv-device-metal, #64666b)"/>
+      <stop offset="0.55" style="stop-color: var(--kv-device-button, #3c3e43)"/>
+      <stop offset="1" style="stop-color: var(--kv-device-shade, #24262a)"/>
+    </linearGradient>
+    <linearGradient id="dp-btn" x1="0" x2="0" y1="0" y2="1">
+      <stop style="stop-color: var(--kv-device-button, #42454a)"/>
+      <stop offset="1" style="stop-color: var(--kv-device-shade, #292b30)"/>
+    </linearGradient>
+    <filter id="dp-shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="8" stdDeviation="7" flood-color="#000" flood-opacity="0.32"/>
+    </filter>
+  </defs>
+  <g id="dp-body-shape">
+    <rect x="9" y="9" width="494" height="494" rx="76" fill="url(#dp-body)" style="stroke: var(--kv-device-edge, #16181b)" stroke-width="8"/>
+    <rect x="16" y="16" width="480" height="480" rx="69" fill="none" style="stroke: var(--kv-device-rim, #74777c)" stroke-opacity=".28" stroke-width="2"/>
+  </g>
+  <g id="button-1" style="stroke: var(--kv-device-edge, #191b1e)">
+    <circle cx="82" cy="85" r="38" fill="url(#dp-btn)" stroke-width="3"/>
+    <circle cx="82" cy="85" r="33" fill="none" style="stroke: var(--kv-device-rim, #64676d)" stroke-width="1.5"/>
+    <circle cx="82" cy="85" r="3" style="fill: var(--kv-device-glyph, #868a90)" stroke="none"/>
+  </g>
+  <g id="button-2" style="stroke: var(--kv-device-edge, #191b1e)">
+    <circle cx="174" cy="85" r="38" fill="url(#dp-btn)" stroke-width="3"/>
+    <circle cx="174" cy="85" r="33" fill="none" style="stroke: var(--kv-device-rim, #64676d)" stroke-width="1.5"/>
+    <circle cx="174" cy="85" r="3" style="fill: var(--kv-device-glyph, #868a90)" stroke="none"/>
+  </g>
+  <g id="roller">
+    <rect x="316" y="47" width="139" height="74" rx="17" style="fill: var(--kv-device-well, #17191c); stroke: var(--kv-device-rim, #55585d)" stroke-width="3"/>
+    <rect x="331" y="54" width="109" height="59" rx="9" fill="url(#dp-metal)"/>
+    <path d="M337 58 H434 M337 63 H434 M337 68 H434 M337 73 H434 M337 78 H434 M337 83 H434 M337 88 H434 M337 93 H434 M337 98 H434 M337 103 H434 M337 108 H434" style="stroke: var(--kv-device-glyph, #85878c)" stroke-opacity=".35" stroke-width="1.5"/>
+  </g>
+  <rect id="led" x="249" y="125" width="15" height="7" rx="3.5" style="fill: var(--kv-state-success, #68cf74)"/>
+  <g id="dial">
+    <circle cx="256" cy="289" r="155" style="fill: var(--kv-device-well, #151619)" opacity=".5" filter="url(#dp-shadow)"/>
+    <circle cx="256" cy="286" r="144" fill="url(#dp-metal)" style="stroke: var(--kv-device-shade, #202226)" stroke-width="5"/>
+    <circle cx="256" cy="281" r="136" fill="none" style="stroke: var(--kv-device-glyph, #97999d)" stroke-opacity=".19" stroke-width="2"/>
+  </g>
+  <g id="button-3" style="stroke: var(--kv-device-edge, #191b1e)">
+    <circle cx="83" cy="429" r="38" fill="url(#dp-btn)" stroke-width="3"/>
+    <circle cx="83" cy="429" r="12" fill="none" style="stroke: var(--kv-device-glyph, #85898e)" stroke-width="2"/>
+  </g>
+  <g id="button-4" style="stroke: var(--kv-device-edge, #191b1e)">
+    <circle cx="429" cy="429" r="38" fill="url(#dp-btn)" stroke-width="3"/>
+    <circle cx="429" cy="429" r="12" fill="none" style="stroke: var(--kv-device-glyph, #85898e)" stroke-width="2"/>
+  </g>
+</svg>

@@ -1,0 +1,23 @@
+{
+  "profile": "terminal",
+  "page": 1,
+  "key": 2,
+  "file": "terminal.toml",
+  "path": "profiles/terminal.toml",
+  "fields": { "label": "Copy", "action": { "type": "chord", "keys": "ctrl+shift+c" } },
+  "line": 20,
+  "steps": [
+    {
+      "field": "label",
+      "fields": { "label": "Paste", "action": { "type": "chord", "keys": "ctrl+shift+c" } },
+      "file": "terminal.1.toml",
+      "line": 20
+    },
+    {
+      "field": "action",
+      "fields": { "label": "Paste", "action": { "type": "exec", "cmd": "wl-paste" } },
+      "file": "terminal.2.toml",
+      "line": 20
+    }
+  ]
+}

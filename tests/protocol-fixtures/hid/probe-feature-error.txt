@@ -1,0 +1,15 @@
+# `keyvo probe --feature 0x1234` where the device refuses getFeature on both
+# planes: classic ROOT getFeature(0x1234) answered with the HID++ 2.0 error
+# reply `11 ff ff <index 00> <fn|swid 0e> <code 02 InvalidArgument>`, then
+# VLP ROOT getFeature(0x1234) answered with an error reply of the same shape
+# on report 0x13.
+#
+# Not captured: no capture holds an error reply to getFeature. The classic
+# layout is the one of the captured getTimeoutRange error the probe test
+# uses; the VLP layout past the classic header is unknown (spec §5.2), and
+# this is the shape keyvo matches as a VLP error reply. The owner's
+# `keyvo probe --feature --dump` run records the real bytes (#71).
+> 11 ff 00 0e 12 34 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff ff 00 0e 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+> 13 ff 00 0e e0 12 34 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff ff 00 0e 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00

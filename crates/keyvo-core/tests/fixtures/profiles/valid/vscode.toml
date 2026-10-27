@@ -1,0 +1,34 @@
+# A full profile: every field of schema version 1.
+schema_version = 1
+
+[profile]
+id       = "vscode"
+name     = "VS Code"
+match    = { class = ["code", "com.visualstudio.code"], title = "\\.rs - " }
+accent   = "#4e8bd6"
+priority = 10
+
+[[pages]]
+name = "context"
+
+[pages.keys.1]
+icon   = "lucide:hammer"
+label  = "Build"
+action = { type = "exec", cmd = "cargo build" }
+[pages.keys.1.states.error]
+badge = "!"
+
+[pages.keys.3]              # keys are numbered 1..9, row-major, top-left = 1
+icon   = "lucide:git-commit"
+label  = "Commit"
+color  = "#4E8BD6"
+action = { type = "chord", keys = "ctrl+shift+g" }
+[pages.keys.3.states.dirty]
+color = "#e0a83b"
+badge = "*"
+
+[[pages]]
+name = "general"
+
+[pages.keys.9]
+label = "Mute"

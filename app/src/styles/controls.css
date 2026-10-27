@@ -1,0 +1,117 @@
+/*
+ * Form controls (docs/design/gui-ux.md §6). Each control takes its text and
+ * its background from one token pair, so no control shows the webview's
+ * own colours under the app's text: the option list of a select had white
+ * text on a white background before (owner, 2026-10-25). tokens.css sets
+ * color-scheme for the native popups the webview draws itself.
+ */
+button,
+input,
+select,
+textarea {
+  box-sizing: border-box;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--kv-fg-muted);
+  border-radius: var(--kv-radius);
+  background: var(--kv-bg-alt);
+  color: var(--kv-fg);
+  font: inherit;
+  font-size: var(--kv-font-size);
+}
+
+button {
+  cursor: pointer;
+}
+
+option,
+optgroup {
+  background: var(--kv-bg);
+  color: var(--kv-fg);
+}
+
+::placeholder {
+  background: var(--kv-bg-alt);
+  color: var(--kv-fg-muted);
+  opacity: 1;
+}
+
+button:disabled,
+button[aria-disabled="true"],
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background: var(--kv-bg-alt);
+  color: var(--kv-fg-muted);
+  cursor: not-allowed;
+}
+
+[role="menu"] {
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--kv-fg-muted);
+  border-radius: var(--kv-radius);
+  background: var(--kv-bg-alt);
+  color: var(--kv-fg);
+  list-style: none;
+}
+
+[role="menuitem"] {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  border: none;
+  background: var(--kv-bg-alt);
+  color: var(--kv-fg);
+  text-align: start;
+}
+
+[role="menuitem"][aria-disabled="true"] {
+  background: var(--kv-bg-alt);
+  color: var(--kv-fg-muted);
+}
+
+[role="tooltip"] {
+  padding: 4px 8px;
+  border: 1px solid var(--kv-fg-muted);
+  border-radius: var(--kv-radius);
+  background: var(--kv-bg);
+  color: var(--kv-fg);
+}
+
+/* Hover moves the border to the text colour and nothing else (DESIGN.md
+   "Hover / Focus"); :where() keeps the rule below a selected or current
+   control's accent border, and a disabled control does not react. */
+button:where(:not(:disabled, [aria-disabled="true"])):hover,
+input:hover,
+select:hover,
+textarea:hover,
+[role="menuitem"]:hover {
+  border-color: var(--kv-fg);
+}
+
+button,
+input,
+select,
+textarea,
+[role="menuitem"] {
+  transition: border-color 150ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="menuitem"]:focus-visible {
+  border-color: var(--kv-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

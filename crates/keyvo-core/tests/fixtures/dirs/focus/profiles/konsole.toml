@@ -1,0 +1,12 @@
+schema_version = 1
+
+[profile]
+id    = "konsole"
+name  = "Konsole"
+match = { class = ["org.kde.konsole"] }
+
+[[pages]]
+name = "context"
+
+[pages.keys.1]
+label = "Shell"

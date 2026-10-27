@@ -1,0 +1,32 @@
+{
+  "name": "keyvo-app",
+  "version": "0.0.0",
+  "private": true,
+  "description": "keyvo desktop app frontend (Svelte 5, Tauri 2)",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.4"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/svelte": "5.4.2",
+    "@tsconfig/svelte": "5.0.8",
+    "@types/node": "24.19.2",
+    "jsdom": "30.1.3",
+    "smol-toml": "1.9.1",
+    "svelte": "5.57.2",
+    "svelte-check": "4.7.7",
+    "typescript": "6.0.3",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}

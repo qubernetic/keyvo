@@ -1,0 +1,21 @@
+# keyvo recipe pack: the calculator.
+# KCalc from the distribution, or its Flatpak on an image-based system such
+# as Fedora Kinoite or Aurora. On GNOME it is `gnome-calculator`. A
+# `launch`: the calculator stays open, so keyvo lets it go.
+schema_version = 1
+
+[recipe]
+group = "apps"
+name  = "Calculator"
+icon  = "lucide:calculator"
+label = "Calc"
+
+[[variants]]
+id     = "kcalc"
+name   = "KCalc"
+action = { type = "launch", cmd = "kcalc" }
+
+[[variants]]
+id     = "flatpak"
+name   = "KCalc (Flatpak)"
+action = { type = "launch", cmd = "flatpak run org.kde.kcalc" }

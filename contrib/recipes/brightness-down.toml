@@ -1,0 +1,20 @@
+# keyvo recipe pack: lower the screen brightness.
+# As brightness-up.toml: Plasma's PowerDevil shortcut first, the media key
+# for GNOME and X11.
+schema_version = 1
+
+[recipe]
+group = "system"
+name  = "Brightness down"
+icon  = "lucide:sun-dim"
+label = "Bright -"
+
+[[variants]]
+id     = "plasma"
+name   = "Plasma brightness shortcut"
+action = { type = "exec", cmd = "gdbus call --session --dest org.kde.kglobalaccel --object-path /component/org_kde_powerdevil --method org.kde.kglobalaccel.Component.invokeShortcut 'Decrease Screen Brightness'" }
+
+[[variants]]
+id     = "key"
+name   = "Brightness media key"
+action = { type = "chord", keys = "brightnessdown" }

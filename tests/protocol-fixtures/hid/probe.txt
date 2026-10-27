@@ -1,0 +1,61 @@
+# `keyvo probe` in its request order: read-only, no keep-alive, no claim.
+# Every exchange is copied from the capture (swid 0xe); the firmware
+# entities 2 and 3 are retagged from swid 0xd as in firmware-version.txt.
+#
+# 1. ROOT ping, data 0x39 -> HID++ 4.5 (frames #1563, #1565; lines 37-38)
+> 11 ff 00 1e 00 00 39 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 00 1e 04 05 39 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 2. ROOT getFeature(0x0003) -> index 0x02, version 7 (frames #1567, #1569; lines 39-40)
+> 11 ff 00 0e 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 00 0e 02 00 07 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 3. ROOT getFeature(0x0008) -> index 0x04, version 1 (frames #1631, #1633; lines 71-72)
+> 11 ff 00 0e 00 08 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 00 0e 04 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 4. ROOT getFeature(0x1B04) -> index 0x0b, version 6 (frames #1681, #1683; lines 96-97)
+> 11 ff 00 0e 1b 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 00 0e 0b 00 06 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 5. ROOT getFeature(0x8040) -> index 0x0f, version 1 (frames #1689, #1691; lines 100-101)
+> 11 ff 00 0e 80 40 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 00 0e 0f 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 6. DEVICE_FW_VERSION fn0 and fn1 for entities 0 to 3 (frames #1571 to
+#    #1581, #1309 to #1315; see firmware-version.txt)
+> 11 ff 02 0e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 02 0e 04 29 00 1e 00 00 08 c3 54 00 00 00 00 00 01 00
+> 11 ff 02 1e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 02 1e 01 42 4c 32 20 00 00 17 00 ab d4 00 00 00 00 00
+> 11 ff 02 1e 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 02 1e 00 55 31 00 66 00 00 17 01 c3 54 00 00 00 00 00
+> 11 ff 02 1e 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 02 1e 0b 49 4d 00 01 00 00 17 00 c3 54 00 00 00 00 00
+> 11 ff 02 1e 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 02 1e 02 48 57 20 00 00 00 00 00 00 00 00 00 00 00 00
+# 7. KEEP_ALIVE fn0 getTimeoutRange -> 500 .. 10000 ms (frames #1635, #1637; lines 73-74)
+> 11 ff 04 0e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 ff 04 0e 01 f4 27 10 00 00 00 00 00 00 00 00 00 00 00 00
+# 8. VLP root fn1 protocol capabilities (frames #1559, #1561; lines 35-36)
+> 13 ff 00 1e e0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 00 1e c0 01 00 00 01 e8 20 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 9. VLP root getFeature(0x19A1) -> VLP index 2 (frames #1643, #1645; lines 77-78)
+> 13 ff 00 0e e0 19 a1 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 00 0e c0 19 a1 02 00 00 00 01 e8 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 10. display fn3 supported modes (frames #1655, #1657; lines 83-84)
+> 13 ff 02 3e e0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 3e c0 a0 a1 a2 a4 a5 a6 d0 d1 d2 d3 d4 d5 d6 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 11. display fn5 current mode -> a1, the state after a keep-alive expiry; a
+#     freshly plugged-in Keypad reports a2 (first light, 2026-10-25,
+#     docs/hardware-notes.md item 5) (frames #1659, #1661; lines 85-86)
+> 13 ff 02 5e e0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 5e c0 a1 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 12. display fn0 capabilities (frames #1663, #1665; lines 87-88; see
+#     display-capabilities.txt)
+> 13 ff 02 0e e0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 0e c0 01 00 7a 1e 00 00 00 1b 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 13. display fn1 geometry, four packets (frames #1667 to #1675; lines 89-93)
+> 13 ff 02 1e e0 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 13 ff 02 1e 80 01 00 60 01 e0 01 e0 09 00 01 00 18 00 06 00 76 00 76 01 00 b6 00 07 00 76 00 76
+< 13 ff 02 1e 01 01 01 54 00 06 00 76 00 76 01 00 17 00 a4 00 76 00 76 01 00 b5 00 a3 00 76 00 76
+< 13 ff 02 1e 02 01 01 53 00 a4 00 76 00 76 01 00 17 01 42 00 76 00 76 01 00 b5 01 41 00 76 00 76
+< 13 ff 02 1e 43 01 01 54 01 41 00 76 00 76 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+#
+# Source: hcooper 03-options-plus-startup.pcap; line numbers refer to
+# docs/research/hcooper-startup-keypad-sequence.txt. MIT, see README.md.

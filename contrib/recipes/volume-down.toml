@@ -1,0 +1,20 @@
+# keyvo recipe pack: lower the volume.
+# As volume-up.toml: Plasma's own shortcut first, the media key for GNOME
+# and X11.
+schema_version = 1
+
+[recipe]
+group = "system"
+name  = "Volume down"
+icon  = "lucide:volume-1"
+label = "Vol -"
+
+[[variants]]
+id     = "plasma"
+name   = "Plasma volume shortcut"
+action = { type = "exec", cmd = "gdbus call --session --dest org.kde.kglobalaccel --object-path /component/kmix --method org.kde.kglobalaccel.Component.invokeShortcut decrease_volume" }
+
+[[variants]]
+id     = "key"
+name   = "Volume media key"
+action = { type = "chord", keys = "volumedown" }

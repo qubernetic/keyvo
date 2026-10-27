@@ -1,0 +1,285 @@
+//! Test doubles for the daemon: [`Pad`], a Keypad built on
+//! `FakeHidTransport`, and [`Pads`], a connector that hands out pads.
+//!
+//! The scripted part (keep-alive lookup, claim, divert) is replayed byte
+//! for byte by `FakeHidTransport`. Image fragments are the one thing a
+//! script cannot hold, because their bytes are the renderer's output: the
+//! pad takes them like the device does, acknowledges each fragment on
+//! `0x13` in the captured layout (`13 ff <display> <fn|swid> c<index> 00
+//! <index>`) and records every finished image with its rectangle. It also
+//! echoes every keep-alive ping, whenever the actor sends one, so the tests
+//! run with the default `[timing]` period (spec §6.1 refuses a period that
+//! is not below the timeout).
+
+#![allow(dead_code, clippy::unwrap_used, clippy::expect_used)]
+
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
+
+use keyvo_core::hid::{FakeHidTransport, HidTransport, TransportError};
+use keyvo_daemon::device::Connector;
+
+/// The display's VLP index in the fixtures.
+pub const DISPLAY: u8 = 2;
+/// The `0x1B04` feature index in the fixtures.
+pub const REPROG: u8 = 0x0b;
+/// The head of a keepAlive(3000) ping in the fixtures (index 0x04, fn1,
+/// swid 0xe); the pad echoes it like the device, whenever it comes.
+const KEEP_ALIVE_PING: [u8; 6] = [0x11, 0xff, 0x04, 0x1e, 0x0b, 0xb8];
+/// Longest a read of an idle pad blocks, so the actor does not spin.
+const IDLE_READ: Duration = Duration::from_millis(2);
+
+/// A fixture script from `tests/protocol-fixtures/hid/`.
+pub fn fixture(name: &str) -> String {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/protocol-fixtures/hid/"
+    );
+    std::fs::read_to_string(format!("{path}{name}")).unwrap()
+}
+
+/// The exchanges `range` of a fixture script (a `>` line with the `<`
+/// lines after it, counted from 0), comments dropped.
+pub fn exchanges(script: &str, range: std::ops::Range<usize>) -> String {
+    let mut exchange = None::<usize>;
+    let mut out = String::new();
+    for line in script.lines() {
+        if line.starts_with('>') {
+            exchange = Some(exchange.map_or(0, |n| n + 1));
+        }
+        let wanted = exchange.is_some_and(|n| range.contains(&n));
+        if wanted && line.starts_with(['>', '<']) {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+/// The device reports (`<` lines) of a fixture script, in order.
+pub fn reports(script: &str) -> Vec<Vec<u8>> {
+    script
+        .lines()
+        .filter_map(|line| line.strip_prefix('<'))
+        .map(|hex| {
+            hex.split_whitespace()
+                .map(|byte| u8::from_str_radix(byte, 16).unwrap())
+                .collect()
+        })
+        .collect()
+}
+
+/// What a connection to the Keypad starts with: the `KEEP_ALIVE` lookup,
+/// the display claim, the display capabilities (fn0, for `maxImageSize`;
+/// the display index is known from the claim) and the page-button divert.
+/// The pings themselves are answered by the pad.
+pub fn startup() -> String {
+    format!(
+        "{}{}{}{}",
+        exchanges(&fixture("keep-alive-ping.txt"), 0..1),
+        fixture("display-claim.txt"),
+        exchanges(&fixture("display-capabilities.txt"), 1..2),
+        fixture("reprog-divert.txt"),
+    )
+}
+
+/// [`startup`] of a Keypad just plugged in: its claim sees the plug-in
+/// splash (`display-splash.txt`, constructed from the #52 daemon log; no
+/// raw capture of a replug exists) twice before `a0` takes.
+pub fn startup_in_splash() -> String {
+    let claim = fixture("display-claim.txt");
+    let head = claim.split("# 6.").next().unwrap();
+    startup().replace(&claim, &format!("{head}{}", fixture("display-splash.txt")))
+}
+
+/// One image the pad received.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Image {
+    /// x, y, width, height.
+    pub rect: (u16, u16, u16, u16),
+    /// The JPEG, without the padding.
+    pub jpeg: Vec<u8>,
+}
+
+#[derive(Debug)]
+struct Partial {
+    rect: (u16, u16, u16, u16),
+    len: usize,
+    jpeg: Vec<u8>,
+}
+
+#[derive(Debug)]
+struct State {
+    script: FakeHidTransport,
+    sent: VecDeque<Vec<u8>>,
+    acks: VecDeque<Vec<u8>>,
+    input: VecDeque<Vec<u8>>,
+    partial: Option<Partial>,
+    images: Vec<Image>,
+    unplugged: bool,
+    seq: u8,
+}
+
+/// A Keypad for the daemon tests. Clones share the device, so a test keeps
+/// one and gives the other to the daemon.
+#[derive(Debug, Clone)]
+pub struct Pad(Arc<Mutex<State>>);
+
+impl Pad {
+    /// A pad that replays `script` for everything but image writes.
+    pub fn new(script: &str) -> Self {
+        Self(Arc::new(Mutex::new(State {
+            script: FakeHidTransport::from_script(script).unwrap(),
+            sent: VecDeque::new(),
+            acks: VecDeque::new(),
+            input: VecDeque::new(),
+            partial: None,
+            images: Vec::new(),
+            unplugged: false,
+            seq: 0xc0,
+        })))
+    }
+
+    fn state(&self) -> MutexGuard<'_, State> {
+        self.0.lock().unwrap()
+    }
+
+    /// Reports that exactly `keys` are held (an empty slice releases all).
+    pub fn hold(&self, keys: &[u8]) {
+        let mut state = self.state();
+        let mut report = vec![0x13, 0xff, DISPLAY, 0x00, state.seq, 0x01];
+        report.extend_from_slice(keys);
+        report.resize(32, 0);
+        state.seq = state.seq.wrapping_add(1);
+        state.input.push_back(report);
+    }
+
+    /// The page buttons `cids` are held now: a diverted-control
+    /// notification on the `0x1B04` index, as in `page-buttons.txt`.
+    pub fn buttons(&self, cids: &[u16]) {
+        let mut report = vec![0x11, 0xff, REPROG, 0x00];
+        for cid in cids {
+            report.extend_from_slice(&cid.to_be_bytes());
+        }
+        report.resize(20, 0);
+        self.state().input.push_back(report);
+    }
+
+    /// The device sends `reports` next, together and ahead of the scripted
+    /// replies, as the two events of a keep-alive expiry come within one
+    /// millisecond, before any answer to what keyvo writes after them.
+    pub fn send(&self, reports: &[Vec<u8>]) {
+        self.state().sent.extend(reports.iter().cloned());
+    }
+
+    /// Every image received so far, in order.
+    pub fn images(&self) -> Vec<Image> {
+        self.state().images.clone()
+    }
+
+    /// The device goes away: every later read and write fails.
+    pub fn unplug(&self) {
+        self.state().unplugged = true;
+    }
+
+    /// True when every scripted request was written and every scripted
+    /// report was read.
+    pub fn script_done(&self) -> bool {
+        self.state().script.is_done()
+    }
+}
+
+impl HidTransport for Pad {
+    fn write(&mut self, report: &[u8]) -> Result<(), TransportError> {
+        let mut state = self.state();
+        if state.unplugged {
+            return Err(TransportError::Disconnected);
+        }
+        if report.starts_with(&KEEP_ALIVE_PING) {
+            state.acks.push_back(report.to_vec());
+            return Ok(());
+        }
+        if report.first() != Some(&0x14) {
+            return state.script.write(report);
+        }
+        let seq = report[4];
+        let index = seq & 0x0f;
+        if seq & 0x80 != 0 {
+            let at = |i: usize| u16::from_be_bytes([report[i], report[i + 1]]);
+            let len = usize::from(report[17]) << 16
+                | usize::from(report[18]) << 8
+                | usize::from(report[19]);
+            state.partial = Some(Partial {
+                rect: (at(9), at(11), at(13), at(15)),
+                len,
+                jpeg: report[20..].to_vec(),
+            });
+        } else if let Some(partial) = &mut state.partial {
+            partial.jpeg.extend_from_slice(&report[5..]);
+        }
+        if seq & 0x40 != 0
+            && let Some(mut partial) = state.partial.take()
+        {
+            partial.jpeg.truncate(partial.len);
+            state.images.push(Image {
+                rect: partial.rect,
+                jpeg: partial.jpeg,
+            });
+        }
+        // The device's ACK layout (image-acks.txt): 01 on the last fragment.
+        let mut ack = vec![
+            0x13,
+            report[1],
+            report[2],
+            report[3],
+            0xc0 | index,
+            0x00,
+            u8::from(seq & 0x40 != 0),
+        ];
+        ack.resize(32, 0);
+        state.acks.push_back(ack);
+        Ok(())
+    }
+
+    fn read(&mut self, timeout: Duration) -> Result<Option<Vec<u8>>, TransportError> {
+        let report = {
+            let mut state = self.state();
+            if state.unplugged {
+                return Err(TransportError::Disconnected);
+            }
+            match state.sent.pop_front().or_else(|| state.acks.pop_front()) {
+                Some(ack) => Some(ack),
+                None => match state.script.read(timeout)? {
+                    Some(report) => Some(report),
+                    None => state.input.pop_front(),
+                },
+            }
+        };
+        if report.is_none() {
+            std::thread::sleep(timeout.min(IDLE_READ));
+        }
+        Ok(report)
+    }
+}
+
+/// Hands out the given pads in order, then fails like a missing device.
+#[derive(Debug)]
+pub struct Pads(pub VecDeque<Pad>);
+
+impl Pads {
+    /// A connector for `pads`.
+    pub fn new(pads: impl IntoIterator<Item = Pad>) -> Self {
+        Self(pads.into_iter().collect())
+    }
+}
+
+impl Connector for Pads {
+    type Transport = Pad;
+
+    fn connect(&mut self) -> Result<Pad, TransportError> {
+        self.0
+            .pop_front()
+            .ok_or_else(|| TransportError::Io("no keypad".into()))
+    }
+}

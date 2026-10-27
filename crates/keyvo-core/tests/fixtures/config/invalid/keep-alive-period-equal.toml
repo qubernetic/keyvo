@@ -1,0 +1,4 @@
+# First light (#40): period 3000 with timeout 3000 lost the claim.
+[timing]
+keep_alive_timeout = 3000
+keep_alive_period = 3000

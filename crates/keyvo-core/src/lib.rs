@@ -3,6 +3,29 @@
 
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
+pub mod chord;
+pub mod clock;
+pub mod config;
+pub mod diagnostic;
+pub mod edit;
+pub mod feedback;
+pub mod focus;
+pub mod hid;
+pub mod inject;
+pub mod layout;
+pub mod press;
+pub mod profile;
+pub mod recipe;
+pub mod render;
+pub mod schema;
+pub mod session;
+pub mod socket;
+pub mod stack;
+pub mod state;
+pub mod store;
+pub mod trace;
 
 /// Version of the keyvo workspace, taken from `Cargo.toml` at compile time.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

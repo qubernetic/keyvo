@@ -39,23 +39,30 @@ sequence. Evidence: `13 ff 00 0e e0 19 a1` → `c0 19 a1 02 …` (VLP root getFe
    Repeated.
 7. `13 ff 02 3e e0` → `c0 a0 a1 a2 a4 a5 a6 d0 d1 d2 d3 d4 d5 d6`: display fn3
    `getSupportedDeviceStates`, 13 device states. Host states: `a0` Streaming, `a1` Standby,
-   `a2` StandbyBright, `a4` Splash, `a5` SplashBright, `a6` OnboardingBright; device-internal
-   states `d0..d6`: Unknown, USB Preconfiguration, Idle, Low Power, TDE embedded image,
-   TDE embedded animation, TDE pattern, reported through the 0x19A1 event
-   ([options-plus-inventory.md](options-plus-inventory.md), finding 1; mapping medium).
+   `a2` StandbyBright, `a4` SplashBright, `a5` OnboardingBright, `a6` Dfu (`a3` Splash is
+   not in this device's list); device-internal states `d0..d6`: Unknown, USB
+   Preconfiguration, Idle, LowPower, TDE embedded image, TDE embedded animation, TDE
+   pattern, reported through the 0x19A1 event (names from the Options+ state enum,
+   [options-plus-display-pipeline.md](options-plus-display-pipeline.md) section 6, high; it
+   corrects the inventory's mapping of `a4` to `a6`).
 8. `13 ff 02 5e e0` → `c0 a1`: display fn5 = **get current mode; `a1` at boot**.
 9. `13 ff 02 0e e0` → `c0 01 00 7a 1e 00 00 00 1b 01`: display fn0 `getCapabilities`:
-   fields `deviceScreenCount`, `maxImageSize`, `maxImageFPS`, format flags `rgb565`, `rgb888`,
-   `jpeg`, `calibrated`, `origin`, `deferrableDisplayUpdate`; the byte widths still need the
-   hardware re-decode ([options-plus-inventory.md](options-plus-inventory.md), finding 1,
-   note A; names high, widths low).
+   `deviceScreenCount` 1 (u8), `maxImageSize` `0x007a` (u16 BE in KiB) = 124 928 bytes,
+   `maxImageFPS` 30 (u8), bytes 4..6 unread, flag byte 7 `0x1b`: bit 0
+   `deferrableDisplayUpdate` 1, bit 1 `rgb565` 1, bit 2 `rgb888` 0, bit 3 `jpeg` 1, bit 4
+   `calibrated` 1, bits 5..6 `origin` 0
+   ([options-plus-display-pipeline.md](options-plus-display-pipeline.md) section 0, high;
+   it replaces the inventory's 31 262 bytes).
 10. `13 ff 02 1e e0 01` → 4 packets (`80`, `01`, `02`, `43` sequence bytes): display fn1 =
     **display/key geometry table**. First packet: `01 00 60 01 e0 01 e0 09 00 01 00 18 00 06 00 76 00 76 01 00 b6 00 07 00 76 00 76`,
-    reading: panel **480 × 480 (0x01e0)**, **9 keys**, then per key: index, x(u16), y(u16), w(u16), h(u16) with
+    reading: shape 1, dimension `0x0060`, panel **480 × 480 (0x01e0)**, **9 buttons** (byte 7),
+    0 visible areas (byte 8), then per button: shape, x(u16), y(u16), w(u16), h(u16) with
     w = h = **0x76 = 118**, x values `0x18`(24), `0xb6`(182), `0x154`(340), y values `0x06/0x07`, `0xa4`(164),
     `0x142`(322). This is close to but not identical with Julusian's `23 + col*158` and needs an
     exact re-decode on hardware. **The device publishes its own geometry**, so keyvo should query
     it instead of hard-coding (future-proof for the 2026 MX Keypad).
+    The exact decode of all four packets (nine origins, header fields) is in spec §5.4 and
+    `tests/protocol-fixtures/hid/display-geometry.txt`.
 11. REPROG_CONTROLS_V4 (index 0x0b): getCount → 2; getCidInfo(0)/(1) → CID `0x01A1`, `0x01A2`,
     flags `0x20` (divertable); `setCidReporting(cid, 0x03)` = divert + dvalid for both page buttons.
 12. `13 ff 02 4e e0 a0` → `c0 a0`, then event `13 ff 02 10 c6 a0`: display fn4 = **set mode `a0`**

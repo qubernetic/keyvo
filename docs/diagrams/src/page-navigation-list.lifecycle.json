@@ -1,0 +1,66 @@
+{
+  "schema_version": 3,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "One page list per profile (#151, #157)",
+    "subtitle": "The page buttons on VS Code with a second page, the owner's global profile with context, general and apps (spec §6.1, §6.3)",
+    "output": "docs/diagrams/page-navigation-list.html",
+    "quality_profile": "showcase"
+  },
+  "mainPath": ["global-apps", "global-general", "context", "page-2"],
+  "states": [
+    { "id": "global-apps", "type": "neutral", "label": "apps", "sublabel": "global page 3, index -1", "tag": "global", "step": "-1" },
+    { "id": "global-general", "type": "neutral", "label": "general", "sublabel": "global page 2, index 0", "tag": "global", "step": "0" },
+    { "id": "context", "type": "start", "label": "context", "sublabel": "VS Code page 1, index 1", "tag": "VS Code", "step": "1" },
+    { "id": "page-2", "type": "active", "label": "Page 2", "sublabel": "VS Code page 2, index 2", "tag": "VS Code", "step": "2" },
+    { "id": "locked", "type": "waiting", "label": "Locked", "sublabel": "manual mode keeps profile and index", "tag": "manual" },
+    { "id": "other-context", "type": "active", "label": "Brave context", "sublabel": "index 1 of the new profile", "tag": "app switch" },
+    { "id": "global-context", "type": "decision", "label": "Global context", "sublabel": "index 1, auto mode", "tag": "escape" }
+  ],
+  "transitions": [
+    { "id": "apps-general", "from": "global-apps", "to": "global-general", "label": "right" },
+    { "id": "general-context", "from": "global-general", "to": "context", "label": "right" },
+    { "id": "context-page-2", "from": "context", "to": "page-2", "label": "right" },
+    { "id": "page-2-context", "from": "page-2", "to": "context", "label": "left" },
+    { "id": "context-general", "from": "context", "to": "global-general", "label": "left" },
+    { "id": "general-apps", "from": "global-general", "to": "global-apps", "label": "left" },
+    { "id": "page-2-other", "from": "page-2", "to": "other-context", "label": "app switch", "note": "at once", "variant": "dashed" },
+    { "id": "general-other", "from": "global-general", "to": "other-context", "label": "app switch", "note": "at once", "variant": "dashed" },
+    { "id": "general-return", "from": "global-general", "to": "context", "label": "return", "note": "no press for page_return_global (10 s)", "variant": "dashed" },
+    { "id": "apps-return", "from": "global-apps", "to": "context", "label": "return", "note": "no press for page_return_global (10 s)", "variant": "dashed" },
+    { "id": "page-2-return", "from": "page-2", "to": "context", "label": "return", "note": "only with page_return_own set (off by default)", "variant": "dashed" },
+    { "id": "page-2-locked", "from": "page-2", "to": "locked", "label": "long press" },
+    { "id": "locked-other", "from": "locked", "to": "other-context", "label": "long press", "note": "the focused window's profile" },
+    { "id": "page-2-escape", "from": "page-2", "to": "global-context", "label": "both buttons", "variant": "security" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "The list",
+      "items": [
+        "Global pages after general at -1, -2, ..., general at 0",
+        "The shown profile's context page at 1, its other pages from 2",
+        "No wrap: right on Page 2 and left on apps do nothing"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Focus and lock",
+      "items": [
+        "An app switch shows index 1 of the new profile at once",
+        "No page-button or key press for page_return_global: a global page returns to index 1; page_return_own (off by default) does it for page 2 and on",
+        "A title change in the same app keeps the index",
+        "The lock records focus changes, walks the same list and never returns"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Not changed",
+      "items": [
+        "Under every app page lies the global context page",
+        "Overlays apply to index 1, general_hint is a key on index 0",
+        "The view reports profile, page and index"
+      ]
+    }
+  ]
+}

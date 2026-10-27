@@ -1,0 +1,27 @@
+# keyvo recipe pack: Spectacle, KDE Plasma's screenshot and recording tool
+# (flags as in Spectacle 6: -f, -r, -R <mode>). On GNOME the screenshot UI
+# is the Print key; `gnome-screenshot -a` takes a region where it is
+# installed. A recording runs until it is stopped, so it is a `launch`; the
+# screenshots end after the capture and stay `exec`.
+schema_version = 1
+
+[recipe]
+group = "apps"
+name  = "Spectacle"
+icon  = "lucide:camera"
+label = "Capture"
+
+[[variants]]
+id     = "fullscreen"
+name   = "Full screen"
+action = { type = "exec", cmd = "spectacle --fullscreen" }
+
+[[variants]]
+id     = "region"
+name   = "Region"
+action = { type = "exec", cmd = "spectacle --region" }
+
+[[variants]]
+id     = "recording"
+name   = "Recording"
+action = { type = "launch", cmd = "spectacle --record region" }

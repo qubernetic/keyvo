@@ -1,0 +1,40 @@
+{
+  "valid": [
+    "a",
+    "ctrl+shift+g",
+    "Ctrl + Shift + P",
+    "control+s",
+    "altgr+e",
+    "meta+e",
+    "super",
+    "ctrl+shift",
+    "ctrl+?",
+    "ctrl++",
+    "ctrl+,",
+    "ctrl+ + ",
+    "KEY_F13",
+    "f5",
+    "leftctrl",
+    "escape",
+    "pgup",
+    "backtick",
+    "ctrl+k, ctrl+s",
+    "ctrl+k,ctrl+s",
+    "volumeup",
+    "brightnessdown"
+  ],
+  "invalid": [
+    { "chord": "", "error": "empty" },
+    { "chord": "   ", "error": "empty" },
+    { "chord": "ctrl+", "error": "missing_key" },
+    { "chord": "ctrl+k,", "error": "missing_key" },
+    { "chord": "ctrl+nope", "error": "unknown_key", "token": "nope" },
+    { "chord": "ctrl+shift+gg", "error": "unknown_key", "token": "gg" },
+    { "chord": "KEY_NOPE", "error": "unknown_key", "token": "KEY_NOPE" },
+    { "chord": "ctrl+k, ctrl+nope", "error": "unknown_key", "token": "nope" },
+    { "chord": "g+ctrl", "error": "not_a_modifier", "token": "g" },
+    { "chord": "ctrl+hyper+g", "error": "not_a_modifier", "token": "hyper" },
+    { "chord": "ctrl++x", "error": "expected_separator", "token": "+" },
+    { "chord": "ctrl+,x", "error": "expected_separator", "token": "," }
+  ]
+}

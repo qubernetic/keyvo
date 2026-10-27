@@ -14,11 +14,19 @@ name = "keyvo"
 path = "src/main.rs"
 
 [dependencies]
+anyhow = "1"
 clap.workspace = true
+image.workspace = true
+keyvo-client.workspace = true
 keyvo-core.workspace = true
+keyvo-hid.workspace = true
+rustix = { version = "1", default-features = false, features = ["std", "process"] }
+serde_json.workspace = true
 
 [lints]
 workspace = true
 
 [dev-dependencies]
 assert_cmd = "2"
+serde_json.workspace = true
+tempfile = "3"

@@ -26,6 +26,83 @@ developer's desk.
 > **Status: pre-alpha.** The project is in its bootstrap phase. Nothing is
 > installable yet. Follow the [roadmap](docs/roadmap.md) and the
 > [milestones](https://github.com/qubernetic/keyvo/milestones) for progress.
+> To try the pre-alpha on a Keypad, follow the
+> [pre-alpha test guide](docs/pre-alpha-test.md): build, the example
+> profiles in [contrib/profiles/](contrib/profiles/), and every check step
+> by step.
+
+From a checkout, the first device commands already run against a Keypad
+(build in the devcontainer, run on the host; see
+[CONTRIBUTING.md](CONTRIBUTING.md)):
+
+```bash
+just build
+just run -- probe                   # features, firmware, display mode, capabilities, geometry
+just run -- keys --json             # one JSON object per press and release
+just run -- fill '#ff8000' --key 5  # or a PNG; --all (default), --panel or --full
+just run -- probe --feature 0x1b04  # one feature id on both ROOT planes
+just run -- --dump probe            # every frame in and out on stderr
+bin/keyvo-daemon                    # paint ~/.config/keyvo/profiles/global.toml, run its keys, page buttons
+```
+
+On KDE Plasma 6 the daemon loads its own KWin script
+([contrib/kwin/keyvo-focus.js](contrib/kwin/keyvo-focus.js)), so the profile
+follows the focused window; nothing needs installing by hand. It also
+watches the session in systemd-logind: while the session is locked the
+pad shows a lock and runs nothing ([SECURITY.md](SECURITY.md)).
+
+While the daemon runs, `keyvo ctl` talks to its control socket
+([docs/socket-api.md](docs/socket-api.md)):
+
+```bash
+just run -- ctl status                                  # device, profile, page, mode
+just run -- ctl press '{"key":5,"dry_run":true}'        # resolve and trace, run nothing
+just run -- ctl subscribe '{"events":["trace","profile"]}'
+```
+
+The commands need read-write access to the Keypad's `/dev/hidraw*` node and
+Solaar stopped; [docs/hardware-notes.md](docs/hardware-notes.md) lists the
+measurements they serve.
+
+The desktop app has its shell (a navigation rail of Pad, Profiles and
+Behaviors, where Behaviors is greyed out until it is built, a header with
+the device selector, the profile dropdown, Preferences behind a gear and a
+keyboard map in its menu), a Profiles screen that manages the profiles
+(the list by priority with the one on the pad marked, name and accent
+written at once, priority, match rules, and page thumbnails with "Edit
+keys on the Pad"), and the Pad: a live mirror of the pad's page in a drawing of the Keypad, the
+pages of the pinned profile as tabs with its accent, a pin glyph in the
+header that shows and resets the pin, a line led by Follow when the pad
+moved away from the profile being edited, a broken profile
+shown with file and line, a strip of the recent presses under the
+inspector, each opening a trace drawer with what the press resolved to and
+what came of it, an actions catalogue to drag a preset (Spectacle,
+Volume up, VS Code and the rest of the recipe packs, with a "What it does"
+choice in the inspector) or Chord, Exec or Launch onto a key, and a virtual pad
+(a click selects a key, `1` to `9` and the arrows too; `Space` is a
+dry-run press, `Shift+Space` a long one). Beside the mirror, the inspector names the selected key, its
+file and line, and changes its label, icon (picked from the bundled icons), color and action, or
+overrides a key the global profile supplies: each change lands in the profile file at
+once (comments and formatting kept, a snapshot under
+`~/.local/state/keyvo/snapshots/` first), the daemon repaints the pad, and
+`Ctrl+Z` undoes it. It builds in the devcontainer and runs on the host:
+
+```bash
+just app-build
+bin/keyvo-app
+```
+
+For layout work, `just app-dev` serves the same app in a browser at
+`http://localhost:1420` against an in-memory mock of the daemon, no
+device or daemon needed (`?theme=breeze-light` and three more token sets,
+CONTRIBUTING.md "Mock dev server").
+
+A profile renders without a device, onto the Keypad's panel as a PNG:
+
+```bash
+just run -- preview crates/keyvo-core/tests/fixtures/profiles/valid/demo.toml -o grid.png
+just run -- preview vscode --page 2 -o grid.png   # an id from ~/.config/keyvo/profiles/
+```
 
 ## What it will do
 
@@ -38,8 +115,9 @@ developer's desk.
   profile switches; short, long, and repeat presses.
 - **Scriptable**: an NDJSON socket API (`keyvo ctl`) and supervised plugin
   processes; first-party integrations for Claude Code, VS Code, tmux, and git.
-- **Text first**: profiles live in `~/.config/keyvo/` as TOML with a JSON Schema;
-  the GUI edits the same files without destroying comments.
+- **Text first**: profiles live in `~/.config/keyvo/` as TOML with a JSON Schema
+  ([`schemas/`](schemas/)); the GUI edits the same files without destroying
+  comments.
 - **Dialpad**: buttons, dial, and roller over the Logi Bolt receiver via a small
   in-house HID++ 2.0 subset.
 - **Windows bridge**: a Logi Actions SDK plugin so the same profiles work next to
@@ -57,6 +135,12 @@ developer's desk.
 ## Documentation
 
 - [Specification](docs/spec.md): what keyvo is and why.
+- [Roadmap](docs/roadmap.md): milestones, the pre-alpha slices and their status.
+- [Socket API](docs/socket-api.md): the control socket's wire contract.
+- [Hardware notes](docs/hardware-notes.md): what the Keypad does, measured on
+  the device.
+- [Pre-alpha test guide](docs/pre-alpha-test.md): the hardware session on
+  the host, with the example profiles.
 - [Project plan](docs/plans/2026-09-09-project-plan.md): decisions, architecture,
   milestones.
 - [Research](docs/research/): protocol findings and prior-art analyses.
