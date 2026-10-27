@@ -400,11 +400,11 @@ describe("Inspector", () => {
   it("writes a picked icon as lucide:<name>", async () => {
     const editor = await mounted(accepting());
     const icon = screen.getByRole("combobox", { name: "Icon" });
-    await fireEvent.input(icon, { target: { value: "termi" } });
+    await fireEvent.input(icon, { target: { value: "hamm" } });
     await fireEvent.keyDown(icon, { key: "ArrowDown" });
     await fireEvent.keyDown(icon, { key: "Enter" });
     await waitFor(() =>
-      expect(editor.editor.editKey).toHaveBeenLastCalledWith(TARGET, { ...STEPS.fields, icon: "lucide:terminal" }),
+      expect(editor.editor.editKey).toHaveBeenLastCalledWith(TARGET, { ...STEPS.fields, icon: "lucide:hammer" }),
     );
   });
 

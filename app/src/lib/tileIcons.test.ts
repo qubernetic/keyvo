@@ -1,6 +1,6 @@
 // The tile icons the picker offers are the ones the renderer bundles: the
 // names are read from the same directory, so the two cannot drift.
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
@@ -11,12 +11,13 @@ const LUCIDE = join(dirname(fileURLToPath(import.meta.url)), "../../../crates/ke
 
 it("names every icon under crates/keyvo-core/assets/lucide, sorted, without the aliases", () => {
   const svgs = readdirSync(LUCIDE).filter((file) => file.endsWith(".svg"));
-  const drawn = svgs.filter((file) => readFileSync(join(LUCIDE, file), "utf8").includes("<svg"));
-  expect(TILE_ICONS).toEqual(drawn.map((file) => file.slice(0, -".svg".length)).sort());
-  // The one alias file today: the renderer draws it as circle-question-mark.
-  expect(svgs.length - drawn.length).toBe(1);
+  expect(TILE_ICONS).toEqual(svgs.map((file) => file.slice(0, -".svg".length)).sort());
+  // The whole lucide set (#142); its old names stay with the renderer
+  // (keyvo_core::render::icon, LUCIDE_ALIASES) and have no file.
+  expect(TILE_ICONS.length).toBeGreaterThan(1500);
+  expect(TILE_ICONS).toContain("house");
+  expect(TILE_ICONS).not.toContain("home");
   expect(TILE_ICONS).not.toContain("circle-help");
-  expect(TILE_ICONS).toContain("circle-question-mark");
 });
 
 it.each(TILE_ICONS)("%s is an SVG drawn in the text colour", (name) => {

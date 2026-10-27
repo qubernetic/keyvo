@@ -101,6 +101,14 @@ fn deprecated_lucide_names_resolve_to_the_current_icon() {
     );
 }
 
+/// The whole lucide set is bundled, its metadata aliases with it (#142).
+#[test]
+fn a_lucide_icon_outside_the_old_subset_and_its_alias_draw_the_same_tile() {
+    let house = icon("lucide:house", None);
+    assert_ne!(house, icon("lucide:circle-question-mark", None));
+    assert_eq!(icon("lucide:home", None), house);
+}
+
 fn labeled(label: &str, icon: Option<&str>) -> keyvo_core::render::Tile {
     let spec = KeySpec {
         label: Some(label.to_owned()),

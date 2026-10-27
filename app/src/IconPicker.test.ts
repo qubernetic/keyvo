@@ -33,15 +33,15 @@ describe("IconPicker", () => {
 
   it("filters on typing, case-insensitive", async () => {
     const { input } = picker();
-    await fireEvent.input(input, { target: { value: "VOL" } });
-    expect(options()).toEqual(["volume-1", "volume-2", "volume-x"]);
+    await fireEvent.input(input, { target: { value: "VOLUME-" } });
+    expect(options()).toEqual(["volume-1", "volume-2", "volume-off", "volume-x"]);
     await fireEvent.input(input, { target: { value: "nothing-like-it" } });
     expect(screen.getByText("No icon matches")).toBeInTheDocument();
   });
 
   it("moves with the arrows and picks with Enter, written as lucide:<name>", async () => {
     const { input, onpick } = picker();
-    await fireEvent.input(input, { target: { value: "vol" } });
+    await fireEvent.input(input, { target: { value: "volume-" } });
     await fireEvent.keyDown(input, { key: "ArrowDown" });
     await fireEvent.keyDown(input, { key: "ArrowDown" });
     expect(input).toHaveAttribute("aria-activedescendant", screen.getByRole("option", { name: "volume-2" }).id);
@@ -55,7 +55,7 @@ describe("IconPicker", () => {
 
   it("wraps at both ends", async () => {
     const { input } = picker();
-    await fireEvent.input(input, { target: { value: "vol" } });
+    await fireEvent.input(input, { target: { value: "volume-" } });
     await fireEvent.keyDown(input, { key: "ArrowUp" });
     expect(screen.getByRole("option", { name: "volume-x" })).toHaveAttribute("aria-selected", "true");
     await fireEvent.keyDown(input, { key: "ArrowDown" });
@@ -64,15 +64,15 @@ describe("IconPicker", () => {
 
   it("picks with a click", async () => {
     const { input, onpick } = picker();
-    await fireEvent.input(input, { target: { value: "term" } });
-    await fireEvent.click(screen.getByRole("option", { name: "terminal" }));
-    expect(onpick).toHaveBeenCalledWith("lucide:terminal");
+    await fireEvent.input(input, { target: { value: "rock" } });
+    await fireEvent.click(screen.getByRole("option", { name: "rocket" }));
+    expect(onpick).toHaveBeenCalledWith("lucide:rocket");
   });
 
   it("closes on Escape and puts the chosen name back", async () => {
     const { input, onpick } = picker("lucide:rocket");
     expect(input).toHaveValue("rocket");
-    await fireEvent.input(input, { target: { value: "vol" } });
+    await fireEvent.input(input, { target: { value: "volume-" } });
     await fireEvent.keyDown(input, { key: "Escape" });
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
     expect(input).toHaveValue("rocket");

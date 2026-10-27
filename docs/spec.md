@@ -113,6 +113,7 @@ keyvo/
 ├── contrib/            # KWin script, example profiles; planned: udev rule, systemd unit, Flatpak manifest
 ├── captures/           # README + derived fixtures; raw pcapng external (release assets)
 ├── tools/keycodes/     # generator of the evdev key code table of the chord parser
+├── tools/lucide/       # generator of the bundled lucide icons and their table
 ├── tools/windows-vm/   # planned: libvirt VM scripts (from TwinCat-MCP)
 ├── schemas/            # generated JSON Schemas of profiles and config.toml
 ├── tests/protocol-fixtures/  # shared fixtures for Rust/TS clients: socket/ NDJSON, editor/, hid/ golden HID++ scripts
@@ -1500,10 +1501,12 @@ justfile page, `gh`, `kubectl`, other agent CLIs, Kitty/WezTerm.
   the key has a label; the label, Inter 4.1 semibold, below the icon or
   centered without one, shrunk from 17 % to 12 % of the tile height to fit
   and then cut with an ellipsis. Icon and label are white on a dark key
-  and near-black on a light one (Rec. 709 luma above 140). Icons are a
-  bundled subset of lucide 1.61.0 (ISC) under
-  `crates/keyvo-core/assets/lucide/`, with lucide's deprecated names
-  (`git-commit`, `circle-help`) accepted; an unknown icon, and every
+  and near-black on a light one (Rec. 709 luma above 140). Icons are the
+  whole lucide 1.61.0 set (ISC, about 1900 icons, about 1.1 MB of the
+  daemon binary) under `crates/keyvo-core/assets/lucide/`, generated with
+  the icon table by `tools/lucide/generate.py` from the pinned release
+  asset, with the deprecated names of lucide's metadata accepted
+  (`git-commit`, `circle-help`, `home`); an unknown icon, and every
   `phosphor:`, `simple-icons:` and `file:` reference until their issues,
   draws `lucide:circle-question-mark` and `keyvo preview` names it. Only
   the embedded font is loaded, never a system font, so a spec renders to
@@ -1879,10 +1882,9 @@ key editor of the app; the key grid exists once, on the Pad.
   Label, Icon and Color. Icon is a combobox (`app/src/IconPicker.svelte`)
   over the icons keyvo-core bundles for the renderer
   (`crates/keyvo-core/assets/lucide/`, read at build time by
-  `app/src/lib/tileIcons.ts`; the alias files without an SVG are left
-  out): typing filters, the arrows move, Enter or a click picks, `Esc`
-  closes, each row with its glyph and name; the pick is written as
-  `lucide:<name>`, the value as written shows under the field, an emptied
+  `app/src/lib/tileIcons.ts`, the whole lucide set): typing filters, the
+  arrows move, Enter or a click picks, `Esc` closes, each row with its glyph and name; the pick is
+  written as `lucide:<name>`, the value as written shows under the field, an emptied
   field removes the icon, and a value the picker does not bundle stays as
   written. Color is a colour swatch and its `#rrggbb` text, kept in step.
 - **Action.** A select (No action, Chord, Exec) and the kind's field, the
@@ -2170,6 +2172,9 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha design pass (2026-10-27)**: §9 the whole lucide 1.61.0
+  set is bundled, generated with its metadata aliases by
+  `tools/lucide/generate.py` (#142).
 - **v0.3, pre-alpha design pass (2026-10-27)**: §10 Pad: while the pad
   shows another page than the pinned one, the mirror draws no selection
   outline, the "pad moved" line names the pinned profile and key before
