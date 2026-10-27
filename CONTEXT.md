@@ -149,14 +149,17 @@ Overlays stack in push order and are removed with `pop_overlay`.
 `context` page; the global profile also has the `general` page; a profile may
 have more.
 
-**Page grace**: The time (default 10 s, `[timing].page_grace`) after the last
-use of a page button during which an app switch keeps the page list index
-instead of showing index 1, so the user's choice sticks.
-
 **Page list**: The ordered pages the page buttons walk for the shown profile:
 the global profile's pages after `general` at -1, -2, ..., the general page at
 0, the shown profile's context page at 1 and its other pages from 2. It does
 not wrap. The daemon reports the position as `index`.
+
+**Page return**: In auto mode the pad goes back to index 1 of the page list by
+itself after a time without a page-button or key press: after
+`[timing].page_return_global` (default 10 s) on a global page (index 0 and
+below), after `[timing].page_return_own` (default 0, off) on the shown
+profile's further pages (index 2 and above). Replaced the page grace, which
+kept the index across an app switch (#157).
 
 **Plugin**: An executable under `~/.config/keyvo/plugins/<name>/` described by
 `plugin.toml`, started and restarted by the daemon, speaking the NDJSON socket

@@ -132,11 +132,19 @@ pub struct Timing {
     #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub long_press: Duration,
-    /// After a page-button use, an app switch keeps the general page for
-    /// this long (spec §6.3). Default 10000 ms.
+    /// On a global page (list index 0 or below), the pad returns to the
+    /// shown profile's context page after this long without a page-button
+    /// or key press (spec §6.3); 0 keeps the page. Default 10000 ms.
     #[serde(with = "millis")]
     #[schemars(with = "u64")]
-    pub page_grace: Duration,
+    pub page_return_global: Duration,
+    /// On one of the shown profile's further pages (list index 2 or
+    /// above), the pad returns to its context page after this long without
+    /// a page-button or key press (spec §6.3); 0 keeps the page. Default 0
+    /// (off).
+    #[serde(with = "millis")]
+    #[schemars(with = "u64")]
+    pub page_return_own: Duration,
     /// Time between two keep-alive pings (spec §5.3); must be shorter than
     /// `keep_alive_timeout`. Default 1000 ms.
     #[serde(with = "millis")]
@@ -212,7 +220,8 @@ impl Default for Timing {
             focus_hysteresis: Duration::from_millis(150),
             render_coalesce: Duration::from_millis(50),
             long_press: Duration::from_millis(1000),
-            page_grace: Duration::from_millis(10_000),
+            page_return_global: Duration::from_millis(10_000),
+            page_return_own: Duration::ZERO,
             keep_alive_period: Duration::from_millis(1000),
             keep_alive_timeout: Duration::from_millis(3000),
             ack_timeout: Duration::from_millis(50),
