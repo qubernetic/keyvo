@@ -112,7 +112,7 @@ keyvo/
 ├── plugins/logi/       # planned: C# Logi Actions SDK plugin (M5), built in the Windows VM
 ├── contrib/            # KWin script, example profiles; planned: udev rule, systemd unit, Flatpak manifest
 ├── captures/           # README + derived fixtures; raw pcapng external (release assets)
-├── tools/keycodes/     # generator of the evdev key code table of the chord parser
+├── tools/keycodes/     # generator of the evdev key code table of the chord parser and the app's key names
 ├── tools/lucide/       # generator of the bundled lucide icons and their table
 ├── tools/windows-vm/   # planned: libvirt VM scripts (from TwinCat-MCP)
 ├── schemas/            # generated JSON Schemas of profiles and config.toml
@@ -2025,7 +2025,13 @@ then subscribes with a replay of the newest 20 trace entries;
   the action (and the label and icon to the pack's). Below 1200 px the
   column goes and the inspector's Action select carries the entries in
   the three groups; a preset chosen there is applied like an assigned
-  one.
+  one. Beside the select a "Browse actions" button (`aria-haspopup`,
+  `aria-expanded`) opens the catalogue as a popover at the window's right
+  edge, a dialog that is not modal, with its icons, search and drag; `/`
+  outside a field opens it too, with or without a selected key, and puts
+  the focus in its search. A click on an entry assigns it to the selected
+  key and closes the popover; Escape and Close close it; the focus goes
+  back to the button (#167).
 - **Trace drawer** (`app/src/TraceDrawer.svelte` on `Drawer`). Opens from
   an entry of the trace strip and from the result line of a dry-run press, takes the
   focus, and closes on `Esc` or its close button, giving the focus back.
@@ -2103,8 +2109,10 @@ key editor of the app; the key grid exists once, on the Pad.
   sets the field again. Color is a colour swatch and its `#rrggbb` text, kept in step.
 - **Action.** A select (No action, Chord, Exec, Launch) and the kind's
   field, the chord's keys or the `exec` or `launch` command; the working directory and hold of
-  an `exec` wait for the action schema to carry them. The form is at most
-  `48ch` wide.
+  an `exec` wait for the action schema to carry them. Under the Chord
+  field a hint line in the label size says the syntax: "Keys joined with
+  +, for example ctrl+shift+g; modifiers ctrl, alt, shift, super." (the
+  field is described by it). The form is at most `48ch` wide.
 
 - **Immediate apply.** A field is written the moment it changes (the
   input's `change`, on Enter or when the focus leaves it), through the
@@ -2115,8 +2123,17 @@ key editor of the app; the key grid exists once, on the Pad.
 - **Validation.** A color that is not `#rrggbb` or an action without its
   keys or command is not written; an alert under the field says why, and
   the field is marked invalid and described by it. A new action type
-  starts empty and is written when its keys or command are entered. A chord
-  the parser refuses comes back from the shell as the error.
+  starts empty and is written when its keys or command are entered. A
+  chord is checked before the write with the grammar of §7.2
+  (`app/src/lib/chord.ts`, a port of the token rules of
+  `keyvo_core::chord`; its evdev key names, `app/src/lib/keynames.ts`, are
+  written by `tools/keycodes/generate.py` in the same run as the Rust
+  table, and a test compares the two); the alert names the wrong token
+  ("nope is not a key name.", "g is not a modifier; ...", "A + or , at the
+  end needs a key after it.", "Expected +, a comma or the end after +.")
+  and nothing is written (#167). Both parsers run the shared cases of
+  `tests/protocol-fixtures/chord/`. A chord the parser still refuses comes
+  back from the shell as the error.
 - **Undo.** `Ctrl+Z` and `Ctrl+Shift+Z`, or the Undo and Redo buttons, undo
   and redo the session's writes, newest first, each by writing the fields
   before it again through the same path; a new write drops what is left to
@@ -2192,7 +2209,10 @@ write of the screen.
   one.
 - **Match rules.** One list of kind and pattern rows as written, each
   kind named once (Window class, Title regex); "+ rule" and each row's
-  Edit are disabled with their M4a-4 sentence. A profile without rules
+  Edit are disabled with their M4a-4 sentence. Under the Window class
+  patterns a muted line in the label size says what the class is: "The
+  class KWin reports for the window; keyvo ctl status prints the focused
+  one." (#167). A profile without rules
   says focus never selects it; the global profile says it is under every
   window.
 - **Pages.** One thumbnail per page, the page's tiles as keyvo-core
@@ -2402,6 +2422,13 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha design pass (2026-10-27)**: chords checked before
+  the write and the fields' hints (#167). §10 the key editor checks a
+  chord with the §7.2 grammar ported to the app, its key names generated
+  with the Rust table, and names the wrong token under the field; hint
+  lines under Chord and under the Window class rule; below 1200 px
+  "Browse actions" (or `/`) opens the catalogue as a popover (critique
+  re-run, heuristics 5, 6 and 10).
 - **v0.3, pre-alpha design pass (2026-10-27)**: one scroll owner per
   screen (#166). §10 `main` no longer scrolls; the Pad's drawing,
   inspector and catalogue and the Profiles list and editor each scroll on

@@ -77,7 +77,7 @@ keyvo/
 │                       #   contrib.rs); planned: udev rule, systemd unit, Flatpak manifest
 ├── captures/           # README + derived fixtures; raw pcapng external (release assets)
 ├── tools/windows-vm/   # planned: libvirt VM scripts
-├── tools/keycodes/     # generator of the evdev key code table in keyvo-core's chord parser
+├── tools/keycodes/     # generator of the evdev key code table of the chord parser and the app's key names
 ├── tools/lucide/       # generator of keyvo-core's bundled lucide icons and their table, from the pinned release
 ├── schemas/            # generated JSON Schemas of profiles, recipe packs and config.toml; a keyvo-core test keeps them current
 ├── tests/protocol-fixtures/  # shared fixtures for Rust/TS clients: socket/ NDJSON, editor/, hid/ golden HID++ scripts
