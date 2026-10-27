@@ -3,6 +3,10 @@
 // the Simulator, the profile dropdown that pins the inspector, the sandbox
 // switch not built yet, the gear that opens Preferences, and the overflow
 // menu whose entries are disabled until they exist.
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { fireEvent, render, screen } from "@testing-library/svelte";
 import { describe, expect, it, vi } from "vitest";
 
@@ -47,14 +51,25 @@ function header(
     onchoose: vi.fn<(choice: DeviceChoice) => void>(),
     onshortcuts: vi.fn<() => void>(),
     onpreferences: vi.fn<() => void>(),
-    onpin: vi.fn<(profile: string) => void>(),
+    onpin: vi.fn<(pinned: Pinned) => void>(),
   };
   render(Header, { props: { device, chosen, profiles, pad, pinned, ...handlers } });
   return handlers;
 }
 
 function dropdown(): HTMLSelectElement {
-  return screen.getByRole("combobox", { name: "Profile" });
+  return screen.getByRole("combobox", { name: /^Profile/ });
+}
+
+function pin(): HTMLButtonElement {
+  return screen.getByRole("button", { name: "Pin" });
+}
+
+/** The body of one rule of the component's style; jsdom applies none. */
+function rule(selector: string): string {
+  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "Header.svelte"), "utf8");
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\n  ${escaped} \\{([^}]*)\\}`).exec(css)?.[1] ?? "";
 }
 
 describe("the profile dropdown", () => {
@@ -80,12 +95,64 @@ describe("the profile dropdown", () => {
   it("pins the profile the user chooses", async () => {
     const { onpin } = header();
     await fireEvent.change(dropdown(), { target: { value: "vscode" } });
-    expect(onpin).toHaveBeenCalledWith("vscode");
+    expect(onpin).toHaveBeenCalledWith({ profile: "vscode", page: 1 });
   });
 
   it("is disabled while the profiles load", () => {
     header(undefined, undefined, { profiles: [] });
     expect(dropdown()).toBeDisabled();
+  });
+
+  it("says in its name that it follows the pad while nothing is pinned", () => {
+    header();
+    expect(dropdown()).toHaveAccessibleName("Profile, following the pad");
+  });
+
+  it("says in its name that it is pinned, on the pad's profile too", () => {
+    header(undefined, undefined, { pinned: { profile: "terminal", page: 2 } });
+    expect(dropdown()).toHaveAccessibleName("Profile, pinned");
+  });
+
+  it("is capped at 24ch, cutting a long name, which its title carries whole", () => {
+    const long = "A profile with a name far longer than the header has room for";
+    header(undefined, undefined, { profiles: [...PROFILES, summary("long", long, 30)], pinned: { profile: "long", page: 1 } });
+    expect(dropdown()).toHaveAttribute("title", long);
+    expect(dropdown()).toHaveClass("profile");
+    expect(rule(".profile")).toMatch(/max-width: 24ch;/);
+    expect(rule(".profile")).toMatch(/text-overflow: ellipsis;/);
+    expect([...dropdown().options].map((option) => option.text)).toContain(long);
+  });
+});
+
+describe("the pin", () => {
+  it("is a toggle beside the dropdown, not pressed while following", () => {
+    header();
+    expect(pin()).toHaveAttribute("aria-pressed", "false");
+    expect(dropdown().nextElementSibling).toBe(pin());
+    expect(pin()).toHaveAccessibleDescription("Following the pad. Press to pin Terminal, page 1.");
+  });
+
+  it("is pressed while the inspector is pinned", () => {
+    header(undefined, undefined, { pinned: { profile: "vscode", page: 1 } });
+    expect(pin()).toHaveAttribute("aria-pressed", "true");
+    expect(pin()).toHaveAccessibleDescription("Pinned to VS Code, page 1. Press to follow the pad.");
+  });
+
+  it("follows the pad again when pressed while pinned", async () => {
+    const { onpin } = header(undefined, undefined, { pinned: { profile: "vscode", page: 1 } });
+    await fireEvent.click(pin());
+    expect(onpin).toHaveBeenCalledWith(undefined);
+  });
+
+  it("pins the pad's profile and page when pressed while following", async () => {
+    const { onpin } = header(undefined, undefined, { pad: { ...PAD, page: 2 } });
+    await fireEvent.click(pin());
+    expect(onpin).toHaveBeenCalledWith({ profile: "terminal", page: 2 });
+  });
+
+  it("is disabled while nothing is pinned and the pad reports no view", () => {
+    render(Header, { props: { onchoose: vi.fn(), profiles: PROFILES } });
+    expect(pin()).toBeDisabled();
   });
 });
 

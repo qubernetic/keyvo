@@ -98,7 +98,7 @@ function app(
 }
 
 function dropdown(): HTMLSelectElement {
-  return screen.getByRole("combobox", { name: "Profile" });
+  return screen.getByRole("combobox", { name: /^Profile/ });
 }
 
 /** The dropdown's option texts once the profile list has arrived. */
@@ -192,6 +192,23 @@ describe("the pin", () => {
     await send({ event: "profile", profile: "global", page: 1, mode: "auto", index: 1 });
     expect(dropdown().value).toBe("vscode");
     expect(await listed()).toEqual(["Global, on the pad", "VS Code", "Terminal"]);
+  });
+
+  it("presses the pin glyph after a header pick and follows the pad again when it is pressed", async () => {
+    const { send } = app();
+    await listed();
+    const pin = screen.getByRole("button", { name: "Pin" });
+    expect(pin).toHaveAttribute("aria-pressed", "false");
+    await fireEvent.change(dropdown(), { target: { value: "vscode" } });
+    expect(pin).toHaveAttribute("aria-pressed", "true");
+    expect(dropdown()).toHaveAccessibleName("Profile, pinned");
+    await send({ event: "profile", profile: "global", page: 1, mode: "auto", index: 1 });
+    expect(await screen.findByText("Editing VS Code, page 1; the pad shows Global, page 1.")).toBeInTheDocument();
+    await fireEvent.click(pin);
+    expect(pin).toHaveAttribute("aria-pressed", "false");
+    expect(dropdown()).toHaveAccessibleName("Profile, following the pad");
+    expect(dropdown().value).toBe("global");
+    expect(screen.queryByText(/^Editing /)).toBeNull();
   });
 
   it("keeps the dropdown disabled while the list cannot be read", async () => {
@@ -313,6 +330,23 @@ describe("App", () => {
     await resize(960);
     expect(screenOf()).toHaveClass("stacked");
     expect(screen.getByRole("button", { name: "Pad" })).toHaveTextContent("");
+  });
+
+  it("keeps the header and the Profiles editor on one pin while the pad moves", async () => {
+    const { send } = app();
+    await listed();
+    await fireEvent.keyDown(window, { key: "2", ctrlKey: true });
+    await fireEvent.change(dropdown(), { target: { value: "vscode" } });
+    await send({ event: "profile", profile: "global", page: 1, mode: "auto", index: 1 });
+    expect(await screen.findByRole("heading", { level: 2, name: "VS Code" })).toBeInTheDocument();
+    expect(dropdown()).toHaveAccessibleName("Profile, pinned");
+    // A pick in the list pins too, and the header names it.
+    await fireEvent.click(screen.getByRole("button", { name: "Terminal (terminal), priority 0" }));
+    expect(dropdown().value).toBe("terminal");
+    // Follow in the header: both follow the pad again.
+    await fireEvent.click(screen.getByRole("button", { name: "Pin" }));
+    expect(dropdown()).toHaveAccessibleName("Profile, following the pad");
+    expect(await screen.findByRole("heading", { level: 2, name: "Global" })).toBeInTheDocument();
   });
 
   it("opens the Pad pinned to a profile from Profiles", async () => {

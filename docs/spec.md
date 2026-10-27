@@ -1849,7 +1849,17 @@ and the columns of `docs/design/gui-ux.md` §2:
   pinned profile, else the pad's, and pins the choice (`app/src/lib/pin.ts`:
   undefined follows the pad, a pinned profile starts on page 1, a view
   event never moves the pin, a profile gone from a re-read list unpins;
-  the Pad's inspector and page tabs read it); the Sandbox
+  the Pad's inspector and page tabs and the Profiles selection read it).
+  The dropdown's accessible name says its state, `Profile, pinned` or
+  `Profile, following the pad`; it is at most `24ch` wide and cuts a
+  longer name with an ellipsis, its title and its option list carrying
+  the whole name (#164). Beside it, the pin glyph (lucide `pin`), a toggle
+  button named "Pin": pressed while the inspector is pinned, and pressing
+  it then is Follow; not pressed while following, and pressing it pins
+  the pad's profile and page; its title says which (`Pinned to <name>,
+  page <n>. Press to follow the pad.` or `Following the pad. Press to pin
+  <name>, page <n>.`); disabled while nothing is pinned and the daemon
+  reports no view (#164). Then the Sandbox
   switch, disabled with its M4a-4 sentence, Apply and Discard not shown;
   the gear, which opens Preferences; and the overflow menu with Export,
   Import, Open config folder, Re-run setup step and About, disabled with
@@ -1923,12 +1933,13 @@ then subscribes with a replay of the newest 20 trace entries;
   first selection pins the inspector to the profile and page the pad
   shows (`pinOnSelect` of `app/src/lib/pin.ts`), so a later view event
   moves the drawing and never the inspector. While the pin and the pad
-  differ, a line under the page tabs says `Editing <pinned profile>, key
+  differ, a line under the page tabs leads with Follow, which unpins
+  and keeps the key number, then says `Editing <pinned profile>, key
   <key>; the pad shows <profile>, page <page>.` (`page <page>` of the pin
   instead of the key while none is selected), both profiles by the name
   the header's dropdown shows (the id while the list does not know the
-  profile, #150), with Follow, which unpins
-  and keeps the key number, and the mirror draws no selection outline.
+  profile, #150); the pinned page's tab carries the pin mark (Page tabs
+  below), and the mirror draws no selection outline (#143, #164).
   A click on a tile then pins the pad's page again when the pin came
   from a key selection; a profile or page chosen in the dropdown, a tab
   or "Edit keys on the Pad" stays pinned (#143).
@@ -1945,7 +1956,10 @@ then subscribes with a replay of the newest 20 trace entries;
   the daemon reports no change while a title change in the same app keeps
   the pad on a global page, so the tabs right of it can still name the
   profile before. While following, the selected tab is the `index`
-  the daemon reports; while pinned, the pinned page's tab. A tab is at
+  the daemon reports; while pinned, the pinned page's tab. While the pad
+  shows another page than the pin, the pinned page's tab carries the
+  lucide `pin` glyph before its name and `, pinned` after its name in its
+  label and title, a mark that is not colour alone (#164). A tab is at
   most `16ch` wide and cuts a longer name with an ellipsis; every tab
   carries its whole name in its title (#130). Arrows
   wrapping, `Home` and `End`; a tab pins its page of the profile that
@@ -2126,10 +2140,15 @@ write of the screen.
   priorities by id. Each row shows the name, a 12 px accent square after
   it when the profile has an accent, and "on the pad" on the profile the
   pad shows; its accessible name adds the id and the priority. The
-  screen opens on the pad's profile, else the global one, and follows
-  the pad until the user picks a profile in the list or a field of the
-  editor takes the focus: from then on the selection stays while the
-  pad moves on (#130). Skeleton rows
+  selection is the shell's pin, the one the header's dropdown names
+  (#164, which answers question 1 of the critique re-run): the pinned
+  profile, else the pad's, else the global one. It follows the pad only
+  while nothing is pinned. A pick in the list pins that profile on page
+  1, as the dropdown does; a field of the editor taking the focus pins
+  the selected profile (on the pad's page when it is the pad's profile),
+  so the pad moving on changes nothing under the user (#130). Follow in
+  the header, or on the Pad, returns both to the pad. A selected profile
+  starts on its pinned page, else on page 1. Skeleton rows
   stand in while the first read runs; a configuration that does not
   load shows as a notice with the load errors, the last list kept. "+"
   opens the templates (Empty profile, Copy of the active profile, Starter
@@ -2370,6 +2389,14 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha design pass (2026-10-27)**: the pin state (#164).
+  §10 the header's profile dropdown names its state (pinned or following
+  the pad) and is capped at `24ch`; the pin glyph beside it is pressed
+  while pinned, Follow when pressed then, and pins the pad's place
+  otherwise; the Pad's moved line leads with Follow and the pinned page's
+  tab carries the pin mark while the pad is away; the Profiles selection
+  is the shell's pin and follows the pad only while nothing is pinned, a
+  pick or a field taking the focus pins it (critique re-run, question 1).
 - **v0.3, pre-alpha design pass (2026-10-27)**: the session lock (#158).
   §4.1 a fourth platform trait, `SessionWatcher`, with
   `FakeSessionWatcher`; §6.1 a locked session veils the view (`locked`),

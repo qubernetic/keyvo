@@ -46,11 +46,11 @@ anti-reference. The sketch of `docs/ui-concepts/v3/` is superseded.*
 
 ```
 +---------------------------------------------------------------------------+
-| keyvo   [ Device v ]  [ Profile v ]   [sandbox] Apply Discard   (gear) [...]|
+| keyvo   [ Device v ]  [Profile v][pin] [sandbox] Apply Discard  (gear) [...]|
 +-----------+------------------------------------------------+--------------+
 | Pad       |   device drawing with the live mirror in it    | Actions      |
 | Profiles  |   Pages (apps)(general)[context][git][+]  [sw] |  [search]    |
-| Behaviors |   Editing git, key 5; pad on vscode  (Follow)  |  v General   |
+| Behaviors |   (Follow) Editing git, key 5; pad on vscode   |  v General   |
 |           |------------------------------------------------|  v System    |
 |           |   Key 5: Exec  file line 42    [Press] [Clear] |  v Apps      |
 |           |   [tile] Label, Icon, Colour; Action, fields   |              |
@@ -67,7 +67,12 @@ anti-reference. The sketch of `docs/ui-concepts/v3/` is superseded.*
 - **Header**: app name, device selector (every device the daemon reports
   plus "Simulator"), the profile dropdown on the Pad (the profiles by
   priority, the global one first, the one on the pad marked; choosing one
-  pins the inspector, §3.1), the sandbox switch with the Apply and Discard
+  pins the inspector, §3.1; at most 24ch wide, a longer name cut and
+  carried whole by the option list and the title; its accessible name
+  says "pinned" or "following the pad"), the pin glyph beside it
+  (lucide `pin`, a toggle: pressed while the inspector is pinned, and
+  pressing it then is Follow; unpressed, it pins the pad's profile and
+  page; #164), the sandbox switch with the Apply and Discard
   pair while the sandbox is on, a gear that opens Preferences, and the
   overflow menu (Export, Import, Open config folder, Re-run setup step,
   Keyboard shortcuts, About). Changing the selected device changes which
@@ -129,12 +134,17 @@ holds, what is special in the right column.
   the inspector follows the pad, the selected tab is the `index` the
   daemon reports and follows every page-button press; a pin selects the
   pinned page's tab instead, and the hardware page buttons then page the
-  pad only: the app's page selection stays where the user put it.
+  pad only: the app's page selection stays where the user put it. While
+  the pad shows another page, the pinned page's tab carries the pin
+  glyph before its name and ", pinned" in its name: a glyph, not colour
+  alone (#164).
 - **Pinned inspector**: the header's profile dropdown and the page tab pin
   the inspector; the mirror keeps following the pad. When the two differ,
-  one line under the tabs names what is pinned, then where the pad is:
-  "Editing Mailspring, key 3; the pad shows Discord, page 1." (without a
-  selected key "Editing Mailspring, page 1; ..."), with a Follow control.
+  one line under the tabs leads with the Follow control, then names what
+  is pinned and where the pad is: "Follow Editing Mailspring, key 3; the
+  pad shows Discord, page 1." (without a selected key "Editing
+  Mailspring, page 1; ..."). Follow comes first so the reset is the
+  first thing the eye and the tab order meet (#164).
   Both profiles go by the name the header's dropdown shows, the id only
   for a profile the list does not know yet (#150).
   While they differ the mirror draws no selection outline, since its
@@ -199,8 +209,14 @@ priority and match rules.*
 
 - List column: profiles by priority, the global profile pinned at the top,
   a 12 px accent square after the name, "on the pad" on the live one. The
-  selection follows the pad until the user picks a profile or starts
-  editing one; then it stays. "+"
+  selection is the shell's pin, the profile the header's dropdown names:
+  it follows the pad only while nothing is pinned, and picking a profile
+  or starting to edit one pins it, so the header shows the pin glyph
+  pressed and the pad moving on changes nothing under the user. Follow
+  (the header's glyph or the Pad's line) returns the selection to the
+  pad. Decided in #164 for question 1 of the critique re-run: "on the
+  pad" in the list marks the pad's profile, and the header, the editor
+  and the inspector never name three different profiles. "+"
   creates a profile from a template (empty, copy of the active, starter
   pack).
 - Editor: the profile header (name, accent as a swatch and `#rrggbb` text,

@@ -4,7 +4,8 @@
   // selected screen beside it, and at most one drawer (a trace entry,
   // Preferences or the keyboard map) at the right. The shell holds the
   // inspector's pin and the profile list, read again on every reload, for
-  // the header's dropdown and the Pad's page tabs. The Pad stays mounted while
+  // the header's dropdown, the Pad's page tabs and the Profiles selection
+  // (#164). The Pad stays mounted while
   // another screen shows, so the header's device selector follows the
   // daemon and the mirror keeps its last frame.
   import Header from "./Header.svelte";
@@ -16,7 +17,7 @@
   import TraceDrawer from "./TraceDrawer.svelte";
   import type { Daemon } from "./lib/daemon";
   import type { Editor } from "./lib/editor";
-  import { kept, pinProfile, type Pinned } from "./lib/pin";
+  import { kept, type Pinned } from "./lib/pin";
   import type { ProfileFiles, ProfileSummary } from "./lib/profiles";
   import type { DeviceStatus, TraceRecord, View } from "./lib/protocol";
   import { layout, type DeviceChoice, type ScreenId } from "./lib/shell";
@@ -74,7 +75,7 @@
       {profiles}
       pad={view}
       {pinned}
-      onpin={(profile) => (pinned = pinProfile(profile))}
+      onpin={(next) => (pinned = next)}
       onpreferences={() => (open = "preferences")}
       onshortcuts={() => (open = "shortcuts")}
     />
@@ -109,6 +110,8 @@
           {columns}
           {view}
           {reloads}
+          {pinned}
+          onpin={(next) => (pinned = next)}
           geometry={device?.geometry}
           onedit={(pin) => {
             pinned = pin;

@@ -284,7 +284,11 @@ describe("the pin", () => {
     await fireEvent.click(key(7));
     await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
     const line = await screen.findByText("Editing terminal, key 7; the pad shows global, page 2.");
-    await fireEvent.click(within(line.closest("p") as HTMLElement).getByRole("button", { name: "Follow" }));
+    // Follow leads the line, the sentence comes after it.
+    const follow = within(line.closest("p") as HTMLElement).getByRole("button", { name: "Follow" });
+    expect(follow.parentElement?.firstElementChild).toBe(follow);
+    expect(follow.compareDocumentPosition(line)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    await fireEvent.click(follow);
     expect(onpin).toHaveBeenLastCalledWith(undefined);
     await waitFor(() => expect(keys.key).toHaveBeenLastCalledWith({ profile: "global", page: 2, key: 7 }));
     expect(screen.queryByText(/the pad shows/)).toBeNull();
@@ -397,6 +401,29 @@ describe("the page tabs", () => {
     expect(
       screen.getByText("Editing terminal, key 2; the pad shows terminal, page 1."),
     ).toBeInTheDocument();
+  });
+
+  it("mark the pinned page's tab while the pad shows another page, and no tab once they agree", async () => {
+    const { daemon } = await mounted();
+    const marked = () =>
+      within(screen.getByRole("tablist", { name: "Pages" }))
+        .getAllByRole("tab")
+        .filter((tab) => tab.querySelector(".icon") !== null);
+    expect(marked()).toEqual([]);
+    await fireEvent.click(key(4));
+    expect(marked()).toEqual([]);
+    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
+    await screen.findByText("Editing terminal, key 4; the pad shows global, page 2.");
+    const pinned = screen.getByRole("tab", { name: "context, pinned" });
+    expect(marked()).toEqual([pinned]);
+    expect(pinned).toHaveAttribute("aria-selected", "true");
+    // The #143 decision stands: no outline on the mirror while the pad is away.
+    expect(screen.getAllByRole("gridcell").filter((cell) => cell.getAttribute("aria-selected") === "true")).toEqual([]);
+    await daemon.send({
+      kind: "event",
+      event: { event: "page", profile: "terminal", page: 1, mode: "auto", index: 1 },
+    });
+    await waitFor(() => expect(marked()).toEqual([]));
   });
 
   it("a tab pins the pad's profile while following", async () => {

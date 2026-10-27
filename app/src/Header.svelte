@@ -3,14 +3,16 @@
   // §5.1): the app name, the device selector (every device the daemon
   // reports plus the Simulator; the Simulator while the Keypad is
   // missing), the profile dropdown that pins the inspector (by priority,
-  // the global one first, the pad's marked), the sandbox switch (M4a-4;
+  // the global one first, the pad's marked; cut at 24ch, its name says
+  // pinned or following), the pin glyph beside it (pressed while pinned,
+  // pressing it then is Follow; #164), the sandbox switch (M4a-4;
   // Apply and Discard appear once it can be on), the gear that opens
   // Preferences, and the overflow menu, whose entries stay disabled until
   // they exist.
   import Icon from "./Icon.svelte";
   import Soon from "./Soon.svelte";
   import { t, type MessageKey } from "./lib/i18n";
-  import type { Pinned } from "./lib/pin";
+  import { follow, pinPage, pinProfile, type Pinned } from "./lib/pin";
   import { ordered, type ProfileSummary } from "./lib/profiles";
   import type { DeviceStatus, View } from "./lib/protocol";
   import {
@@ -43,8 +45,9 @@
     pad?: View;
     /** The inspector's pin; undefined follows the pad. */
     pinned?: Pinned;
-    /** Pins the inspector to the chosen profile. */
-    onpin?: (profile: string) => void;
+    /** Sets the pin: the chosen profile's page 1, the pad's place from the
+     * pin glyph, or undefined (Follow) from the pressed glyph. */
+    onpin?: (pinned: Pinned) => void;
     /** Opens Preferences, the gear. */
     onpreferences?: () => void;
     /** Opens the keyboard map, the menu's "Keyboard shortcuts". */
@@ -54,6 +57,22 @@
   const listed = $derived(ordered(profiles));
   /** The dropdown's profile: the pinned one, else the pad's. */
   const shownProfile = $derived(pinned?.profile ?? pad?.profile ?? "");
+  /** A profile's name; its id while the list does not know it. */
+  const nameOf = (id: string) => profiles.find((profile) => profile.id === id)?.name ?? id;
+
+  /** The pad's profile and page as a pin, the pin glyph's target. */
+  function padPin(): Pinned {
+    return pad === undefined ? undefined : pinPage(pad.profile, pad.page);
+  }
+
+  /** What pressing the pin glyph does, as its description. */
+  const pinHint = $derived(
+    pinned !== undefined
+      ? t("header.pinned", { name: nameOf(pinned.profile), page: pinned.page })
+      : pad === undefined
+        ? undefined
+        : t("header.following", { name: nameOf(pad.profile), page: pad.page }),
+  );
 
   const ACTIONS: Partial<Record<MenuId, () => void>> = {
     shortcuts: () => onshortcuts?.(),
@@ -131,10 +150,12 @@
     {/each}
   </select>
   <select
-    aria-label={t("header.profile")}
+    class="profile"
+    aria-label={t(pinned === undefined ? "header.profileFollowing" : "header.profilePinned")}
+    title={nameOf(shownProfile)}
     value={shownProfile}
     disabled={listed.length === 0}
-    onchange={(event) => onpin?.(event.currentTarget.value)}
+    onchange={(event) => onpin?.(pinProfile(event.currentTarget.value))}
   >
     {#each listed as profile (profile.id)}
       <option value={profile.id}>
@@ -142,6 +163,17 @@
       </option>
     {/each}
   </select>
+  <button
+    type="button"
+    class="pin"
+    aria-label={t("header.pin")}
+    aria-pressed={pinned !== undefined}
+    title={pinHint}
+    disabled={pinned === undefined && pad === undefined}
+    onclick={() => onpin?.(pinned === undefined ? padPin() : follow())}
+  >
+    <Icon name="pin" />
+  </button>
   <Soon label={t("header.sandbox")} soon="soon.sandbox" toggle />
   <button
     type="button"
@@ -219,7 +251,28 @@
     position: relative;
   }
 
+  /* A long profile name is cut; the option list and the title carry it
+     whole, so the dropdown does not push the device selector aside. */
+  .profile {
+    max-width: 24ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* The pin sits beside the dropdown; pressed, it reads as held down. */
+  .pin {
+    margin-inline-start: -8px;
+  }
+
+  .pin[aria-pressed="true"] {
+    border-color: var(--kv-accent);
+    background: var(--kv-bg);
+    color: var(--kv-fg);
+  }
+
   .toggle,
+  .pin,
   .gear {
     display: flex;
     align-items: center;
