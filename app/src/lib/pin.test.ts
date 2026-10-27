@@ -3,7 +3,7 @@
 // the pad never retargets it.
 import { describe, expect, it } from "vitest";
 
-import { difference, follow, kept, pinOnSelect, pinPage, pinProfile, target } from "./pin";
+import { difference, follow, kept, pinOnSelect, pinPage, pinProfile, target, type Pin } from "./pin";
 import type { View } from "./protocol";
 
 const PAD: View = { profile: "terminal", page: 2, mode: "auto" };
@@ -22,12 +22,24 @@ describe("the pin", () => {
   });
 
   it("pins the pad's profile and page when a key is selected", () => {
-    expect(pinOnSelect(undefined, PAD)).toEqual({ profile: "terminal", page: 2 });
+    expect(pinOnSelect(undefined, PAD)).toEqual({ profile: "terminal", page: 2, fromKey: true });
   });
 
-  it("keeps an existing pin when a key is selected", () => {
+  it("keeps a pin on the pad's page when a key is selected", () => {
+    const pinned = pinOnSelect(undefined, PAD);
+    expect(pinOnSelect(pinned, PAD)).toBe(pinned);
+  });
+
+  it("keeps a profile or page the user chose when a key is selected", () => {
     const pinned = pinProfile("vscode");
     expect(pinOnSelect(pinned, PAD)).toBe(pinned);
+    const page = pinPage(pinOnSelect(undefined, PAD) as Pin, 3);
+    expect(pinOnSelect(page, PAD)).toBe(page);
+  });
+
+  it("pins the pad's page again when a key is selected while the pad is away from a key's pin", () => {
+    const pinned = pinOnSelect(undefined, MOVED);
+    expect(pinOnSelect(pinned, PAD)).toEqual({ profile: "terminal", page: 2, fromKey: true });
   });
 
   it("stays where it is when the pad moves", () => {

@@ -1764,8 +1764,13 @@ then subscribes with a replay of the newest 20 trace entries;
   first selection pins the inspector to the profile and page the pad
   shows (`pinOnSelect` of `app/src/lib/pin.ts`), so a later view event
   moves the drawing and never the inspector. While the pin and the pad
-  differ, a line under the page tabs says `The pad moved to <profile>,
-  page <page>` with Follow, which unpins and keeps the key number.
+  differ, a line under the page tabs says `Editing <pinned profile>, key
+  <key>; the pad shows <profile>, page <page>.` (`page <page>` of the pin
+  instead of the key while none is selected) with Follow, which unpins
+  and keeps the key number, and the mirror draws no selection outline.
+  A click on a tile then pins the pad's page again when the pin came
+  from a key selection; a profile or page chosen in the dropdown, a tab
+  or "Edit keys on the Pad" stays pinned (#143).
 - **Page tabs** (`app/src/PageTabs.svelte`). The pinned profile's pages,
   else the pad's, as a tablist by name (`Page <n>` for an unnamed one),
   arrows wrapping, `Home` and `End`; a tab pins its page. A profile with
@@ -2165,6 +2170,11 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha design pass (2026-10-27)**: §10 Pad: while the pad
+  shows another page than the pinned one, the mirror draws no selection
+  outline, the "pad moved" line names the pinned profile and key before
+  the pad's place, and a click on a tile re-pins a key's pin to the
+  pad's page (#143).
 - **v0.3, pre-alpha design pass (2026-10-27)**: §10 Profiles: the header
   form is one column with each label above its field; Enabled shows as
   read ("On" with its M4a-4 sentence), no longer a disabled switch; the

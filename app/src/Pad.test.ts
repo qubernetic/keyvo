@@ -230,38 +230,60 @@ describe("the pin", () => {
   it("selecting a key pins the pad's profile and page; the inspector stays on it when the pad moves", async () => {
     const { daemon, keys, onpin } = await mounted();
     await fireEvent.click(key(5));
-    expect(onpin).toHaveBeenCalledWith({ profile: "terminal", page: 1 });
+    expect(onpin).toHaveBeenCalledWith({ profile: "terminal", page: 1, fromKey: true });
     await waitFor(() => expect(keys.key).toHaveBeenLastCalledWith({ profile: "terminal", page: 1, key: 5 }));
     expect(screen.getByRole("heading", { name: "Key 5: No action" })).toBeInTheDocument();
+    // A second selection keeps the pin.
+    await fireEvent.click(key(6));
+    expect(onpin).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(keys.key).toHaveBeenLastCalledWith({ profile: "terminal", page: 1, key: 6 }));
     // The drawing follows the pad; the inspector does not.
     await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
     await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenCalledWith("global", 2, 9, TILE));
     // The pinned page's tiles for the inspector, now that the pad shows another.
     await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenLastCalledWith("terminal", 1, 9, TILE));
-    expect(keys.key).toHaveBeenLastCalledWith({ profile: "terminal", page: 1, key: 5 });
-    // A second selection keeps the pin.
-    await fireEvent.click(key(6));
-    expect(onpin).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(keys.key).toHaveBeenLastCalledWith({ profile: "terminal", page: 1, key: 6 }));
+    expect(keys.key).toHaveBeenLastCalledWith({ profile: "terminal", page: 1, key: 6 });
   });
 
   it("says where the pad moved and Follow unpins, keeping the key", async () => {
     const { daemon, keys, onpin } = await mounted();
-    expect(screen.queryByText(/The pad moved/)).toBeNull();
+    expect(screen.queryByText(/the pad shows/)).toBeNull();
     await fireEvent.click(key(7));
     await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
-    const line = await screen.findByText("The pad moved to global, page 2");
+    const line = await screen.findByText("Editing terminal, key 7; the pad shows global, page 2.");
     await fireEvent.click(within(line.closest("p") as HTMLElement).getByRole("button", { name: "Follow" }));
     expect(onpin).toHaveBeenLastCalledWith(undefined);
     await waitFor(() => expect(keys.key).toHaveBeenLastCalledWith({ profile: "global", page: 2, key: 7 }));
-    expect(screen.queryByText(/The pad moved/)).toBeNull();
+    expect(screen.queryByText(/the pad shows/)).toBeNull();
+  });
+
+  it("drops the outline while the pad is away, names the pinned key, and a click pins again", async () => {
+    const { daemon, keys, onpin } = await mounted();
+    const selection = () =>
+      screen.getAllByRole("gridcell").filter((cell) => cell.getAttribute("aria-selected") === "true");
+    await fireEvent.click(key(7));
+    // Pinned and shown equal: the outline is on the key.
+    expect(selection()).toEqual([key(7).closest('[role="gridcell"]')]);
+    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
+    // Moved: no outline, the line names the pinned key, the inspector stays.
+    await screen.findByText("Editing terminal, key 7; the pad shows global, page 2.");
+    expect(selection()).toEqual([]);
+    expect(keys.key).toHaveBeenLastCalledWith({ profile: "terminal", page: 1, key: 7 });
+    // Re-pinned: a click pins the shown page and the outline is back.
+    await fireEvent.click(key(2));
+    expect(onpin).toHaveBeenLastCalledWith({ profile: "global", page: 2, fromKey: true });
+    await waitFor(() => expect(keys.key).toHaveBeenLastCalledWith({ profile: "global", page: 2, key: 2 }));
+    expect(screen.queryByText(/the pad shows/)).toBeNull();
+    expect(selection()).toEqual([key(2).closest('[role="gridcell"]')]);
   });
 
   it("says nothing about a move while the pin and the pad agree", async () => {
     const { daemon } = await mounted({ pinned: { profile: "global", page: 2 } });
-    expect(screen.getByText("The pad moved to terminal, page 1")).toBeInTheDocument();
+    expect(
+      screen.getByText("Editing global, page 2; the pad shows terminal, page 1."),
+    ).toBeInTheDocument();
     await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
-    await waitFor(() => expect(screen.queryByText(/The pad moved/)).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/the pad shows/)).toBeNull());
   });
 });
 
@@ -285,7 +307,9 @@ describe("the page tabs", () => {
     expect(onpin).toHaveBeenLastCalledWith({ profile: "terminal", page: 2 });
     await waitFor(() => expect(keys.key).toHaveBeenLastCalledWith({ profile: "terminal", page: 2, key: 2 }));
     expect(screen.getByRole("tab", { selected: true })).toHaveTextContent("git");
-    expect(screen.getByText("The pad moved to terminal, page 1")).toBeInTheDocument();
+    expect(
+      screen.getByText("Editing terminal, key 2; the pad shows terminal, page 1."),
+    ).toBeInTheDocument();
   });
 
   it("a tab pins the pad's profile while following", async () => {
@@ -510,6 +534,9 @@ describe("the inspector", () => {
       "src",
       "data:image/png;base64,terminal-2-2",
     );
+    // A page the user chose stays pinned; the mirror's key 2 is another page's.
+    expect(screen.getByText("Editing terminal, key 2; the pad shows terminal, page 1.")).toBeInTheDocument();
+    expect(key(2)).not.toHaveClass("selected");
   });
 
   it("reads the global key under a key that falls through, and offers the override", async () => {
@@ -663,7 +690,7 @@ describe("the actions catalogue", () => {
   it("Exec dropped on key 7 selects and pins the key and sets Exec without writing", async () => {
     const { keys, onpin } = await mounted({ columns: layout(1200) });
     await fireEvent.drop(cell(7), { dataTransfer: transfer("tool:exec") });
-    expect(onpin).toHaveBeenCalledWith({ profile: "terminal", page: 1 });
+    expect(onpin).toHaveBeenCalledWith({ profile: "terminal", page: 1, fromKey: true });
     expect(key(7)).toHaveClass("selected");
     await waitFor(() => expect(action()).toHaveValue("exec"));
     expect(screen.getByRole("heading", { name: /^Key 7/ })).toBeInTheDocument();
@@ -678,6 +705,34 @@ describe("the actions catalogue", () => {
         { action: { type: "exec", cmd: "kate" } },
       ),
     );
+  });
+
+  it("an entry dropped on a tile while the pad is away pins the shown page and goes to its key", async () => {
+    const { daemon, keys, onpin } = await mounted({ columns: layout(1200) });
+    await fireEvent.click(key(8));
+    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
+    await screen.findByText(/the pad shows global, page 2/);
+    await fireEvent.drop(cell(7), { dataTransfer: transfer("tool:exec") });
+    expect(onpin).toHaveBeenLastCalledWith({ profile: "global", page: 2, fromKey: true });
+    await waitFor(() => expect(keys.key).toHaveBeenLastCalledWith({ profile: "global", page: 2, key: 7 }));
+    await waitFor(() => expect(action()).toHaveValue("exec"));
+    expect(key(7)).toHaveClass("selected");
+  });
+
+  it("a click on an entry while the pad is away assigns it to the pinned key", async () => {
+    const { daemon, keys, onpin } = await mounted({ columns: layout(1200) });
+    await fireEvent.click(key(8));
+    await waitFor(() => expect(action()).toHaveValue("none"));
+    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
+    await screen.findByText(/the pad shows global, page 2/);
+    await fireEvent.click(await screen.findByRole("button", { name: "Volume up" }));
+    await waitFor(() =>
+      expect(keys.editKey).toHaveBeenCalledWith(
+        { profile: "terminal", page: 1, key: 8 },
+        expect.objectContaining({ label: "Vol +" }),
+      ),
+    );
+    expect(onpin).toHaveBeenCalledTimes(1);
   });
 
   it("a click on Chord assigns it to the selected key", async () => {
