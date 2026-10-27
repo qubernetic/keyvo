@@ -4,6 +4,7 @@
 // session, and the line a problem is shown as.
 import { invoke } from "@tauri-apps/api/core";
 
+import { checkChord, type ChordError } from "./chord";
 import { t } from "./i18n";
 import type { Action } from "./protocol";
 
@@ -132,6 +133,22 @@ export function colorOf(text: string): string | undefined {
   return COLOR.test(color) ? color.toLowerCase() : undefined;
 }
 
+/** Why a chord cannot be written, naming the wrong token. */
+function chordMessage(wrong: ChordError): string {
+  switch (wrong.error) {
+    case "empty":
+      return t("editor.noKeys");
+    case "missing_key":
+      return t("editor.chordMissingKey");
+    case "unknown_key":
+      return t("editor.chordUnknownKey", { token: wrong.token });
+    case "not_a_modifier":
+      return t("editor.chordNotModifier", { token: wrong.token });
+    case "expected_separator":
+      return t("editor.chordSeparator", { token: wrong.token });
+  }
+}
+
 /** The form field a message of `fromForm` belongs under. */
 export type FormField = "color" | "action";
 
@@ -155,6 +172,10 @@ export function fromForm(
       break;
     case "chord":
       if (action === "") return { invalid: t("editor.noKeys"), field: "action" };
+      {
+        const wrong = checkChord(action);
+        if (wrong !== undefined) return { invalid: chordMessage(wrong), field: "action" };
+      }
       fields.action = { type: "chord", keys: action };
       break;
     case "exec":

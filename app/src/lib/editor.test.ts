@@ -1,7 +1,13 @@
-// The editor's pure parts: the form both ways, problems as one line, and
-// the session history.
+// The editor's pure parts: the form both ways, the chord check, problems as
+// one line, and the session history.
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
+import { checkChord } from "./chord";
+import { KEY_NAMES } from "./keynames";
 import {
   afterRedo,
   afterUndo,
@@ -18,7 +24,7 @@ import {
   type KeyFields,
   type Form,
 } from "./editor";
-import { editorSteps } from "./fixtures";
+import { chordCases, editorSteps } from "./fixtures";
 
 const BLANK: Form = { label: "", color: "", icon: "", actionType: "none", action: "" };
 
@@ -79,6 +85,18 @@ describe("the form", () => {
     });
   });
 
+  it("checks a chord with the daemon's grammar and names the wrong token", () => {
+    const chord = (action: string) => fromForm({ ...BLANK, actionType: "chord", action });
+    expect(chord("ctrl+nope")).toEqual({ invalid: "nope is not a key name.", field: "action" });
+    expect(chord("g+ctrl")).toEqual({
+      invalid: "g is not a modifier; only the last name is a key (ctrl, shift, alt, altgr, super).",
+      field: "action",
+    });
+    expect(chord("ctrl+")).toEqual({ invalid: "A + or , at the end needs a key after it.", field: "action" });
+    expect(chord("ctrl++x")).toEqual({ invalid: "Expected +, a comma or the end after +.", field: "action" });
+    expect(chord("ctrl+k, ctrl+s")).toEqual({ fields: { action: { type: "chord", keys: "ctrl+k, ctrl+s" } } });
+  });
+
   it("compares fields the way the file does", () => {
     expect(sameFields({ color: "#AA3300" }, { color: "#aa3300" })).toBe(true);
     expect(sameFields({}, { label: "" })).toBe(false);
@@ -94,6 +112,26 @@ describe("the form", () => {
     expect(sameTarget(target, { ...target, page: 2 })).toBe(false);
     expect(sameTarget(target, undefined)).toBe(false);
     expect(sameTarget(undefined, undefined)).toBe(true);
+  });
+});
+
+describe("the chord grammar", () => {
+  it("accepts and rejects the shared fixture as keyvo_core::chord does", () => {
+    const { valid, invalid } = chordCases();
+    for (const text of valid) expect(checkChord(text), text).toBeUndefined();
+    for (const { chord, error, token } of invalid) {
+      expect(checkChord(chord), chord).toEqual({ error, ...(token !== undefined ? { token } : {}) });
+    }
+  });
+
+  it("knows exactly the key names of the Rust table", () => {
+    const rust = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../../../crates/keyvo-core/src/chord/keycodes.rs"),
+      "utf8",
+    );
+    const names = [...rust.matchAll(/^ {4}\("([^"]+)", \d+\),$/gm)].map((match) => match[1]);
+    expect(names.length).toBeGreaterThan(500);
+    expect(KEY_NAMES).toEqual(names);
   });
 });
 

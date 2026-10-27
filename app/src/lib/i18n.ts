@@ -275,6 +275,12 @@ export const messages = {
   "editor.wrote": "Wrote key {key} to {path}",
   "editor.badColor": "The color {color} is not written #rrggbb.",
   "editor.noKeys": "Enter the chord's keys to write it.",
+  "editor.chordMissingKey": "A + or , at the end needs a key after it.",
+  "editor.chordUnknownKey": "{token} is not a key name.",
+  "editor.chordNotModifier":
+    "{token} is not a modifier; only the last name is a key (ctrl, shift, alt, altgr, super).",
+  "editor.chordSeparator": "Expected +, a comma or the end after {token}.",
+  "editor.chordHint": "Keys joined with +, for example ctrl+shift+g; modifiers ctrl, alt, shift, super.",
   "editor.noCommand": "Enter the command to write it.",
 } as const;
 
