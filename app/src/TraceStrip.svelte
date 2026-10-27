@@ -37,7 +37,7 @@
         {#each shown as entry, index (index)}
           {@const line = summarize(entry)}
           {@const time = clock(entry.timestamp_ms)}
-          <li>
+          <li class:newest={index === 0}>
             <button
               type="button"
               class="entry"
@@ -89,8 +89,16 @@
     list-style: none;
   }
 
-  /* Collapsed, the entries share one line and each ends in an ellipsis. */
-  .strip:not(.expanded) li {
+  /* Collapsed, the entries share one line: the newest is read in full
+     (an ellipsis only when it alone is longer than the line), the older
+     ones take what is left and give way to nothing before it loses a
+     character. */
+  .strip:not(.expanded) li.newest {
+    flex: 0 1 auto;
+    max-width: 100%;
+  }
+
+  .strip:not(.expanded) li:not(.newest) {
     flex: 1 1 0;
     min-width: 0;
   }
