@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+  EVENT_CLASSES,
   ProtocolError,
   parseRequest,
   parseServerMessage,
@@ -77,8 +78,28 @@ describe("server messages", () => {
       expect(json(serverLine(message)), line).toEqual(json(line));
     }
     expect([...classes].sort()).toEqual(
-      ["config", "context", "device", "key", "mode", "page", "profile", "trace"],
+      ["config", "context", "device", "key", "mode", "page", "profile", "session", "trace"],
     );
+  });
+
+  it("views carry locked, a lock is a session event, a blocked press says why", () => {
+    const events = fixture("events.ndjson").map(parseServerMessage);
+    const views = events.flatMap((message) =>
+      message.kind === "event" && "index" in message.event ? [message.event] : [],
+    );
+    expect(views.map((view) => view.locked)).toEqual([false, false, false]);
+    expect(events).toContainEqual({ kind: "event", event: { event: "session", locked: true } });
+    expect(events).toContainEqual({
+      kind: "event",
+      event: expect.objectContaining({
+        event: "trace",
+        entry: expect.objectContaining({
+          action: null,
+          result: { status: "blocked", reason: "session locked" },
+        }),
+      }),
+    });
+    expect(EVENT_CLASSES).toContain("session");
   });
 
   it("the status reply carries the configuration directory and the device geometry", () => {

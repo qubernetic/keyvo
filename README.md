@@ -47,7 +47,9 @@ bin/keyvo-daemon                    # paint ~/.config/keyvo/profiles/global.toml
 
 On KDE Plasma 6 the daemon loads its own KWin script
 ([contrib/kwin/keyvo-focus.js](contrib/kwin/keyvo-focus.js)), so the profile
-follows the focused window; nothing needs installing by hand.
+follows the focused window; nothing needs installing by hand. It also
+watches the session in systemd-logind: while the session is locked the
+pad shows a lock and runs nothing ([SECURITY.md](SECURITY.md)).
 
 While the daemon runs, `keyvo ctl` talks to its control socket
 ([docs/socket-api.md](docs/socket-api.md)):

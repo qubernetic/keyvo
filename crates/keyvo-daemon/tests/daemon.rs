@@ -16,12 +16,13 @@ use keyvo_core::focus::{FakeWindowWatcher, WindowContext};
 use keyvo_core::inject::FakeInputInjector;
 use keyvo_core::press::PressKind;
 use keyvo_core::profile::{KeySlot, Profile};
-use keyvo_core::render::{Canvas, KeyPlace, KeySpec, Renderer};
+use keyvo_core::render::{self, Canvas, KeyPlace, KeySpec, Renderer};
+use keyvo_core::session::{FakeSessionWatcher, Session};
 use keyvo_core::socket::{Command, Context, ContextSource, DeviceStatus, Edge, Geometry, Status};
 use keyvo_core::stack::Layer;
 use keyvo_core::state::{Mode, View};
 use keyvo_core::trace::{Outcome, TraceRecord};
-use keyvo_daemon::daemon::{self, Answer, Event, Request};
+use keyvo_daemon::daemon::{self, Answer, Event, Request, Sources};
 use keyvo_hid::display;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -91,6 +92,8 @@ struct Daemon {
     dir: tempfile::TempDir,
     events: broadcast::Receiver<Event>,
     requests: mpsc::UnboundedSender<Request>,
+    /// Locks and unlocks the daemon's session.
+    session: FakeSessionWatcher,
     stop: oneshot::Sender<()>,
     task: JoinHandle<std::io::Result<()>>,
 }
@@ -116,7 +119,8 @@ impl Daemon {
         Self::start_on(CONFIG, profiles, pads, injector, watcher)
     }
 
-    /// A daemon on `config` and the profiles `(id, text)`.
+    /// A daemon on `config` and the profiles `(id, text)`, its session
+    /// unlocked until the test says otherwise through `session`.
     fn start_on(
         config: &str,
         profiles: &[(&str, &str)],
@@ -124,6 +128,28 @@ impl Daemon {
         injector: FakeInputInjector,
         watcher: FakeWindowWatcher,
     ) -> Self {
+        Self::start_in(
+            config,
+            profiles,
+            pads,
+            injector,
+            Sources {
+                window: watcher,
+                session: FakeSessionWatcher::new(),
+            },
+        )
+    }
+
+    /// A daemon on `config` and the profiles `(id, text)`, focus and
+    /// session reported by `sources`.
+    fn start_in(
+        config: &str,
+        profiles: &[(&str, &str)],
+        pads: Vec<Pad>,
+        injector: FakeInputInjector,
+        sources: Sources<FakeWindowWatcher, FakeSessionWatcher>,
+    ) -> Self {
+        let session = sources.session.clone();
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("config.toml"), config).unwrap();
         std::fs::create_dir(dir.path().join("profiles")).unwrap();
@@ -142,7 +168,7 @@ impl Daemon {
                 &paths,
                 Pads::new(pads),
                 injector,
-                watcher,
+                sources,
                 sender,
                 inbox,
                 async {
@@ -155,6 +181,7 @@ impl Daemon {
             dir,
             events,
             requests,
+            session,
             stop,
             task,
         }
@@ -720,6 +747,7 @@ fn view(profile: &str, page: usize, index: isize, mode: Mode) -> View {
         page,
         mode,
         index,
+        locked: false,
     }
 }
 
@@ -766,6 +794,161 @@ async fn the_painted_profile_follows_the_focused_window() {
     assert!(watcher.focus(WindowContext::new("org.kde.dolphin", "Home")));
     assert_eq!(daemon.switched().await, view("global", 1, 1, Mode::Auto));
     daemon.shows(&pad, &union_of(GLOBAL)).await;
+    daemon.stop().await;
+}
+
+/// The one image of the lock page over the panel of `text`'s profile: its
+/// accent tints the panel and underlines the lock.
+fn lock_union(text: &str) -> Image {
+    let accent = profile(text).profile.accent;
+    let renderer = Renderer::new();
+    let mut canvas = renderer
+        .canvas(accent, &display::captured_geometry().panel())
+        .unwrap();
+    for (index, spec) in render::lock_page(accent, 9).iter().enumerate() {
+        renderer.draw(&mut canvas, index, spec).unwrap();
+    }
+    let union = canvas.panel().bounds(0..9).unwrap();
+    crop(&canvas, union)
+}
+
+/// `view` under the session lock.
+fn locked(view: View) -> View {
+    View {
+        locked: true,
+        ..view
+    }
+}
+
+fn blocked() -> Outcome {
+    Outcome::Blocked {
+        reason: "session locked".into(),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_locked_session_paints_the_lock_and_blocks_every_press() {
+    let pad = Pad::new(&startup());
+    let watcher = FakeWindowWatcher::new();
+    let injector = FakeInputInjector::new();
+    let mut daemon = Daemon::start_with(
+        &[("global", GLOBAL), ("terminal", TERMINAL)],
+        vec![pad.clone()],
+        injector.clone(),
+        watcher.clone(),
+    );
+    daemon.painted().await;
+    assert!(watcher.focus(WindowContext::new("org.kde.konsole", "~ : bash")));
+    assert_eq!(daemon.switched().await, view("terminal", 1, 1, Mode::Auto));
+    daemon.shows(&pad, &union_over(TERMINAL, GLOBAL)).await;
+
+    // The lock keeps the view and paints the lock page in its accent.
+    assert!(daemon.session.report(Session::Locked));
+    assert_eq!(
+        daemon.switched().await,
+        locked(view("terminal", 1, 1, Mode::Auto))
+    );
+    daemon.shows(&pad, &lock_union(TERMINAL)).await;
+    assert!(daemon.status().await.view.locked);
+
+    // Every key is blocked: neither the exec of key 1 nor the global chord
+    // of key 2 runs, and no look changes.
+    let images = pad.images().len();
+    for key in [1, 2, 9] {
+        pad.hold(&[key]);
+        pad.hold(&[]);
+        let record = daemon.trace().await;
+        assert_eq!((record.key.get(), record.result), (key, blocked()));
+        assert_eq!(record.action, None);
+    }
+    // The page buttons do nothing: no switch comes before the next trace.
+    pad.buttons(&[0x01a1]);
+    pad.buttons(&[]);
+    pad.buttons(&[0x01a2]);
+    pad.buttons(&[]);
+    pad.hold(&[5]);
+    pad.hold(&[]);
+    let mut seen = Vec::new();
+    let record = daemon
+        .until(|event| {
+            seen.push(event.clone());
+            match event {
+                Event::Trace(record) => Some(record.clone()),
+                _ => None,
+            }
+        })
+        .await;
+    assert_eq!(record.result, blocked());
+    assert!(!seen.iter().any(|event| matches!(event, Event::Switched(_))));
+    // A client press is blocked the same way, a dry run included.
+    for dry_run in [false, true] {
+        let record = daemon.press(2, dry_run).await;
+        assert_eq!(
+            (record.result, record.trigger.simulated),
+            (blocked(), dry_run)
+        );
+    }
+    assert!(injector.sent().is_empty());
+    assert_eq!(pad.images().len(), images);
+
+    // A focus change under the lock applies: the lock shows over the new
+    // profile, and the unlock shows that profile.
+    assert!(watcher.focus(WindowContext::new("org.kde.dolphin", "Home")));
+    assert_eq!(
+        daemon.switched().await,
+        locked(view("global", 1, 1, Mode::Auto))
+    );
+    daemon.shows(&pad, &lock_union(GLOBAL)).await;
+    assert!(daemon.session.report(Session::Unlocked));
+    assert_eq!(daemon.switched().await, view("global", 1, 1, Mode::Auto));
+    daemon.shows(&pad, &union_of(GLOBAL)).await;
+    pad.hold(&[2]);
+    pad.hold(&[]);
+    assert!(matches!(daemon.trace().await.result, Outcome::Sent { .. }));
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_daemon_started_under_the_lock_paints_the_lock_page() {
+    let pad = Pad::new(&startup());
+    let mut daemon = Daemon::start_in(
+        CONFIG,
+        &[("global", GLOBAL)],
+        vec![pad.clone()],
+        FakeInputInjector::new(),
+        Sources {
+            window: FakeWindowWatcher::failing("no focus source"),
+            session: FakeSessionWatcher::starting(Session::Locked),
+        },
+    );
+    daemon.shows(&pad, &lock_union(GLOBAL)).await;
+    assert!(daemon.status().await.view.locked);
+    assert!(daemon.session.report(Session::Unlocked));
+    daemon.shows(&pad, &union_of(GLOBAL)).await;
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn without_a_session_source_the_daemon_runs_unlocked() {
+    let pad = Pad::new(&startup());
+    let injector = FakeInputInjector::new();
+    let mut daemon = Daemon::start_in(
+        CONFIG,
+        &[("global", GLOBAL)],
+        vec![pad.clone()],
+        injector.clone(),
+        Sources {
+            window: FakeWindowWatcher::failing("no focus source"),
+            session: FakeSessionWatcher::failing("no logind"),
+        },
+    );
+    assert_eq!(daemon.painted().await.len(), 9);
+    assert_eq!(pad.images(), [union_of(GLOBAL)]);
+    assert!(!daemon.session.report(Session::Locked));
+    pad.hold(&[2]);
+    pad.hold(&[]);
+    assert!(matches!(daemon.trace().await.result, Outcome::Sent { .. }));
+    assert!(!daemon.status().await.view.locked);
     daemon.stop().await;
 }
 

@@ -22,7 +22,7 @@ export interface Clients {
  * set `?theme=` names applied to `root`; `?mock-error=unreachable` makes
  * `status` reject, `?mock-error=write` makes every `editKey` reject with a
  * Problem carrying file, line and column, `?mock-profiles=empty` adds a
- * profile with no pages. */
+ * profile with no pages, `?mock-locked` locks the session. */
 export function mockClients(search: string, root: HTMLElement): Clients {
   applyTheme(themeOf(search), root);
   const query = new URLSearchParams(search);
@@ -30,8 +30,9 @@ export function mockClients(search: string, root: HTMLElement): Clients {
   const store = new Store([...contribProfiles(), ...(empty ? [EMPTY_PROFILE] : [])]);
   const unreachable = query.get("mock-error") === "unreachable";
   const refuseWrites = query.get("mock-error") === "write";
+  const locked = query.has("mock-locked");
   return {
-    daemon: mockDaemon(store, { unreachable }),
+    daemon: mockDaemon(store, { unreachable, locked }),
     editor: mockEditor(store, { refuseWrites }),
     files: mockProfiles(store),
   };

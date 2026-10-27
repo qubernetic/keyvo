@@ -18,9 +18,13 @@ use keyvo_core::layout::Loaded;
 use keyvo_core::press;
 use keyvo_core::profile::{Key, KeySlot, Profile};
 use keyvo_core::render::{self, KeySpec};
+use keyvo_core::session::Session;
 use keyvo_core::stack::{Layer, Stack};
 use keyvo_core::state::{PageButton, State, View};
 use keyvo_core::trace::{TraceRecord, Trigger};
+
+/// The reason of a press blocked while the session is locked.
+pub const BLOCKED_LOCKED: &str = "session locked";
 
 /// A key of one page (counted from 1) of one profile.
 type KeyId = (String, usize, KeySlot);
@@ -116,6 +120,13 @@ impl Engine {
         self.state.release(button, now, &self.loaded.profiles);
     }
 
+    /// The session source reports `session`; `true` when the lock state
+    /// changed. While locked the keys show the lock page and every press
+    /// is blocked.
+    pub fn session(&mut self, session: Session) -> bool {
+        self.state.session(session)
+    }
+
     /// A key on the pad went down at `now`: the page return starts over.
     pub const fn touch(&mut self, now: Instant) {
         self.state.touch(now);
@@ -146,10 +157,13 @@ impl Engine {
 
     /// What every key shows at `now`, keys 1 to the device's key count: the
     /// active profile's key, else the global one. A profile without the
-    /// active page shows blank keys.
+    /// active page shows blank keys; a locked session the lock page.
     #[must_use]
     pub fn specs(&self, now: Instant) -> Vec<KeySpec> {
         let profile = self.active();
+        if self.state.locked() {
+            return render::lock_page(profile.profile.accent, self.keys);
+        }
         let page = self.page();
         let specs = self.stack().map_or_else(
             || vec![KeySpec::default(); usize::from(self.keys)],
@@ -192,8 +206,20 @@ impl Engine {
 
     /// Resolves a press of `slot` on the active profile and page, a key the
     /// profile lacks on the global layer; an error or success look of the
-    /// key ends, unless the press is simulated.
+    /// key ends, unless the press is simulated. While the session is
+    /// locked nothing is resolved: the press is [`BLOCKED_LOCKED`] and the
+    /// look stays.
     pub fn press(&mut self, slot: KeySlot, trigger: Trigger, at: SystemTime) -> TraceRecord {
+        if self.state.locked() {
+            return press::blocked(
+                &self.active().profile.id,
+                self.page(),
+                slot,
+                trigger,
+                at,
+                BLOCKED_LOCKED,
+            );
+        }
         let record = self.stack().map_or_else(
             || press::unbound(&self.active().profile.id, self.page(), slot, trigger, at),
             |stack| press::resolve(&stack, slot, trigger, at),
@@ -224,6 +250,7 @@ mod tests {
     use keyvo_core::layout::Profiles;
     use keyvo_core::press::PressKind;
     use keyvo_core::profile::{Action, GLOBAL_ID};
+    use keyvo_core::session::Session;
     use keyvo_core::state::Mode;
     use keyvo_core::trace::Outcome;
 
@@ -336,7 +363,8 @@ action = { type = "exec", cmd = "true" }
                 profile: GLOBAL_ID.into(),
                 page: 2,
                 mode: Mode::Auto,
-                index: 0
+                index: 0,
+                locked: false
             }
         );
         assert_eq!(engine.specs(now)[0].label.as_deref(), Some("Play"));
@@ -462,6 +490,54 @@ action = { type = "exec", cmd = "true" }
         assert_eq!(engine.specs(now)[0].look, Look::Success);
         assert_eq!(engine.next_change(now), Some(now + hold));
         assert_eq!(engine.specs(now + hold)[0].look, Look::Idle);
+    }
+
+    #[test]
+    fn a_locked_session_shows_the_lock_page_with_the_profiles_accent() {
+        let mut engine = Engine::new(loaded_with(&[GLOBAL, CODE]));
+        engine.set_key_count(9);
+        let now = Instant::now();
+        focus_code(&mut engine, now);
+        assert!(engine.session(Session::Locked));
+        assert!(!engine.session(Session::Locked));
+        assert!(engine.view().locked);
+        assert_eq!(
+            engine.specs(now),
+            render::lock_page(engine.active().profile.accent, 9)
+        );
+        assert!(engine.session(Session::Unlocked));
+        assert_eq!(engine.specs(now)[0].label.as_deref(), Some("Run"));
+    }
+
+    #[test]
+    fn a_press_under_the_lock_is_blocked_and_leaves_the_look_alone() {
+        let mut engine = Engine::new(loaded(GLOBAL));
+        engine.set_key_count(9);
+        let now = Instant::now();
+        let mut record = engine.press(slot(1), short(), SystemTime::UNIX_EPOCH);
+        record.finish(Outcome::Failed { error: "x".into() });
+        engine.finished(&record, now);
+        engine.session(Session::Locked);
+        for trigger in [
+            short(),
+            Trigger {
+                simulated: true,
+                ..short()
+            },
+        ] {
+            let blocked = engine.press(slot(1), trigger, SystemTime::UNIX_EPOCH);
+            assert_eq!(
+                blocked.result,
+                Outcome::Blocked {
+                    reason: "session locked".into()
+                }
+            );
+            assert_eq!((blocked.action, blocked.layer), (None, None));
+            assert_eq!((blocked.profile.as_str(), blocked.page), ("global", 1));
+        }
+        engine.session(Session::Unlocked);
+        // The error look of before the lock is still there.
+        assert_eq!(engine.specs(now)[0].look, Look::Error);
     }
 
     #[test]

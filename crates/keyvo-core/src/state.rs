@@ -25,6 +25,10 @@
 //! - A window whose class is in `[focus].hold_classes` (the keyvo app)
 //!   holds the context: its report cancels a pending one and the window
 //!   applied before stays, so the profile and page stay too.
+//! - A locked session ([`Session`]) is a veil over the state, not a mode:
+//!   the view keeps its profile, index and mode and says `locked`; the page
+//!   buttons do nothing; focus reports and the page return apply as
+//!   without the lock, so the unlock shows what the state shows anyway.
 //!
 //! Synchronous and clock-free: every call takes `now`, and the caller
 //! wakes the machine with [`State::poll`] at [`State::next_deadline`].
@@ -39,6 +43,7 @@ use crate::focus::WindowContext;
 use crate::layout::Profiles;
 use crate::press::{PressDetector, PressKind};
 use crate::profile::{GLOBAL_ID, Profile};
+use crate::session::Session;
 
 /// Who chooses the profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -83,6 +88,11 @@ pub struct View {
     /// The position in the shown profile's page list: 1 its context page,
     /// 0 the global `general` page.
     pub index: isize,
+    /// The session is locked: the pad shows the lock page over this view
+    /// and blocks every press. Read as `false` when absent, as from a
+    /// daemon before the session lock.
+    #[serde(default)]
+    pub locked: bool,
 }
 
 /// The mode and page state of the pad.
@@ -112,6 +122,8 @@ pub struct State {
     last_use: Option<Instant>,
     held: BTreeSet<PageButton>,
     buttons: PressDetector<PageButton>,
+    /// The session is locked.
+    locked: bool,
 }
 
 impl State {
@@ -136,6 +148,7 @@ impl State {
             last_use: None,
             held: BTreeSet::new(),
             buttons: PressDetector::new(timing.long_press),
+            locked: false,
         }
     }
 
@@ -158,7 +171,28 @@ impl State {
             page,
             mode: self.mode,
             index,
+            locked: self.locked,
         }
+    }
+
+    /// Whether the session is locked.
+    #[must_use]
+    pub const fn locked(&self) -> bool {
+        self.locked
+    }
+
+    /// The session source reports `session`; `true` when the lock state
+    /// changed. A page button held at the lock or the unlock is forgotten,
+    /// so neither its long press nor its release acts.
+    pub fn session(&mut self, session: Session) -> bool {
+        let locked = session.is_locked();
+        if locked == self.locked {
+            return false;
+        }
+        self.locked = locked;
+        self.held.clear();
+        self.buttons = PressDetector::new(self.long_press);
+        true
     }
 
     /// Whether a window of `class` holds the context.
@@ -192,8 +226,12 @@ impl State {
         self.poll(now, profiles);
     }
 
-    /// `button` went down at `now`. The second button held escapes.
+    /// `button` went down at `now`. The second button held escapes. Nothing
+    /// while the session is locked.
     pub fn press(&mut self, button: PageButton, now: Instant, _profiles: &Profiles) {
+        if self.locked {
+            return;
+        }
         self.last_use = Some(now);
         self.held.insert(button);
         if self.held.len() > 1 {
@@ -204,8 +242,11 @@ impl State {
     }
 
     /// `button` came up at `now`: a short press pages, a long one not yet
-    /// fired toggles the mode.
+    /// fired toggles the mode. Nothing while the session is locked.
     pub fn release(&mut self, button: PageButton, now: Instant, profiles: &Profiles) {
+        if self.locked {
+            return;
+        }
         self.last_use = Some(now);
         self.held.remove(&button);
         match self.buttons.release(button, now) {

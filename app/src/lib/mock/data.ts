@@ -11,6 +11,7 @@ import backgroundPng from "../../../../crates/keyvo-core/tests/snapshots/render_
 import iconLabelPng from "../../../../crates/keyvo-core/tests/snapshots/render__icon-label.snap.png?url";
 import iconPng from "../../../../crates/keyvo-core/tests/snapshots/render__icon.snap.png?url";
 import labelPng from "../../../../crates/keyvo-core/tests/snapshots/render__label.snap.png?url";
+import lockPng from "../../../../crates/keyvo-core/tests/snapshots/render__lock-key.snap.png?url";
 import eventsNdjson from "../../../../tests/protocol-fixtures/socket/events.ndjson?raw";
 import recipesNdjson from "../../../../tests/protocol-fixtures/socket/recipes.ndjson?raw";
 import responsesNdjson from "../../../../tests/protocol-fixtures/socket/responses.ndjson?raw";
@@ -94,4 +95,8 @@ export const SNAPSHOTS = {
   icon: iconPng,
   label: labelPng,
   iconLabel: iconLabelPng,
+  /** The lock key of the lock page (keyvo_core::render::lock_page). */
+  lock: lockPng,
+  /** A bare key of the lock page: nothing on the panel background. */
+  bare: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
 } as const;

@@ -1,5 +1,5 @@
 {"v":1,"id":1,"cmd":"status"}
-{"v":1,"id":"gui-2","cmd":"subscribe","events":["key","profile","page","mode","device","context","trace","config"],"replay":20}
+{"v":1,"id":"gui-2","cmd":"subscribe","events":["key","profile","page","mode","device","context","trace","config","session"],"replay":20}
 {"v":1,"cmd":"subscribe","events":["trace"],"replay":0}
 {"v":1,"id":3,"cmd":"press","key":5,"kind":"short","dry_run":true}
 {"v":1,"id":4,"cmd":"press","key":1,"kind":"long","dry_run":false}

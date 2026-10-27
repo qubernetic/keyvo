@@ -270,6 +270,64 @@ fn the_demo_page_renders_on_the_captured_panel() {
     insta::assert_binary_snapshot!("demo-page-1.png", panel.png().unwrap());
 }
 
+#[test]
+fn the_lock_page_shows_the_lock_on_the_middle_key_and_nothing_else() {
+    let accent = demo().profile.accent;
+    let specs = render::lock_page(accent, 9);
+    let bare = KeySpec {
+        bare: true,
+        ..KeySpec::default()
+    };
+    let lock = KeySpec {
+        accent,
+        icon: Some("lucide:lock".to_owned()),
+        bare: true,
+        muted: true,
+        ..KeySpec::default()
+    };
+    let mut expected = vec![bare; 9];
+    expected[4] = lock;
+    assert_eq!(specs, expected);
+    // The middle key of another count, none without keys.
+    assert_eq!(
+        render::lock_page(accent, 3)[1].icon.as_deref(),
+        Some("lucide:lock")
+    );
+    assert!(render::lock_page(accent, 0).is_empty());
+
+    let renderer = Renderer::new();
+    let panel = renderer.panel(&specs, &captured_panel()).unwrap();
+    let rgb = panel.rgb();
+    let background = renderer.panel_color(accent);
+    let panel_rgb = [background.r, background.g, background.b];
+    // Key 1 is the panel background, not a key face.
+    assert_eq!(pixel(&rgb, 480, 24 + 59, 6 + 59), panel_rgb);
+    // Key 5 has the lock in the muted foreground and the accent bar.
+    let muted = renderer.theme().muted;
+    let picture = RgbImage::from_raw(480, 480, rgb.clone()).unwrap();
+    let ink = picture
+        .enumerate_pixels()
+        .filter(|(x, y, p)| {
+            (181..299).contains(x)
+                && (163..281).contains(y)
+                && close(**p, Rgb([muted.r, muted.g, muted.b]))
+        })
+        .count();
+    assert!(ink > 300, "{ink} muted pixels");
+    assert_eq!(count(&picture, Rgb([0xff, 0xff, 0xff])), 0);
+    let bar = accent.unwrap();
+    assert!(close(
+        *picture.get_pixel(181 + 59, 163 + 107),
+        Rgb([bar.r, bar.g, bar.b])
+    ));
+    insta::assert_binary_snapshot!("lock-page.png", panel.png().unwrap());
+    // The lock key alone, for the app's mock daemon.
+    insta::assert_binary_snapshot!(
+        "lock-key.png",
+        renderer.tile(&specs[4], KEY).unwrap().png().unwrap()
+    );
+}
+
 /// The union of the captured key rectangles: 435x434 at 23,6.
 const UNION: KeyPlace = KeyPlace {
     x: 23,

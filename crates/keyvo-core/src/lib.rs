@@ -20,6 +20,7 @@ pub mod profile;
 pub mod recipe;
 pub mod render;
 pub mod schema;
+pub mod session;
 pub mod socket;
 pub mod stack;
 pub mod state;

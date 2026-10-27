@@ -33,7 +33,12 @@ const GLOBAL = "global";
 export interface MockDaemonOptions {
   /** Rejects `status` as if no daemon listened on the socket. */
   unreachable?: boolean;
+  /** The session is locked: the view says so, presses are blocked. */
+  locked?: boolean;
 }
+
+/** The key the lock page shows the lock on: the middle one. */
+const LOCK_KEY = 5;
 
 /** The page named `context`, else page 1 (keyvo_core::state::context_page). */
 function contextPage(profile: MockProfile | undefined): number {
@@ -72,7 +77,13 @@ export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemo
       .filter((profile) => profile.id !== GLOBAL && profile.match.class.includes(focused))
       .sort((a, b) => b.priority - a.priority);
     const profile = matching[0] ?? store.find(GLOBAL);
-    return { profile: profile?.id ?? GLOBAL, page: contextPage(profile), mode: "auto", index: 1 };
+    return {
+      profile: profile?.id ?? GLOBAL,
+      page: contextPage(profile),
+      mode: "auto",
+      index: 1,
+      locked: options.locked === true,
+    };
   }
 
   /** Key `key` of page `page` of `id` with the layer that supplies it: the
@@ -120,13 +131,18 @@ export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemo
           ...(fields.accent === undefined ? {} : { accent: fields.accent }),
         };
       }),
-    tiles: (id, page, keys) =>
+    tiles: (id, page, keys, _tile, locked) =>
       attempt(() => {
         known(id);
         try {
           store.page(id, page);
         } catch (error) {
           throw (error as { message: string }).message;
+        }
+        if (locked === true) {
+          return Array.from({ length: keys }, (_, index): Tile => ({
+            image: index + 1 === LOCK_KEY ? SNAPSHOTS.lock : SNAPSHOTS.bare,
+          }));
         }
         return Array.from({ length: keys }, (_, index): Tile => {
           const found = resolve(id, page, index + 1);
@@ -144,6 +160,19 @@ export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemo
     press: (key, kind) =>
       attempt(() => {
         const { profile, page } = view();
+        if (options.locked === true) {
+          const blocked: TraceRecord = {
+            timestamp_ms: Date.now(),
+            trigger: { press: kind, simulated: true },
+            profile,
+            page,
+            key,
+            action: null,
+            result: { status: "blocked", reason: "session locked" },
+          };
+          record(blocked);
+          return blocked;
+        }
         const found = resolve(profile, page, key);
         const action = found?.[0].action;
         const entry: TraceRecord = {

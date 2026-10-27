@@ -157,6 +157,32 @@ mod resolution {
     }
 
     #[test]
+    fn a_blocked_press_resolves_nothing_and_says_why() {
+        for simulated in [false, true] {
+            let trigger = Trigger {
+                press: PressKind::Short,
+                simulated,
+            };
+            let record = keyvo_core::press::blocked("demo", 1, slot(1), trigger, at(), "locked");
+            assert_eq!(
+                record,
+                TraceRecord {
+                    timestamp_ms: 1_792_929_600_250,
+                    trigger,
+                    profile: "demo".to_owned(),
+                    page: 1,
+                    key: slot(1),
+                    layer: None,
+                    action: None,
+                    result: Outcome::Blocked {
+                        reason: "locked".to_owned()
+                    },
+                }
+            );
+        }
+    }
+
+    #[test]
     fn a_key_without_an_action_is_unbound() {
         for (page, key) in [(1, 7), (1, 8), (2, 5)] {
             let record = resolve(page, key, REAL_SHORT);
@@ -208,6 +234,14 @@ mod resolution {
             ),
             // A `launch` whose application still runs after the settle.
             (Outcome::Started { pid: 4242 }, true, false),
+            // A press under the session lock ran nothing: no look.
+            (
+                Outcome::Blocked {
+                    reason: "session locked".to_owned(),
+                },
+                false,
+                false,
+            ),
         ];
         for (outcome, success, error) in table {
             assert_eq!(outcome.is_success(), success, "{outcome:?}");
@@ -241,7 +275,9 @@ mod resolution {
             },
         );
         let unbound = resolve(2, 1, REAL_SHORT);
-        let lines: String = [chord, exec, failed, dry, unbound]
+        let blocked =
+            keyvo_core::press::blocked("demo", 1, slot(5), REAL_SHORT, at(), "session locked");
+        let lines: String = [chord, exec, failed, dry, unbound, blocked]
             .iter()
             .map(|record| serde_json::to_string(record).unwrap() + "\n")
             .collect();

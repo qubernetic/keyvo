@@ -9,7 +9,7 @@ import { eventsOf, nth, responses } from "./lib/fixtures";
 import type { TraceRecord } from "./lib/protocol";
 
 /** The fixture entries: chord sent, exec exited 101, exec failed, dry run,
- * unbound, launch started. */
+ * unbound, launch started, blocked under the session lock. */
 const ENTRIES = eventsOf("trace").map((event) => event.entry);
 
 function drawer(entry: TraceRecord, onclose = vi.fn()) {
@@ -109,6 +109,20 @@ describe("TraceDrawer", () => {
     expect(value(action, "Type")).toBe("none");
     expect(section(dialog, "Block reason")).toHaveTextContent(
       "Unbound: no layer binds this key on this page.",
+    );
+  });
+
+  it("gives a blocked press's reason instead of a result", () => {
+    const { dialog } = drawer(nth(ENTRIES, 6));
+    expect(sections(dialog)).toEqual([
+      "Trigger",
+      "Context snapshot",
+      "Resolved action",
+      "Block reason",
+    ]);
+    expect(value(section(dialog, "Resolved action"), "Type")).toBe("none");
+    expect(section(dialog, "Block reason")).toHaveTextContent(
+      "Blocked: session locked. Nothing was resolved or run.",
     );
   });
 

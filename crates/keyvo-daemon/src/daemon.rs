@@ -16,6 +16,12 @@
 //!   return). A changed profile, page or mode repaints and is reported as
 //!   [`Event::Switched`]. Without a watcher the daemon runs on, without
 //!   focus switching.
+//! - The [`SessionWatcher`] reports the session lock. While locked the pad
+//!   shows the lock page, every press (a socket `press` and its dry run
+//!   included) is traced `blocked` and runs nothing, and the page buttons
+//!   do nothing; the lock and unlock are reported as [`Event::Switched`]
+//!   with `locked` set. Without a session source the daemon runs on,
+//!   without lock detection.
 //! - A change in the configuration directory reloads it after
 //!   `[timing].reload_settle` of quiet. A directory that does not load
 //!   keeps the last good state.
@@ -43,6 +49,7 @@ use keyvo_core::layout::{self, Loaded, Profiles};
 use keyvo_core::press::{PressDetector, PressKind};
 use keyvo_core::profile::{Action, KeySlot};
 use keyvo_core::recipe;
+use keyvo_core::session::{Session, SessionWatcher};
 use keyvo_core::socket::{
     Command as Wire, Context, ContextSource, DeviceStatus, Edge as KeyEdge, Geometry, Recipes,
     Status,
@@ -144,19 +151,31 @@ pub struct Paths {
     pub socket: PathBuf,
 }
 
+/// The daemon's view of the desktop: the focused window and the session
+/// lock (spec §6.2).
+#[derive(Debug, Clone)]
+pub struct Sources<W, S> {
+    /// Reports the focused window.
+    pub window: W,
+    /// Reports the session lock.
+    pub session: S,
+}
+
 /// Runs the daemon on the configuration in `paths.config_dir` until
-/// `shutdown` completes. `watcher` reports the focused window; one that does not
-/// start is logged and the daemon runs without focus switching. Socket
-/// clients' commands arrive on `requests`.
+/// `shutdown` completes. `sources.window` reports the focused window; one
+/// that does not start is logged and the daemon runs without focus
+/// switching. `sources.session` reports the session lock; one that does
+/// not start is logged once and the daemon runs without lock detection.
+/// Socket clients' commands arrive on `requests`.
 ///
 /// # Errors
 ///
 /// When the device actor's thread cannot be started or ends in a panic.
-pub async fn run<C, I, W>(
+pub async fn run<C, I, W, S>(
     paths: &Paths,
     connector: C,
     injector: I,
-    mut watcher: W,
+    sources: Sources<W, S>,
     events: broadcast::Sender<Event>,
     mut requests: mpsc::UnboundedReceiver<Request>,
     shutdown: impl Future<Output = ()>,
@@ -165,7 +184,12 @@ where
     C: Connector,
     I: InputInjector + Send + 'static,
     W: WindowWatcher,
+    S: SessionWatcher,
 {
+    let Sources {
+        window: mut watcher,
+        session: mut session_watcher,
+    } = sources;
     let config_dir = paths.config_dir.as_path();
     let loaded = layout::load(config_dir).unwrap_or_else(|errors| {
         tracing::warn!("configuration not loaded:\n{errors}");
@@ -193,6 +217,12 @@ where
         let _ = focused.send(window);
     })) {
         tracing::warn!("focus switching off: {error}");
+    }
+    let (reported, mut sessions) = mpsc::unbounded_channel::<Session>();
+    if let Err(error) = session_watcher.start(Box::new(move |session| {
+        let _ = reported.send(session);
+    })) {
+        tracing::warn!("lock detection off, the pad stays live under a lock: {error}");
     }
 
     let mut changes = watch(config_dir);
@@ -231,6 +261,7 @@ where
             () = &mut shutdown => break,
             Some(event) = device_events.recv() => controller.device(event),
             Some(window) = focus.recv() => controller.focus(window, ContextSource::Watcher),
+            Some(session) = sessions.recv() => controller.session(session),
             Some(request) = requests.recv() => controller.request(request),
             Some(()) = changed(&mut changes) => {
                 controller.reload_at = Some(now + controller.engine.config().timing.reload_settle);
@@ -244,6 +275,7 @@ where
         }
     }
     drop(watcher);
+    drop(session_watcher);
 
     let _ = commands.send(Command::Stop);
     tokio::task::spawn_blocking(move || actor.join())
@@ -449,6 +481,23 @@ impl<I: InputInjector> Controller<'_, I> {
         self.switched(&before);
     }
 
+    /// The session source reports `session`: a lock paints the lock page
+    /// and blocks every press, an unlock paints what the state shows.
+    fn session(&mut self, session: Session) {
+        let before = self.engine.view();
+        if self.engine.session(session) {
+            tracing::info!(
+                "session {}",
+                if session.is_locked() {
+                    "locked: the pad shows the lock and blocks every press"
+                } else {
+                    "unlocked"
+                }
+            );
+        }
+        self.switched(&before);
+    }
+
     /// A pending focus change, a page-button long press or the page return
     /// is due.
     fn poll_state(&mut self) {
@@ -463,11 +512,12 @@ impl<I: InputInjector> Controller<'_, I> {
         let view = self.engine.view();
         if view != *before {
             tracing::info!(
-                "showing profile {} index {} (page {}) in {} mode",
+                "showing profile {} index {} (page {}) in {} mode{}",
                 view.profile,
                 view.index,
                 view.page,
-                view.mode.as_str()
+                view.mode.as_str(),
+                if view.locked { " under the lock" } else { "" }
             );
             self.dirty();
             self.emit(Event::Switched(view));
@@ -498,7 +548,7 @@ impl<I: InputInjector> Controller<'_, I> {
     /// follows as a trace event.
     fn press(&mut self, slot: KeySlot, trigger: Trigger) -> TraceRecord {
         let mut record = self.engine.press(slot, trigger, SystemTime::now());
-        if trigger.simulated {
+        if trigger.simulated || matches!(record.result, Outcome::Blocked { .. }) {
             self.emit(Event::Trace(record.clone()));
             return record;
         }

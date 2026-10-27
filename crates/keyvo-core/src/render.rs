@@ -55,6 +55,11 @@ pub struct KeySpec {
     /// Where the [`Look::Running`] arc starts, in degrees clockwise from
     /// the top; the daemon turns it to animate the spinner.
     pub spinner: u16,
+    /// No key face: the tile is transparent but for the accent, icon and
+    /// label, so the panel background shows through.
+    pub bare: bool,
+    /// The icon and label in the theme's muted foreground.
+    pub muted: bool,
 }
 
 impl KeySpec {
@@ -116,6 +121,36 @@ pub fn page(stack: &Stack<'_>, keys: u8) -> Vec<KeySpec> {
                 .and_then(|slot| stack.key(slot))
                 .map(|(key, _)| key);
             KeySpec::from_key(key, accent)
+        })
+        .collect()
+}
+
+/// The icon of the lock page.
+pub const LOCK_ICON: &str = "lucide:lock";
+
+/// The specs of keys 1 to `keys` while the session is locked (spec §9):
+/// every key bare on the panel background, the middle one (key 5 of nine)
+/// the lock in the muted foreground over the `accent` bar of the profile
+/// the unlock returns to.
+#[must_use]
+pub fn lock_page(accent: Option<Color>, keys: u8) -> Vec<KeySpec> {
+    let middle = keys.div_ceil(2);
+    (1..=keys)
+        .map(|n| {
+            let bare = KeySpec {
+                bare: true,
+                ..KeySpec::default()
+            };
+            if n == middle {
+                KeySpec {
+                    accent,
+                    icon: Some(LOCK_ICON.to_owned()),
+                    muted: true,
+                    ..bare
+                }
+            } else {
+                bare
+            }
         })
         .collect()
 }
@@ -190,6 +225,8 @@ pub struct Theme {
     pub light_foreground: Color,
     /// Icon and label color on a light background.
     pub dark_foreground: Color,
+    /// Icon and label color of a muted key, such as the lock.
+    pub muted: Color,
     /// Icon size of a key without a label.
     pub icon_size: f32,
     /// Vertical center of the icon of a key without a label.
@@ -243,6 +280,7 @@ impl Default for Theme {
             accent_margin: 0.07,
             light_foreground: Color::rgb(0xff, 0xff, 0xff),
             dark_foreground: Color::rgb(0x11, 0x11, 0x11),
+            muted: Color::rgb(0x8b, 0x90, 0x99),
             icon_size: 0.5,
             icon_center: 0.45,
             labeled_icon_size: 0.4,
@@ -488,6 +526,12 @@ impl Renderer {
         }
     }
 
+    /// The theme it draws with.
+    #[must_use]
+    pub const fn theme(&self) -> &Theme {
+        &self.theme
+    }
+
     /// Renders `spec` at `size`.
     ///
     /// # Errors
@@ -502,7 +546,9 @@ impl Renderer {
         )?;
         let (width, height) = (f32::from(size.width), f32::from(size.height));
         let background = spec.background.unwrap_or(self.theme.background);
-        if let Some(rect) = Rect::from_xywh(0.0, 0.0, width, height) {
+        if !spec.bare
+            && let Some(rect) = Rect::from_xywh(0.0, 0.0, width, height)
+        {
             fill_rounded(&mut pixmap, rect, self.theme.radius * height, background);
         }
         if let Some(accent) = spec.accent {
@@ -515,7 +561,11 @@ impl Renderer {
                 fill_rounded(&mut pixmap, rect, bar_height / 2.0, accent);
             }
         }
-        let foreground = self.theme.foreground(background);
+        let foreground = if spec.muted {
+            self.theme.muted
+        } else {
+            self.theme.foreground(background)
+        };
         let label = spec
             .label
             .as_deref()

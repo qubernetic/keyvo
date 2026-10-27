@@ -12,6 +12,7 @@ use keyvo_core::config::{self, Config, Timing};
 use keyvo_core::focus::WindowContext;
 use keyvo_core::layout::{self, Profiles};
 use keyvo_core::profile::Profile;
+use keyvo_core::session::Session;
 use keyvo_core::state::{Mode, PageButton, State, View};
 
 fn profiles() -> Profiles {
@@ -111,10 +112,15 @@ enum Step {
     /// The caller's timer: pending focus changes, long presses and the
     /// page return.
     Poll(u64),
+    /// The session is locked; the view is checked with `locked` set from
+    /// here.
+    Lock,
+    /// The session is unlocked.
+    Unlock,
 }
 
 use PageButton::{Left, Right};
-use Step::{Down, Focus, Key, Poll, Short, Up};
+use Step::{Down, Focus, Key, Lock, Poll, Short, Unlock, Up};
 
 const AUTO: Mode = Mode::Auto;
 const MANUAL: Mode = Mode::Manual;
@@ -136,8 +142,17 @@ fn run_with(config: &Config, profiles: &Profiles, table: &[Row]) {
     let at = |ms: u64| start + Duration::from_millis(ms);
     let mut state = State::new(config, profiles);
     assert_eq!(state.view(profiles), view("global", 1, 1, AUTO));
+    let mut locked = false;
     for (row, &(step, profile, page, index, mode)) in table.iter().enumerate() {
         match step {
+            Lock => {
+                locked = true;
+                state.session(Session::Locked);
+            }
+            Unlock => {
+                locked = false;
+                state.session(Session::Unlocked);
+            }
             Focus(class, title, ms) => state.focus(window(class, title), at(ms), profiles),
             Down(button, ms) => state.press(button, at(ms), profiles),
             Up(button, ms) => state.release(button, at(ms), profiles),
@@ -150,7 +165,10 @@ fn run_with(config: &Config, profiles: &Profiles, table: &[Row]) {
         }
         assert_eq!(
             state.view(profiles),
-            view(profile, page, index, mode),
+            View {
+                locked,
+                ..view(profile, page, index, mode)
+            },
             "row {row}: {step:?}"
         );
     }
@@ -162,7 +180,69 @@ fn view(profile: &str, page: usize, index: isize, mode: Mode) -> View {
         page,
         mode,
         index,
+        locked: false,
     }
+}
+
+#[test]
+fn a_locked_session_veils_the_view_and_ignores_the_page_buttons() {
+    run(
+        &contrib(),
+        &[
+            (Focus("code", "main.rs", 0), "global", 1, 1, AUTO),
+            (Poll(150), "vscode", 1, 1, AUTO),
+            (Short(Right, 500), "vscode", 2, 2, AUTO),
+            // The lock keeps the profile, index and mode.
+            (Lock, "vscode", 2, 2, AUTO),
+            // Page buttons do nothing, short or long.
+            (Short(Left, 1100), "vscode", 2, 2, AUTO),
+            (Down(Right, 1300), "vscode", 2, 2, AUTO),
+            (Poll(2400), "vscode", 2, 2, AUTO),
+            (Up(Right, 2500), "vscode", 2, 2, AUTO),
+            // Both buttons do not escape either.
+            (Down(Left, 2600), "vscode", 2, 2, AUTO),
+            (Down(Right, 2650), "vscode", 2, 2, AUTO),
+            (Up(Left, 2700), "vscode", 2, 2, AUTO),
+            (Up(Right, 2700), "vscode", 2, 2, AUTO),
+            // A focus report is recorded as without the lock.
+            (Focus("org.kde.konsole", "~", 3000), "vscode", 2, 2, AUTO),
+            (Poll(3150), "konsole", 1, 1, AUTO),
+            // The unlock shows what the state would show anyway.
+            (Unlock, "konsole", 1, 1, AUTO),
+            (Short(Left, 4100), "global", 2, 0, AUTO),
+        ],
+    );
+}
+
+#[test]
+fn a_page_button_held_into_the_lock_does_not_toggle_the_mode() {
+    run(
+        &contrib(),
+        &[
+            (Focus("code", "main.rs", 0), "global", 1, 1, AUTO),
+            (Poll(150), "vscode", 1, 1, AUTO),
+            (Down(Left, 500), "vscode", 1, 1, AUTO),
+            (Lock, "vscode", 1, 1, AUTO),
+            // The long press would have fired at 1500.
+            (Poll(1500), "vscode", 1, 1, AUTO),
+            (Unlock, "vscode", 1, 1, AUTO),
+            // Its release after the unlock is not a press either.
+            (Up(Left, 1700), "vscode", 1, 1, AUTO),
+            (Short(Left, 2000), "global", 2, 0, AUTO),
+        ],
+    );
+}
+
+#[test]
+fn a_lock_and_unlock_say_whether_they_changed_anything() {
+    let profiles = contrib();
+    let mut state = State::new(&Config::default(), &profiles);
+    assert!(!state.locked());
+    assert!(state.session(Session::Locked));
+    assert!(state.locked());
+    assert!(!state.session(Session::Locked));
+    assert!(state.session(Session::Unlocked));
+    assert!(!state.session(Session::Unlocked));
 }
 
 #[test]

@@ -46,8 +46,10 @@ export interface Daemon {
   status(): Promise<Status>;
   /** The `keys` keys of `profile`'s page `page` from the daemon's
    * configuration directory, rendered at `tile` (both from the geometry
-   * the daemon reports), in key order; rejects when they do not render. */
-  tiles(profile: string, page: number, keys: number, tile: Size): Promise<Tile[]>;
+   * the daemon reports), in key order; rejects when they do not render.
+   * With `locked` the lock page the pad shows under the session lock, in
+   * the profile's accent (keyvo_core::render::lock_page). */
+  tiles(profile: string, page: number, keys: number, tile: Size, locked?: boolean): Promise<Tile[]>;
   /** The page count and accent of `profile` from the daemon's
    * configuration directory; rejects when it has no such profile. */
   outline(profile: string): Promise<Outline>;
@@ -68,7 +70,8 @@ export const UPDATE_EVENT = "keyvo://update";
 /** The daemon through the Tauri shell's commands. */
 export const tauriDaemon: Daemon = {
   status: () => invoke<Status>("status"),
-  tiles: (profile, page, keys, tile) => invoke<Tile[]>("tiles", { profile, page, keys, tile }),
+  tiles: (profile, page, keys, tile, locked) =>
+    invoke<Tile[]>("tiles", { profile, page, keys, tile, locked: locked === true }),
   outline: (profile) => invoke<Outline>("outline", { profile }),
   recipes: () => invoke<Recipes>("recipes"),
   press: (key, kind) => invoke<TraceRecord>("press", { key, kind }),

@@ -137,6 +137,7 @@ glue over it, so the GUI's logic is tested without a display.
 trait HidTransport   // open/read/write HID reports; hidraw on Linux, hidapi elsewhere; FakeHidTransport in tests
 trait InputInjector  // Linux: uinput (evdev); Windows: SendInput
 trait WindowWatcher  // Linux: KWin script over D-Bus (KDE), X11 _NET_ACTIVE_WINDOW; Windows: SetWinEventHook
+trait SessionWatcher // Linux: systemd-logind on the system bus; Windows and X11 sources later
 ```
 
 `HidTransport` (`keyvo_core::hid`) moves whole reports, report id first:
@@ -147,7 +148,7 @@ request/response pairs in the fixture notation of §5.9 and fails on any
 write the script does not expect.
 
 The test doubles (`FakeHidTransport`, `FakeClock`, `FakeInputInjector`,
-`FakeWindowWatcher`) are public items of `keyvo-core`, not behind a
+`FakeWindowWatcher`, `FakeSessionWatcher`) are public items of `keyvo-core`, not behind a
 feature: the tests of `keyvo-hid`, `keyvo-daemon` and `keyvo-cli` use
 them, and they hold no device or system resource, so shipping them costs
 nothing. They are for tests; no production path constructs one.
@@ -176,7 +177,18 @@ watcher that cannot start returns the reason, and the daemon logs
 binary uses the KWin watcher (`keyvo_daemon::kwin::KWinWatcher`, §6.2);
 `FakeWindowWatcher` lets a test report a window by hand.
 
-Clients implement none of the three traits: they reach the device only
+`SessionWatcher` (`keyvo_core::session`) reports the lock state of the
+user's session as `Session::Locked` or `Session::Unlocked`: `start(sink)`
+the same way, a watcher that knows the state reports it at once, so a
+daemon started under the lock starts locked. A watcher that cannot start
+returns the reason, and the daemon logs "lock detection off" once and runs
+on without it. The daemon binary uses the logind watcher
+(`keyvo_daemon::logind::LogindSessionWatcher`, §6.2); `FakeSessionWatcher`
+lets a test lock and unlock by hand, `FakeSessionWatcher::starting` reports
+a state at the start. The daemon takes both watchers as
+`keyvo_daemon::daemon::Sources { window, session }`.
+
+Clients implement none of the four traits: they reach the device only
 through the daemon's socket. `keyvo-client` is that client side, used by the
 desktop app: `Client` sends one request at a time over any `Read + Write`
 stream (`Client::connect` for the Unix socket at `socket_path`:
@@ -190,8 +202,10 @@ to the frontend as they are; `Mirror` folds the `status`, `subscribe`
 and `press` replies and the events into the view, device, focus context,
 held keys, recent trace entries and the last reload error; `Tiles` renders a
 page with the `keyvo-core` renderer, so a tile in the GUI has the pixels the
-daemon paints on the LCD, and `tiles::keys` gives each key's label and
-action for the GUI to announce. Its tests run against the socket fixtures in
+daemon paints on the LCD (for a locked view the lock page, §9), and
+`tiles::keys` gives each key's label and action for the GUI to announce
+(none for a locked view); `Mirror` takes a `session` event into the view's
+`locked`. Its tests run against the socket fixtures in
 `tests/protocol-fixtures/socket/`, the same lines the TypeScript side of
 the app checks itself against. `Editor` is the key editor's file side
 (§7.1, §10): `Editor::key` reads a key's file and fields, `Editor::set_key`
@@ -208,8 +222,8 @@ tasks (§8); an inotify watcher reports changes in the configuration
 directory (§7.2); the control socket serves each client in its own task
 and hands the commands to the controller (§8). Its end-to-end tests drive
 the controller with `FakeHidTransport` pads, a `FakeInputInjector`, a
-`FakeWindowWatcher`, socket clients and a configuration directory on
-disk. Run it with `just build`, then `bin/keyvo-daemon [--config-dir DIR]
+`FakeWindowWatcher`, a `FakeSessionWatcher`, socket clients and a
+configuration directory on disk. Run it with `just build`, then `bin/keyvo-daemon [--config-dir DIR]
 [--device PATH] [--socket PATH]` on the host; logs go to stderr.
 
 Core rendering is, as the target, the pure function
@@ -917,6 +931,32 @@ daemon's `context` event and the `context` field of `status` carry
 `held: true` for such a report (§8); no `profile`, `page` or `mode` event
 follows it.
 
+The session lock (#158, decided by the owner on 2026-10-27 after the
+User test of #151: the pad stayed live under the lock screen, and every
+key would have run its chord or `exec` in the locked session) is a veil
+over the state, not a mode. While the `SessionWatcher` (§4.1, §6.2)
+reports the session locked:
+
+- the view keeps the profile, page, index and mode it had and carries
+  `locked: true`; nothing else changes;
+- the pad shows the lock page (§9): the lock on key 5 in the accent of
+  the profile the unlock returns to, every other key blank;
+- every key press, short or long, from the device or a socket `press`
+  (`dry_run` included), resolves nothing and is traced with
+  `Outcome::Blocked { reason: "session locked" }` (§8): no chord, no
+  `exec` or `launch`, no feedback look, no `on_fail`;
+- the page buttons do nothing, short, long or both together; a button
+  held into the lock or the unlock is forgotten, so neither its long press
+  nor its release acts;
+- a focus report is recorded and applied as without the lock, with the
+  focus hysteresis, and so is the page return; the lock page shows the
+  new profile's accent;
+- the unlock shows what the state would show anyway.
+
+The lock and the unlock are `Switched` events like any other change of the
+view; the socket reports them as `session` events (§8). An animated lock
+(a pulse) is a later slice.
+
 ### 6.2 Window/context detection
 
 - **KDE Wayland (v1):** the daemon pushes its own KWin script over D-Bus
@@ -977,6 +1017,28 @@ follows it.
   hysteresis, and the last report from either source wins. Its
   precedence over the watcher, `cwd` and the pid come with M2-5.
 - **Windows:** `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` (native mode only).
+- **Session lock as built (pre-alpha, `keyvo_daemon::logind`):**
+  systemd-logind on the system bus. The daemon's session is the object
+  `org.freedesktop.login1.Manager.GetSessionByPID` names for the daemon's
+  pid; for a daemon outside every session (a systemd user service) it is
+  `/org/freedesktop/login1/session/auto`, resolved to the session's own
+  path through its `Id` (systemd's path escaping: `2` is `_32`), because
+  logind emits the signals on that path. The watcher subscribes to the
+  signals of that path first, then reads `LockedHint`
+  (`org.freedesktop.login1.Session`) and reports it, so a daemon started
+  under the lock starts locked. After that it reports the `Lock` and
+  `Unlock` signals and every `PropertiesChanged` that carries
+  `LockedHint`: `loginctl lock-session` sends `Lock`, while the screen
+  locker sets `LockedHint` for a lock by shortcut or idle timeout and for
+  the unlock with the password, which sends no `Unlock`. When the system
+  bus or logind is unreachable the daemon logs "lock detection off" once
+  and runs without lock detection, like the KWin watcher without KWin.
+  The KWin lock-screen window (class `kwin_wayland`, empty title, which
+  KWin reports as a focused window) is not used: it is a side effect, not
+  a contract. Tests run without logind: a peer-to-peer zbus connection to
+  a fake manager and session (`crates/keyvo-daemon/tests/logind.rs`), and
+  unit tests of the signal decoding on built message bodies. Windows and
+  X11 lock sources come with M5 and the X11 watcher.
 - Matching rules: by class (reverse-DNS `org.kde.konsole` and short
   `konsole` both accepted, glob/regex), regex on title (VS Code file →
   language pages, terminal title → Claude Code), explicit priority, and
@@ -1434,7 +1496,7 @@ the Rust, TypeScript and C# clients.
 As built (pre-alpha, `keyvo_core::socket` and `keyvo_daemon::socket`):
 
 - The commands are `status`, `subscribe` (classes `key`, `profile`, `page`,
-  `mode`, `device`, `context`, `trace`, `config`, with an optional replay
+  `mode`, `device`, `context`, `trace`, `config`, `session`, with an optional replay
   of the newest trace entries), `press` (`key`, `kind`, `dry_run`),
   `reload`, `notify_context` (`class`, `title`), and `recipes` (the bundled
   and the user's recipe packs with their variants, `problems` naming each
@@ -1447,7 +1509,15 @@ As built (pre-alpha, `keyvo_core::socket` and `keyvo_daemon::socket`):
 - The view in `status`, in the `subscribe` result and in the `profile`,
   `page` and `mode` events is `profile`, `page`, `mode` and `index`, the
   position in the shown profile's page list (§6.1, #151); a change of the
-  index alone is a `page` event.
+  index alone is a `page` event. The view also carries `locked`, `true`
+  while the session is locked (§6.1, #158); a client reads a missing
+  `locked` as `false`.
+- A lock or an unlock is a `session` event (`{"v":1,"event":"session",
+  "locked":true}`), sent after the `profile`, `page` or `mode` events of
+  the same change, so a subscriber of `session` alone sees every lock and
+  unlock. A `press` under the lock, `dry_run` included, is answered with
+  its trace entry, result `blocked` with `reason` `session locked`; the
+  socket itself answers as before, to the same user (`SECURITY.md`).
 - Clients ignore unknown fields in responses and events, so a later daemon
   may add fields within version 1.
 - Every response echoes the request's `id` and carries `ok` with `result`
@@ -1501,8 +1571,11 @@ buffer, the file and `keyvo ctl trace|tail` live in the daemon. Pre-alpha
 subset of a record: timestamp, trigger (press kind, simulated), profile id,
 page, key, the resolved action, and the result: `unbound`, `dry_run`,
 `pending`, `sent` with the chord's key events, `exited` with exit code and
-duration, `started` with the `pid` of a `launch` that was let go, or
-`failed` with the reason; one serialized record per line is in
+duration, `started` with the `pid` of a `launch` that was let go,
+`failed` with the reason, or `blocked` with the block `reason` (as built
+only `session locked`, a press under the session lock, §6.1: no layer, no
+action, nothing run; the untrusted project's block comes with M2); one
+serialized record per line is in
 `crates/keyvo-core/tests/fixtures/trace/records.ndjson`. The daemon keeps
 the newest `[trace].ring` entries (default 1000, the only `[trace]` key so
 far) in memory: device and client presses, dry runs, and each `exec`
@@ -1586,6 +1659,16 @@ justfile page, `gh`, `kubectl`, other agent CLIs, Kitty/WezTerm.
   the same pixels everywhere. Badges and the feedback looks are described
   below. The theme file, gradients, caching and the size guard come with
   later issues.
+- The lock page (#158, `keyvo_core::render::lock_page`): while the session
+  is locked (§6.1) every key is *bare*, no key face, so the panel
+  background shows through (tinted with the accent of the profile the
+  unlock returns to), and the middle key (key 5 of nine) shows
+  `lucide:lock` in the theme's muted foreground (`#8b9099`), no label,
+  over that profile's accent bar. A key spec carries `bare` and `muted`
+  for this. The page goes through the composite path like any other; the
+  snapshot is `crates/keyvo-core/tests/snapshots/render__lock-page.snap.png`.
+  An animated lock (a pulse within the device's `maxImageFPS`) and a
+  configurable lock page are later slices.
 - Animation = frame push; renderer supports spinner/progress/blink
   primitives. Sustainable frame rate is measured in M0-1 (plan §5 item 9)
   and documented; there is no native animated format.
@@ -1874,6 +1957,14 @@ then subscribes with a replay of the newest 20 trace entries;
 - **Held caption.** While the focused window is held (§6.1,
   `[focus].hold_classes`), a `status` line reads `keyvo-app focused,
   holding <profile>`, the profile the pad keeps.
+- **Session lock** (#158). While the view is `locked` (§6.1) the mirror
+  shows the lock page the pad shows (the shell's `tiles` command with
+  `locked` renders `keyvo_core::render::lock_page`, so the tiles name no
+  key), and the same `status` line reads `Session locked; the pad shows
+  the lock.` in place of the held caption. The Inspector keeps editing the
+  pinned page; edits are file writes. A blocked press reads `Key <n>:
+  blocked, session locked` in the trace strip, and the trace drawer gives
+  the reason under Block reason.
 - **Trace strip** (`app/src/TraceStrip.svelte`). Under the inspector, one
   line "Recent events" with the newest three trace entries, newest first,
   each with its 24 h time: the key, the press kind, whether it was
@@ -2095,7 +2186,10 @@ every ten seconds, and its subscription sends a fixture trace entry every
 two seconds. `?theme=` picks one of the four measured token sets of
 `docs/design/gui-ux.md` §7, `?mock-error=unreachable` makes `status`
 fail, `?mock-error=write` makes every `edit_key` fail with the key's file,
-line and column. A build without the variable contains no mock module.
+line and column, `?mock-locked` reports the session locked: the view says
+`locked`, the tiles of the pad's page are the lock key
+(`render__lock-key.snap.png`) and bare keys, and every press is
+`blocked`. A build without the variable contains no mock module.
 
 ---
 
@@ -2276,6 +2370,15 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha design pass (2026-10-27)**: the session lock (#158).
+  §4.1 a fourth platform trait, `SessionWatcher`, with
+  `FakeSessionWatcher`; §6.1 a locked session veils the view (`locked`),
+  paints the lock page, blocks every press and ignores the page buttons,
+  while focus reports apply; §6.2 systemd-logind as the lock source
+  (`GetSessionByPID`, else the `auto` session; `Lock`, `Unlock`,
+  `LockedHint`); §8 the trace result `blocked` with a `reason`, the view's
+  `locked`, the event class `session`; §9 the lock page; §10 the mirror
+  shows the lock and the Pad's line says so, the mock's `?mock-locked`.
 - **v0.3, pre-alpha design pass (2026-10-27)**: §6.1 and §6.3 the page
   return replaces `page_grace`: `[timing].page_return_global` (10 s)
   brings a global page back to the context page after a time without a

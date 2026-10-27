@@ -20,6 +20,8 @@ import type { Daemon, Tile, Update } from "./lib/daemon";
 import type { Editor, KeyFields, Target } from "./lib/editor";
 import { eventsOf, nth, recipeReplies, responses } from "./lib/fixtures";
 import { t } from "./lib/i18n";
+import { SNAPSHOTS } from "./lib/mock/data";
+import { mockClients } from "./lib/mock";
 import { PAD_TRACE, STRIP_LINE } from "./lib/pad";
 import type { Pinned } from "./lib/pin";
 import type { ProfileSummary } from "./lib/profiles";
@@ -171,6 +173,29 @@ describe("the drawing", () => {
     expect(
       screen.getByRole("grid", { name: "Keypad mirror: profile global, page 2" }),
     ).toBeInTheDocument();
+  });
+
+  it("shows the lock page and says so while the session is locked", async () => {
+    const { daemon } = await mounted();
+    expect(screen.queryByText(t("pad.locked"))).not.toBeInTheDocument();
+    await daemon.send({ kind: "event", event: { event: "session", locked: true } });
+    await waitFor(() =>
+      expect(daemon.daemon.tiles).toHaveBeenLastCalledWith("terminal", 1, 9, TILE, true),
+    );
+    expect(screen.getByRole("status", { name: t("pad.context") })).toHaveTextContent(
+      "Session locked; the pad shows the lock.",
+    );
+    await daemon.send({ kind: "event", event: { event: "session", locked: false } });
+    await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenLastCalledWith("terminal", 1, 9, TILE));
+    expect(screen.queryByText(t("pad.locked"))).not.toBeInTheDocument();
+  });
+
+  it("shows the mock's lock tile and line under ?mock-locked", async () => {
+    const { daemon } = mockClients("?mock-locked", document.createElement("div"));
+    render(Pad, { props: { daemon, editor: editor(), profiles: PROFILES } });
+    expect(await screen.findByText(t("pad.locked"))).toBeInTheDocument();
+    await waitFor(() => expect(key(5).querySelector("img")).toHaveAttribute("src", SNAPSHOTS.lock));
+    expect(key(5)).toHaveAccessibleName("Key 5: unbound");
   });
 
   it("lays out the keys the daemon's geometry reports, on the plain panel when the drawing has no cutouts for them", async () => {
@@ -577,6 +602,7 @@ describe("the trace strip", () => {
     await fireEvent.click(within(strip).getByRole("button", { name: t("trace.expand") }));
     const items = within(screen.getByRole("list", { name: "Recent events" })).getAllByRole("listitem");
     expect(items.map((item) => item.textContent?.trim())).toEqual([
+      expect.stringContaining("Key 5: blocked, session locked"),
       expect.stringContaining("Key 2, global layer: launch flatpak run org.kde.kcalc, started, pid 4711"),
       expect.stringContaining("Key 1: unbound"),
       expect.stringContaining("Key 5 long, simulated, app layer: exec cargo test, dry run, nothing executed"),

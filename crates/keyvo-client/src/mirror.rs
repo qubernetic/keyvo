@@ -84,6 +84,10 @@ impl Mirror {
                 };
                 true
             }
+            Event::Session { locked } => self
+                .view
+                .as_mut()
+                .is_some_and(|view| std::mem::replace(&mut view.locked, *locked) != *locked),
         }
     }
 

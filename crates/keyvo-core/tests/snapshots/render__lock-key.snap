@@ -1,0 +1,6 @@
+---
+source: crates/keyvo-core/tests/render.rs
+expression: "renderer.tile(&specs[4], KEY).unwrap().png().unwrap()"
+extension: png
+snapshot_kind: binary
+---

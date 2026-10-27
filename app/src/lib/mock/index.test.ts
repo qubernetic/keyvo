@@ -28,6 +28,12 @@ describe("the mock clients", () => {
     await expect(daemon.status()).rejects.toMatch(/cannot reach the keyvo daemon/);
   });
 
+  it("locks the session under ?mock-locked, and only there", async () => {
+    const root = document.createElement("div");
+    expect((await mockClients("?mock-locked", root).daemon.status()).view.locked).toBe(true);
+    expect((await mockClients("", root).daemon.status()).view.locked).toBe(false);
+  });
+
   it("adds a profile with no pages under ?mock-profiles=empty", async () => {
     const root = document.createElement("div");
     const ids = async (search: string) =>

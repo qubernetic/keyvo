@@ -1,8 +1,8 @@
 {"v":1,"event":"key","key":5,"edge":"press"}
 {"v":1,"event":"key","key":5,"edge":"release"}
-{"v":1,"event":"profile","profile":"terminal","page":1,"mode":"auto","index":1}
-{"v":1,"event":"page","profile":"global","page":2,"mode":"auto","index":0}
-{"v":1,"event":"mode","profile":"global","page":1,"mode":"manual","index":1}
+{"v":1,"event":"profile","profile":"terminal","page":1,"mode":"auto","index":1,"locked":false}
+{"v":1,"event":"page","profile":"global","page":2,"mode":"auto","index":0,"locked":false}
+{"v":1,"event":"mode","profile":"global","page":1,"mode":"manual","index":1,"locked":false}
 {"v":1,"event":"device","connected":true,"keys":9,"geometry":{"panel":{"width":480,"height":480},"tile":{"width":118,"height":118},"rects":[{"x":24,"y":6,"width":118,"height":118},{"x":182,"y":7,"width":118,"height":118},{"x":340,"y":6,"width":118,"height":118},{"x":23,"y":164,"width":118,"height":118},{"x":181,"y":163,"width":118,"height":118},{"x":339,"y":164,"width":118,"height":118},{"x":23,"y":322,"width":118,"height":118},{"x":181,"y":321,"width":118,"height":118},{"x":340,"y":321,"width":118,"height":118}]}}
 {"v":1,"event":"device","connected":false,"error":"device disconnected"}
 {"v":1,"event":"context","class":"org.kde.konsole","title":"~ : bash","pid":4242,"source":"watcher"}
@@ -14,5 +14,8 @@
 {"v":1,"event":"trace","entry":{"timestamp_ms":1792929600250,"trigger":{"press":"long","simulated":true},"profile":"demo","page":1,"key":5,"layer":"app","action":{"type":"exec","cmd":"cargo test"},"result":{"status":"dry_run"}}}
 {"v":1,"event":"trace","entry":{"timestamp_ms":1792929600250,"trigger":{"press":"short","simulated":false},"profile":"demo","page":2,"key":1,"action":null,"result":{"status":"unbound"}}}
 {"v":1,"event":"trace","entry":{"timestamp_ms":1792929600250,"trigger":{"press":"short","simulated":false},"profile":"global","page":3,"key":2,"layer":"global","action":{"type":"launch","cmd":"flatpak run org.kde.kcalc"},"result":{"status":"started","pid":4711}}}
+{"v":1,"event":"trace","entry":{"timestamp_ms":1792929600250,"trigger":{"press":"short","simulated":false},"profile":"demo","page":1,"key":5,"action":null,"result":{"status":"blocked","reason":"session locked"}}}
+{"v":1,"event":"session","locked":true}
+{"v":1,"event":"session","locked":false}
 {"v":1,"event":"config","reloaded":true}
 {"v":1,"event":"config","reloaded":false,"error":"profiles/global.toml:8:9: invalid type: integer `7`, expected a string"}

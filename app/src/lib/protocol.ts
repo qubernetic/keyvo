@@ -15,7 +15,8 @@ export type EventClass =
   | "device"
   | "context"
   | "trace"
-  | "config";
+  | "config"
+  | "session";
 
 export const EVENT_CLASSES: readonly EventClass[] = [
   "key",
@@ -26,6 +27,7 @@ export const EVENT_CLASSES: readonly EventClass[] = [
   "context",
   "trace",
   "config",
+  "session",
 ];
 
 export type Mode = "auto" | "manual";
@@ -42,6 +44,9 @@ export interface View {
    * context page, 2 and up its other pages, 0 the global `general` page,
    * below 0 the global pages after it. */
   index: number;
+  /** The session is locked: the pad shows the lock page over this view and
+   * blocks every press. Absent from a daemon before the session lock. */
+  locked?: boolean;
 }
 
 export type Command =
@@ -188,7 +193,8 @@ export type Event =
   | ({ event: "device" } & DeviceStatus)
   | ({ event: "context" } & Context)
   | { event: "trace"; entry: TraceRecord }
-  | { event: "config"; reloaded: boolean; error?: string };
+  | { event: "config"; reloaded: boolean; error?: string }
+  | { event: "session"; locked: boolean };
 
 /** A line from the daemon. */
 export type ServerMessage =

@@ -103,7 +103,7 @@ No fields. The result:
 | `version` | string | The daemon's version. |
 | `config_dir` | string | The configuration directory the daemon loads (`--config-dir` or the default, spec §7.1). A client that edits profiles (the app) edits this tree. |
 | `device` | object | `connected` (bool); `keys` (the key count) and `geometry` when connected; `error` (why not) when the daemon knows. |
-| `view` | object | What the pad shows: `profile` (id of the profile that owns the page, the global one at index 0 and below), `page` (from 1, inside `profile`), `mode` (`auto` or `manual`), `index` (integer: the position in the shown profile's page list, spec §6.1: 1 its context page, 2 and up its other pages, 0 the global `general` page, -1 and below the global pages after it). |
+| `view` | object | What the pad shows: `profile` (id of the profile that owns the page, the global one at index 0 and below), `page` (from 1, inside `profile`), `mode` (`auto` or `manual`), `index` (integer: the position in the shown profile's page list, spec §6.1: 1 its context page, 2 and up its other pages, 0 the global `general` page, -1 and below the global pages after it), `locked` (bool: the session is locked, spec §6.1; the pad shows the lock page over this view and blocks every press; read as `false` when absent). |
 | `context` | object, optional | The last focus report: `class`, `title`, `pid` when known, `source` (`watcher` or `notify_context`), and `held: true` when the class is in `[focus].hold_classes` (spec §6.1: the view stays that of the window before; absent otherwise). Left out before the first report. |
 | `trace` | integer | The entries in the trace ring buffer. |
 
@@ -160,6 +160,9 @@ ring buffer and to `trace` subscribers.
 - Without it, the action runs. A `chord`'s entry carries its result
   (`sent` or `failed`). An `exec` returns `pending`, and its result
   follows as a second `trace` event when the command ends.
+- While the session is locked (the view's `locked`), nothing resolves,
+  `dry_run` or not: the entry has no `layer`, `action` `null`, and the
+  result `{"status": "blocked", "reason": "session locked"}`.
 
 ### `reload`
 
@@ -218,23 +221,27 @@ The schema of a pack file is `schemas/recipe.schema.json`.
 ## Events
 
 ```json
-{"v":1,"event":"profile","profile":"terminal","page":1,"mode":"auto","index":1}
+{"v":1,"event":"profile","profile":"terminal","page":1,"mode":"auto","index":1,"locked":false}
+{"v":1,"event":"session","locked":true}
 ```
 
 | `event` | Fields | When |
 |---|---|---|
 | `key` | `key` (1..9), `edge` (`press` or `release`) | A key on the device went down or up. Page buttons show up as `page` and `mode` events instead. |
-| `profile` | `profile`, `page`, `mode`, `index` | Another profile shows. |
-| `page` | `profile`, `page`, `mode`, `index` | Another page shows, or another list position. |
-| `mode` | `profile`, `page`, `mode`, `index` | The mode changed. |
+| `profile` | `profile`, `page`, `mode`, `index`, `locked` | Another profile shows. |
+| `page` | `profile`, `page`, `mode`, `index`, `locked` | Another page shows, or another list position. |
+| `mode` | `profile`, `page`, `mode`, `index`, `locked` | The mode changed. |
 | `device` | `connected`, `keys` and `geometry`, or `error` | The Keypad was claimed or lost; the fields of `status`'s `device`. |
 | `context` | `class`, `title`, `pid` (optional), `source`, `held` (only when `true`) | A focus source reported a window. A report does not always switch the profile; a `held` one (a class in `[focus].hold_classes`, default the keyvo app) never does, so no `profile`, `page` or `mode` event follows it. |
 | `trace` | `entry` | A press was resolved (dry run, unbound, chord) or an `exec` ended. |
 | `config` | `reloaded`, `error` (when it failed) | The configuration directory was reloaded, or did not load. |
+| `session` | `locked` | The session was locked or unlocked (spec §6.1, §6.2). While locked the pad shows the lock page and every press is `blocked`. |
 
 `profile`, `page` and `mode` each carry the whole new view. One switch that
 changes several of them sends one event per changed class, in the order
-`profile`, `page`, `mode`.
+`profile`, `page`, `mode`, `session`. A lock or an unlock alone changes
+only the view's `locked`, so it sends `session` alone; a subscriber of
+`session` sees every lock and unlock without the view classes.
 
 ## Trace entries
 
@@ -254,6 +261,8 @@ with `status` set to one of the following:
 - `started`, with `pid`: a `launch` still running after
   `[timing].launch_settle`, let go; its end is not reported
 - `failed`, with `error`
+- `blocked`, with `reason`: the press was not resolved and nothing ran;
+  as built only `session locked`, a press under the session lock
 
 The daemon keeps the newest `[trace].ring` entries (default 1000) in
 memory. They are lost when it stops. The trace file and `keyvo ctl

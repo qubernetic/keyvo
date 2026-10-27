@@ -14,6 +14,11 @@ opens an application and lets it go once it outlives
 `[timing].launch_settle`. An optional `on_fail` action runs when the primary
 one fails.
 
+**Blocked**: The trace result of a press that was not resolved and ran
+nothing, with its reason (`Outcome::Blocked { reason }`): as built
+`session locked`, a press under the session lock; later an untrusted
+project's key. No look, no `on_fail`.
+
 **Behavior**: The GUI's view of one key binding: a key (or Dialpad or MX
 control) on a page of a profile with its trigger rows, conditions, actions and
 feedback. A view over the profile TOML, not a TOML entity; the key stays the
@@ -195,6 +200,14 @@ into a key; the profile does not reference it.
 in which several state changes are merged into one repaint of the nine keys, so
 that bursts of socket messages do not flood the device.
 
+**Session lock**: The user's session locked by the screen locker, as
+systemd-logind reports it (`LockedHint`, `Lock`, `Unlock`) through the
+`SessionWatcher` platform trait (`keyvo_core::session`; the daemon's
+`LogindSessionWatcher`, `FakeSessionWatcher` in tests). A veil over the
+state, not a mode: the view keeps its profile, page and mode and says
+`locked`, the pad shows the lock page, every press is *blocked* and the
+page buttons do nothing; the socket reports it as a `session` event.
+
 **Simulator**: The GUI's virtual pad, rendered by the same renderer as the
 device. In sandbox mode it works on a copy of the profiles that Apply merges
 and Discard drops; simulated presses are dry runs on the socket, resolved and
@@ -240,9 +253,10 @@ three files and re-asked whenever they change (direnv style). Granted with
 profile schema; the first is the default.
 
 **View**: What the pad shows: the profile id, the page (counted from 1) and the
-mode (`keyvo_core::state::View`). The state machine computes it, the daemon
+mode (`keyvo_core::state::View`), with its page-list `index` and whether the
+session is `locked`. The state machine computes it, the daemon
 paints it, and the socket reports it in `status`, `subscribe` and the
-`profile`, `page` and `mode` events.
+`profile`, `page` and `mode` events, a lock or unlock as a `session` event.
 
 **VLP plane**: The Keypad's second protocol, on report IDs `0x13` (control,
 per-fragment acknowledgements) and `0x14` (bulk), with its own root and the

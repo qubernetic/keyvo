@@ -83,6 +83,8 @@
         return { title: "drawer.block", text: t("drawer.dryRun") };
       case "unbound":
         return { title: "drawer.block", text: t("drawer.unbound") };
+      case "blocked":
+        return { title: "drawer.block", text: t("drawer.blocked", { reason: String(result.reason) }) };
       case "pending":
         return { title: "drawer.result", rows: [{ term: "drawer.status", value: t("trace.running") }] };
       case "sent":
