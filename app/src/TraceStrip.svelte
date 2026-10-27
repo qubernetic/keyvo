@@ -101,6 +101,7 @@
   .strip:not(.expanded) li:not(.newest) {
     flex: 1 1 0;
     min-width: 0;
+    overflow: hidden;
   }
 
   .strip:not(.expanded) .entry {

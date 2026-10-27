@@ -63,6 +63,9 @@ describe("the trace strip", () => {
     const older = /\.strip:not\(\.expanded\) li:not\(\.newest\) \{([^}]*)\}/.exec(css)?.[1] ?? "";
     expect(older).toMatch(/flex: 1 1 0/);
     expect(older).toMatch(/min-width: 0/);
+    // An older entry squeezed to nothing clips its time instead of letting
+    // it run past the strip (and past the window at 960 px).
+    expect(older).toMatch(/overflow: hidden/);
   });
 
   it("opens the drawer on the entry that was clicked", async () => {
