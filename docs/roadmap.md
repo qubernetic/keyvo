@@ -1,7 +1,8 @@
 # keyvo roadmap
 
 Milestones run in the order Pre-alpha, M4b, M0, M1, M2, M3, M4a, M5 (M4b
-moved up on 2026-10-25, see the M4b section); each gets its own planning round before its issues
+moved up on 2026-10-25, see the M4b section); the Beta epic after the
+pre-alpha takes M4b and the M1 and M3 rows marked "beta" in Status. Each gets its own planning round before its issues
 are opened, and every issue carries its plan in a plan file under `docs/plans/`
 or in the issue body (CONTRIBUTING.md, "Sandbox-complete and hardware-bound
 issues"). Definition
@@ -118,6 +119,67 @@ research issue #86 and slices 6j to 6m from the owner's display pipeline
 plan change (Options+ paints one composite image per change); R1 and R3
 from the epic pre-review.
 
+## Beta (milestone `Beta`, epic #180)
+
+**Goal.** A build the owner installs as a Flatpak on the Aurora host and
+uses daily with both devices: the Keypad as today, the Dialpad over Bolt,
+and combined key-plus-dial actions.
+
+**DoD.** Every slice below is merged into the epic branch `epic/180-beta`;
+the owner's hardware checks (the Dialpad over Bolt and Bluetooth, #187; the
+Flatpak install and a week of daily use, #190) passed;
+`docs/beta-test.md` was walked once end to end on the final epic commit;
+the epic PR is merged into `develop`. The Flathub submission is the
+owner's step after the merge.
+
+**Rules.**
+
+- One chain on `epic/180-beta`, because every code slice touches
+  `docs/beta-test.md` and the spec, and the core slices share
+  `profile.rs`, `state.rs`, `schemas/` and `daemon.rs`. Only the owner's
+  slices (#185, #187, #190) run beside the chain.
+- Findings of the owner's hardware re-test of the pre-alpha slices become
+  `fix(...)` issues on `develop`, with their own PR into `develop`, placed
+  before the next unstarted slice; that slice starts with
+  `git merge origin/develop` on its branch, so its PR carries the fix into
+  the epic. Nobody pushes to the epic branch directly, nothing is rebased.
+- A PR into the epic does not close its issue: the Reviewer names the
+  issue in the merge comment and closes it by hand with the PR number.
+- The application id is `io.github.qubernetic.keyvo` (ADR-0005). The
+  Flatpak ships the GUI and the CLI; the daemon runs on the host under the
+  systemd user unit (spec §16 question 9).
+- Every slice's User test block goes into `docs/beta-test.md` section 5;
+  `docs/pre-alpha-test.md` is frozen.
+
+Each slice is a thin cut of the roadmap issue named in **From**; the
+roadmap issue stays open for the rest. The Proof block of every slice is
+in its issue body. Out of scope: #161, #159, #160, #145, M5, the project
+layer and trust (M2-3 to M2-5), plugins and integrations, the trace core
+(M1-8), `keyvo setup` (M1-10), the X11 watcher (M2-6), cargo-dist and
+tags, the MX triggers (M3-3, M3-4) and desk state (M3-5).
+
+| Slice | Issue | Title | Layer | From | Depends on | Status |
+|---|---|---|---|---|---|---|
+| 0 | #181 | `docs(roadmap,beta-test): open the beta section and the beta test guide` | S | conventions | | in review |
+| 1 | #182 | `chore(flatpak): manifest, portal and device permissions` | S | M4b-1 | #181 | open |
+| 2 | #179 | `feat(core,daemon,app): a launch keeps the global page until its window arrives` | S | pre-alpha follow-up | #182 | open |
+| 3 | #183 | `feat(core,daemon): run the on_fail action when a key's action fails` | S | M1-5 | #179 | open |
+| 4 | #184 | `chore(contrib,cli): systemd user unit, udev rule and keyvo doctor` | S | M1-11 | #183 | open |
+| 5 | #185 | `research: static pass over the dialpad features` | H | M3-0 | | open, owner |
+| 6 | #186 | `feat(hid,cli): dialpad driver over bolt with a dial command` | S | M3-1 | #184, #185 | open |
+| 7 | #187 | `test(hardware): verify the dialpad over bolt and bluetooth` | H | M3-2 | #186 | open, owner |
+| 8 | #188 | `feat(core,daemon,app): dialpad bindings and the dialpad panel` | S | M3-1, M4a-8 | #186, #187 | open |
+| 9 | #189 | `feat(core,daemon,app): a key as the dial modifier, held or toggled` | S | beta goal | #188 | open |
+| 10 | #156 | `feat(core,app): page switches, page deletion and per-profile global pages` | S | #156 | #189 | open |
+| 11 | #190 | `test(hardware): install the flatpak on the host and use it daily` | H | M4b-2 | #182, then the chain | open, owner |
+
+Status as of 2026-10-27: `merged` is merged into `epic/180-beta`,
+`passed` a hardware check the owner ran, `open, owner` a hardware or
+research slice the owner runs, `in review` an open pull request into the
+epic branch. Slice 5 runs in the owner's time from the start; its report
+PR goes into the epic. Slice 11 starts on the bundle of slice 1 and ends
+after slice 10.
+
 ## M4b: Flathub ([milestone 6](https://github.com/qubernetic/keyvo/milestone/6))
 
 **Goal.** One-click install on any Linux desktop. Flatpak manifest, portal and
@@ -130,10 +192,10 @@ until the Flatpak exists the app runs only inside the `org.gnome.Platform//51`
 runtime. M4b-1 packages the pre-alpha app and no longer waits for M4a-8; the
 later M4a screens ship in the same manifest when they land.
 
-| Issue | Title | Layer | Proof or User test | Depends on |
-|---|---|---|---|---|
-| M4b-1 | `chore(flatpak): manifest, portal and device permissions` | S | `flatpak-builder` in the container (`just flatpak`) | Pre-alpha (`epic/34-pre-alpha` merged into `develop`) |
-| M4b-2 | `hardware: Flatpak install on the owner's host, Flathub submission` | H | owner | M4b-1 |
+| Issue | Title | Layer | Proof or User test | Depends on | Status |
+|---|---|---|---|---|---|
+| M4b-1 | `chore(flatpak): manifest, portal and device permissions` | S | `flatpak-builder` on the host (`just flatpak`), proven by the CI `flatpak` job | Pre-alpha (`epic/34-pre-alpha` merged into `develop`) | beta (#182) |
+| M4b-2 | `hardware: Flatpak install on the owner's host, Flathub submission` | H | owner | M4b-1 | beta (#190, the install and daily use; the Flathub submission after the epic merge) |
 
 ## M0: Protocol ([milestone 1](https://github.com/qubernetic/keyvo/milestone/1))
 
@@ -178,20 +240,20 @@ checks; first cargo-dist release tagged `v0.1.0`.
 
 Open: `.lp5` (Options+ profile) import lands here or in M2.
 
-| Issue | Title | Layer | Proof or User test | Depends on |
-|---|---|---|---|---|
-| M1-1 | `feat(core): profile model, TOML load, JSON Schema` | S | `just test`; schema fixtures under `crates/keyvo-core/tests/fixtures/` | |
-| M1-2 | `feat(core): toml_edit round-trip editing API` | S | `just test`; round-trip fixtures (comments, order, formatting preserved) | M1-1 |
-| M1-3 | `feat(core): renderer with insta snapshots and keyvo preview` | S | `just test`; `insta` snapshots for every primitive and the demo profiles | M1-1 |
-| M1-4 | `feat(core): actions chord, text, page, profile, mode; chord parser` | S | `just test` | M1-1 |
-| M1-5 | `feat(daemon): exec and http actions, result to key states, on_fail` | S | `just test`; fake `InputInjector`, local HTTP stub | M1-4 |
-| M1-6 | `feat(core): feedback primitives running, success, error; feedback_hold, long_run_threshold, splash` | S | `just test`; `insta` snapshots | M1-3 |
-| M1-7 | `feat(core): recipe action type and detectors` | S | `just test`; sample project trees per detector under `crates/keyvo-core/tests/fixtures/projects/` | M1-4 |
-| M1-8 | `feat(daemon): unified trace core` (ring buffer, `trace.ndjson` rotation, `ctl trace`, `ctl tail`, `exec-check`) | S | `just test`; NDJSON fixtures under `tests/protocol-fixtures/trace/` | M1-5 |
-| M1-9 | `feat(daemon): press kinds short, long, repeat; inotify hot-reload` | S | `just test`; `FakeHidTransport` sequences | M1-4 |
-| M1-10 | `feat(cli): keyvo setup and profile export, import` | S | `just test`; the flow driven with scripted answers and a fake `doctor` | M1-5 |
-| M1-11 | `chore: systemd user unit, udev rule, doctor checks, cargo-dist config` | S | `just test`; unit tests for every `doctor` predicate; file content fixtures | |
-| M1-12 | `hardware: install path verified, v0.1.0 tagged` | H | owner; `keyvo setup`, service start, first paint, udev rule effective after replug | M1-11, M1-9 |
+| Issue | Title | Layer | Proof or User test | Depends on | Status |
+|---|---|---|---|---|---|
+| M1-1 | `feat(core): profile model, TOML load, JSON Schema` | S | `just test`; schema fixtures under `crates/keyvo-core/tests/fixtures/` | | |
+| M1-2 | `feat(core): toml_edit round-trip editing API` | S | `just test`; round-trip fixtures (comments, order, formatting preserved) | M1-1 | |
+| M1-3 | `feat(core): renderer with insta snapshots and keyvo preview` | S | `just test`; `insta` snapshots for every primitive and the demo profiles | M1-1 | |
+| M1-4 | `feat(core): actions chord, text, page, profile, mode; chord parser` | S | `just test` | M1-1 | |
+| M1-5 | `feat(daemon): exec and http actions, result to key states, on_fail` | S | `just test`; fake `InputInjector`, local HTTP stub | M1-4 | beta (#183, `on_fail`) |
+| M1-6 | `feat(core): feedback primitives running, success, error; feedback_hold, long_run_threshold, splash` | S | `just test`; `insta` snapshots | M1-3 | |
+| M1-7 | `feat(core): recipe action type and detectors` | S | `just test`; sample project trees per detector under `crates/keyvo-core/tests/fixtures/projects/` | M1-4 | |
+| M1-8 | `feat(daemon): unified trace core` (ring buffer, `trace.ndjson` rotation, `ctl trace`, `ctl tail`, `exec-check`) | S | `just test`; NDJSON fixtures under `tests/protocol-fixtures/trace/` | M1-5 | |
+| M1-9 | `feat(daemon): press kinds short, long, repeat; inotify hot-reload` | S | `just test`; `FakeHidTransport` sequences | M1-4 | |
+| M1-10 | `feat(cli): keyvo setup and profile export, import` | S | `just test`; the flow driven with scripted answers and a fake `doctor` | M1-5 | |
+| M1-11 | `chore: systemd user unit, udev rule, doctor checks, cargo-dist config` | S | `just test`; unit tests for every `doctor` predicate; file content fixtures | | beta (#184, without the cargo-dist config) |
+| M1-12 | `hardware: install path verified, v0.1.0 tagged` | H | owner; `keyvo setup`, service start, first paint, udev rule effective after replug | M1-11, M1-9 | |
 
 ## M2: Context ([milestone 3](https://github.com/qubernetic/keyvo/milestone/3))
 
@@ -240,15 +302,15 @@ pass under ADR-0008 over the Dialpad features, from `getCapabilities` to
 so the Dialpad work does not meet the surprise the Keypad display pipeline
 did (#86). Every M3 slice depends on it.
 
-| Issue | Title | Layer | Proof or User test | Depends on |
-|---|---|---|---|---|
-| M3-0 | `research: static pass over the Dialpad features` (ADR-0008, inventory deeper-pass item 3: `0x4610` getCapabilities, getRollerCapabilities, getMode, setMode, getRollerSettings, setRollerSettings, RotationEvent) | S (research, sandbox) | report under `docs/research/` | |
-| M3-1 | `feat(hid): Dialpad driver over Bolt` (0x1B04 buttons, 0x4610 dial and roller, device index) | S | `just test`; fixtures `own` and M3-0 | M0-3, M0-2, M3-0 |
-| M3-2 | `hardware: Dialpad over Bolt and Bluetooth verified` | H | owner | M3-1, M3-0 |
-| M3-3 | `feat(hid): MX Master 4 and MX Mechanical as trigger sources` (`getCidInfo` walk, volatile diverts) | S | `just test`; fixtures from `docs/research/hidpp-features-dump.txt` | M3-1, M3-0 |
-| M3-4 | `hardware: MX triggers and the Solaar divert warning verified` | H | owner | M3-3, M3-0 |
-| M3-5 | `feat(daemon): desk state per profile` | S or dropped | decided with spec §16 question 20 | M3-0 |
-| M3-6 | `feat(integrations): VS Code extension` (`notify_context` with `cwd`) | S | extension tests (`just test`) | M2-5, M3-0 |
+| Issue | Title | Layer | Proof or User test | Depends on | Status |
+|---|---|---|---|---|---|
+| M3-0 | `research: static pass over the Dialpad features` (ADR-0008, inventory deeper-pass item 3: `0x4610` getCapabilities, getRollerCapabilities, getMode, setMode, getRollerSettings, setRollerSettings, RotationEvent) | S (research, sandbox) | report under `docs/research/` | | beta (#185, run by the owner) |
+| M3-1 | `feat(hid): Dialpad driver over Bolt` (0x1B04 buttons, 0x4610 dial and roller, device index) | S | `just test`; fixtures `own` and M3-0 | M0-3, M0-2, M3-0 | beta (#186 the driver, #188 the profile bindings) |
+| M3-2 | `hardware: Dialpad over Bolt and Bluetooth verified` | H | owner | M3-1, M3-0 | beta (#187) |
+| M3-3 | `feat(hid): MX Master 4 and MX Mechanical as trigger sources` (`getCidInfo` walk, volatile diverts) | S | `just test`; fixtures from `docs/research/hidpp-features-dump.txt` | M3-1, M3-0 | |
+| M3-4 | `hardware: MX triggers and the Solaar divert warning verified` | H | owner | M3-3, M3-0 | |
+| M3-5 | `feat(daemon): desk state per profile` | S or dropped | decided with spec §16 question 20 | M3-0 | |
+| M3-6 | `feat(integrations): VS Code extension` (`notify_context` with `cwd`) | S | extension tests (`just test`) | M2-5, M3-0 | |
 
 ## M4a: GUI ([milestone 5](https://github.com/qubernetic/keyvo/milestone/5))
 
@@ -301,7 +363,7 @@ layer via shell hook, MX buttons, desk state.
 - `.lp5` import placement: M1 or M2 (proposal: M2).
 - Claude Code plugin key layout for the owner's workflow, grilled before M2-10.
 - Desk state per profile without Solaar: spec §16 question 20, decided before M3-5.
-- Flatpak manifest details (in M4b-1, right after the pre-alpha), Windows native mode (after the M0-2 ownership test).
+- Flatpak manifest details (in M4b-1, Beta slice 1, #182), Windows native mode (after the M0-2 ownership test).
 - MX Keypad (2026) PID and firmware compatibility: confirm as soon as an owner publishes `lsusb` or `solaar show`.
 - Upstream: Solaar crash on the Dialpad (`settings_templates.py` in 1.1.20); udev `uaccess` rule for `046d:c354` in systemd.
 - v2 candidates from the UI/UX grill: referenced `[[behaviors]]`, workflow insights from the trace, `keyvo pack add <git-url>`, plugin sandbox, system widgets.
