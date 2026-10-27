@@ -1,7 +1,8 @@
 <script lang="ts">
   // The Pad screen (pad screen brief §5.2, §6; screen id `home`): the
   // device drawing with the live mirror (Mirror.svelte), the page list
-  // tabs (#151), the "pad moved" line, the held caption or the session
+  // tabs (#151),
+  // the "pad moved" line led by Follow (#164), the held caption or the session
   // lock line (#158, the mirror then shows the lock page), and the pinned
   // inspector, which keeps editing the pinned page under the lock. Selecting a key pins the inspector to the pad's
   // profile and page (lib/pin.ts), so it never changes under the user; the
@@ -406,10 +407,10 @@
       {/if}
       {#if moved !== undefined}
         <p class="moved">
-          {movedLine}
           <button type="button" aria-label={t("pad.follow")} onclick={() => onpin?.(follow())}>
             {t("pad.follow")}
           </button>
+          <span>{movedLine}</span>
         </p>
       {/if}
       <p role="status" aria-label={t("home.result")} class="result">

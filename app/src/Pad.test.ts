@@ -284,7 +284,11 @@ describe("the pin", () => {
     await fireEvent.click(key(7));
     await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
     const line = await screen.findByText("Editing terminal, key 7; the pad shows global, page 2.");
-    await fireEvent.click(within(line.closest("p") as HTMLElement).getByRole("button", { name: "Follow" }));
+    // Follow leads the line, the sentence comes after it.
+    const follow = within(line.closest("p") as HTMLElement).getByRole("button", { name: "Follow" });
+    expect(follow.parentElement?.firstElementChild).toBe(follow);
+    expect(follow.compareDocumentPosition(line)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    await fireEvent.click(follow);
     expect(onpin).toHaveBeenLastCalledWith(undefined);
     await waitFor(() => expect(keys.key).toHaveBeenLastCalledWith({ profile: "global", page: 2, key: 7 }));
     expect(screen.queryByText(/the pad shows/)).toBeNull();
