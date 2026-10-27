@@ -16,7 +16,7 @@
   import TraceDrawer from "./TraceDrawer.svelte";
   import type { Daemon } from "./lib/daemon";
   import type { Editor } from "./lib/editor";
-  import { kept, pinProfile, type Pinned } from "./lib/pin";
+  import { kept, type Pinned } from "./lib/pin";
   import type { ProfileFiles, ProfileSummary } from "./lib/profiles";
   import type { DeviceStatus, TraceRecord, View } from "./lib/protocol";
   import { layout, type DeviceChoice, type ScreenId } from "./lib/shell";
@@ -74,7 +74,7 @@
       {profiles}
       pad={view}
       {pinned}
-      onpin={(profile) => (pinned = pinProfile(profile))}
+      onpin={(next) => (pinned = next)}
       onpreferences={() => (open = "preferences")}
       onshortcuts={() => (open = "shortcuts")}
     />

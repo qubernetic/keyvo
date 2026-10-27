@@ -98,7 +98,7 @@ function app(
 }
 
 function dropdown(): HTMLSelectElement {
-  return screen.getByRole("combobox", { name: "Profile" });
+  return screen.getByRole("combobox", { name: /^Profile/ });
 }
 
 /** The dropdown's option texts once the profile list has arrived. */
@@ -192,6 +192,23 @@ describe("the pin", () => {
     await send({ event: "profile", profile: "global", page: 1, mode: "auto", index: 1 });
     expect(dropdown().value).toBe("vscode");
     expect(await listed()).toEqual(["Global, on the pad", "VS Code", "Terminal"]);
+  });
+
+  it("presses the pin glyph after a header pick and follows the pad again when it is pressed", async () => {
+    const { send } = app();
+    await listed();
+    const pin = screen.getByRole("button", { name: "Pin" });
+    expect(pin).toHaveAttribute("aria-pressed", "false");
+    await fireEvent.change(dropdown(), { target: { value: "vscode" } });
+    expect(pin).toHaveAttribute("aria-pressed", "true");
+    expect(dropdown()).toHaveAccessibleName("Profile, pinned");
+    await send({ event: "profile", profile: "global", page: 1, mode: "auto", index: 1 });
+    expect(await screen.findByText("Editing VS Code, page 1; the pad shows Global, page 1.")).toBeInTheDocument();
+    await fireEvent.click(pin);
+    expect(pin).toHaveAttribute("aria-pressed", "false");
+    expect(dropdown()).toHaveAccessibleName("Profile, following the pad");
+    expect(dropdown().value).toBe("global");
+    expect(screen.queryByText(/^Editing /)).toBeNull();
   });
 
   it("keeps the dropdown disabled while the list cannot be read", async () => {

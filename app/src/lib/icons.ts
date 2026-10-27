@@ -10,6 +10,7 @@ export const ICONS = [
   "keyboard",
   "settings",
   "ellipsis-vertical",
+  "pin",
   "panel-left",
   "panel-right",
 ] as const;
