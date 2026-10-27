@@ -836,6 +836,21 @@ Dolphin for Brave. Run by the owner in #130.
 - [ ] #151 Both buttons held from anywhere: the global context page, auto mode.
 - [ ] #151 The app on the GNOME runtime: the tab strip reads `apps  general  context  2` for VS Code with `apps` and `general` muted; the selected tab follows every press on the pad; clicking `general` edits the global profile's general page.
 
+### Polish, harden and the critique re-run (#130)
+
+The closing pass of the GUI design pass: the mock items ran on the mock
+dev server (#113) in a host browser; the runtime items are the owner's on
+the GNOME runtime with the daemon and the Keypad.
+
+- [ ] #130 `just app-dev`, Profiles, type a name of 90 characters without spaces: the heading wraps the name and `Open in editor` keeps one line at the end of the 48ch row; the list row cuts the name with an ellipsis.
+- [ ] #130 Profiles, focus the Name field of the profile on the pad and wait for the focus cycle to move the pad: the editor stays on that profile; without a focused field it follows the pad.
+- [ ] #130 Pad, the tab strip: every tab carries its whole name as a title; a page named with more than 16 characters is cut with an ellipsis (edit a page name in a profile file to see it).
+- [ ] #130 `?mock-error=unreachable`: the catalogue entries read disabled (greyed, not draggable) and the hint says to connect the daemon.
+- [ ] #130 The catalogue's hint under the search reads in the body size, the same size as the notes of the inspector.
+- [ ] #130 A header write on Profiles says `Wrote the header of <id> to <path> at hh:mm:ss`; the trace drawer's Time is the date with a 24 h time.
+- [ ] #130 With the daemon and the Keypad on the GNOME runtime: the same six checks against the real tiles and files; the Enabled line reads `On  Switching a profile off is not built yet.`.
+- [ ] #130 `docs/design/critique-2026-10.md` section 10 reads 27/40 with no P0 and no P1 left open; each remaining finding has its slice (#164 to #167).
+
 ### First-light records (#75)
 
 - [ ] #75 Read `docs/hardware-notes.md`, "Measurements", against the first-light report on #40 and its logs: every number and log citation matches.
