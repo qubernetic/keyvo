@@ -536,6 +536,19 @@ describe("the match rules", () => {
     }
   });
 
+  it("say under the window class what it is and how to find one (#167)", async () => {
+    mount();
+    await pick(/^Claude Code/);
+    const hint = within(rules()).getByText(
+      "The class KWin reports for the window; keyvo ctl status prints the focused one.",
+    );
+    expect(hint.closest(".kind")?.querySelector("dt")).toHaveTextContent("Window class");
+    expect(hint).toHaveClass("hint");
+    expect(within(rules()).getAllByText(/The class KWin reports/)).toHaveLength(1);
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "Profiles.svelte"), "utf8");
+    expect(/\.rules dd\.hint \{([^}]*)\}/.exec(css)?.[1] ?? "").toMatch(/font-size: 0\.85em/);
+  });
+
   it("say when focus never selects the profile", async () => {
     mount();
     await pick(/^Notes/);

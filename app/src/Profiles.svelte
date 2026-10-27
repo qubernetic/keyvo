@@ -447,6 +447,9 @@
                     />
                   </dd>
                 {/each}
+                {#if rule.kind === "profiles.class"}
+                  <dd class="hint">{t("profiles.classHint")}</dd>
+                {/if}
               </div>
             {/each}
           </dl>
@@ -713,6 +716,13 @@
     justify-content: space-between;
     gap: 8px;
     margin: 4px 0 0;
+  }
+
+  /* The line under the window class, muted in the label size (#167). */
+  .rules dd.hint {
+    display: block;
+    margin: 4px 0 0;
+    font-size: 0.85em;
   }
 
   .pattern {

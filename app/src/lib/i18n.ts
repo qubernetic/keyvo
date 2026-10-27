@@ -104,6 +104,7 @@ export const messages = {
   "profiles.result": "Profile result",
   "profiles.match": "Match rules",
   "profiles.class": "Window class",
+  "profiles.classHint": "The class KWin reports for the window; keyvo ctl status prints the focused one.",
   "profiles.title": "Title regex",
   "profiles.globalMatch": "The global profile is under every window.",
   "profiles.noMatch": "No match rules: focus never selects this profile.",
