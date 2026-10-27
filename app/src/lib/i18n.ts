@@ -152,7 +152,6 @@ export const messages = {
   "home.schemaErrorLine": "Schema error in {file}, line {line}: {message}",
   "home.missing": "The Keypad is missing; last seen at {time}.",
   "home.missingNever": "The Keypad is missing; not seen since the app started.",
-  "home.noGeometry": "The mirror appears once a Keypad has reported its geometry.",
   "home.mirror": "Keypad mirror",
   "home.mirrorView": "Keypad mirror: profile {profile}, page {page}",
   "home.key": "Key {key}: {parts}",

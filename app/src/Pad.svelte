@@ -10,7 +10,9 @@
   // while it shows the pinned page (#143). The inspector gets the pinned page's
   // tile, the global key under a key that falls through, and Press, a dry
   // run of the selected key whose result shows under the drawing. The
-  // unreachable, no-device and configuration notices go through Notice.
+  // unreachable, no-device and configuration notices go through Notice;
+  // without a geometry the drawing is the device with empty wells (#165),
+  // with one it keeps the last frame while the daemon is away.
   // The trace strip sits under the inspector; the actions catalogue is the
   // right column from 1200 px and collapses into the inspector's Action
   // select below it; its presets are the daemon's recipe packs. An entry
@@ -374,7 +376,16 @@
 
   <div class="workspace">
     <div class="drawing">
-      {#if pad.geometry !== undefined}
+      {#if pad.geometry === undefined && connecting}
+        <!-- §5.2: skeleton tiles, no spinner. -->
+        <ul class="skeleton" aria-busy="true" aria-label={t("home.connecting")}>
+          {#each SKELETON as tile (tile)}
+            <li><span class="bar"></span></li>
+          {/each}
+        </ul>
+      {:else}
+        <!-- Without a geometry (unreachable, or no Keypad has reported one)
+             the device with nine empty wells and "No pad" (#165). -->
         <Mirror
           geometry={pad.geometry}
           {tiles}
@@ -386,15 +397,6 @@
           onpress={(key, kind) => void press(key, kind)}
           ondrop={assignTo}
         />
-      {:else if connecting}
-        <!-- §5.2: skeleton tiles, no spinner. -->
-        <ul class="skeleton" aria-busy="true" aria-label={t("home.connecting")}>
-          {#each SKELETON as tile (tile)}
-            <li><span class="bar"></span></li>
-          {/each}
-        </ul>
-      {:else if pad.view !== undefined}
-        <p class="note">{t("home.noGeometry")}</p>
       {/if}
       {#if tilesError !== undefined}
         <p class="note">{t("home.tilesError", { error: tilesError })}</p>

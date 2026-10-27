@@ -215,13 +215,16 @@ describe("the drawing", () => {
     expect(screen.queryByRole("button", { name: /^Key 5\b/ })).not.toBeInTheDocument();
   });
 
-  it("shows no mirror until a Keypad has reported its geometry", async () => {
+  it("draws empty wells and No pad until a Keypad has reported its geometry", async () => {
     const daemon = fake({ status: vi.fn(() => Promise.resolve(responses()[1] as Status)) });
     pad({ daemon });
-    expect(await screen.findByText(/once a Keypad has reported its geometry/)).toBeInTheDocument();
+    const drawing = await screen.findByRole("figure", { name: "No pad" });
+    expect(drawing.querySelectorAll(".well")).toHaveLength(9);
     expect(screen.queryByRole("grid")).not.toBeInTheDocument();
+    expect(daemon.daemon.tiles).not.toHaveBeenCalled();
     await daemon.send({ kind: "event", event: nth(eventsOf("device"), 0) });
     await waitFor(() => expect(key(9)).toBeInTheDocument());
+    expect(screen.queryByRole("figure", { name: "No pad" })).not.toBeInTheDocument();
     expect(daemon.daemon.tiles).toHaveBeenCalledWith("global", 1, 9, TILE);
   });
 
@@ -610,6 +613,22 @@ describe("the notices", () => {
     expect(key(5)).toHaveAccessibleName("Key 5: Test, exec cargo test");
   });
 
+  it("draws the device with empty wells and No pad under ?mock-error=unreachable", async () => {
+    const { daemon } = mockClients("?mock-error=unreachable", document.createElement("div"));
+    const { container } = render(Pad, { props: { daemon, editor: editor(), profiles: PROFILES } });
+    await screen.findByRole("alert");
+    const drawing = screen.getByRole("figure", { name: "No pad" });
+    expect(within(drawing).getByRole("img", { name: t("device.keypad") })).toBeInTheDocument();
+    expect(drawing.querySelectorAll(".well")).toHaveLength(9);
+    expect(screen.queryByRole("grid")).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Connecting to the daemon" })).not.toBeInTheDocument();
+    // The inspector and the tabs keep their empty states, the result line stays empty.
+    expect(screen.getByText("No pad connected.")).toBeInTheDocument();
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(screen.getByRole("status", { name: t("home.result") })).toHaveTextContent("");
+    expect(container.querySelector(".drawing .note")).toBeNull();
+  });
+
   it("notes a Keypad not seen since the app started", async () => {
     pad({ daemon: fake({ status: vi.fn(() => Promise.resolve(responses()[1] as Status)) }) });
     expect(
@@ -622,7 +641,7 @@ describe("connecting", () => {
   it("shows skeleton tiles and no keys while connecting", () => {
     pad({ daemon: fake({ status: vi.fn(() => new Promise<Status>(() => {})) }) });
     expect(screen.queryByRole("grid")).not.toBeInTheDocument();
-    expect(screen.queryByText(/reported its geometry/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("figure", { name: "No pad" })).not.toBeInTheDocument();
     const loading = screen.getByRole("list", { name: "Connecting to the daemon" });
     expect(loading).toHaveAttribute("aria-busy", "true");
     expect(within(loading).getAllByRole("listitem")).toHaveLength(9);
