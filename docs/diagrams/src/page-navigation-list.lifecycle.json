@@ -2,7 +2,7 @@
   "schema_version": 3,
   "diagram_type": "lifecycle",
   "meta": {
-    "title": "One page list per profile (#151)",
+    "title": "One page list per profile (#151, #157)",
     "subtitle": "The page buttons on VS Code with a second page, the owner's global profile with context, general and apps (spec §6.1, §6.3)",
     "output": "docs/diagrams/page-navigation-list.html",
     "quality_profile": "showcase"
@@ -24,8 +24,11 @@
     { "id": "page-2-context", "from": "page-2", "to": "context", "label": "left" },
     { "id": "context-general", "from": "context", "to": "global-general", "label": "left" },
     { "id": "general-apps", "from": "global-general", "to": "global-apps", "label": "left" },
-    { "id": "page-2-other", "from": "page-2", "to": "other-context", "label": "app switch", "note": "no press for page_grace (10 s)", "variant": "dashed" },
-    { "id": "general-other", "from": "global-general", "to": "other-context", "label": "app switch", "note": "no press for page_grace (10 s)", "variant": "dashed" },
+    { "id": "page-2-other", "from": "page-2", "to": "other-context", "label": "app switch", "note": "at once", "variant": "dashed" },
+    { "id": "general-other", "from": "global-general", "to": "other-context", "label": "app switch", "note": "at once", "variant": "dashed" },
+    { "id": "general-return", "from": "global-general", "to": "context", "label": "return", "note": "no press for page_return_global (10 s)", "variant": "dashed" },
+    { "id": "apps-return", "from": "global-apps", "to": "context", "label": "return", "note": "no press for page_return_global (10 s)", "variant": "dashed" },
+    { "id": "page-2-return", "from": "page-2", "to": "context", "label": "return", "note": "only with page_return_own set (off by default)", "variant": "dashed" },
     { "id": "page-2-locked", "from": "page-2", "to": "locked", "label": "long press" },
     { "id": "locked-other", "from": "locked", "to": "other-context", "label": "long press", "note": "the focused window's profile" },
     { "id": "page-2-escape", "from": "page-2", "to": "global-context", "label": "both buttons", "variant": "security" }
@@ -44,9 +47,10 @@
       "dot": "amber",
       "title": "Focus and lock",
       "items": [
-        "An app switch within page_grace of a press keeps the index, clamped to the new list",
+        "An app switch shows index 1 of the new profile at once",
+        "No page-button or key press for page_return_global: a global page returns to index 1; page_return_own (off by default) does it for page 2 and on",
         "A title change in the same app keeps the index",
-        "The lock records focus changes and walks the same list"
+        "The lock records focus changes, walks the same list and never returns"
       ]
     },
     {

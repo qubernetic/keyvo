@@ -32,5 +32,5 @@ boundary of ADR-0008, not keyvo's design.
 
 | Diagram | Type | What it shows | Source of the facts |
 |---|---|---|---|
-| `page-navigation-list.html` | lifecycle | keyvo's own design: the page list the page buttons walk on VS Code with a second page (the global pages at -1 and 0, the context page at 1, page 2), the app switch after `page_grace`, the lock and the escape (#151) | spec §6.1 and §6.3 |
+| `page-navigation-list.html` | lifecycle | keyvo's own design: the page list the page buttons walk on VS Code with a second page (the global pages at -1 and 0, the context page at 1, page 2), the app switch, the return after `page_return_global`, the lock and the escape (#151, #157) | spec §6.1 and §6.3 |
 | `page-navigation-as-built.html` | lifecycle | the behaviour #151 replaced, on the owner's seven profiles of 2026-10-27: the toggle to the global general page, manual-mode paging with wrap, the grace on the general page only; kept as the record of what the decision changed (#162) | spec §6.1 and §6.3 as built before #151, `keyvo_core::state` at `93aa019` |

@@ -843,7 +843,7 @@ pages `context`, `general` and `apps`). With the example profiles of
 Dolphin for Brave. Run by the owner in #130.
 
 - [ ] #151 Focus VS Code: context page. Right: VS Code page 2. Right again: nothing. Left, left: context, then the global general page. Left again: the global `apps` page. Left again: nothing.
-- [ ] #151 On the global general page, switch to Brave within 10 s: still the general page. Wait 10 s, switch to Konsole: Konsole's context page.
+- [ ] #151 On the global general page, switch to Brave: Brave's context page at once (since #157 there is no grace; the block below has the page return).
 - [ ] #151 Focus Konsole: right does nothing; left: general; left: apps.
 - [ ] #151 Long press on VS Code page 2: the lock; focus Brave: the pad keeps VS Code page 2; left: VS Code context; long press: Brave's context page.
 - [ ] #151 Both buttons held from anywhere: the global context page, auto mode.
@@ -867,6 +867,21 @@ replays a `started, pid 4711` line.
 - [ ] #155 Global context page, Konsole and Dolphin keys: success, the windows stay.
 - [ ] #155 An `exec` key (`xdg-open`, `spectacle --region`): unchanged.
 - [ ] #155 The app: the Inspector offers Launch, writes `type = "launch"` to the file, and the catalogue's Calculator recipe dragged onto a key produces a `launch` key.
+
+### Return to the context page after a pause (#157)
+
+On the host with the Keypad and the daemon, the owner's own profiles,
+with `~/.config/keyvo/config.toml` absent (defaults: `page_return_global`
+10 s, `page_return_own` off). With the example profiles of
+`contrib/profiles/` the same steps hold with `third` for `apps`, Dolphin
+for Brave and the `third` page's Launch key for KCalc and Spotify.
+
+- [ ] #157 Brave, left twice to `apps`, press KCalc: KCalc comes up and the pad shows the global context page at once (no grace). Click Brave: Brave's context page.
+- [ ] #157 Brave, left to `general`, nothing for 10 s: Brave's context page comes back by itself; the app's tab strip follows.
+- [ ] #157 Brave, left to `apps`, press Spotify, wait 5 s, press KCalc, wait 5 s: still `apps` (each press restarted the clock); 10 s after the last press: the context page.
+- [ ] #157 VS Code, right to page 2, nothing for 30 s: page 2 stays (own-page return off by default).
+- [ ] #157 `config.toml` with `[timing] page_return_own = 5000`: VS Code page 2 returns after 5 s without activity; with `page_return_global = 0`: `general` stays.
+- [ ] #157 Long press on `general` (the lock), wait 15 s: `general` stays; long press again: the context page.
 
 ### Polish, harden and the critique re-run (#130)
 

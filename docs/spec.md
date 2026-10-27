@@ -857,7 +857,8 @@ Defaults, all configurable under `[timing]` in `config.toml`:
 | `focus_hysteresis` | 150 ms | a focus change shorter than this does not repaint |
 | `render_coalesce` | 50 ms | repaints within this window are merged |
 | `long_press` | 1000 ms | hold duration that turns a press into `long` |
-| `page_grace` | 10 s | see §6.3 |
+| `page_return_global` | 10000 ms | a global page (list index 0 or below) returns to the context page after this long without a page-button or key press; 0 is off, §6.3 |
+| `page_return_own` | 0 (off) | the shown profile's further pages (list index 2 or above) return to the context page after this long without a page-button or key press; 0 is off, §6.3 |
 | `keep_alive_period` | 1000 ms | time between two keep-alive pings, §5.3 |
 | `keep_alive_timeout` | 3000 ms | timeout requested with every ping: how long the device holds the claim without the next one, §5.3 |
 | `ack_timeout` | 50 ms | how long an image fragment waits for its ACK before the next one goes out anyway, §5.5 (captured ACK latency about 1 ms) |
@@ -1011,18 +1012,26 @@ follows it.
 - In both modes the left button shows index - 1 of the shown profile's
   page list (§6.1), the right button index + 1. The list does not wrap: a
   press past either end does nothing (no event, no repaint).
-- A focus change that selects another profile shows index 1 of the new
-  profile, except under `page_grace`.
-- `[timing].page_grace` (10 s): an app switch within `page_grace` of a
-  page button's use keeps the index; if the new profile's list has no such
-  index, the nearest end of its list. An app switch later than that shows
-  index 1. A title change in the same app keeps the index (#151; this
-  replaces the earlier rule that applied to the general page only).
+- An app switch shows index 1 of the new profile at once, whatever the
+  index was. A title change in the same app keeps the index (#157; this
+  replaces `page_grace` of #151, which kept the index across an app
+  switch for 10 s after a page button's use).
+- The page return: a page that was paged to does not stay on the pad
+  once it is no longer used. The clock starts at the last activity on the
+  pad, a page button's press or release or a key's press; a key press
+  restarts it, so a run of launches from the `apps` page keeps the page.
+  When the clock of the side the index is on runs out, the pad shows
+  index 1 of the shown profile. The global pages (index 0 and below) are
+  visited for a press or two, an app's own further pages can be the
+  working page of a whole session, so each side has its own time:
+  `[timing].page_return_global` (10 s) for index 0 and below,
+  `[timing].page_return_own` (0, off) for index 2 and above; 0 turns a
+  side off. An app switch cancels a pending return.
 - Manual mode is a focus lock: a long press (`[timing].long_press`) on
   either page button toggles it and keeps the shown profile and index;
   focus changes are recorded and not shown; the buttons walk the same
-  list. Leaving manual mode shows index 1 of the profile the focused
-  window selects.
+  list; the page return does not apply. Leaving manual mode shows index 1
+  of the profile the focused window selects.
 - Manual mode is visually distinguishable (dimmed/dashed frame or a corner
   "lock" badge, theme-controlled).
 - Both page buttons held together is reserved as an always-available escape
@@ -1033,9 +1042,15 @@ follows it.
   press walks the list as above in either mode. An app switch is a focus
   change to another window class; a title change in the same app keeps
   the index even when it selects another profile, clamped to that
-  profile's list. Every press and release of a page button counts as its
-  use for `page_grace`. A reload keeps the index, clamped to the list as
-  it is now; a locked profile that is gone gives way to the global
+  profile's list. The page return (#157) runs in auto mode only: every
+  press and release of a page button and every press of a key on the pad
+  (not a socket `press`) restarts its clock, and the daemon wakes the
+  state machine at the deadline, which then shows index 1 and reports it
+  as a `page` event with a repaint. The return runs whatever window is in
+  front, a window that holds the context included. A reload reads both
+  return times and keeps the clock. A `config.toml` that still names
+  `page_grace` does not load: unknown keys are errors (§7.2). A reload
+  keeps the index, clamped to the list as it is now; a locked profile that is gone gives way to the global
   context page, still locked. The second button held escapes to the
   global profile, index 1, auto mode; neither button then acts again
   until it is pressed anew. Until a later focus change the global profile
@@ -1237,7 +1252,7 @@ mouse.dpi            = 1200
   load at start, the daemon runs with its `config.toml` (when that one is
   valid) and the built-in global profile. A missing directory turns
   hot-reload off with a warning. The `[timing]` values of the device
-  (§5), `long_press`, `focus_hysteresis`, `page_grace` and
+  (§5), `long_press`, `focus_hysteresis` and
   `[focus].hold_classes` are read at start; the other `[timing]` and `[render]` values and `[trace].ring`
   apply from the next reload.
   The socket `reload` (§8) loads the directory at once, with the same
@@ -1844,9 +1859,9 @@ then subscribes with a replay of the newest 20 trace entries;
   the global context page shows the global profile's own list. The
   profile the pad walks is the view's profile from index 1 on and the one
   seen before at index 0 and below (the global profile when none was);
-  the daemon reports no change while a focus switch within `page_grace`
-  keeps the pad on a global page, so the tabs right of it can still name
-  the profile before. While following, the selected tab is the `index`
+  the daemon reports no change while a title change in the same app keeps
+  the pad on a global page, so the tabs right of it can still name the
+  profile before. While following, the selected tab is the `index`
   the daemon reports; while pinned, the pinned page's tab. A tab is at
   most `16ch` wide and cuts a longer name with an ellipsis; every tab
   carries its whole name in its title (#130). Arrows
@@ -2261,6 +2276,13 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha design pass (2026-10-27)**: §6.1 and §6.3 the page
+  return replaces `page_grace`: `[timing].page_return_global` (10 s)
+  brings a global page back to the context page after a time without a
+  page-button or key press, `[timing].page_return_own` (0, off) the shown
+  profile's further pages; an app switch shows index 1 at once; no return
+  under the lock; §7.2 both values apply from the next reload; §10 the
+  Pad's tabs no longer name a grace (#157).
 - **v0.3, pre-alpha design pass (2026-10-27)**: §7.2 a new action type
   `launch` opens an application and lets it go; §6.1 `[timing].launch_settle`
   (1000 ms); §8 the as-built paragraph and the trace result `started` with
