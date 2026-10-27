@@ -49,7 +49,7 @@ anti-reference. The sketch of `docs/ui-concepts/v3/` is superseded.*
 | keyvo   [ Device v ]  [ Profile v ]   [sandbox] Apply Discard   (gear) [...]|
 +-----------+------------------------------------------------+--------------+
 | Pad       |   device drawing with the live mirror in it    | Actions      |
-| Profiles  |   Pages [context] [git] [+]      Accent [sw]   |  [search]    |
+| Profiles  |   Pages (apps)(general)[context][git][+]  [sw] |  [search]    |
 | Behaviors |   Editing git, key 5; pad on vscode  (Follow)  |  v General   |
 |           |------------------------------------------------|  v System    |
 |           |   Key 5: Exec  file line 42    [Press] [Clear] |  v Apps      |
@@ -117,9 +117,19 @@ holds, what is special in the right column.
   falls through from the global layer is dimmed with a corner mark; the
   selected key has the accent outline; key feedback (§5.1) draws on the
   tile with an icon or a word.
-- Under the drawing: the pages as named tabs (`context` first, "+" adds a
-  page) and the accent swatch with its label. The hardware page buttons
-  page the pad only; the app's page selection stays where the user put it.
+- Under the drawing: the page list the pad walks (spec §6.1, #151) as
+  named tabs, in index order. First the global profile's pages at index 0
+  and below (`apps  general` on the owner's machine) as muted tabs with a
+  dashed rim, labelled as the global profile's (`general, a page of
+  Global`); clicking one edits that page of the global profile and keeps
+  the list. Then the shown profile's pages, `context` first, and "+",
+  which adds a page at the end of the shown profile's list (not built
+  yet, M4a-4); then the accent swatch with its label. For VS Code with a
+  second page the strip reads `apps  general  context  Page 2`. While
+  the inspector follows the pad, the selected tab is the `index` the
+  daemon reports and follows every page-button press; a pin selects the
+  pinned page's tab instead, and the hardware page buttons then page the
+  pad only: the app's page selection stays where the user put it.
 - **Pinned inspector**: the header's profile dropdown and the page tab pin
   the inspector; the mirror keeps following the pad. When the two differ,
   one line under the tabs names what is pinned, then where the pad is:

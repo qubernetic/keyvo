@@ -37,8 +37,9 @@ then injected through `uinput` by the daemon.
 (`0x4610`). Implemented in `keyvo-hid`; distinct from the VLP plane.
 
 **Context page**: The page of the active profile that auto mode shows while the
-matched application has focus; overlays apply only here. Named `context` in the
-profile's `[[pages]]`; a profile without one uses its first page.
+matched application has focus, index 1 of its page list; overlays apply only
+here. Named `context` in the profile's `[[pages]]`; a profile without one uses
+its first page.
 
 **Desk state**: The mouse and keyboard settings a profile applies on
 activation (DPI, backlight, button remaps), stored under `[devices]` and applied
@@ -91,9 +92,9 @@ over heuristics.
 shown on the general page when an overlay is active on the context page, so the
 user knows something is waiting without leaving the general page.
 
-**General page**: The page shared by every profile (media keys, launchers)
-reachable from auto mode with a page button; overlays never draw on it. Named
-`general` in the global profile.
+**General page**: The page shared by every profile (media keys, launchers),
+index 0 of every page list, one left press from any context page; overlays
+never draw on it. Named `general` in the global profile.
 
 **Hot-plug**: Device connect and disconnect at runtime (USB replug, suspend,
 Bolt sleep). The daemon watches udev, reopens the node, re-claims display mode,
@@ -127,10 +128,11 @@ the view, device, focus context, held keys, recent trace entries and the last
 reload error, filled from the `status`, `subscribe` and `press` replies and kept
 current by the events. The GUI's Home screen draws the pad from it.
 
-**Mode**: `auto` or `manual`. In auto mode the focus source selects the profile
-and page; in manual mode the user pages through the active profile with the page
-buttons and focus changes are ignored. Toggled by a long press on a page button
-or by `set_mode` on the socket.
+**Mode**: `auto` or `manual`. In auto mode the focus source selects the profile;
+manual mode is a focus lock that keeps the shown profile and page list index
+while focus changes are recorded, not shown. The page buttons walk the page
+list in both. Toggled by a long press on a page button or by `set_mode` on the
+socket.
 
 **MX Keypad (2026)**: The Keypad-only product Logitech announced on 2026-09-08
 for Windows and macOS. Assumed to share the Keypad's hardware; its PID and feature
@@ -141,12 +143,17 @@ socket (`push_overlay`), for example a coding agent's working/waiting status.
 Overlays stack in push order and are removed with `pop_overlay`.
 
 **Page**: One arrangement of the nine keys inside a profile. Every profile has a
-`context` page; the global profile also has the `general` page; manual mode may
-add more.
+`context` page; the global profile also has the `general` page; a profile may
+have more.
 
 **Page grace**: The time (default 10 s, `[timing].page_grace`) after the last
-use of a page button during which an app switch keeps the general page instead
-of returning to the context page, so the user's choice sticks.
+use of a page button during which an app switch keeps the page list index
+instead of showing index 1, so the user's choice sticks.
+
+**Page list**: The ordered pages the page buttons walk for the shown profile:
+the global profile's pages after `general` at -1, -2, ..., the general page at
+0, the shown profile's context page at 1 and its other pages from 2. It does
+not wrap. The daemon reports the position as `index`.
 
 **Plugin**: An executable under `~/.config/keyvo/plugins/<name>/` described by
 `plugin.toml`, started and restarted by the daemon, speaking the NDJSON socket
