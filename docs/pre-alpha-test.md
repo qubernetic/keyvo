@@ -344,7 +344,7 @@ is for `keyvo ctl`, T3 for the app.
     - With the global profile on the pad (it has three pages), select
       key 5, then click the `general` tab: the key editor edits key 5 of
       page 2 while the drawing stays on the pad's page 1, and a line
-      says `Editing Global, key 5; the pad shows global, page 1.` with
+      says `Editing Global, key 5; the pad shows Global, page 1.` with
       `Follow`; key 5 of the drawing has no accent outline. Click
       `Follow`: the line goes and the editor is on key 5 of page 1.
     - Break a profile: put `label = 7` on a key of
@@ -397,7 +397,7 @@ is for `keyvo ctl`, T3 for the app.
       `general`, then `Edit keys on the Pad`: the Pad opens with the
       Profile dropdown on Global and the `general` tab selected, and the
       line starts `Editing Global` (with the key selected earlier, if any)
-      and ends `the pad shows konsole, page 1.`; `Follow` returns to it.
+      and ends `the pad shows Konsole, page 1.`; `Follow` returns to it.
     - `+` above the list opens Empty profile, Copy of the active profile
       and Starter pack, all greyed: hovering shows `Coming soon`, Tab
       onto one adds the sentence with its roadmap item, and a click does
@@ -811,6 +811,12 @@ The mock dev server of #113 in a host browser. Run by the owner in #130.
 - [ ] #149 `just app-dev`, click a key, type `hou` in Icon, wait fifteen seconds (the focus cycle moves the pad at least once): the field still reads `hou` and the list its fourteen matches; pick `house`: the tile shows the house.
 - [ ] #149 Type a Label, Tab into Icon, type `arr`: the search survives the write of the label.
 - [ ] #149 Type `hou` in Icon, click another tile: the Icon field shows that key's icon and the list is closed.
+
+### The shown profile by name in the moved line (#150)
+
+The mock dev server of #113 in a host browser. Run by the owner in #130.
+
+- [ ] #150 `just app-dev`, click key 3 while the pad shows Konsole, wait for the focus cycle: the line reads `Editing Konsole, key 3; the pad shows VS Code, page 1.`, then `... the pad shows Global, page 1.`; the header's dropdown says `VS Code, on the pad` and `Global, on the pad` at the same moments.
 
 ### First-light records (#75)
 
