@@ -321,6 +321,11 @@ fn the_lock_page_shows_the_lock_on_the_middle_key_and_nothing_else() {
         Rgb([bar.r, bar.g, bar.b])
     ));
     insta::assert_binary_snapshot!("lock-page.png", panel.png().unwrap());
+    // The lock key alone, for the app's mock daemon.
+    insta::assert_binary_snapshot!(
+        "lock-key.png",
+        renderer.tile(&specs[4], KEY).unwrap().png().unwrap()
+    );
 }
 
 /// The union of the captured key rectangles: 435x434 at 23,6.

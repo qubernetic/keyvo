@@ -47,7 +47,7 @@ describe("the mock daemon", () => {
     expect(status.device.connected).toBe(true);
     expect(status.device.geometry?.rects).toHaveLength(9);
     expect(status.config_dir).toBe(fixture.config_dir);
-    expect(status.view).toEqual({ profile: "global", page: 1, mode: "auto", index: 1 });
+    expect(status.view).toEqual({ profile: "global", page: 1, mode: "auto", index: 1, locked: false });
     expect(status.context?.class).toBe("org.kde.dolphin");
   });
 
@@ -122,6 +122,19 @@ describe("the mock daemon", () => {
     });
   });
 
+  it("under the lock reports the view locked, tiles the lock page and blocks presses", async () => {
+    const daemon = mockDaemon(new Store(contribProfiles()), { locked: true });
+    expect((await daemon.status()).view.locked).toBe(true);
+    const tiles = await daemon.tiles("global", 1, 9, TILE, true);
+    expect(tiles[4]).toEqual({ image: SNAPSHOTS.lock });
+    expect(tiles.filter((tile) => tile.image === SNAPSHOTS.bare)).toHaveLength(8);
+    const entry = await daemon.press(5, "short");
+    expect(entry).toMatchObject({ key: 5, action: null, result: { status: "blocked", reason: "session locked" } });
+    expect(entry.layer).toBeUndefined();
+    // The pinned page still tiles as itself.
+    expect((await daemon.tiles("global", 1, 9, TILE))[4]).not.toEqual({ image: SNAPSHOTS.lock });
+  });
+
   it("rejects tiles of an unknown profile or page", async () => {
     const daemon = mockDaemon(new Store(contribProfiles()));
     await expect(daemon.tiles("nope", 1, 9, TILE)).rejects.toBe(
@@ -157,7 +170,7 @@ describe("the mock daemon", () => {
     const updates: Update[] = [];
     const stop = await daemon.subscribe(20, (update) => updates.push(update));
     expect(updates).toEqual([
-      { kind: "subscribed", view: { profile: "global", page: 1, mode: "auto", index: 1 } },
+      { kind: "subscribed", view: { profile: "global", page: 1, mode: "auto", index: 1, locked: false } },
     ]);
 
     vi.advanceTimersByTime(TRACE_MS);
@@ -178,7 +191,7 @@ describe("the mock daemon", () => {
       );
     expect(views()).toEqual(["konsole"]);
     expect(contexts()).toEqual(["org.kde.konsole"]);
-    expect((await daemon.status()).view).toEqual({ profile: "konsole", page: 1, mode: "auto", index: 1 });
+    expect((await daemon.status()).view).toEqual({ profile: "konsole", page: 1, mode: "auto", index: 1, locked: false });
     expect((await daemon.press(1, "short")).profile).toBe("konsole");
 
     vi.advanceTimersByTime(3 * FOCUS_MS);
@@ -217,7 +230,7 @@ describe("the mock daemon", () => {
       },
     ]);
     const status = await daemon.status();
-    expect(status.view).toEqual({ profile: "konsole", page: 1, mode: "auto", index: 1 });
+    expect(status.view).toEqual({ profile: "konsole", page: 1, mode: "auto", index: 1, locked: false });
     expect(status.context?.held).toBe(true);
     expect((await daemon.press(1, "short")).profile).toBe("konsole");
     stop();

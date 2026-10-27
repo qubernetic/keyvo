@@ -1,8 +1,9 @@
 <script lang="ts">
   // The Pad screen (pad screen brief §5.2, §6; screen id `home`): the
   // device drawing with the live mirror (Mirror.svelte), the page list
-  // tabs (#151), the "pad moved" line, the held caption, and the
-  // pinned inspector. Selecting a key pins the inspector to the pad's
+  // tabs (#151), the "pad moved" line, the held caption or the session
+  // lock line (#158, the mirror then shows the lock page), and the pinned
+  // inspector, which keeps editing the pinned page under the lock. Selecting a key pins the inspector to the pad's
   // profile and page (lib/pin.ts), so it never changes under the user; the
   // drawing keeps following the pad, and outlines the selected key only
   // while it shows the pinned page (#143). The inspector gets the pinned page's
@@ -160,8 +161,11 @@
     void edits;
     if (view === undefined || geometry === undefined) return;
     const mine = ++fetched;
+    // Under the session lock the pad shows the lock page.
     const answer = untrack(() =>
-      daemon.tiles(view.profile, view.page, geometry.rects.length, geometry.tile),
+      view.locked === true
+        ? daemon.tiles(view.profile, view.page, geometry.rects.length, geometry.tile, true)
+        : daemon.tiles(view.profile, view.page, geometry.rects.length, geometry.tile),
     );
     answer.then(
       (got) => {
@@ -249,7 +253,8 @@
       },
     );
   });
-  const held = $derived(caption(pad));
+  /** The context line: the session lock, else the held caption. */
+  const held = $derived(pad.view?.locked === true ? t("pad.locked") : caption(pad));
   /** A profile's name, as the header names it; its id while the list does
    * not know it. */
   const nameOf = (id: string) => profiles.find((profile) => profile.id === id)?.name ?? id;
