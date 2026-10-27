@@ -454,7 +454,20 @@
       </section>
 
       <section class="part" aria-labelledby={`kv-pages-${uid}`}>
-        <h3 id={`kv-pages-${uid}`}>{t("profiles.pages")}</h3>
+        <!-- The screen's one primary action heads its part, at the 48ch
+             end, so a 760 px window shows it without scrolling (#166). -->
+        <div class="head row">
+          <h3 id={`kv-pages-${uid}`}>{t("profiles.pages")}</h3>
+          {#if pages.length > 0}
+            <button
+              type="button"
+              aria-label={t("profiles.editOnPad")}
+              onclick={() => onedit?.({ profile: selected.id, page })}
+            >
+              {t("profiles.editOnPad")}
+            </button>
+          {/if}
+        </div>
         {#if pages.length === 0}
           <p class="note">{t("profiles.noPages")}</p>
         {:else}
@@ -491,15 +504,6 @@
           {#if thumbsError !== undefined}
             <p class="note">{t("home.tilesError", { error: thumbsError })}</p>
           {/if}
-          <div>
-            <button
-              type="button"
-              aria-label={t("profiles.editOnPad")}
-              onclick={() => onedit?.({ profile: selected.id, page })}
-            >
-              {t("profiles.editOnPad")}
-            </button>
-          </div>
         {/if}
       </section>
     {/if}
@@ -629,6 +633,12 @@
   }
 
   .heading > button {
+    flex: none;
+    white-space: nowrap;
+  }
+
+  /* "Edit keys on the Pad" keeps its one line beside the Pages heading. */
+  .head > button {
     flex: none;
     white-space: nowrap;
   }

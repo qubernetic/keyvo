@@ -601,6 +601,19 @@ describe("the pages", () => {
     expect(props.onedit).toHaveBeenCalledWith({ profile: "terminal", page: 2 });
   });
 
+  it("put Edit keys on the Pad in the Pages heading row, above the fold (#166)", async () => {
+    mount();
+    await waitFor(() => expect(within(thumbnails()).getAllByRole("button")).toHaveLength(3));
+    const edit = screen.getByRole("button", { name: "Edit keys on the Pad" });
+    const row = edit.parentElement as HTMLElement;
+    expect(row).toHaveClass("row");
+    expect(row.querySelector("h3")).toHaveTextContent("Pages");
+    // The row comes before the thumbnails, so the button sits at the 48ch
+    // end like Open in editor and + rule.
+    expect(row.compareDocumentPosition(thumbnails()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(rule(".head > button")).toMatch(/white-space: nowrap;/);
+  });
+
   it("start a newly selected profile on its first page", async () => {
     const props = mount();
     await waitFor(() => expect(within(thumbnails()).getAllByRole("button")).toHaveLength(3));
