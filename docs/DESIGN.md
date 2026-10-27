@@ -230,7 +230,7 @@ distinguished by position and label, not by colour.
 - **Shape:** softly rounded (6 px, `--kv-radius`), 32 px minimum height, 8 px horizontal padding, body size text.
 - **Default:** panel surface (`--kv-bg-alt`), text `--kv-fg`, 1 px border `--kv-fg-muted`.
 - **Selected / current** (tabs, rail items, the selected profile): window surface (`--kv-bg`) inside a `--kv-accent` border: pressed in, not lit up.
-- **Hover / Focus:** focus is the 2 px `--kv-accent` outline with 2 px offset from tokens.css, plus the border turning accent on controls. Hover changes nothing today; when it does, it moves the border colour, nothing else.
+- **Hover / Focus:** focus is the 2 px `--kv-accent` outline with 2 px offset from tokens.css, plus the border turning accent on controls. Hover moves the border to `--kv-fg` over 150 ms (ease-out), nothing else; a disabled control does not react, and a selected or current control keeps its accent border (the hover rule sits below it through `:where()`).
 - **Disabled:** panel surface with muted text and `cursor: not-allowed`; "Coming soon" controls stay disabled and labelled, never hidden.
 - **Icon buttons** (rail toggle, overflow, column toggles): 32 px square; the rail's targets are 40 px (gui-ux.md §6).
 
@@ -254,7 +254,7 @@ distinguished by position and label, not by colour.
 - A row is a button that spans the list width: name, metadata in muted label size, a status mark at the right. The profile's accent is shown as a small square swatch inside the row, not as a stripe along its edge.
 
 ### The Mirror (signature component)
-- The nine tiles are images from the renderer, in the device's proportions (480x480 panel, 118 px tiles at 1:1), scaled as a whole to the column that holds them, never clipped and never drawn larger than 1:1. The selected tile has the accent outline; a project-layer tile the `--kv-project` outline. The grid spacing between tiles mirrors the device's gaps.
+- The nine tiles are images from the renderer, in the device's proportions (480x480 panel, 118 px tiles at 1:1), scaled as a whole to the column that holds them, never clipped and never drawn larger than 1:1. The selected tile has the accent outline; a project-layer tile the `--kv-project` outline. The grid spacing between tiles mirrors the device's gaps. A tile is part of the device, not a control: it sits inside the cutout's rim and takes the cutout's corner radius (`--kv-tile-radius`, from the drawing) and the well colour behind its transparent corners (`--kv-device-well`), the same in every theme and at every size; the theme radius applies only on the plain panel a drawing has no cutouts for.
 - A key slot in an editor grid (where the image is not shown) is a 96 by 56 px button with the number as a caption and the label in body size.
 
 ### Menus and tooltips

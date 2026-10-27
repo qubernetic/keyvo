@@ -105,6 +105,12 @@ holds, what is special in the right column.
   tiles rendered by keyvo-core sit in the cutouts at the geometry rects
   and scale with the drawing: `width: 100%`, `max-width` the panel's
   pixel width, the device aspect ratio, never above 1:1, never clipped.
+  Each tile sits inside the cutout's rim, inset by half its stroke, and
+  takes the cutout's corner radius (`--kv-tile-radius`, set by
+  `Device.svelte` from the drawing's `rx`) and the well colour behind the
+  rendered image's transparent corners (`--kv-device-well`), so the corner
+  follows the drawing, not the theme radius, in the mirror and in the
+  Profiles thumbnails alike (#138).
   The Dialpad gets its own drawing with the Dialpad slice (the panel of
   §3.3 and §4.2, then a Devices tab of Preferences).
 - The mirror shows the pad: the active profile and page, live. A key that
