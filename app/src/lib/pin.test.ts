@@ -6,8 +6,8 @@ import { describe, expect, it } from "vitest";
 import { difference, follow, kept, pinOnSelect, pinPage, pinProfile, target, type Pin } from "./pin";
 import type { View } from "./protocol";
 
-const PAD: View = { profile: "terminal", page: 2, mode: "auto" };
-const MOVED: View = { profile: "vscode", page: 1, mode: "auto" };
+const PAD: View = { profile: "terminal", page: 2, mode: "auto", index: 2 };
+const MOVED: View = { profile: "vscode", page: 1, mode: "auto", index: 1 };
 
 describe("the pin", () => {
   it("follows the pad by default", () => {

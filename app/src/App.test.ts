@@ -189,7 +189,7 @@ describe("the pin", () => {
     await listed();
     await fireEvent.change(dropdown(), { target: { value: "vscode" } });
     expect(dropdown().value).toBe("vscode");
-    await send({ event: "profile", profile: "global", page: 1, mode: "auto" });
+    await send({ event: "profile", profile: "global", page: 1, mode: "auto", index: 1 });
     expect(dropdown().value).toBe("vscode");
     expect(await listed()).toEqual(["Global, on the pad", "VS Code", "Terminal"]);
   });
@@ -254,7 +254,7 @@ describe("App", () => {
     await listed();
     await fireEvent.click(await screen.findByRole("button", { name: /^Key 4\b/ }));
     expect(await screen.findByRole("heading", { name: /^Key 4: / })).toBeInTheDocument();
-    await send({ event: "profile", profile: "global", page: 1, mode: "auto" });
+    await send({ event: "profile", profile: "global", page: 1, mode: "auto", index: 1 });
     expect(dropdown().value).toBe("terminal");
     expect(await screen.findByText("Editing Terminal, key 4; the pad shows Global, page 1.")).toBeInTheDocument();
     await fireEvent.click(screen.getByRole("button", { name: "Follow" }));

@@ -30,7 +30,7 @@ const STATUS = responses()[0] as Status;
 const GEOMETRY = STATUS.device.geometry as Geometry;
 const STEPS = profileSteps();
 const CONFIG = "/home/u/.config/keyvo";
-const VIEW: View = { profile: STEPS.profile, page: 1, mode: "auto" };
+const VIEW: View = { profile: STEPS.profile, page: 1, mode: "auto", index: 1 };
 
 function summary(id: string, name: string, priority: number, extra: Partial<ProfileSummary> = {}) {
   return {
@@ -235,7 +235,7 @@ describe("the list column", () => {
   });
 
   it("selects the global profile when the pad shows none", async () => {
-    mount({ view: { profile: "gone", page: 1, mode: "auto" } });
+    mount({ view: { profile: "gone", page: 1, mode: "auto", index: 1 } });
     await listed();
     expect(within(list()).getByRole("button", { name: /^Everywhere/ })).toHaveAttribute(
       "aria-current",

@@ -39,3 +39,16 @@ action = { type = "exec", cmd = "exit 1" }
 icon   = "lucide:hammer"
 label  = "Slow"
 action = { type = "exec", cmd = "sleep 15" }
+
+[[pages]]                     # page 2: the right page button from the context page
+name = "files"
+
+[pages.keys.1]                # opens the file finder
+icon   = "lucide:file-search"
+label  = "Open"
+action = { type = "chord", keys = "ctrl+p" }
+
+[pages.keys.2]                # toggles the sidebar
+icon   = "lucide:panel-left"
+label  = "Sidebar"
+action = { type = "chord", keys = "ctrl+b" }

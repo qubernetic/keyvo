@@ -33,10 +33,15 @@ export type PressKind = "short" | "long";
 
 /** What the pad shows. */
 export interface View {
+  /** The profile that owns the page: the global one at index 0 and below. */
   profile: string;
-  /** Counted from 1. */
+  /** Counted from 1 inside `profile`. */
   page: number;
   mode: Mode;
+  /** The position in the shown profile's page list (spec §6.3): 1 its
+   * context page, 2 and up its other pages, 0 the global `general` page,
+   * below 0 the global pages after it. */
+  index: number;
 }
 
 export type Command =

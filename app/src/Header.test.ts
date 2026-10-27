@@ -32,7 +32,7 @@ const PROFILES = [
   summary("vscode", "VS Code", 20),
 ];
 
-const PAD: View = { profile: "terminal", page: 1, mode: "auto" };
+const PAD: View = { profile: "terminal", page: 1, mode: "auto", index: 1 };
 
 function header(
   device?: DeviceStatus,

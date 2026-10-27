@@ -315,14 +315,20 @@ fn union_on(text: &str, page: usize) -> Image {
 /// whose first page is its context page: a key `text` lacks shows the
 /// global key, with the accent of `text` (spec §6.1).
 fn union_over(text: &str, global: &str) -> Image {
+    union_over_on(text, 1, global)
+}
+
+/// [`union_over`] for page `page` of `text`: every page of an app profile
+/// lies over the global context page.
+fn union_over_on(text: &str, page: usize, global: &str) -> Image {
     let mut stacked = profile(text);
     for (slot, key) in &profile(global).pages[0].keys {
-        stacked.pages[0]
+        stacked.pages[page - 1]
             .keys
             .entry(*slot)
             .or_insert_with(|| key.clone());
     }
-    union_of_profile(&stacked, 1)
+    union_of_profile(&stacked, page)
 }
 
 /// [`union_on`] for a parsed `profile`.
@@ -585,11 +591,13 @@ label = \"Play\"
     )
 }
 
-fn view(profile: &str, page: usize, mode: Mode) -> View {
+/// The view of `page` of `profile` at list position `index`.
+fn view(profile: &str, page: usize, index: isize, mode: Mode) -> View {
     View {
         profile: profile.to_owned(),
         page,
         mode,
+        index,
     }
 }
 
@@ -607,7 +615,7 @@ async fn the_painted_profile_follows_the_focused_window() {
     assert_eq!(pad.images(), [union_of(GLOBAL)]);
 
     assert!(watcher.focus(WindowContext::new("org.kde.konsole", "~ : bash")));
-    assert_eq!(daemon.switched().await, view("terminal", 1, Mode::Auto));
+    assert_eq!(daemon.switched().await, view("terminal", 1, 1, Mode::Auto));
     // The switch writes exactly one image: the union of the keys, with the
     // terminal's panel background and every key on it.
     assert_eq!(daemon.painted().await, (1..=9).collect::<Vec<_>>());
@@ -634,23 +642,80 @@ async fn the_painted_profile_follows_the_focused_window() {
 
     // Another class without a profile of its own shows the global one.
     assert!(watcher.focus(WindowContext::new("org.kde.dolphin", "Home")));
-    assert_eq!(daemon.switched().await, view("global", 1, Mode::Auto));
+    assert_eq!(daemon.switched().await, view("global", 1, 1, Mode::Auto));
     daemon.shows(&pad, &union_of(GLOBAL)).await;
     daemon.stop().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_page_button_toggles_the_general_page() {
+async fn a_page_button_walks_to_the_general_page() {
     let global = with_general();
     let (mut daemon, pad, _) = started(&global).await;
     pad.buttons(&[0x01a1]);
     pad.buttons(&[]);
-    assert_eq!(daemon.switched().await, view("global", 2, Mode::Auto));
+    assert_eq!(daemon.switched().await, view("global", 2, 0, Mode::Auto));
     daemon.shows(&pad, &union_on(&global, 2)).await;
     pad.buttons(&[0x01a2]);
     pad.buttons(&[]);
-    assert_eq!(daemon.switched().await, view("global", 1, Mode::Auto));
+    assert_eq!(daemon.switched().await, view("global", 1, 1, Mode::Auto));
     daemon.shows(&pad, &union_on(&global, 1)).await;
+    daemon.stop().await;
+}
+
+/// The terminal profile with a second page.
+fn terminal_with_two_pages() -> String {
+    format!(
+        "{TERMINAL}
+[[pages]]
+name = \"git\"
+[pages.keys.1]
+icon = \"lucide:git-branch\"
+label = \"Branch\"
+"
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_page_buttons_walk_the_page_list_of_a_two_page_profile() {
+    let global = with_general();
+    let terminal = terminal_with_two_pages();
+    let pad = Pad::new(&startup());
+    let watcher = FakeWindowWatcher::new();
+    let mut daemon = Daemon::start_with(
+        &[("global", &global), ("terminal", &terminal)],
+        vec![pad.clone()],
+        FakeInputInjector::new(),
+        watcher.clone(),
+    );
+    daemon.painted().await;
+    assert!(watcher.focus(WindowContext::new("org.kde.konsole", "~")));
+    assert_eq!(daemon.switched().await, view("terminal", 1, 1, Mode::Auto));
+    daemon.shows(&pad, &union_over(&terminal, &global)).await;
+    // Right: the terminal's own page 2, still over the global context page.
+    pad.buttons(&[0x01a2]);
+    pad.buttons(&[]);
+    assert_eq!(daemon.switched().await, view("terminal", 2, 2, Mode::Auto));
+    daemon
+        .shows(&pad, &union_over_on(&terminal, 2, &global))
+        .await;
+    // Right again is past the end: no event, no image.
+    pad.buttons(&[0x01a2]);
+    pad.buttons(&[]);
+    // Left: the context page; left: the global general page as it is.
+    pad.buttons(&[0x01a1]);
+    pad.buttons(&[]);
+    assert_eq!(daemon.switched().await, view("terminal", 1, 1, Mode::Auto));
+    daemon.shows(&pad, &union_over(&terminal, &global)).await;
+    pad.buttons(&[0x01a1]);
+    pad.buttons(&[]);
+    assert_eq!(daemon.switched().await, view("global", 2, 0, Mode::Auto));
+    daemon.shows(&pad, &union_on(&global, 2)).await;
+    // Left past the end: nothing, so the next event is the right press's.
+    pad.buttons(&[0x01a1]);
+    pad.buttons(&[]);
+    pad.buttons(&[0x01a2]);
+    pad.buttons(&[]);
+    assert_eq!(daemon.switched().await, view("terminal", 1, 1, Mode::Auto));
     daemon.stop().await;
 }
 
@@ -661,14 +726,14 @@ async fn a_held_page_button_switches_the_mode_and_both_escape() {
     pad.buttons(&[0x00c4]);
     pad.buttons(&[]);
     pad.buttons(&[0x01a2]);
-    assert_eq!(daemon.switched().await, view("global", 1, Mode::Manual));
+    assert_eq!(daemon.switched().await, view("global", 1, 1, Mode::Manual));
     pad.buttons(&[]);
-    pad.buttons(&[0x01a2]);
+    pad.buttons(&[0x01a1]);
     pad.buttons(&[]);
-    assert_eq!(daemon.switched().await, view("global", 2, Mode::Manual));
+    assert_eq!(daemon.switched().await, view("global", 2, 0, Mode::Manual));
     pad.buttons(&[0x01a1]);
     pad.buttons(&[0x01a1, 0x01a2]);
-    assert_eq!(daemon.switched().await, view("global", 1, Mode::Auto));
+    assert_eq!(daemon.switched().await, view("global", 1, 1, Mode::Auto));
     pad.buttons(&[]);
     daemon.stop().await;
 }
@@ -687,7 +752,7 @@ async fn a_reload_selects_the_profile_for_the_focused_window_again() {
     assert!(watcher.focus(WindowContext::new("org.kde.konsole", "~")));
     // No profile matches yet: nothing switches. A new profile file does.
     std::fs::write(daemon.dir.path().join("profiles/terminal.toml"), TERMINAL).unwrap();
-    assert_eq!(daemon.switched().await, view("terminal", 1, Mode::Auto));
+    assert_eq!(daemon.switched().await, view("terminal", 1, 1, Mode::Auto));
     daemon.shows(&pad, &union_over(TERMINAL, GLOBAL)).await;
     daemon.stop().await;
 }
@@ -711,7 +776,7 @@ async fn status_reports_the_device_the_view_and_the_trace_size() {
             error: None
         }
     );
-    assert_eq!(status.view, view("global", 1, Mode::Auto));
+    assert_eq!(status.view, view("global", 1, 1, Mode::Auto));
     assert_eq!(status.context, None);
     assert_eq!(status.trace, 0);
 
@@ -887,7 +952,7 @@ async fn notify_context_switches_like_the_watcher_and_is_reported() {
         })
         .await;
     assert_eq!(reported, notified);
-    assert_eq!(daemon.switched().await, view("terminal", 1, Mode::Auto));
+    assert_eq!(daemon.switched().await, view("terminal", 1, 1, Mode::Auto));
     assert_eq!(daemon.status().await.context, Some(notified));
 
     // The watcher's reports are context events too.
@@ -962,7 +1027,7 @@ async fn the_keyvo_app_holds_the_context() {
     );
     assert_eq!(
         seen.last(),
-        Some(&Event::Switched(view("terminal", 1, Mode::Auto)))
+        Some(&Event::Switched(view("terminal", 1, 1, Mode::Auto)))
     );
 
     // Held over the terminal: well past the hysteresis the pad still shows
@@ -970,7 +1035,10 @@ async fn the_keyvo_app_holds_the_context() {
     assert!(watcher.focus(WindowContext::new("keyvo-app", "keyvo")));
     assert!(daemon.context().await.held);
     tokio::time::sleep(Duration::from_millis(200)).await;
-    assert_eq!(daemon.status().await.view, view("terminal", 1, Mode::Auto));
+    assert_eq!(
+        daemon.status().await.view,
+        view("terminal", 1, 1, Mode::Auto)
+    );
     assert!(watcher.focus(WindowContext::new("org.kde.dolphin", "Home")));
     let seen = daemon.up_to_a_switch().await;
     assert!(
@@ -979,7 +1047,7 @@ async fn the_keyvo_app_holds_the_context() {
     );
     assert_eq!(
         seen.last(),
-        Some(&Event::Switched(view("global", 1, Mode::Auto)))
+        Some(&Event::Switched(view("global", 1, 1, Mode::Auto)))
     );
     daemon.stop().await;
 }
@@ -997,10 +1065,10 @@ async fn an_empty_hold_list_lets_the_keyvo_app_switch() {
     );
     daemon.painted().await;
     assert!(watcher.focus(WindowContext::new("org.kde.konsole", "~")));
-    assert_eq!(daemon.switched().await, view("terminal", 1, Mode::Auto));
+    assert_eq!(daemon.switched().await, view("terminal", 1, 1, Mode::Auto));
     assert!(watcher.focus(WindowContext::new("keyvo-app", "keyvo")));
     assert!(!daemon.context().await.held);
-    assert_eq!(daemon.switched().await, view("global", 1, Mode::Auto));
+    assert_eq!(daemon.switched().await, view("global", 1, 1, Mode::Auto));
     daemon.stop().await;
 }
 
@@ -1053,7 +1121,7 @@ async fn subscribe_replays_the_newest_ring_entries_then_streams() {
     else {
         panic!("not subscribed");
     };
-    assert_eq!(now, view("global", 1, Mode::Auto));
+    assert_eq!(now, view("global", 1, 1, Mode::Auto));
     assert_eq!(backlog, pressed[1..]);
     let later = daemon.press(7, true).await;
     let streamed = tokio::time::timeout(PATIENCE, async {

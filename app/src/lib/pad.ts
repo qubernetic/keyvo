@@ -131,7 +131,10 @@ export function apply(state: PadState, update: Update, now = Date.now()): PadSta
     case "profile":
     case "page":
     case "mode":
-      return { ...state, view: { profile: event.profile, page: event.page, mode: event.mode } };
+      return {
+        ...state,
+        view: { profile: event.profile, page: event.page, mode: event.mode, index: event.index },
+      };
     case "device": {
       const { event: _, ...device } = event;
       return {

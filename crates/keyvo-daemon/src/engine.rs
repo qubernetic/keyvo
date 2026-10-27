@@ -327,7 +327,8 @@ action = { type = "exec", cmd = "true" }
             View {
                 profile: GLOBAL_ID.into(),
                 page: 2,
-                mode: Mode::Auto
+                mode: Mode::Auto,
+                index: 0
             }
         );
         assert_eq!(engine.specs(now)[0].label.as_deref(), Some("Play"));

@@ -177,9 +177,19 @@ fn a_switch_is_one_event_per_changed_class() {
         profile: profile.into(),
         page,
         mode,
+        index: 1,
     };
     let before = view("global", 1, Mode::Auto);
     assert!(Event::switched(&before, &before).is_empty());
+    // Another list position is another page, even on the same page.
+    let moved = View {
+        index: 0,
+        ..before.clone()
+    };
+    assert_eq!(
+        Event::switched(&before, &moved),
+        [Event::Page(moved.clone())]
+    );
     let after = view("terminal", 2, Mode::Manual);
     assert_eq!(
         Event::switched(&before, &after),

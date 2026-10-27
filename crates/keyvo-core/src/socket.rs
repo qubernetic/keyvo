@@ -594,7 +594,7 @@ impl Event {
         if before.profile != after.profile {
             events.push(Self::Profile(after.clone()));
         }
-        if before.page != after.page {
+        if before.page != after.page || before.index != after.index {
             events.push(Self::Page(after.clone()));
         }
         if before.mode != after.mode {
