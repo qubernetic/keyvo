@@ -630,6 +630,12 @@
     font-size: 0.85em;
   }
 
+  /* A label inside a field is sized once: the field already carries the
+     label size, and nesting the two shrank the Command label to 9.6 px. */
+  .field label {
+    font-size: 1em;
+  }
+
   .colour {
     display: flex;
     gap: 8px;
@@ -667,5 +673,10 @@
     background: var(--kv-bg);
     color: var(--kv-fg);
     overflow-wrap: anywhere;
+  }
+
+  /* One line is reserved, so the first message shifts nothing below it. */
+  .result {
+    min-height: 1.4em;
   }
 </style>
