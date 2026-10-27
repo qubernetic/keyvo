@@ -2,7 +2,9 @@
 // profile and page the inspector edits. Undefined follows the pad. The
 // header's profile dropdown and the page tabs pin it, selecting a key pins
 // it to what the pad shows, and from then on a view event never retargets
-// it, so the inspector never changes under the user; Follow unpins.
+// it, so the inspector never changes under the user; Follow unpins. A
+// pin a key set goes back to the pad's page when another key of the
+// mirror is selected while the pad is away (#143).
 import type { Target } from "./editor";
 import type { View } from "./protocol";
 
@@ -10,6 +12,8 @@ export interface Pin {
   profile: string;
   /** Counted from 1. */
   page: number;
+  /** Set by selecting a key; absent for a profile or page the user chose. */
+  fromKey?: true;
 }
 
 /** The pin, or undefined to follow the pad. */
@@ -19,7 +23,7 @@ export type Pinned = Pin | undefined;
  * page the pad shows; none before the pad reports a view. */
 export function target(pinned: Pinned, view: View | undefined, key: number): Target | undefined {
   const pin = pinned ?? (view === undefined ? undefined : { profile: view.profile, page: view.page });
-  return pin === undefined ? undefined : { ...pin, key };
+  return pin === undefined ? undefined : { profile: pin.profile, page: pin.page, key };
 }
 
 /** What the pad shows when it differs from the pin, for the "pad moved"
@@ -30,11 +34,16 @@ export function difference(pinned: Pinned, view: View | undefined): Pin | undefi
   return { profile: view.profile, page: view.page };
 }
 
-/** The pin once a key is selected: kept if set, else the pad's profile
- * and page. */
+/** The pin once a key of the mirror is selected: a profile or page the
+ * user chose is kept, so is a key's pin on the pad's page; otherwise the
+ * pad's profile and page, since the selected tile is one the mirror shows
+ * (#143). */
 export function pinOnSelect(pinned: Pinned, view: View | undefined): Pinned {
-  if (pinned !== undefined || view === undefined) return pinned;
-  return { profile: view.profile, page: view.page };
+  if (view === undefined) return pinned;
+  if (pinned !== undefined && (pinned.fromKey !== true || difference(pinned, view) === undefined)) {
+    return pinned;
+  }
+  return { profile: view.profile, page: view.page, fromKey: true };
 }
 
 /** Pins profile `id` on page 1, the context page. */
@@ -44,7 +53,7 @@ export function pinProfile(id: string): Pin {
 
 /** Moves the pin to page `page` of its profile. */
 export function pinPage(pinned: Pin, page: number): Pin {
-  return { ...pinned, page };
+  return { profile: pinned.profile, page };
 }
 
 /** Unpins: the inspector follows the pad again. */

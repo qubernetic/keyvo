@@ -20,28 +20,49 @@ function options(): string[] {
 }
 
 describe("IconPicker", () => {
-  it("lists every tile icon, each with its glyph and name", async () => {
+  it("lists the first 60 tile icons on an empty search, each with its glyph and name", async () => {
     const { input } = picker();
     expect(input).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
     await fireEvent.keyDown(input, { key: "ArrowDown" });
     expect(input).toHaveAttribute("aria-expanded", "true");
-    expect(options()).toEqual(TILE_ICONS);
-    const terminal = screen.getByRole("option", { name: "terminal" });
-    expect(terminal.querySelector("svg")).not.toBeNull();
+    expect(options()).toEqual(TILE_ICONS.slice(0, 60));
+    expect(screen.getByRole("option", { name: TILE_ICONS[0] }).querySelector("svg")).not.toBeNull();
+    expect(screen.getByText(`60 of ${TILE_ICONS.length}, keep typing`)).toBeInTheDocument();
+  });
+
+  it("shows at most 60 matches and names how many more match", async () => {
+    const { input } = picker();
+    const arrows = TILE_ICONS.filter((name) => name.includes("arrow"));
+    expect(arrows.length).toBeGreaterThan(60);
+    await fireEvent.input(input, { target: { value: "arrow" } });
+    expect(options()).toEqual(arrows.slice(0, 60));
+    expect(screen.getByText(`60 of ${arrows.length}, keep typing`)).toBeInTheDocument();
+    await fireEvent.input(input, { target: { value: "volume-" } });
+    expect(screen.queryByText(/keep typing/)).not.toBeInTheDocument();
+  });
+
+  it("moves over the shown rows only", async () => {
+    const { input } = picker();
+    const arrows = TILE_ICONS.filter((name) => name.includes("arrow"));
+    await fireEvent.input(input, { target: { value: "arrow" } });
+    await fireEvent.keyDown(input, { key: "ArrowUp" });
+    expect(screen.getByRole("option", { name: arrows[59] })).toHaveAttribute("aria-selected", "true");
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: arrows[0] })).toHaveAttribute("aria-selected", "true");
   });
 
   it("filters on typing, case-insensitive", async () => {
     const { input } = picker();
-    await fireEvent.input(input, { target: { value: "VOL" } });
-    expect(options()).toEqual(["volume-1", "volume-2", "volume-x"]);
+    await fireEvent.input(input, { target: { value: "VOLUME-" } });
+    expect(options()).toEqual(["volume-1", "volume-2", "volume-off", "volume-x"]);
     await fireEvent.input(input, { target: { value: "nothing-like-it" } });
     expect(screen.getByText("No icon matches")).toBeInTheDocument();
   });
 
   it("moves with the arrows and picks with Enter, written as lucide:<name>", async () => {
     const { input, onpick } = picker();
-    await fireEvent.input(input, { target: { value: "vol" } });
+    await fireEvent.input(input, { target: { value: "volume-" } });
     await fireEvent.keyDown(input, { key: "ArrowDown" });
     await fireEvent.keyDown(input, { key: "ArrowDown" });
     expect(input).toHaveAttribute("aria-activedescendant", screen.getByRole("option", { name: "volume-2" }).id);
@@ -55,7 +76,7 @@ describe("IconPicker", () => {
 
   it("wraps at both ends", async () => {
     const { input } = picker();
-    await fireEvent.input(input, { target: { value: "vol" } });
+    await fireEvent.input(input, { target: { value: "volume-" } });
     await fireEvent.keyDown(input, { key: "ArrowUp" });
     expect(screen.getByRole("option", { name: "volume-x" })).toHaveAttribute("aria-selected", "true");
     await fireEvent.keyDown(input, { key: "ArrowDown" });
@@ -64,15 +85,15 @@ describe("IconPicker", () => {
 
   it("picks with a click", async () => {
     const { input, onpick } = picker();
-    await fireEvent.input(input, { target: { value: "term" } });
-    await fireEvent.click(screen.getByRole("option", { name: "terminal" }));
-    expect(onpick).toHaveBeenCalledWith("lucide:terminal");
+    await fireEvent.input(input, { target: { value: "rock" } });
+    await fireEvent.click(screen.getByRole("option", { name: "rocket" }));
+    expect(onpick).toHaveBeenCalledWith("lucide:rocket");
   });
 
   it("closes on Escape and puts the chosen name back", async () => {
     const { input, onpick } = picker("lucide:rocket");
     expect(input).toHaveValue("rocket");
-    await fireEvent.input(input, { target: { value: "vol" } });
+    await fireEvent.input(input, { target: { value: "volume-" } });
     await fireEvent.keyDown(input, { key: "Escape" });
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
     expect(input).toHaveValue("rocket");

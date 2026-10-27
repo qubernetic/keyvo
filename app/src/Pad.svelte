@@ -4,7 +4,8 @@
   // the pinned profile, the "pad moved" line, the held caption, and the
   // pinned inspector. Selecting a key pins the inspector to the pad's
   // profile and page (lib/pin.ts), so it never changes under the user; the
-  // drawing keeps following the pad. The inspector gets the pinned page's
+  // drawing keeps following the pad, and outlines the selected key only
+  // while it shows the pinned page (#143). The inspector gets the pinned page's
   // tile, the global key under a key that falls through, and Press, a dry
   // run of the selected key whose result shows under the drawing. The
   // unreachable, no-device and configuration notices go through Notice.
@@ -233,6 +234,15 @@
     );
   });
   const held = $derived(caption(pad));
+  /** The "pad moved" line: what the inspector edits, then what the pad
+   * shows. */
+  const movedLine = $derived.by(() => {
+    if (moved === undefined || shown === undefined) return undefined;
+    const pinned = shownProfile?.name ?? shown.profile;
+    return selected === undefined
+      ? t("pad.movedPage", { pinned, pinnedPage: shown.page, profile: moved.profile, page: moved.page })
+      : t("pad.moved", { pinned, key: selected, profile: moved.profile, page: moved.page });
+  });
 
   function select(key: number) {
     selected = key;
@@ -246,9 +256,13 @@
   /** Selects `key` and hands the inspector the catalogue entry with key
    * `entry` for it. */
   function assignTo(key: number, entry: string) {
-    const at = target(pinned, pad.view, key);
+    const at = target(pinOnSelect(pinned, pad.view), pad.view, key);
     if (at === undefined) return;
     select(key);
+    hand(entry, at);
+  }
+
+  function hand(entry: string, at: Target) {
     assign = { entry, target: at, seq: (assign?.seq ?? 0) + 1 };
   }
 
@@ -334,7 +348,7 @@
           {tiles}
           profile={pad.view?.profile}
           held={pad.held}
-          {selected}
+          selected={moved === undefined ? selected : undefined}
           name={gridName}
           onselect={select}
           onpress={(key, kind) => void press(key, kind)}
@@ -361,7 +375,7 @@
       {/if}
       {#if moved !== undefined}
         <p class="moved">
-          {t("pad.moved", { profile: moved.profile, page: moved.page })}
+          {movedLine}
           <button type="button" aria-label={t("pad.follow")} onclick={() => onpin?.(follow())}>
             {t("pad.follow")}
           </button>
@@ -409,7 +423,7 @@
           {active}
           {connected}
           onassign={(entry) => {
-            if (selected !== undefined) assignTo(selected, entry);
+            if (editing !== undefined) hand(entry, editing);
           }}
         />
       </div>

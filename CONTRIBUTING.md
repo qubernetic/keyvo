@@ -101,7 +101,9 @@ app talks to the in-memory mock of `app/src/lib/mock/` instead of the Tauri
 shell, fed by `tests/protocol-fixtures/socket/`, `contrib/profiles/` and the
 renderer snapshots, so a change shows in a host browser in seconds without a
 container build, a daemon or a Keypad. `?theme=breeze-dark|breeze-light|adwaita-dark|adwaita-light`
-switches between the measured token sets of `docs/design/gui-ux.md` §7,
+switches between the measured token sets of `docs/design/gui-ux.md` §7
+(with the muted text and the focus ring derived by its rules where the
+measured ones fail the contrast checks),
 `?mock-error=unreachable` shows the Pad's error state, `?mock-error=write`
 makes every key write fail with a file, line and column, `?mock-profiles=empty`
 adds a profile with no pages, and every fourth focus step is the keyvo app,

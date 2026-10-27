@@ -78,6 +78,7 @@ keyvo/
 ├── captures/           # README + derived fixtures; raw pcapng external (release assets)
 ├── tools/windows-vm/   # planned: libvirt VM scripts
 ├── tools/keycodes/     # generator of the evdev key code table in keyvo-core's chord parser
+├── tools/lucide/       # generator of keyvo-core's bundled lucide icons and their table, from the pinned release
 ├── schemas/            # generated JSON Schemas of profiles, recipe packs and config.toml; a keyvo-core test keeps them current
 ├── tests/protocol-fixtures/  # shared fixtures for Rust/TS clients: socket/ NDJSON, editor/, hid/ golden HID++ scripts
 └── docs/               # spec.md, roadmap.md, socket-api.md, adr/, design/, research/, plans/,

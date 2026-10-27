@@ -344,7 +344,8 @@ is for `keyvo ctl`, T3 for the app.
     - With the global profile on the pad (it has three pages), select
       key 5, then click the `general` tab: the key editor edits key 5 of
       page 2 while the drawing stays on the pad's page 1, and a line
-      says `The pad moved to global, page 1` with `Follow`. Click
+      says `Editing Global, key 5; the pad shows global, page 1.` with
+      `Follow`; key 5 of the drawing has no accent outline. Click
       `Follow`: the line goes and the editor is on key 5 of page 1.
     - Break a profile: put `label = 7` on a key of
       `~/.config/keyvo/profiles/global.toml`. An error notice shows
@@ -369,8 +370,9 @@ is for `keyvo ctl`, T3 for the app.
     - The heading row shows `Konsole` and `Open in editor`, the file
       `~/.config/keyvo/profiles/konsole.toml` under it, once. The form
       shows the name, the accent `#3fae5a` beside its swatch, priority
-      `0` with `higher wins the window`, and Enabled as a greyed switch
-      reading `On`. Change the name to `Terminal` and press Enter.
+      `0` with `higher wins the window`, and Enabled reading `On` with
+      the sentence that switching a profile off arrives with M4a-4,
+      each label above its field. Change the name to `Terminal` and press Enter.
       Expected: the heading and the list show `Terminal` at once, and
 
       ```bash
@@ -394,7 +396,8 @@ is for `keyvo ctl`, T3 for the app.
       `third`, each the page's tiles as the pad would show them. Click
       `general`, then `Edit keys on the Pad`: the Pad opens with the
       Profile dropdown on Global and the `general` tab selected, and the
-      line says the pad moved to Konsole; `Follow` returns to it.
+      line starts `Editing Global` (with the key selected earlier, if any)
+      and ends `the pad shows konsole, page 1.`; `Follow` returns to it.
     - `+` above the list opens Empty profile, Copy of the active profile
       and Starter pack, all greyed: hovering shows `Coming soon`, Tab
       onto one adds the sentence with its roadmap item, and a click does
@@ -721,7 +724,7 @@ No Keypad needed for the first three; the mock dev server of #113 in a host brow
 
 - [ ] #133 `just app-dev` at 1363x798 and at 960 px wide, with `?theme=breeze-light` and `?theme=breeze-dark`: the Keypad drawing scales with the window, never above its 1:1 size and never clipped; the tiles sit in the cutouts; the page tabs and the accent swatch are readable; no element under a scroll bar.
 - [ ] #133 Wait for the mock's focus cycle to reach `keyvo-app` (after Konsole): a line reads `keyvo-app focused, holding konsole` and the drawing stays on Konsole; the next step (VS Code) removes the line.
-- [ ] #133 Click a tile (it gets the accent outline, nothing is pressed), then wait for the focus cycle to move the pad: the key editor stays on the key, the drawing follows the pad, and `The pad moved to <profile>, page <n>` appears with `Follow`; `Follow` removes it and the editor shows the same key number on the pad's profile. `?mock-profiles=empty` and `Empty` in the header's dropdown: no tabs, only the greyed `+`.
+- [ ] #133 Click a tile (it gets the accent outline, nothing is pressed), then wait for the focus cycle to move the pad: the key editor stays on the key, the drawing follows the pad, and `Editing <pinned profile>, key <n>; the pad shows <profile>, page <n>.` appears with `Follow`; `Follow` removes it and the editor shows the same key number on the pad's profile. `?mock-profiles=empty` and `Empty` in the header's dropdown: no tabs, only the greyed `+`.
 - [ ] #133 With the daemon and the Keypad: section 5 steps 9, 10 and 13.
 
 ### The pinned inspector with the icon picker (#134)
@@ -757,6 +760,39 @@ The app with the daemon in the GNOME runtime. Run by the owner in #130.
 - [ ] #137 At 1363x798 and at 960 px, light and dark: the list, the header form and the rules with no control under a scroll bar; the thumbnails render the pages.
 - [ ] #137 Section 5 step 14: name and accent edits round-trip (the file byte-identical outside the field); `Edit keys on the Pad` opens the Pad pinned to the profile and the selected page.
 - [ ] #137 Every dropdown opened and read in the light and the dark desktop theme (carried from #52).
+
+### Muted text and focus ring that pass in every theme set (#144)
+
+The mock dev server of #113 in a host browser. Run by the owner in #130.
+
+- [ ] #144 `just app-dev`, open `?theme=breeze-light`, then `?theme=adwaita-light`: on the Profiles screen the file path, and on the Pad the hints and the empty-state sentences, read as muted but dark enough; disabled controls stay legible. Tab through the header: the focus ring is a clearly visible blue on both surfaces in `breeze-light`.
+- [ ] #144 Run the browser detector of `docs/design/critique-2026-10.md` on both light themes: it reports no `low-contrast` on body text.
+- [ ] #144 `?theme=breeze-dark` and `?theme=adwaita-dark` look as before (their measured values are kept).
+
+### The profiles screen after the design pass (#139)
+
+The mock dev server of #113 in a host browser. Run by the owner in #130.
+
+- [ ] #139 `just app-dev`, Profiles, at 1363x798 and at 960 px, in a light and a dark theme: every label of the header form (Name, Accent, Priority, Enabled) sits above its field, muted and smaller, as in the Pad's Inspector; the accent swatch and its `#rrggbb` text share one row under the label.
+- [ ] #139 Same sizes: `Open in editor` sits at the end of the heading row and `+ rule` at the end of the `Match rules` row, both where the form ends (`48ch`), not at the column's edge; the rule list and the thumbnails keep their widths.
+- [ ] #139 Enabled reads as a value: `On` with the sentence that switching a profile off arrives with M4a-4, like Priority's `0  higher wins the window`; nothing there looks or acts like a switch.
+
+### No selection outline while the pad is away (#143)
+
+The mock dev server of #113 in a host browser. Run by the owner in #130.
+
+- [ ] #143 `just app-dev`: while the pad shows Konsole, click key 3: it gets the accent outline. Wait for the focus cycle to move the pad: the outline goes, the drawing shows the new profile's tiles, the inspector stays on key 3 and the line under the tabs reads `Editing Konsole, key 3; the pad shows <profile>, page 1.` with `Follow`.
+- [ ] #143 Click any tile while that line shows: the line goes, the inspector edits that key on the profile the pad shows, and the tile has the accent outline again.
+- [ ] #143 Profiles, pick a profile the pad does not show, `Edit keys on the Pad`: the line reads `Editing <name>, page 1; the pad shows <profile>, page 1.` (`key <n>` instead of `page 1` when a key was selected before); click a tile: the inspector edits that key number on the chosen profile, the line names it, and the drawing draws no outline.
+
+### The whole lucide set (#142)
+
+The mock dev server of #113 in a host browser, then the daemon with the Keypad. Run by the owner in #130.
+
+- [ ] #142 `just app-dev`, click a key, type `hou` in Icon: about a dozen rows with their glyphs, `house` among them; pick it: the tile shows the house.
+- [ ] #142 Type `arrow` in Icon: 60 rows and under them `60 of 95, keep typing`; the arrows move over the 60 rows and wrap. Empty the field and press the down arrow: the first 60 names and `60 of <about 1900>, keep typing`. (`plus` matches 51 names, so it shows no count line.)
+- [ ] #142 The Actions column still opens within a second.
+- [ ] #142 With the daemon and the Keypad: set a key to `icon = "lucide:house"` in its profile by hand, save: the pad shows the house; `lucide:home` draws the same tile.
 
 ### The pad screen polished after the design pass (#141)
 

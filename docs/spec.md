@@ -113,6 +113,7 @@ keyvo/
 ├── contrib/            # KWin script, example profiles; planned: udev rule, systemd unit, Flatpak manifest
 ├── captures/           # README + derived fixtures; raw pcapng external (release assets)
 ├── tools/keycodes/     # generator of the evdev key code table of the chord parser
+├── tools/lucide/       # generator of the bundled lucide icons and their table
 ├── tools/windows-vm/   # planned: libvirt VM scripts (from TwinCat-MCP)
 ├── schemas/            # generated JSON Schemas of profiles and config.toml
 ├── tests/protocol-fixtures/  # shared fixtures for Rust/TS clients: socket/ NDJSON, editor/, hid/ golden HID++ scripts
@@ -1500,10 +1501,12 @@ justfile page, `gh`, `kubectl`, other agent CLIs, Kitty/WezTerm.
   the key has a label; the label, Inter 4.1 semibold, below the icon or
   centered without one, shrunk from 17 % to 12 % of the tile height to fit
   and then cut with an ellipsis. Icon and label are white on a dark key
-  and near-black on a light one (Rec. 709 luma above 140). Icons are a
-  bundled subset of lucide 1.61.0 (ISC) under
-  `crates/keyvo-core/assets/lucide/`, with lucide's deprecated names
-  (`git-commit`, `circle-help`) accepted; an unknown icon, and every
+  and near-black on a light one (Rec. 709 luma above 140). Icons are the
+  whole lucide 1.61.0 set (ISC, about 1900 icons, about 1.1 MB of the
+  daemon binary) under `crates/keyvo-core/assets/lucide/`, generated with
+  the icon table by `tools/lucide/generate.py` from the pinned release
+  asset, with the deprecated names of lucide's metadata accepted
+  (`git-commit`, `circle-help`, `home`); an unknown icon, and every
   `phosphor:`, `simple-icons:` and `file:` reference until their issues,
   draws `lucide:circle-question-mark` and `keyvo preview` names it. Only
   the embedded font is loaded, never a system font, so a spec renders to
@@ -1764,8 +1767,13 @@ then subscribes with a replay of the newest 20 trace entries;
   first selection pins the inspector to the profile and page the pad
   shows (`pinOnSelect` of `app/src/lib/pin.ts`), so a later view event
   moves the drawing and never the inspector. While the pin and the pad
-  differ, a line under the page tabs says `The pad moved to <profile>,
-  page <page>` with Follow, which unpins and keeps the key number.
+  differ, a line under the page tabs says `Editing <pinned profile>, key
+  <key>; the pad shows <profile>, page <page>.` (`page <page>` of the pin
+  instead of the key while none is selected) with Follow, which unpins
+  and keeps the key number, and the mirror draws no selection outline.
+  A click on a tile then pins the pad's page again when the pin came
+  from a key selection; a profile or page chosen in the dropdown, a tab
+  or "Edit keys on the Pad" stays pinned (#143).
 - **Page tabs** (`app/src/PageTabs.svelte`). The pinned profile's pages,
   else the pad's, as a tablist by name (`Page <n>` for an unnamed one),
   arrows wrapping, `Home` and `End`; a tab pins its page. A profile with
@@ -1874,10 +1882,12 @@ key editor of the app; the key grid exists once, on the Pad.
   Label, Icon and Color. Icon is a combobox (`app/src/IconPicker.svelte`)
   over the icons keyvo-core bundles for the renderer
   (`crates/keyvo-core/assets/lucide/`, read at build time by
-  `app/src/lib/tileIcons.ts`; the alias files without an SVG are left
-  out): typing filters, the arrows move, Enter or a click picks, `Esc`
-  closes, each row with its glyph and name; the pick is written as
-  `lucide:<name>`, the value as written shows under the field, an emptied
+  `app/src/lib/tileIcons.ts`, the whole lucide set): typing filters on a
+  substring of the name, the list shows the first 60 matches and a line
+  counts the rest ("60 of 95, keep typing"; an empty search shows the
+  first 60 names), the arrows move over the shown rows, Enter or a click
+  picks, `Esc` closes, each row with its glyph and name; the pick is
+  written as `lucide:<name>`, the value as written shows under the field, an emptied
   field removes the icon, and a value the picker does not bundle stays as
   written. Color is a colour swatch and its `#rrggbb` text, kept in step.
 - **Action.** A select (No action, Chord, Exec) and the kind's field, the
@@ -1941,17 +1951,22 @@ write of the screen.
   command `open_profile`; the path comes from the id, never from the
   page); under it the file path, once. For the built-in global profile,
   which has no file until its first edit, the button is
-  `aria-disabled` and a note says so.
-- **Header form.** At most `48ch` wide. Name, and Accent as a swatch and
+  `aria-disabled` and a note says so. The row is as wide as the header
+  form (`48ch`), so the button ends where the content ends; the "Match
+  rules" row with "+ rule" likewise.
+- **Header form.** At most `48ch` wide, one column: each label above its
+  field (`docs/DESIGN.md` "Inputs / Fields", as the Inspector). Name, and
+  Accent as a swatch and
   its `#rrggbb` text, each written the moment it changes through the
   shell's `edit_profile` (`keyvo_core::edit::ProfileDocument::set_profile`):
   a snapshot, then the atomic write of §7.1, every byte outside the
   edited value kept, an empty accent removed, a new one added at the end
   of `[profile]`. An empty name or an accent that is not `#rrggbb` is not
   written; the field is marked invalid and the message under it says
-  why. Priority shows as read with "higher wins the window"; Enabled is a
-  disabled switch, shown on, with its M4a-4 sentence (the schema has no
-  `enabled` yet and the editor writes name and accent only). The result
+  why. Priority shows as read with "higher wins the window"; Enabled
+  likewise shows as read, "On", with its M4a-4 sentence beside it (the
+  schema has no `enabled` yet and the editor writes name and accent
+  only). The result
   line under the form says what was written or opened. Header writes are
   not on the Pad's undo stack; the snapshot keeps the file before each
   one.
@@ -2160,6 +2175,20 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha design pass (2026-10-27)**: §9 the whole lucide 1.61.0
+  set is bundled, generated with its metadata aliases by
+  `tools/lucide/generate.py`; §10 the Icon picker shows the first 60
+  matches and counts the rest (#142).
+- **v0.3, pre-alpha design pass (2026-10-27)**: §10 Pad: while the pad
+  shows another page than the pinned one, the mirror draws no selection
+  outline, the "pad moved" line names the pinned profile and key before
+  the pad's place, and a click on a tile re-pins a key's pin to the
+  pad's page (#143).
+- **v0.3, pre-alpha design pass (2026-10-27)**: §10 Profiles: the header
+  form is one column with each label above its field; Enabled shows as
+  read ("On" with its M4a-4 sentence), no longer a disabled switch; the
+  heading row and the "Match rules" row are capped at the form's `48ch`
+  (#139).
 - **v0.3, pre-alpha slice 7 (2026-10-26)**: §10 Profiles as the profile
   manager: the list with the 12 px accent square and "on the pad", "+"
   with the templates as Soon controls; the heading row with the file

@@ -180,6 +180,13 @@ function thumbnails(): HTMLElement {
   return screen.getByRole("list", { name: "Pages" });
 }
 
+/** The body of one rule of the component's style; jsdom applies none. */
+function rule(selector: string): string {
+  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "Profiles.svelte"), "utf8");
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\n  ${escaped} \\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+}
+
 describe("the list column", () => {
   it("pins the global profile first, then orders by priority and marks the pad's one", async () => {
     mount();
@@ -290,17 +297,59 @@ describe("the profile header", () => {
     expect(screen.queryByText("File:")).toBeNull();
   });
 
-  it("shows the priority with what it means and Enabled as not built yet", async () => {
+  it("puts every label above its field and ties it to the field", async () => {
     mount();
     await waitFor(() => expect(field("Name")).toHaveValue("Terminal"));
-    expect(screen.getByText("Priority").nextElementSibling).toHaveTextContent(
-      "5 higher wins the window",
+    const form = document.querySelector("form.fields") as HTMLElement;
+    for (const name of ["Name", "Accent", "Priority", "Enabled"]) {
+      const label = within(form).getByText(name, { selector: "label" }) as HTMLLabelElement;
+      const control = form.querySelector(`#${CSS.escape(label.htmlFor)}`);
+      expect(control, name).not.toBeNull();
+      expect(
+        label.compareDocumentPosition(control as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
+        name,
+      ).toBeTruthy();
+      // Above, not beside: the label and its field share one column.
+      expect(label.parentElement, name).toHaveClass("field");
+      expect((control as HTMLElement).closest(".field"), name).toBe(label.parentElement);
+    }
+  });
+
+  it("stacks the form in one column at 48ch with muted labels, as the Inspector does", () => {
+    expect(rule(".fields")).toMatch(/flex-direction: column;/);
+    expect(rule(".fields")).toMatch(/gap: 8px;/);
+    expect(rule(".fields")).toMatch(/max-width: 48ch;/);
+    expect(rule(".fields")).not.toMatch(/grid-template-columns/);
+    expect(rule(".field")).toMatch(/flex-direction: column;/);
+    expect(rule(".field")).toMatch(/gap: 2px;/);
+    expect(rule(".field > label")).toMatch(/font-size: 0\.85em;/);
+    expect(rule(".field > label")).toMatch(/color: var\(--kv-fg-muted\);/);
+  });
+
+  it("shows the priority with what it means and Enabled as a read value", async () => {
+    mount();
+    await waitFor(() => expect(field("Name")).toHaveValue("Terminal"));
+    const form = document.querySelector("form.fields") as HTMLElement;
+    expect(within(form).getByText("Priority").parentElement).toHaveTextContent(
+      "Priority 5 higher wins the window",
     );
-    const enabled = screen.getByRole("switch", { name: "Enabled" });
-    expect(enabled).toHaveAttribute("aria-disabled", "true");
     // Every profile is on until the schema can switch one off.
-    expect(enabled).toHaveAttribute("aria-checked", "true");
-    expect(enabled).toHaveTextContent("On");
+    const enabled = within(form).getByText("Enabled").parentElement as HTMLElement;
+    expect(enabled).toHaveTextContent(
+      "Enabled On Switching a profile off arrives with M4a-4 on the roadmap.",
+    );
+    expect(within(enabled).queryByRole("button")).toBeNull();
+    expect(within(enabled).queryByRole("switch")).toBeNull();
+  });
+
+  it("keeps Open in editor and + rule at the end of the 48ch content", async () => {
+    mount();
+    await pick(/^Claude Code/);
+    const open = screen.getByRole("button", { name: "Open in editor" });
+    expect(open.parentElement).toHaveClass("row");
+    const add = within(rules()).getByRole("button", { name: "Add a rule" });
+    expect(add.closest(".row")?.querySelector("h3")).toHaveTextContent("Match rules");
+    expect(rule(".row")).toMatch(/max-width: 48ch;/);
   });
 
   it("shows the accent as a swatch beside its text", async () => {
@@ -477,14 +526,13 @@ describe("what is not built yet", () => {
     ["Empty profile", /An empty profile arrives with M4a-4/],
     ["Copy of the active profile", /A copy of the active profile arrives with M4a-4/],
     ["Starter pack", /A profile from a starter pack arrives with M4a-4/],
-    ["Enabled", /Switching a profile off arrives with M4a-4/],
     ["Add a rule", /Editing match rules arrives with M4a-4/],
     ["Edit the rule org.kde.konsole", /Editing match rules arrives with M4a-4/],
   ])("%s is disabled and says why on focus", async (name, sentence) => {
     mount();
     await waitFor(() => expect(field("Name")).toHaveValue("Terminal"));
     await fireEvent.click(screen.getByRole("button", { name: "New profile" }));
-    const control = screen.getByRole(name === "Enabled" ? "switch" : "button", { name });
+    const control = screen.getByRole("button", { name });
     expect(control).toHaveAttribute("aria-disabled", "true");
     expect(control).toHaveAccessibleDescription("Coming soon");
     await fireEvent.focus(control);

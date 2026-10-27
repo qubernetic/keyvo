@@ -129,7 +129,8 @@ export const messages = {
   "pad.accent": "Accent",
   "pad.accentSwatch": "Accent {accent}",
   "pad.context": "Context",
-  "pad.moved": "The pad moved to {profile}, page {page}",
+  "pad.moved": "Editing {pinned}, key {key}; the pad shows {profile}, page {page}.",
+  "pad.movedPage": "Editing {pinned}, page {pinnedPage}; the pad shows {profile}, page {page}.",
   "pad.follow": "Follow",
   "pad.startWith": "Start it with",
   "pad.daemonCommand": "keyvo-daemon",
@@ -251,6 +252,7 @@ export const messages = {
 
   "picker.search": "Search the icons",
   "picker.noMatch": "No icon matches",
+  "picker.more": "{shown} of {total}, keep typing",
 
   "editor.colorExample": "#rrggbb",
   "editor.chordExample": "ctrl+shift+g",
