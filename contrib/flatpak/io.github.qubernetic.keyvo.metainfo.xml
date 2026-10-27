@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.qubernetic.keyvo</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+
+  <name>keyvo</name>
+  <summary>Nine tiles that follow your context</summary>
+  <developer id="io.github.qubernetic">
+    <name>Qubernetic</name>
+  </developer>
+
+  <description>
+    <p>
+      keyvo turns the Logitech MX Creative Keypad into a context-aware,
+      scriptable control surface for developers on Linux. Profiles switch with
+      the focused window, and the nine LCD keys show the actions that matter
+      right now.
+    </p>
+    <p>
+      This app is the editor and mirror of the keyvo daemon, which runs on the
+      host and drives the device:
+    </p>
+    <ul>
+      <li>See the pad's tiles live and press a key from the screen</li>
+      <li>Edit a key's label, icon and action, and the pad follows</li>
+      <li>Pick actions from a catalogue of recipes</li>
+      <li>Open a profile's TOML file in your editor</li>
+    </ul>
+    <p>
+      The app needs the keyvo daemon running on the host; it talks to it over
+      the daemon's local socket and edits the profiles in ~/.config/keyvo.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.qubernetic.keyvo.desktop</launchable>
+  <provides>
+    <binary>keyvo-app</binary>
+    <binary>keyvo</binary>
+  </provides>
+
+  <url type="homepage">https://github.com/qubernetic/keyvo</url>
+  <url type="bugtracker">https://github.com/qubernetic/keyvo/issues</url>
+  <url type="vcs-browser">https://github.com/qubernetic/keyvo</url>
+  <url type="contribute">https://github.com/qubernetic/keyvo/blob/develop/CONTRIBUTING.md</url>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">960</display_length>
+  </requires>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#a8cbff</color>
+    <color type="primary" scheme_preference="dark">#2b2d33</color>
+  </branding>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="0.1.0" date="2026-10-28" type="development">
+      <description>
+        <p>The first beta build: the desktop app and the keyvo CLI as a Flatpak.</p>
+      </description>
+    </release>
+  </releases>
+</component>
