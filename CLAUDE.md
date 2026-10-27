@@ -23,8 +23,8 @@ Two-layer model ([ADR-0002](docs/adr/0002-two-layer-dev-model.md)):
 
 | Layer | Where | Commands |
 |---|---|---|
-| Build, test, lint, coverage, docs, CI parity | devcontainer (docker compose, Rust + Node image) | `just setup dev down clean rebuild shell build test lint fmt fmt-check deny cov ci app-test app-build diagrams docs` |
-| Hardware execution | host, with the container-built binary | `just run -- <args>`, `just test-hw`; `just app-dev` (mock dev server, Node only) |
+| Build, test, lint, coverage, docs, CI parity | devcontainer (docker compose, Rust + Node image) | `just setup dev down clean rebuild shell build test lint fmt fmt-check deny cov ci app-test app-build flatpak-sources flatpak-sources-check diagrams docs` |
+| Hardware execution | host, with the container-built binary | `just run -- <args>`, `just test-hw`; `just app-dev` (mock dev server, Node only); `just flatpak` (flatpak-builder) |
 
 ```bash
 just setup        # build the dev image, start the container, fetch dependencies (first time)
@@ -44,13 +44,16 @@ just ci           # fmt-check + lint + test --profile ci + deny + cov, the seque
 just app-test     # desktop app: npm ci, svelte-check, vitest, npm audit, cargo deny on app/src-tauri (works in native mode)
 just app-build    # frontend build plus the Tauri shell (needs the dev image's webkit2gtk), bin/keyvo-app
 just app-dev      # host: the app on the Vite dev server against the mock daemon (app/src/lib/mock/), :1420
+just flatpak-sources        # regenerate contrib/flatpak/{cargo,node}-sources.json (pinned generators, tools/flatpak/)
+just flatpak-sources-check  # fail when those files are stale against the three lockfiles (CI `app` job)
+just flatpak      # host: flatpak-builder build and user install of contrib/flatpak/, then flatpak-builder-lint
 just run -- probe # run the built binary (bin/keyvo) on the host against real hardware
 just test-hw      # host checks: hidraw nodes, /dev/uinput, groups (keyvo doctor is planned)
 just diagrams     # placeholder: regenerating docs/diagrams with archify lands with Issue #4
 just docs         # placeholder: the mdBook lands with Issue #3
 ```
 
-**Claude Code runs on the host**, never inside the devcontainer. The container cannot see `/dev/hidraw*` or `/dev/uinput`; anything touching a device runs on the host. CI (`.github/workflows/ci.yml`) builds the same image from the `Dockerfile` and runs the five `just ci` commands in it in the same order (`fmt-check`, `lint`, `test --profile ci`, `deny`, `cov`); the nextest `ci` profile (`.config/nextest.toml`: no fail-fast, JUnit report in `target/nextest/ci/junit.xml`) is what `just ci` and CI share. The `ci` job is read-only and passes the coverage and JUnit reports as an artifact to the `codecov` job, the only job with `id-token: write`, which uploads them without running repository code; pull request runs only restore the caches. A second read-only job, `app`, builds the same image and runs the command lines of `just app-test` and `just app-build`; it is the only place the Tauri shell compiles (the agent sandbox has no webkit2gtk). Never call `cargo` on the host; use the `just` recipes, or `docker compose exec rust cargo ...` for anything the justfile does not cover. Inside a shell that already is the container (the agent sandbox, `just shell`), `AGENT_HORDE=1` makes the check and build recipes run the toolchain directly (native mode, CONTRIBUTING.md "Two-layer development model"). The container runs as user `dev` with the host UID/GID passed from the justfile (`KEYVO_UID`/`KEYVO_GID`); `target/` is on the bind mount, the cargo registry and git caches are named volumes. Pin bumps: `rust-toolchain.toml` and the Dockerfile base tag move together, and the tag carries its `@sha256:` digest; Node and cargo-binstall versions are build args with a committed sha256 per architecture that moves with the version; cargo tool versions are Dockerfile build args (see CONTRIBUTING.md, "Bumping a pinned version").
+**Claude Code runs on the host**, never inside the devcontainer. The container cannot see `/dev/hidraw*` or `/dev/uinput`; anything touching a device runs on the host. CI (`.github/workflows/ci.yml`) builds the same image from the `Dockerfile` and runs the five `just ci` commands in it in the same order (`fmt-check`, `lint`, `test --profile ci`, `deny`, `cov`); the nextest `ci` profile (`.config/nextest.toml`: no fail-fast, JUnit report in `target/nextest/ci/junit.xml`) is what `just ci` and CI share. The `ci` job is read-only and passes the coverage and JUnit reports as an artifact to the `codecov` job, the only job with `id-token: write`, which uploads them without running repository code; pull request runs only restore the caches. A second read-only job, `app`, builds the same image and runs the command lines of `just app-test`, `just app-build` and `just flatpak-sources-check`; it is the only place the Tauri shell compiles (the agent sandbox has no webkit2gtk). A third read-only job, `flatpak`, runs in the `flathub-infra/flatpak-github-actions` image of the manifest's runtime (pinned by digest, `--privileged` for flatpak-builder's sandbox): the manifest lint, the offline build of `contrib/flatpak/` by the SHA-pinned `flatpak-builder` action, `appstreamcli validate` on the metainfo, the repository lint, and the bundle `keyvo.flatpak` as its artifact (14 days). The agent sandbox has no `flatpak`; that job is the build proof. Never call `cargo` on the host; use the `just` recipes, or `docker compose exec rust cargo ...` for anything the justfile does not cover. Inside a shell that already is the container (the agent sandbox, `just shell`), `AGENT_HORDE=1` makes the check and build recipes run the toolchain directly (native mode, CONTRIBUTING.md "Two-layer development model"). The container runs as user `dev` with the host UID/GID passed from the justfile (`KEYVO_UID`/`KEYVO_GID`); `target/` is on the bind mount, the cargo registry and git caches are named volumes. Pin bumps: `rust-toolchain.toml` and the Dockerfile base tag move together, and the tag carries its `@sha256:` digest; Node and cargo-binstall versions are build args with a committed sha256 per architecture that moves with the version; cargo tool versions are Dockerfile build args (see CONTRIBUTING.md, "Bumping a pinned version").
 
 ## Repository Layout
 
@@ -74,11 +77,14 @@ keyvo/
 ├── plugins/logi/       # planned: C# Logi Actions SDK plugin (M5), built in the Windows VM
 ├── contrib/            # kwin/ focus script; profiles/ are the example profiles of docs/pre-alpha-test.md;
 │                       #   recipes/ are the bundled recipe packs of the actions catalogue (test: keyvo-core
-│                       #   contrib.rs); planned: udev rule, systemd unit, Flatpak manifest
+│                       #   contrib.rs); flatpak/ is the Flatpak io.github.qubernetic.keyvo (manifest,
+│                       #   desktop file, metainfo, icon, generated cargo/node sources, lint exceptions;
+│                       #   test: contrib.rs); planned: udev rule, systemd unit
 ├── captures/           # README + derived fixtures; raw pcapng external (release assets)
 ├── tools/windows-vm/   # planned: libvirt VM scripts
 ├── tools/keycodes/     # generator of the evdev key code table of the chord parser and the app's key names
 ├── tools/lucide/       # generator of keyvo-core's bundled lucide icons and their table, from the pinned release
+├── tools/flatpak/      # pin and wrapper of the flatpak-builder-tools generators of contrib/flatpak/'s sources
 ├── schemas/            # generated JSON Schemas of profiles, recipe packs and config.toml; a keyvo-core test keeps them current
 ├── tests/protocol-fixtures/  # shared fixtures for Rust/TS clients: socket/ NDJSON, editor/, hid/ golden HID++ scripts
 └── docs/               # spec.md, roadmap.md, socket-api.md, adr/, design/, research/, plans/,

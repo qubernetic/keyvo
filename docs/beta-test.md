@@ -12,9 +12,8 @@ extended.
 **Binaries.** The daemon and the CLI are built in the devcontainer and run
 on the host: from `bin/` after `just build`, and from `~/.local/bin` under
 the systemd user unit once #184 is merged. The app comes from the Flatpak
-bundle of the CI `flatpak` job, or from `just flatpak` on the host, once
-#182 is merged; until then it runs inside the GNOME runtime as in section
-2.
+bundle of the CI `flatpak` job, or from `just flatpak` on the host
+(section 2).
 
 **Flatpak id.** The app's application id is `io.github.qubernetic.keyvo`
 (ADR-0005). The Flatpak carries the app and the `keyvo` CLI, not the
@@ -90,12 +89,36 @@ Expected:
 - `just run -- --version` and `bin/keyvo-daemon --version` each print one
   version line.
 
-The app: until #182 is merged, build it with `just app-build` (it ends
-with `binary in bin/: keyvo-app (debug)`) and run it inside the
-`org.gnome.Platform//51` runtime, in the sandbox of an installed
-application on that runtime, exactly as `docs/pre-alpha-test.md` section 2
-describes (#169). #182 replaces this with the Flatpak bundle and its
-install steps; #184 adds the install of the daemon under the user unit.
+The app is the Flatpak `io.github.qubernetic.keyvo` (#182): the app and
+the `keyvo` CLI on `org.gnome.Platform//51`, without the daemon. Take the
+bundle from the CI run of the commit under test (the `keyvo.flatpak`
+artifact of the `flatpak` job: Actions, the run, Artifacts; unzip it):
+
+```bash
+flatpak install --user keyvo.flatpak
+flatpak list --app --columns=application,runtime | grep keyvo
+```
+
+Expected: `io.github.qubernetic.keyvo  org.gnome.Platform/x86_64/51`
+(the install pulls the runtime from Flathub if it is missing). Or build
+and install the same app from the checkout on the host (the first run
+downloads the GNOME SDK, about 2 GB):
+
+```bash
+just flatpak
+```
+
+With the daemon running in T1 (`bin/keyvo-daemon`), in T3:
+
+```bash
+flatpak run io.github.qubernetic.keyvo
+flatpak run --command=keyvo io.github.qubernetic.keyvo ctl status
+```
+
+Expected: the app opens on the Pad screen; the `ctl status` line has
+`"connected":true`. Inside the Flatpak the CLI reaches only the daemon:
+`keyvo probe`, `keys`, `fill` and `preview` run from `bin/keyvo` on the
+host. #184 adds the install of the daemon under the user unit.
 
 ## 3. Profiles
 
@@ -145,6 +168,16 @@ section 3, the daemon started with `bin/keyvo-daemon` in T1 when the item
 needs it and stopped (Ctrl-C) when the item uses `keyvo fill`, `keys`,
 `probe` or `dial`. Where an item's original text used its own test
 profile, it is rewritten here for the example profiles.
+
+### #192: the Flatpak (#182)
+
+- [ ] #192 Download `keyvo.flatpak` from the PR's `flatpak` job and `flatpak install --user keyvo.flatpak`: `flatpak list --app` shows `io.github.qubernetic.keyvo` on `org.gnome.Platform//51` (section 2).
+- [ ] #192 With the daemon running (`bin/keyvo-daemon` in T1): `flatpak run io.github.qubernetic.keyvo` opens the app; the Pad shows the mirror and the real tiles; the Inspector edits a label and the pad follows; the colour chooser opens without the #169 abort.
+- [ ] #192 `flatpak run --command=keyvo io.github.qubernetic.keyvo ctl status` prints the status line with `"connected":true`.
+- [ ] #192 With the app focused, the pad keeps the previous window's profile (the id is in `[focus].hold_classes`); `bin/keyvo ctl status` shows `held: true`.
+- [ ] #192 "Open in editor" on a profile opens the file in the desktop's editor through the portal.
+- [ ] #192 `just flatpak` on the host builds and installs the same app from the checkout (the first run downloads the SDK, about 2 GB) and `flatpak run io.github.qubernetic.keyvo` works the same.
+- [ ] #192 `flatpak info --show-permissions io.github.qubernetic.keyvo` lists only the six `finish-args`: `ipc`, `wayland`, `fallback-x11`, `dri`, `xdg-run/keyvo` and `xdg-config/keyvo:create`.
 
 ## 6. What to post back
 

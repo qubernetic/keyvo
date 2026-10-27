@@ -160,8 +160,8 @@ tags, the MX triggers (M3-3, M3-4) and desk state (M3-5).
 
 | Slice | Issue | Title | Layer | From | Depends on | Status |
 |---|---|---|---|---|---|---|
-| 0 | #181 | `docs(roadmap,beta-test): open the beta section and the beta test guide` | S | conventions | | in review |
-| 1 | #182 | `chore(flatpak): manifest, portal and device permissions` | S | M4b-1 | #181 | open |
+| 0 | #181 | `docs(roadmap,beta-test): open the beta section and the beta test guide` | S | conventions | | merged |
+| 1 | #182 | `chore(flatpak): manifest, portal and device permissions` | S | M4b-1 | #181 | in review |
 | 2 | #179 | `feat(core,daemon,app): a launch keeps the global page until its window arrives` | S | pre-alpha follow-up | #182 | open |
 | 3 | #183 | `feat(core,daemon): run the on_fail action when a key's action fails` | S | M1-5 | #179 | open |
 | 4 | #184 | `chore(contrib,cli): systemd user unit, udev rule and keyvo doctor` | S | M1-11 | #183 | open |
@@ -173,7 +173,7 @@ tags, the MX triggers (M3-3, M3-4) and desk state (M3-5).
 | 10 | #156 | `feat(core,app): page switches, page deletion and per-profile global pages` | S | #156 | #189 | open |
 | 11 | #190 | `test(hardware): install the flatpak on the host and use it daily` | H | M4b-2 | #182, then the chain | open, owner |
 
-Status as of 2026-10-27: `merged` is merged into `epic/180-beta`,
+Status as of 2026-10-28: `merged` is merged into `epic/180-beta`,
 `passed` a hardware check the owner ran, `open, owner` a hardware or
 research slice the owner runs, `in review` an open pull request into the
 epic branch. Slice 5 runs in the owner's time from the start; its report
@@ -363,7 +363,8 @@ layer via shell hook, MX buttons, desk state.
 - `.lp5` import placement: M1 or M2 (proposal: M2).
 - Claude Code plugin key layout for the owner's workflow, grilled before M2-10.
 - Desk state per profile without Solaar: spec §16 question 20, decided before M3-5.
-- Flatpak manifest details (in M4b-1, Beta slice 1, #182), Windows native mode (after the M0-2 ownership test).
+- Flatpak: the manifest is built in M4b-1 (Beta slice 1, #182) with the ADR-0005 id `io.github.qubernetic.keyvo`, which also replaced the Tauri identifier `org.qubernetic.keyvo` (the D-Bus interface `org.qubernetic.keyvo.Focus` stays); screenshots for the metainfo, the Flathub submission and the udev rule in systemd's hwdb stay in M4b-2.
+- Windows native mode (after the M0-2 ownership test).
 - MX Keypad (2026) PID and firmware compatibility: confirm as soon as an owner publishes `lsusb` or `solaar show`.
 - Upstream: Solaar crash on the Dialpad (`settings_templates.py` in 1.1.20); udev `uaccess` rule for `046d:c354` in systemd.
 - v2 candidates from the UI/UX grill: referenced `[[behaviors]]`, workflow insights from the trace, `keyvo pack add <git-url>`, plugin sandbox, system widgets.

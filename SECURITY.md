@@ -144,6 +144,15 @@ user is trusted, and nothing else is.
   `cargo deny` with `app/src-tauri/deny.toml` (the root policy plus
   documented exceptions), `app/package-lock.json` by `npm audit
   --audit-level=high`. Dependabot watches both.
+- The Flatpak (`contrib/flatpak/`) gives the app and the CLI the display,
+  the GPU, the daemon's runtime directory (`xdg-run/keyvo`, the socket) and
+  `~/.config/keyvo`, nothing else: no device, no host files, no session or
+  system bus name beyond the portals. The sandbox is not a boundary between
+  the app and the daemon: through the socket and the profile files the app
+  can configure actions the host daemon runs (`exec`, `launch`), which is
+  what the editor is for. It keeps the app away from the rest of the user's
+  files and the hardware; the daemon stays the user's own process on the
+  host.
 
 ### Actions run what the user configured
 
