@@ -59,6 +59,7 @@ pub trait SessionWatcher {
 pub struct FakeSessionWatcher {
     sink: Arc<Mutex<Option<SessionSink>>>,
     failure: Option<String>,
+    initial: Option<Session>,
 }
 
 impl FakeSessionWatcher {
@@ -66,6 +67,16 @@ impl FakeSessionWatcher {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A watcher that reports `session` as it starts, as one that reads
+    /// the state does.
+    #[must_use]
+    pub fn starting(session: Session) -> Self {
+        Self {
+            initial: Some(session),
+            ..Self::default()
+        }
     }
 
     /// A watcher that refuses to start with `message`, as without logind.
@@ -89,14 +100,18 @@ impl std::fmt::Debug for FakeSessionWatcher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FakeSessionWatcher")
             .field("failure", &self.failure)
+            .field("initial", &self.initial)
             .finish_non_exhaustive()
     }
 }
 
 impl SessionWatcher for FakeSessionWatcher {
-    fn start(&mut self, sink: SessionSink) -> Result<(), SessionError> {
+    fn start(&mut self, mut sink: SessionSink) -> Result<(), SessionError> {
         if let Some(message) = &self.failure {
             return Err(SessionError(message.clone()));
+        }
+        if let Some(session) = self.initial {
+            sink(session);
         }
         *self.sink.lock().unwrap_or_else(PoisonError::into_inner) = Some(sink);
         Ok(())
@@ -122,6 +137,17 @@ mod tests {
         assert_eq!(received.try_recv().unwrap(), Session::Locked);
         assert_eq!(received.try_recv().unwrap(), Session::Unlocked);
         assert!(format!("{fake:?}").starts_with("FakeSessionWatcher"));
+    }
+
+    #[test]
+    fn a_fake_that_knows_the_state_reports_it_at_the_start() {
+        let fake = FakeSessionWatcher::starting(Session::Locked);
+        let (sender, received) = mpsc::channel();
+        fake.clone()
+            .start(Box::new(move |session| sender.send(session).unwrap()))
+            .unwrap();
+        assert_eq!(received.try_recv().unwrap(), Session::Locked);
+        assert!(received.try_recv().is_err());
     }
 
     #[test]
