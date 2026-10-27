@@ -106,6 +106,12 @@ pub enum Outcome {
         /// How long it ran, in milliseconds.
         duration_ms: u64,
     },
+    /// A `launch` command still ran after `[timing].launch_settle` and was
+    /// let go; its end is not reported.
+    Started {
+        /// The process id of the shell that runs the command.
+        pid: u32,
+    },
     /// The action could not run or did not end in time.
     Failed {
         /// What went wrong.
@@ -117,7 +123,10 @@ impl Outcome {
     /// The action ran and succeeded: the key gets the `success` look.
     #[must_use]
     pub fn is_success(&self) -> bool {
-        matches!(self, Self::Sent { .. } | Self::Exited { code: Some(0), .. })
+        matches!(
+            self,
+            Self::Sent { .. } | Self::Exited { code: Some(0), .. } | Self::Started { .. }
+        )
     }
 
     /// The action failed: the key gets the `error` look.

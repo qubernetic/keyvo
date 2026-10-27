@@ -127,13 +127,17 @@ fn looks_name_the_key_state_that_overrides_them() {
 }
 
 #[test]
-fn only_exec_actions_have_automatic_states() {
+fn only_exec_and_launch_actions_have_automatic_states() {
     let exec = Action::Exec {
         cmd: "make".to_owned(),
+    };
+    let launch = Action::Launch {
+        cmd: "kcalc".to_owned(),
     };
     let chord = Action::Chord {
         keys: Chord::parse("ctrl+s").unwrap(),
     };
     assert!(exec.has_feedback());
+    assert!(launch.has_feedback());
     assert!(!chord.has_feedback());
 }

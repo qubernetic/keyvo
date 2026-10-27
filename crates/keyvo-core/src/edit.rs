@@ -368,6 +368,7 @@ fn parts(action: &Action) -> (&'static str, &'static str, String) {
     match action {
         Action::Chord { keys } => ("chord", "keys", keys.to_string()),
         Action::Exec { cmd } => ("exec", "cmd", cmd.clone()),
+        Action::Launch { cmd } => ("launch", "cmd", cmd.clone()),
     }
 }
 
@@ -390,8 +391,9 @@ fn set_action(key: &mut dyn TableLike, before: Option<&Action>, after: Option<&A
     let old = before.map(parts);
     if old.as_ref().map(|(kind, ..)| *kind) != Some(kind) {
         set_value(table, "type", Some(kind.into()));
-        if let Some((_, field, _)) = old {
-            table.remove(field);
+        // `exec` and `launch` share `cmd`; it keeps its place and decor.
+        if let Some((_, old_field, _)) = old.filter(|(_, old_field, _)| *old_field != field) {
+            table.remove(old_field);
         }
     }
     set_value(table, field, Some(value.into()));

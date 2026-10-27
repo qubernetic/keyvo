@@ -138,6 +138,13 @@
           "minimum": 0,
           "type": "integer"
         },
+        "launch_settle": {
+          "default": 1000,
+          "description": "How long a `launch` action is watched for an early exit (spec §8): a\ncommand still running after this long is let go and counts as\nstarted. Default 1000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "long_press": {
           "default": 1000,
           "description": "Hold duration that turns a press into `long`. Default 1000 ms.",
@@ -241,6 +248,7 @@
         "focus_hysteresis": 150,
         "keep_alive_period": 1000,
         "keep_alive_timeout": 3000,
+        "launch_settle": 1000,
         "long_press": 1000,
         "page_grace": 10000,
         "reconnect_interval": 1000,

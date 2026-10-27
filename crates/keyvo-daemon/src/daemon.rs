@@ -513,18 +513,36 @@ impl<I: InputInjector> Controller<'_, I> {
                 self.emit(Event::Trace(record.clone()));
             }
             Some(Action::Exec { cmd }) => {
-                self.engine.started(&record, Instant::now().into_std());
                 let env = exec::env(&record, self.socket);
                 let timeout = self.engine.config().timing.exec_timeout;
-                let done = self.done.clone();
-                let mut running = record.clone();
-                tokio::spawn(async move {
-                    running.finish(exec::run(&cmd, &env, timeout).await);
-                    let _ = done.send(running);
-                });
+                self.spawn(&record, async move { exec::run(&cmd, &env, timeout).await });
+            }
+            Some(Action::Launch { cmd }) => {
+                let env = exec::env(&record, self.socket);
+                let settle = self.engine.config().timing.launch_settle;
+                self.spawn(
+                    &record,
+                    async move { exec::launch(&cmd, &env, settle).await },
+                );
             }
         }
         record
+    }
+
+    /// Runs `action`, the command of `record`, without blocking; its result
+    /// comes back through `done`.
+    fn spawn(
+        &mut self,
+        record: &TraceRecord,
+        action: impl Future<Output = Outcome> + Send + 'static,
+    ) {
+        self.engine.started(record, Instant::now().into_std());
+        let done = self.done.clone();
+        let mut running = record.clone();
+        tokio::spawn(async move {
+            running.finish(action.await);
+            let _ = done.send(running);
+        });
     }
 
     fn finished(&mut self, record: TraceRecord) {

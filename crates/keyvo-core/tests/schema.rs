@@ -51,6 +51,7 @@ fn schema_recipe_constrains_groups_variants_and_actions() {
         assert!(text.contains(&format!(r#""const":"{group}""#)), "{text}");
     }
     assert!(text.contains(r#""const":"exec""#), "{text}");
+    assert!(text.contains(r#""const":"launch""#), "{text}");
     assert_eq!(
         recipe["required"],
         serde_json::json!(["schema_version", "recipe", "variants"])
@@ -66,6 +67,7 @@ fn schema_profile_constrains_versions_keys_and_actions() {
     assert!(text.contains(r#""^#[0-9a-fA-F]{6}$""#), "{text}");
     assert!(text.contains(r#""const":"chord""#), "{text}");
     assert!(text.contains(r#""const":"exec""#), "{text}");
+    assert!(text.contains(r#""const":"launch""#), "{text}");
     assert_eq!(
         profile["required"],
         serde_json::json!(["schema_version", "profile"])

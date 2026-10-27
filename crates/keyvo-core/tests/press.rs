@@ -206,6 +206,8 @@ mod resolution {
                 false,
                 true,
             ),
+            // A `launch` whose application still runs after the settle.
+            (Outcome::Started { pid: 4242 }, true, false),
         ];
         for (outcome, success, error) in table {
             assert_eq!(outcome.is_success(), success, "{outcome:?}");
