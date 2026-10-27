@@ -33,10 +33,17 @@ const GLOBAL: ProfileSummary = {
   file: true,
 };
 
-function tabs(profile: ProfileSummary = VSCODE, selected: number | null = 2) {
+function tabs(profile: ProfileSummary = VSCODE, selected: number | null = 2, pinned?: number) {
   const onpage = vi.fn<(profile: string, page: number) => void>();
   render(PageTabs, {
-    props: { profile, global: GLOBAL, tabs: pageList(profile, GLOBAL), selected: selected ?? undefined, onpage },
+    props: {
+      profile,
+      global: GLOBAL,
+      tabs: pageList(profile, GLOBAL),
+      selected: selected ?? undefined,
+      pinned,
+      onpage,
+    },
   });
   return { onpage, list: screen.getByRole("tablist", { name: "Pages" }) };
 }
@@ -82,6 +89,29 @@ describe("the page tabs", () => {
     expect(within(list).getByRole("tab", { selected: true })).toHaveTextContent("Page 2");
     const all = within(list).getAllByRole("tab");
     expect(all.map((tab) => tab.getAttribute("tabindex"))).toEqual(["-1", "-1", "-1", "0", "-1"]);
+  });
+
+  it("mark no tab as pinned unless asked", () => {
+    const { list } = tabs();
+    for (const tab of within(list).getAllByRole("tab")) {
+      expect(tab.querySelector(".icon")).toBeNull();
+      expect(tab.getAttribute("aria-label")).not.toMatch(/pinned/);
+    }
+  });
+
+  it("mark the pinned tab with the pin glyph and say so in its name and title", () => {
+    const { list } = tabs(VSCODE, 2, 2);
+    const pinned = within(list).getByRole("tab", { name: "Page 2, pinned" });
+    expect(pinned).toHaveAttribute("title", "Page 2, pinned");
+    expect(pinned).toHaveAttribute("aria-selected", "true");
+    expect(pinned.querySelector(".icon svg.lucide-pin")).not.toBeNull();
+    expect(pinned).toHaveTextContent("Page 2");
+    expect(within(list).getAllByRole("tab").filter((tab) => tab.querySelector(".icon") !== null)).toEqual([pinned]);
+  });
+
+  it("mark a pinned global tab, keeping its global name", () => {
+    const { list } = tabs(VSCODE, 0, 0);
+    expect(within(list).getByRole("tab", { name: "general, a page of Global, pinned" })).toBeInTheDocument();
   });
 
   it("select a global tab at index 0", () => {

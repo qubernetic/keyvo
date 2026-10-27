@@ -6,9 +6,11 @@
   // Home and End; "+" after them is not built yet (M4a-4); the shown
   // profile's accent as a 12 px swatch with its label and `#rrggbb` at the
   // right. Choosing a tab pins that page of the profile that owns it; the
-  // hardware page buttons page the pad only.
+  // hardware page buttons page the pad only. While the pad shows another
+  // page, the pinned one's tab carries the pin glyph (#164).
   import { tick } from "svelte";
 
+  import Icon from "./Icon.svelte";
   import Soon from "./Soon.svelte";
   import { t } from "./lib/i18n";
   import type { PageTab, ProfileSummary } from "./lib/profiles";
@@ -18,6 +20,7 @@
     global,
     tabs,
     selected,
+    pinned,
     onpage,
   }: {
     /** The profile whose list the tabs show. */
@@ -28,6 +31,9 @@
     tabs: PageTab[];
     /** The index of the selected tab; none selects no tab. */
     selected: number | undefined;
+    /** The index of the tab that carries the pin glyph, the pinned page
+     * while the pad shows another one (#164); none marks no tab. */
+    pinned?: number;
     /** Pins page `page` (from 1) of profile `profile`. */
     onpage: (profile: string, page: number) => void;
   } = $props();
@@ -35,9 +41,12 @@
   const buttons: HTMLButtonElement[] = $state([]);
   const at = $derived(tabs.findIndex((tab) => tab.index === selected));
 
-  /** The label of a global tab names the global profile. */
-  function label(tab: PageTab): string | undefined {
-    return tab.index > 0 ? undefined : t("pad.globalPage", { page: tab.name, profile: global?.name ?? tab.profile });
+  /** The label of a tab: a global one names the global profile, the
+   * pinned one says so. */
+  function label(tab: PageTab): string {
+    const name =
+      tab.index > 0 ? tab.name : t("pad.globalPage", { page: tab.name, profile: global?.name ?? tab.profile });
+    return tab.index === pinned ? t("pad.pinnedTab", { name }) : name;
   }
 
   async function choose(next: number) {
@@ -78,11 +87,14 @@
         class:global={tab.index <= 0}
         aria-selected={tab.index === selected}
         tabindex={position === Math.max(at, 0) ? 0 : -1}
-        aria-label={label(tab) ?? tab.name}
-        title={label(tab) ?? tab.name}
+        aria-label={label(tab)}
+        title={label(tab)}
         onclick={() => onpage(tab.profile, tab.page)}
       >
-        {tab.name}
+        {#if tab.index === pinned}
+          <Icon name="pin" />
+        {/if}
+        <span class="name">{tab.name}</span>
       </button>
     {/each}
   </div>
@@ -121,6 +133,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* The pin glyph of the pinned page, in the text's size before its name. */
+  [role="tab"] :global(.icon) {
+    width: 1em;
+    height: 1em;
+    margin-inline-end: 4px;
+    vertical-align: -0.125em;
   }
 
   /* A global page: muted text and a dashed rim; selected, it keeps the rim. */

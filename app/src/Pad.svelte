@@ -1,7 +1,7 @@
 <script lang="ts">
   // The Pad screen (pad screen brief §5.2, §6; screen id `home`): the
   // device drawing with the live mirror (Mirror.svelte), the page list
-  // tabs (#151),
+  // tabs (#151; the pinned page's tab marked while the pad is away, #164),
   // the "pad moved" line led by Follow (#164), the held caption or the session
   // lock line (#158, the mirror then shows the lock page), and the pinned
   // inspector, which keeps editing the pinned page under the lock. Selecting a key pins the inspector to the pad's
@@ -402,6 +402,7 @@
           global={globalProfile}
           tabs={pageTabs}
           selected={selectedTab}
+          pinned={moved === undefined ? undefined : selectedTab}
           onpage={choosePage}
         />
       {/if}

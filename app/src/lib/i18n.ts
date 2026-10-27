@@ -138,6 +138,7 @@ export const messages = {
   "pad.moved": "Editing {pinned}, key {key}; the pad shows {profile}, page {page}.",
   "pad.movedPage": "Editing {pinned}, page {pinnedPage}; the pad shows {profile}, page {page}.",
   "pad.follow": "Follow",
+  "pad.pinnedTab": "{name}, pinned",
   "pad.startWith": "Start it with",
   "pad.daemonCommand": "keyvo-daemon",
   "pad.resultHint": "Select a key, then press Space for a dry run, Shift+Space for a long one.",
