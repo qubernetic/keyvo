@@ -37,9 +37,14 @@
    * typing, until an arrow moves into the list. */
   let active = $state(-1);
 
+  /** The name the field shows for the value. A derived only notifies when
+   * the name changes, so a refresh that hands the same value again (a new
+   * revision of the key, an acknowledged write) keeps what the user typed. */
+  const shown = $derived(shownOf(value));
+
   // The field follows the value from outside: a pick, a read, an undo.
   $effect(() => {
-    query = shownOf(value);
+    query = shown;
   });
 
   /** How many matches the list shows as rows. */
@@ -48,7 +53,7 @@
   const matches = $derived.by(() => {
     const text = query.trim().toLowerCase();
     // The list opened on the shown name lists everything.
-    if (text === "" || text === shownOf(value).toLowerCase()) return TILE_ICONS;
+    if (text === "" || text === shown.toLowerCase()) return TILE_ICONS;
     return TILE_ICONS.filter((name) => name.includes(text));
   });
   const rows = $derived(matches.slice(0, SHOWN));
@@ -66,7 +71,7 @@
 
   function close() {
     open = false;
-    query = shownOf(value);
+    query = shown;
   }
 
   function move(step: number) {

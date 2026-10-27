@@ -804,6 +804,14 @@ No Keypad needed for the first four; the mock dev server of #113 in a host brows
 - [ ] #141 In the four themes, in the mirror and in the Profiles thumbnails: every tile sits inside the rim of its cutout with the rim's corner, the same shape in Breeze and in Adwaita and at both window sizes; no light square shows in the corners of a tile; a cutout without a tile shows its number in the drawing's glyph colour.
 - [ ] #141 With the daemon and the Keypad on the GNOME runtime: the same four checks against the real tiles, then section 5 step 11 (the inspector writes a label, icon and colour; the lucide id under Icon is not monospace).
 
+### The icon search kept through a refresh (#149)
+
+The mock dev server of #113 in a host browser. Run by the owner in #130.
+
+- [ ] #149 `just app-dev`, click a key, type `hou` in Icon, wait fifteen seconds (the focus cycle moves the pad at least once): the field still reads `hou` and the list its fourteen matches; pick `house`: the tile shows the house.
+- [ ] #149 Type a Label, Tab into Icon, type `arr`: the search survives the write of the label.
+- [ ] #149 Type `hou` in Icon, click another tile: the Icon field shows that key's icon and the list is closed.
+
 ### First-light records (#75)
 
 - [ ] #75 Read `docs/hardware-notes.md`, "Measurements", against the first-light report on #40 and its logs: every number and log citation matches.

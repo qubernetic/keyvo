@@ -1889,7 +1889,10 @@ key editor of the app; the key grid exists once, on the Pad.
   picks, `Esc` closes, each row with its glyph and name; the pick is
   written as `lucide:<name>`, the value as written shows under the field, an emptied
   field removes the icon, and a value the picker does not bundle stays as
-  written. Color is a colour swatch and its `#rrggbb` text, kept in step.
+  written. A typed search, its list and its active row stay through a
+  refresh of the key (a new revision, a pad move, an acknowledged
+  write); only another value (a pick, an undo, another key) or `Esc`
+  sets the field again. Color is a colour swatch and its `#rrggbb` text, kept in step.
 - **Action.** A select (No action, Chord, Exec) and the kind's field, the
   chord's keys or the `exec` command; the working directory and hold of
   an `exec` wait for the action schema to carry them. The form is at most
@@ -2175,6 +2178,9 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, pre-alpha design pass (2026-10-27)**: §10 the Icon picker keeps
+  a typed search through a refresh of the key and starts afresh on
+  another key (#149).
 - **v0.3, pre-alpha design pass (2026-10-27)**: §9 the whole lucide 1.61.0
   set is bundled, generated with its metadata aliases by
   `tools/lucide/generate.py`; §10 the Icon picker shows the first 60

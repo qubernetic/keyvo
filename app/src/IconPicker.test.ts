@@ -5,6 +5,7 @@ import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { describe, expect, it, vi } from "vitest";
 
 import IconPicker from "./IconPicker.svelte";
+import { nth } from "./lib/fixtures";
 import { TILE_ICONS } from "./lib/tileIcons";
 
 function picker(value = "") {
@@ -122,6 +123,24 @@ describe("IconPicker", () => {
 
   it("follows a new value from outside", async () => {
     const { input, view } = picker("lucide:rocket");
+    await view.rerender({ value: "lucide:terminal" });
+    expect(input).toHaveValue("terminal");
+  });
+
+  it("keeps the typed search and its rows when the same value comes again", async () => {
+    const { input, view } = picker("lucide:rocket");
+    await fireEvent.input(input, { target: { value: "hou" } });
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    const typed = options();
+    await view.rerender({ value: "lucide:rocket" });
+    expect(input).toHaveValue("hou");
+    expect(options()).toEqual(typed);
+    expect(input).toHaveAttribute("aria-activedescendant", expect.stringContaining(nth(typed, 0)));
+  });
+
+  it("drops the typed search for another value", async () => {
+    const { input, view } = picker("lucide:rocket");
+    await fireEvent.input(input, { target: { value: "hou" } });
     await view.rerender({ value: "lucide:terminal" });
     expect(input).toHaveValue("terminal");
   });
