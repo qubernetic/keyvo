@@ -19,6 +19,7 @@ import {
   sameFields,
   sameTarget,
   toForm,
+  summaryOf,
   viewOf,
   type Change,
   type KeyFields,
@@ -203,6 +204,20 @@ describe("the view after a write", () => {
     const view = viewOf({ path: "/c/profiles/t.toml", before: {}, fields: {} });
     expect(view).toEqual({ path: "/c/profiles/t.toml", fields: {} });
     expect(view).not.toHaveProperty("line");
+  });
+
+  it("keeps the on_fail of the view the write was made from", () => {
+    const onFail = { type: "exec", cmd: "notify-send failed" } as const;
+    const edited = { path: "/c/profiles/t.toml", before: {}, fields: { label: "A" } };
+    const before = { path: edited.path, fields: {}, on_fail: onFail };
+    expect(viewOf(edited, before)).toEqual({ path: edited.path, fields: { label: "A" }, on_fail: onFail });
+    expect(viewOf(edited, { path: edited.path, fields: {} })).not.toHaveProperty("on_fail");
+  });
+
+  it("sums an action up in its keys or its command", () => {
+    expect(summaryOf({ type: "chord", keys: "ctrl+z" })).toBe("ctrl+z");
+    expect(summaryOf({ type: "exec", cmd: "make" })).toBe("make");
+    expect(summaryOf({ type: "launch", cmd: "konsole" })).toBe("konsole");
   });
 });
 

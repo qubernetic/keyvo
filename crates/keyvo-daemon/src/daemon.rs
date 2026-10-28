@@ -8,7 +8,9 @@
 //! - A key press starts the long-press timer; the release or the timer
 //!   makes it a short or long press, resolved on the active page. `chord`
 //!   goes through the [`InputInjector`]; `exec` runs in its own task and its
-//!   result comes back as the key's `success` or `error` look.
+//!   result comes back as the key's `success` or `error` look. An action
+//!   that fails runs the key's `on_fail` once, traced as a second record
+//!   of the press; it leaves the `error` look and is never retried.
 //! - The [`WindowWatcher`] reports the focused window and the page buttons
 //!   arrive as diverted controls; both go to the context state machine,
 //!   which the controller wakes at its next deadline (focus hysteresis,
@@ -45,6 +47,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc as std_mpsc;
 use std::time::SystemTime;
 
+use keyvo_core::chord::Chord;
 use keyvo_core::config::Config;
 use keyvo_core::focus::{WindowContext, WindowWatcher};
 use keyvo_core::inject::InputInjector;
@@ -276,7 +279,7 @@ where
             Some(()) = changed(&mut changes) => {
                 controller.reload_at = Some(now + controller.engine.config().timing.reload_settle);
             }
-            Some((record, launch)) = finished.recv() => controller.finished(record, launch),
+            Some(done) = finished.recv() => controller.finished(done),
             () = sleep(controller.reload_at) => { let _ = controller.reload(); }
             () = sleep(controller.flush_at) => controller.flush(),
             () = sleep(look_at) => controller.dirty(),
@@ -348,6 +351,17 @@ async fn sleep(deadline: Option<Instant>) {
     }
 }
 
+/// A finished `exec` or `launch`.
+struct Done {
+    /// Its record, the result in.
+    record: TraceRecord,
+    /// The pending launch it opened.
+    launch: Option<LaunchId>,
+    /// The key's `on_fail`, run when the result is an error; `None` for an
+    /// `on_fail` run itself.
+    on_fail: Option<Action>,
+}
+
 struct Controller<'a, I, L> {
     config_dir: &'a Path,
     socket: &'a Path,
@@ -358,9 +372,8 @@ struct Controller<'a, I, L> {
     presses: PressDetector<u8>,
     flush_at: Option<Instant>,
     reload_at: Option<Instant>,
-    /// Where a finished `exec` or `launch` reports, with the pending launch
-    /// it opened.
-    done: mpsc::UnboundedSender<(TraceRecord, Option<LaunchId>)>,
+    /// Where a finished `exec` or `launch` reports.
+    done: mpsc::UnboundedSender<Done>,
     device: DeviceStatus,
     /// The last focus report.
     context: Option<Context>,
@@ -559,7 +572,8 @@ impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
 
     /// Resolves a press of `slot` and, unless it is simulated, runs its
     /// action. The entry as resolved: a chord's result is in, an `exec`'s
-    /// follows as a trace event.
+    /// follows as a trace event. An action that fails runs the key's
+    /// `on_fail` once.
     fn press(&mut self, slot: KeySlot, trigger: Trigger) -> TraceRecord {
         let mut record = self.engine.press(slot, trigger, SystemTime::now());
         if trigger.simulated || matches!(record.result, Outcome::Blocked { .. }) {
@@ -568,35 +582,81 @@ impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
         }
         // A press ends the key's error or success look.
         self.dirty();
+        let on_fail = self.engine.on_fail(slot);
         match record.action.clone() {
             None => self.emit(Event::Trace(record.clone())),
             Some(Action::Chord { keys }) => {
-                let events = keys.events();
-                let outcome = match self.injector.send(&events) {
-                    Ok(()) => Outcome::Sent { events },
-                    Err(error) => Outcome::Failed {
-                        error: error.to_string(),
-                    },
-                };
-                record.finish(outcome);
+                record.finish(self.chord(&keys));
                 self.emit(Event::Trace(record.clone()));
+                if let Some(action) = on_fail.filter(|_| record.result.is_error()) {
+                    self.on_fail(&record, action);
+                }
             }
             Some(Action::Exec { cmd }) => {
                 let env = exec::env(&record, self.socket);
-                let timeout = self.engine.config().timing.exec_timeout;
-                self.spawn(&record, None, async move {
-                    exec::run(&cmd, &env, timeout).await
-                });
+                self.exec(&record, on_fail, cmd, env);
             }
-            Some(action @ Action::Launch { .. }) => self.launch(&record, &action),
+            Some(action @ Action::Launch { .. }) => self.launch(&record, on_fail, &action),
         }
         record
+    }
+
+    /// Sends the events of the chord `keys` through the injector.
+    fn chord(&mut self, keys: &Chord) -> Outcome {
+        let events = keys.events();
+        match self.injector.send(&events) {
+            Ok(()) => Outcome::Sent { events },
+            Err(error) => Outcome::Failed {
+                error: error.to_string(),
+            },
+        }
+    }
+
+    /// Runs the `exec` command `cmd` of `record` with `env`.
+    fn exec(
+        &mut self,
+        record: &TraceRecord,
+        on_fail: Option<Action>,
+        cmd: String,
+        env: Vec<(&'static str, String)>,
+    ) {
+        let timeout = self.engine.config().timing.exec_timeout;
+        self.spawn(record, None, on_fail, async move {
+            exec::run(&cmd, &env, timeout).await
+        });
+    }
+
+    /// Runs the key's `on_fail` `action` once after the press `failed`,
+    /// with the key's `KEYVO_*` variables and `KEYVO_FAILED_CODE`, traced
+    /// as a second record of the press. It changes no look and has no
+    /// `on_fail` of its own; a `launch` opens no pending launch.
+    fn on_fail(&mut self, failed: &TraceRecord, action: Action) {
+        tracing::info!(
+            "key {} failed, running its on_fail: {}",
+            failed.key.get(),
+            action.summary()
+        );
+        let mut record = failed.on_fail(action.clone());
+        let env = exec::on_fail_env(failed, &failed.result, self.socket);
+        match action {
+            Action::Chord { keys } => {
+                record.finish(self.chord(&keys));
+                self.emit(Event::Trace(record));
+            }
+            Action::Exec { cmd } => self.exec(&record, None, cmd, env),
+            Action::Launch { cmd, .. } => {
+                let settle = self.engine.config().timing.launch_settle;
+                self.spawn(&record, None, None, async move {
+                    exec::launch(&cmd, &env, settle).await
+                });
+            }
+        }
     }
 
     /// Starts the `launch` `action` of `record`. One that waits for its
     /// window opens a pending launch first, which learns the shell's pid
     /// at the spawn.
-    fn launch(&mut self, record: &TraceRecord, action: &Action) {
+    fn launch(&mut self, record: &TraceRecord, on_fail: Option<Action>, action: &Action) {
         let Action::Launch { cmd, .. } = action else {
             return;
         };
@@ -608,34 +668,53 @@ impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
                 if let (Some(id), Some(pid)) = (pending, launch.pid()) {
                     self.engine.launch_started(id, pid);
                 }
-                self.spawn(record, pending, launch.settle(settle));
+                self.spawn(record, pending, on_fail, launch.settle(settle));
             }
-            Err(outcome) => self.spawn(record, pending, std::future::ready(outcome)),
+            Err(outcome) => self.spawn(record, pending, on_fail, std::future::ready(outcome)),
         }
     }
 
     /// Runs `action`, the command of `record`, without blocking; its result
-    /// comes back through `done` with the pending `launch` it opened.
+    /// comes back through `done` with the pending `launch` it opened and
+    /// the key's `on_fail`. The key's own action shows the running look,
+    /// an `on_fail` run none.
     fn spawn(
         &mut self,
         record: &TraceRecord,
         launch: Option<LaunchId>,
+        on_fail: Option<Action>,
         action: impl Future<Output = Outcome> + Send + 'static,
     ) {
-        self.engine.started(record, Instant::now().into_std());
+        if record.branch.is_none() {
+            self.engine.started(record, Instant::now().into_std());
+        }
         let done = self.done.clone();
         let mut running = record.clone();
         tokio::spawn(async move {
             running.finish(action.await);
-            let _ = done.send((running, launch));
+            let _ = done.send(Done {
+                record: running,
+                launch,
+                on_fail,
+            });
         });
     }
 
-    /// The command of `record` finished. A `launch` that failed to start
-    /// or exited with an error expects no window any more; one that exited
-    /// 0 within the settle handed over to a running instance, whose window
-    /// still comes.
-    fn finished(&mut self, record: TraceRecord, launch: Option<LaunchId>) {
+    /// The command of `done.record` finished. A `launch` that failed to
+    /// start or exited with an error expects no window any more; one that
+    /// exited 0 within the settle handed over to a running instance, whose
+    /// window still comes. A failed action runs the key's `on_fail`; an
+    /// `on_fail` run is only reported.
+    fn finished(&mut self, done: Done) {
+        let Done {
+            record,
+            launch,
+            on_fail,
+        } = done;
+        if record.branch.is_some() {
+            self.emit(Event::Trace(record));
+            return;
+        }
         if let Some(id) = launch
             && record.result.is_error()
         {
@@ -643,7 +722,10 @@ impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
         }
         self.engine.finished(&record, Instant::now().into_std());
         self.dirty();
-        self.emit(Event::Trace(record));
+        self.emit(Event::Trace(record.clone()));
+        if let Some(action) = on_fail.filter(|_| record.result.is_error()) {
+            self.on_fail(&record, action);
+        }
     }
 
     /// Loads the configuration directory again; on failure the last good

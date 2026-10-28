@@ -663,7 +663,7 @@ describe("connecting", () => {
 
 describe("the trace strip", () => {
   it("lists the trace entries newest first, one line each, and hands one to the drawer", async () => {
-    const ontrace = vi.fn<(entry: TraceRecord) => void>();
+    const ontrace = vi.fn<(entry: TraceRecord, onFail?: TraceRecord) => void>();
     const { daemon } = await mounted({ ontrace });
     const entries = eventsOf("trace");
     await daemon.send(...entries.map((event): Update => ({ kind: "event", event })));
@@ -677,7 +677,10 @@ describe("the trace strip", () => {
       expect.stringContaining("Key 1: unbound"),
       expect.stringContaining("Key 5 long, simulated, app layer: exec cargo test, dry run, nothing executed"),
       expect.stringContaining("Key 9, app layer: exec gh pr view --web, failed: no such file or directory: gh"),
-      expect.stringContaining("Key 1, app layer: exec cargo build, exited 101 after 2318 ms"),
+      expect.stringContaining(
+        "Key 1, app layer: exec cargo build, exited 101 after 2318 ms; " +
+          "on_fail: exec notify-send 'build failed' -> exited 0 after 41 ms",
+      ),
       expect.stringContaining("Key 4, app layer: chord ctrl+p, sent"),
     ]);
     await fireEvent.click(
@@ -685,7 +688,10 @@ describe("the trace strip", () => {
         name: /^\d\d:\d\d:\d\d Key 9, app layer: exec gh pr view --web, failed: no such file or directory: gh, open the trace entry$/,
       }),
     );
-    expect(ontrace).toHaveBeenCalledWith(nth(entries, 2).entry);
+    expect(ontrace).toHaveBeenCalledWith(nth(entries, 3).entry, undefined);
+    // A press and its on_fail run open together.
+    await fireEvent.click(screen.getByRole("button", { name: /cargo build, .*, open the trace entry$/ }));
+    expect(ontrace).toHaveBeenLastCalledWith(nth(entries, 1).entry, nth(entries, 2).entry);
   });
 
   it("says when nothing happened yet and how to fill the list", async () => {

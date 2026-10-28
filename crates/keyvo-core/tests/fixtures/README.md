@@ -13,7 +13,7 @@ capture.
 | `edit-profile/<case>.json`, `edit-profile/<case>.toml` | `tests/edit_profile.rs` | round-trip editing of the profile header: each case applies `<case>.json` (name and accent) to `edit/before.toml` and must give `<case>.toml` byte for byte, changing only the line of the edited field (`name`, `accent`, `accent-removed`); the `CASES` table lists them |
 | `recipes/valid/screenshot.toml` | `tests/recipe.rs` | every field of a recipe pack: group, name, icon, label, an `exec` and a `chord` variant; its id is the file name |
 | `recipes/invalid/unknown-action.toml` | `tests/recipe.rs` | a variant with an action kind the profile schema does not have; the diagnostic names the file and line 12 (the smaller invalid packs are inline in the test) |
-| `trace/records.ndjson` | `tests/press.rs` | one serialized trace record per line, resolved from presses on `demo.toml`: a sent chord, an exec that exited 101, an exec that failed to start, a simulated long press, an unbound key |
+| `trace/records.ndjson` | `tests/press.rs` | one serialized trace record per line, resolved from presses on `demo.toml`: a sent chord, an exec that exited 101, the `on_fail` run after it (`branch`), an exec that failed to start, a simulated long press, an unbound key |
 | `config/valid/partial.toml` | `tests/config.rs` | keys left out keep their default |
 | `config/invalid/*.toml` | `tests/config.rs` | an unknown `[timing]` key, a negative duration |
 | `dirs/full/` | `tests/layout.rs` | `config.toml`, a `global.toml`, an app profile and a non-TOML file that is ignored |

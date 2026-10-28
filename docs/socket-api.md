@@ -266,6 +266,14 @@ with `status` set to one of the following:
 - `blocked`, with `reason`: the press was not resolved and nothing ran;
   as built only `session locked`, a press under the session lock
 
+An entry may carry `branch`. It is absent (a reader takes `null` the same
+way) for the key's own action and `"on_fail"` for the key's `on_fail`
+action, which the daemon runs once after the key's action ended `exited`
+with a code other than 0 or `failed` (#183). The `on_fail` entry is a
+second entry of the same press: the same `timestamp_ms`, `trigger`,
+`profile`, `page`, `key` and `layer`, its own `action` and `result`. It
+follows the key's own entry; a failing `on_fail` leaves no third entry.
+
 The daemon keeps the newest `[trace].ring` entries (default 1000) in
 memory. They are lost when it stops. The trace file and `keyvo ctl
 trace|tail` come with M1-8.

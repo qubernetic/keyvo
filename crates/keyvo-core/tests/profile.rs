@@ -106,6 +106,12 @@ const INVALID: &[(&str, usize, usize, &str)] = &[
     ),
     ("missing-name.toml", 3, 1, "missing field `name`"),
     (
+        "nested-on-fail.toml",
+        10,
+        66,
+        "an action has no `on_fail` of its own",
+    ),
+    (
         "priority-not-integer.toml",
         7,
         12,
@@ -312,6 +318,67 @@ fn a_launch_names_its_window_class_and_whether_it_waits_for_the_window() {
         assert!(
             diagnostic.message.starts_with(message),
             "{action}: {diagnostic}"
+        );
+    }
+}
+
+fn on_fail_of(on_fail: &str) -> Result<Option<Action>, Diagnostic> {
+    let text = format!(
+        "schema_version = 1\n[profile]\nid = \"t\"\nname = \"T\"\n[[pages]]\n[pages.keys.1]\n\
+         action = {{ type = \"exec\", cmd = \"make\" }}\non_fail = {on_fail}\n"
+    );
+    Profile::from_toml(&text, Path::new("t.toml")).map(|profile| {
+        profile.pages[0].keys[&KeySlot::new(1).unwrap()]
+            .on_fail
+            .clone()
+    })
+}
+
+#[test]
+fn a_key_runs_any_action_on_fail() {
+    let table = [
+        (
+            r#"{ type = "exec", cmd = "notify-send failed" }"#,
+            Action::Exec {
+                cmd: "notify-send failed".into(),
+            },
+        ),
+        (
+            r#"{ type = "launch", cmd = "konsole" }"#,
+            Action::launch("konsole"),
+        ),
+        (
+            r#"{ type = "chord", keys = "ctrl+z" }"#,
+            Action::Chord {
+                keys: Chord::parse("ctrl+z").unwrap(),
+            },
+        ),
+    ];
+    for (on_fail, action) in table {
+        assert_eq!(on_fail_of(on_fail).unwrap(), Some(action), "{on_fail}");
+    }
+    assert_eq!(
+        action_of(r#"{ type = "exec", cmd = "make" }"#)
+            .unwrap()
+            .map(|a| a.summary()),
+        Some("make".to_owned())
+    );
+    let profile = parse("valid/vscode.toml").unwrap();
+    assert_eq!(profile.pages[0].keys[&slot(3)].on_fail, None);
+}
+
+#[test]
+fn an_action_has_no_on_fail_of_its_own() {
+    for on_fail in [
+        r#"{ type = "exec", cmd = "a", on_fail = { type = "exec", cmd = "b" } }"#,
+        r#"{ on_fail = { type = "exec", cmd = "b" }, type = "exec", cmd = "a" }"#,
+    ] {
+        let diagnostic = on_fail_of(on_fail).unwrap_err();
+        assert!(
+            diagnostic
+                .message
+                .starts_with("an action has no `on_fail` of its own"),
+            "{on_fail}: {diagnostic}"
         );
     }
 }

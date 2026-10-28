@@ -28,8 +28,8 @@ name = \"Global\"
 name = \"context\"
 ";
 
-/// The fields of a key the editor changes; `states` and anything else in
-/// the key's table are kept as they are. An absent field is removed from
+/// The fields of a key the editor changes; `on_fail`, `states` and anything
+/// else in the key's table are kept as they are. An absent field is removed from
 /// the file.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -166,6 +166,21 @@ impl ProfileDocument {
                 pages: pages.len(),
             })?;
         Ok(found.keys.get(&slot).map(KeyFields::of).unwrap_or_default())
+    }
+
+    /// The `on_fail` action of key `slot` on page `page` (counted from 1),
+    /// which the editor shows and never writes; `None` for a key without
+    /// one and a page or key the profile does not define.
+    #[must_use]
+    pub fn on_fail(&self, page: usize, slot: KeySlot) -> Option<Action> {
+        let index = page.checked_sub(1)?;
+        self.profile
+            .pages
+            .get(index)?
+            .keys
+            .get(&slot)?
+            .on_fail
+            .clone()
     }
 
     /// The line, counted from 1, on which the table of key `slot` on page

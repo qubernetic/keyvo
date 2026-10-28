@@ -1328,7 +1328,7 @@ mouse.dpi            = 1200
   global page, §6.3; both are unknown fields on a `chord` or an `exec`).
   The editor writes `class` and `wait_focus` only where they differ from
   the defaults. The other
-  keys of the example above (`general_hint`, `on_fail`, the `recipe` action,
+  keys of the example above (`general_hint`, the `recipe` action,
   `[dialpad]`, `[desk_state]`) are rejected as unknown until their issues
   add them.
 - Chords as `keyvo_core::chord` parses them (checked when the profile
@@ -1360,7 +1360,19 @@ mouse.dpi            = 1200
   (`ctrl+?`) are accepted; the full evdev keycode table is supported.
 - `on_fail` (optional, per key or per press kind): an action run when the
   primary action fails (non-zero exit, timeout, non-2xx, unresolved recipe).
-  It is not retried and has no `on_fail` of its own.
+  It is not retried and has no `on_fail` of its own. As built (beta,
+  #183): one `on_fail` per key, next to `action`, any of `chord`, `exec`
+  and `launch`; an `on_fail` inside an action (nested, or written inside
+  `action`) is a load error at the nested table's line and column. It
+  runs once when the key's action ends `exited` with a code other than
+  0 (an `exec`, or a `launch` within `[timing].launch_settle`) or
+  `failed` (past `exec_timeout`, a command that does not start, a chord
+  the injector cannot send); never on `blocked`, a dry run, an unbound
+  key, a `started` launch, or when the `on_fail` itself fails. The key
+  keeps the primary's `error` look; the `on_fail` run shows no look of
+  its own. Per press kind comes with M1-9. The key editor leaves
+  `on_fail` in the file as it is and the Inspector shows it read-only
+  (§10).
 - Automatic states: an `exec`, `launch` or `http` action switches the key's
   state to `running` while it runs, then to `success` or `error` (a
   `launch` is `success` once it has started or exited 0); the looks are the
@@ -1526,6 +1538,15 @@ the whole process group is killed and the result is `failed` with "timed
 out after <n> ms". A chord's result is `sent` with its key events, or
 `failed` with the injector's error.
 
+As built (beta, #183): after the key's action failed (§7.2), the daemon
+runs the key's `on_fail` once through the same paths, a chord through the
+injector, an `exec` with `exec_timeout`, a `launch` with `launch_settle`
+(and no pending launch, §6.3). It gets the key's `KEYVO_*` variables and
+`KEYVO_FAILED_CODE`: the exit code, `timeout` past `exec_timeout`,
+`signal` for a command a signal ended, `failed` for an action that did
+not run (no `sh`, a chord not sent). Its record is a second trace entry
+of the press (below); its own failure is traced and runs nothing more.
+
 As built (pre-alpha, #155): a `launch` action runs the same `sh -c <cmd>`
 with the same environment, stdin and stdout on `/dev/null` and stderr in
 the daemon's log, but in a new session (`setsid`), so it leaves the
@@ -1538,9 +1559,9 @@ installed exits 1), and a spawn error is `failed`. A command still running
 then is let go: the result is `started` with the shell's `pid` and the key
 shows `success`. A task of the daemon still waits for the child, so its
 end leaves no zombie and changes no trace record; once the daemon exits,
-the system reaps it. `exec_timeout` does not apply. The `on_fail` branch
-is not built for any action yet (§7.2); it applies to a failed `launch` as
-to a failed `exec`. A daemon run as a systemd unit with the default
+the system reaps it. `exec_timeout` does not apply. A failed `launch` runs
+the key's `on_fail` as a failed `exec` does; a `started` one does not. A
+daemon run as a systemd unit with the default
 `KillMode=control-group` would still stop a launched application with
 the unit, since `setsid` does not leave the cgroup; keyvo ships no unit
 yet.
@@ -1663,7 +1684,10 @@ page, key, the resolved action, and the result: `unbound`, `dry_run`,
 duration, `started` with the `pid` of a `launch` that was let go,
 `failed` with the reason, or `blocked` with the block `reason` (as built
 only `session locked`, a press under the session lock, §6.1: no layer, no
-action, nothing run; the untrusted project's block comes with M2); one
+action, nothing run; the untrusted project's block comes with M2), and
+the `branch` (#183): absent for the key's own action, `on_fail` for the
+run of the key's `on_fail`, a second entry of the same press with its
+own action and result after the key's entry; one
 serialized record per line is in
 `crates/keyvo-core/tests/fixtures/trace/records.ndjson`. The daemon keeps
 the newest `[trace].ring` entries (default 1000, the only `[trace]` key so
@@ -2090,7 +2114,10 @@ then subscribes with a replay of the newest 20 trace entries;
   line "Recent events" with the newest three trace entries, newest first,
   each with its 24 h time: the key, the press kind, whether it was
   simulated, the layer that supplied the key (`app layer` or `global
-  layer`), the action and its result. Each entry opens the trace drawer
+  layer`), the action and its result. A press and its `on_fail` run are
+  one line, the run after a `;` as "on_fail: <action> -> <result>"
+  (#183); an `on_fail` entry whose press is no longer kept is a line of
+  its own. Each entry opens the trace drawer
   on itself. Once there are more, the chevron expands the strip in place
   to the 20 entries the Pad keeps, one per line, and collapses it again.
 - **Actions catalogue** (`app/src/Catalogue.svelte`,
@@ -2140,8 +2167,10 @@ then subscribes with a replay of the newest 20 trace entries;
   sections of the entry the daemon records today, in resolution order:
   Trigger (time, key, press kind, the device or simulated), Context
   snapshot (profile, page), Resolved action (layer, type, keys or
-  command), then Result (status; a chord's key events, an `exec`'s exit
-  code or signal and duration, a failure's error) or Block reason (dry
+  command; Branch `on_fail` for an `on_fail` entry opened alone), then
+  Result (status; a chord's key events, an `exec`'s exit code or signal
+  and duration, a failure's error; for a press whose `on_fail` ran, an
+  `on_fail` row "<action> -> <result>", #183) or Block reason (dry
   run, or no layer binds the key). Conditions, variables and the window
   context come with the daemon fields that carry them.
 - **Virtual pad.** On the grid, `Space` presses the selected key short and
@@ -2216,7 +2245,11 @@ key editor of the app; the key grid exists once, on the Pad.
   tool or a preset starts both over (no class, waiting). Under the Chord
   field a hint line in the label size says the syntax: "Keys joined with
   +, for example ctrl+shift+g; modifiers ctrl, alt, shift, super." (the
-  field is described by it). The form is at most `48ch` wide.
+  field is described by it). A key with an `on_fail` shows the read-only
+  line "Runs `<keys or command>` when this fails. Edit it in the file."
+  under the action fields (#183); no field edits it, and a write of the
+  other fields leaves it in the file byte for byte. The form is at most
+  `48ch` wide.
 
 - **Immediate apply.** A field is written the moment it changes (the
   input's `change`, on Enter or when the focus leaves it), through the
@@ -2529,6 +2562,15 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, beta slice 3 (2026-10-28)**: a key's `on_fail` runs when its
+  action fails (#183). §7.2 `on_fail` as built: one per key, any action,
+  a nested one a load error at its position, run once on a non-zero exit
+  or a failure, never on a block, a dry run, an unbound key, a started
+  launch or its own failure, the key keeping its `error` look; §8 the
+  run through the `exec` and `launch` paths with `KEYVO_FAILED_CODE`, the
+  #155 paragraph's open `on_fail` line closed, and the trace record's
+  `branch`; §10 the strip's one line per press, the drawer's `on_fail`
+  row and the Inspector's read-only line.
 - **v0.3, beta slice 2 (2026-10-28)**: a launch keeps the global page
   until its window arrives (#179). §6.1 `[timing].launch_focus` (15 s);
   §6.3 pending launches, judged by lineage, class, then the oldest launch

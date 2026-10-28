@@ -42,6 +42,7 @@
     sameFields,
     sameTarget,
     toForm,
+    summaryOf,
     viewOf,
     type ActionType,
     type Change,
@@ -287,7 +288,7 @@
     try {
       const edited = await editor.editKey(at, fields);
       if (sameTarget(at, target)) {
-        view = viewOf(edited);
+        view = viewOf(edited, view);
         if (show) form = toForm(edited.fields);
       }
       problem = undefined;
@@ -596,6 +597,13 @@
             />
             {t("inspector.waitFocus")}
           </label>
+        {/if}
+        {#if shown?.on_fail !== undefined}
+          <!-- Read-only in the beta (#183): the editor never writes on_fail. -->
+          <p class="hint">
+            {t("inspector.onFailRuns")} <code>{summaryOf(shown.on_fail)}</code>
+            {t("inspector.onFailWhen")}
+          </p>
         {/if}
       </form>
     {/if}

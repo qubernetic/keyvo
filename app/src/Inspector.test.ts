@@ -431,6 +431,28 @@ describe("Inspector, the key editor's cases", () => {
 });
 
 describe("Inspector", () => {
+  it("shows the key's on_fail read-only under the action and keeps it through a write", async () => {
+    const onFail = { type: "exec", cmd: "notify-send 'keyvo' 'key 2 failed'" } as const;
+    const editor = fake({
+      key: vi.fn(() => Promise.resolve({ path: PATH, fields: STEPS.fields, line: STEPS.line, on_fail: onFail })),
+    });
+    await mounted(editor);
+    const line = "Runs notify-send 'keyvo' 'key 2 failed' when this fails. Edit it in the file.";
+    expect(screen.getByText(/^Runs/, { selector: "p" })).toHaveTextContent(line);
+    expect(screen.getByText(onFail.cmd, { selector: "code" })).toBeInTheDocument();
+    // Nothing in the form edits it, and a write keeps the line.
+    expect(screen.queryByRole("textbox", { name: /on_fail/i })).toBeNull();
+    await type(field("Label"), "Paste");
+    await waitFor(() => expect(editor.file).toBe(editorFile(nth(STEPS.steps, 0).file)));
+    expect(editor.editor.editKey).toHaveBeenLastCalledWith(TARGET, nth(STEPS.steps, 0).fields);
+    expect(screen.getByText(/^Runs/, { selector: "p" })).toHaveTextContent(line);
+  });
+
+  it("has no on_fail line for a key without one", async () => {
+    await mounted();
+    expect(screen.queryByText(/when this fails/)).toBeNull();
+  });
+
   it("names the key's kind and its file and line in the header", async () => {
     const exec: KeyFields = { label: "Test", action: { type: "exec", cmd: "cargo test" } };
     render(Inspector, {

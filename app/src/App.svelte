@@ -62,6 +62,8 @@
   /** The one drawer that is open, and the trace entry it shows. */
   let open: "trace" | "preferences" | "shortcuts" | undefined = $state();
   let entry: TraceRecord | undefined = $state();
+  /** The on_fail run of the press of `entry`. */
+  let onFail: TraceRecord | undefined = $state();
 </script>
 
 <svelte:window bind:innerWidth={width} />
@@ -96,8 +98,9 @@
           view = next;
           reloads = count;
         }}
-        ontrace={(next) => {
+        ontrace={(next, failed) => {
           entry = next;
+          onFail = failed;
           open = "trace";
         }}
       />
@@ -124,7 +127,7 @@
 </div>
 
 {#if open === "trace" && entry !== undefined && active === "home"}
-  <TraceDrawer {entry} onclose={() => (open = undefined)} />
+  <TraceDrawer {entry} {onFail} onclose={() => (open = undefined)} />
 {:else if open === "preferences"}
   <Preferences onclose={() => (open = undefined)} />
 {:else if open === "shortcuts"}

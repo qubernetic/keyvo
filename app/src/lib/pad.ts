@@ -223,7 +223,8 @@ export function describeAction(action: Action | null | undefined): string | unde
   }
 }
 
-function result(entry: TraceRecord): string {
+/** What came of `entry`, in a few words. */
+export function traceResult(entry: TraceRecord): string {
   const result = entry.result;
   switch (result.status) {
     case "dry_run":
@@ -248,13 +249,59 @@ export function phrase(parts: (string | undefined)[]): string {
   return parts.filter((part) => part !== undefined).join(", ");
 }
 
+/** An `on_fail` run in a few words: `on_fail: <action> -> <result>`. */
+export function onFailLine(entry: TraceRecord): string {
+  return t("trace.onFail", { action: describeAction(entry.action) ?? "", result: traceResult(entry) });
+}
+
 /** One line: the key, how it was pressed, the layer that supplied it, the
- * action and what came of it. */
-export function summarize(entry: TraceRecord): string {
+ * action and what came of it, and the press's `onFail` run after it. An
+ * `on_fail` entry alone says it is one. */
+export function summarize(entry: TraceRecord, onFail?: TraceRecord): string {
   const head = phrase([
     t(entry.trigger.press === "long" ? "trace.keyLong" : "trace.key", { key: entry.key }),
     entry.trigger.simulated ? t("trace.simulated") : undefined,
     entry.layer === undefined ? undefined : t("layer", { layer: entry.layer }),
   ]);
-  return t("trace.line", { head, body: phrase([describeAction(entry.action), result(entry)]) });
+  const body =
+    entry.branch === "on_fail"
+      ? onFailLine(entry)
+      : phrase([describeAction(entry.action), traceResult(entry)]);
+  const line = t("trace.line", { head, body });
+  return onFail === undefined ? line : t("trace.withOnFail", { line, onFail: onFailLine(onFail) });
+}
+
+/** One press of the trace: the entry of the key's action and, after it
+ * failed, the entry of the key's `on_fail` run. */
+export interface Press {
+  entry: TraceRecord;
+  onFail?: TraceRecord;
+}
+
+/** Whether `a` and `b` are entries of the same press. */
+function samePress(a: TraceRecord, b: TraceRecord): boolean {
+  return (
+    a.timestamp_ms === b.timestamp_ms &&
+    a.key === b.key &&
+    a.profile === b.profile &&
+    a.page === b.page &&
+    a.trigger.press === b.trigger.press &&
+    a.trigger.simulated === b.trigger.simulated
+  );
+}
+
+/** The presses of `entries` (newest first), newest first: an `on_fail`
+ * entry joins the older entry of its press, so a press is one row; one
+ * whose press is no longer kept stays a row of its own. */
+export function presses(entries: readonly TraceRecord[]): Press[] {
+  const rows: Press[] = [];
+  for (const entry of entries) {
+    const waiting =
+      entry.branch === "on_fail"
+        ? -1
+        : rows.findIndex((row) => row.entry.branch === "on_fail" && samePress(row.entry, entry));
+    const onFail = waiting < 0 ? undefined : rows.splice(waiting, 1)[0]?.entry;
+    rows.push(onFail === undefined ? { entry } : { entry, onFail });
+  }
+  return rows;
 }

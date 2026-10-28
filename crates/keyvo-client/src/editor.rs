@@ -10,7 +10,7 @@ use std::time::SystemTime;
 use keyvo_core::diagnostic::Diagnostic;
 use keyvo_core::edit::{BUILTIN_GLOBAL, EditError, KeyFields, ProfileDocument, ProfileFields};
 use keyvo_core::layout::SNAPSHOTS;
-use keyvo_core::profile::{GLOBAL_ID, KeySlot, is_valid_id};
+use keyvo_core::profile::{Action, GLOBAL_ID, KeySlot, is_valid_id};
 use keyvo_core::recipe::Recipe;
 use keyvo_core::store::{self, SNAPSHOTS_KEPT};
 use serde::Serialize;
@@ -109,6 +109,10 @@ pub struct KeyView {
     /// for a key the page does not define.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line: Option<usize>,
+    /// The key's `on_fail` action, shown read-only: the editor never
+    /// writes it, a write of the fields keeps it as it is in the file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_fail: Option<Action>,
 }
 
 /// What a write did.
@@ -181,7 +185,13 @@ impl Editor {
         let (path, doc) = self.open(id)?;
         let fields = doc.key(page, slot)?;
         let line = doc.key_line(page, slot);
-        Ok(KeyView { path, fields, line })
+        let on_fail = doc.on_fail(page, slot);
+        Ok(KeyView {
+            path,
+            fields,
+            line,
+            on_fail,
+        })
     }
 
     /// Sets the fields of key `slot` on page `page` of profile `id`: a

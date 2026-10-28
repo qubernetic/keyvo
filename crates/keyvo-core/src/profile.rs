@@ -167,6 +167,9 @@ pub struct Key {
     pub color: Option<Color>,
     /// What a press does; a key without an action only displays.
     pub action: Option<Action>,
+    /// An action run once when `action` fails (spec §7.2); it has no
+    /// `on_fail` of its own.
+    pub on_fail: Option<Action>,
     /// Named looks that replace parts of the key while the state is active.
     #[serde(default)]
     pub states: BTreeMap<String, KeyState>,
@@ -273,6 +276,16 @@ impl Action {
     pub fn has_feedback(&self) -> bool {
         matches!(self, Self::Exec { .. } | Self::Launch { .. })
     }
+
+    /// What the action does in a few words: a chord's keys, the command
+    /// line of `exec` and `launch`.
+    #[must_use]
+    pub fn summary(&self) -> String {
+        match self {
+            Self::Chord { keys } => keys.to_string(),
+            Self::Exec { cmd } | Self::Launch { cmd, .. } => cmd.clone(),
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for Action {
@@ -309,6 +322,9 @@ impl<'de> Deserialize<'de> for Action {
                         "cmd" => cmd = Some(map.next_value::<String>()?),
                         "class" => class = Some(map.next_value::<String>()?),
                         "wait_focus" => wait_focus = Some(map.next_value::<bool>()?),
+                        // A nested `on_fail`, or one written inside the
+                        // key's `action` instead of next to it.
+                        "on_fail" => match map.next_value::<NestedOnFail>()? {},
                         _ => {
                             map.next_value::<de::IgnoredAny>()?;
                             unknown.get_or_insert(name);
@@ -355,6 +371,19 @@ impl<'de> Deserialize<'de> for Action {
         }
 
         deserializer.deserialize_map(ActionVisitor)
+    }
+}
+
+/// An `on_fail` inside an action never deserializes; failing as the value
+/// puts the diagnostic on the nested table itself.
+enum NestedOnFail {}
+
+impl<'de> Deserialize<'de> for NestedOnFail {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        de::IgnoredAny::deserialize(deserializer)?;
+        Err(de::Error::custom(
+            "an action has no `on_fail` of its own; `on_fail` belongs to the key, next to `action`",
+        ))
     }
 }
 

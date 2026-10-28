@@ -4,8 +4,9 @@
 //! keeps the ring buffer and writes the file.
 //!
 //! Pre-alpha subset: trigger, profile, page, key, the layer that supplied
-//! the key, resolved action, result. The context snapshot and `on_fail`
-//! branch come with their issues.
+//! the key, resolved action, result, and the branch: a key's `on_fail` run
+//! is a second record of the same press. The context snapshot comes with
+//! its issue.
 
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
@@ -49,6 +50,19 @@ pub struct TraceRecord {
     pub action: Option<Action>,
     /// What came of it.
     pub result: Outcome,
+    /// The branch the record belongs to: `None` (written as an absent
+    /// field, read as `null` too) for the key's own action,
+    /// [`Branch::OnFail`] for the `on_fail` run after it failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<Branch>,
+}
+
+/// Which action of a press a record traces, beside the key's own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Branch {
+    /// The key's `on_fail`, run because its action failed.
+    OnFail,
 }
 
 /// The fields an [`Action`] reads; a record drops the others.
@@ -81,6 +95,19 @@ impl TraceRecord {
     /// Sets the result once the action has run.
     pub fn finish(&mut self, result: Outcome) {
         self.result = result;
+    }
+
+    /// The record of the key's `on_fail` `action`, run after this press
+    /// failed: the same press, trigger and key, on [`Branch::OnFail`],
+    /// [`Outcome::Pending`] until it has run.
+    #[must_use]
+    pub fn on_fail(&self, action: Action) -> Self {
+        Self {
+            action: Some(action),
+            result: Outcome::Pending,
+            branch: Some(Branch::OnFail),
+            ..self.clone()
+        }
     }
 }
 

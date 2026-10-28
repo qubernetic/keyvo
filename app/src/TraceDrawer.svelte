@@ -3,16 +3,27 @@
   // as sections in resolution order. It renders the parts the daemon
   // records today (spec §8): the trigger, the context snapshot (profile
   // and page), the resolved action with the layer that supplied it, and
-  // the execution result or the block reason. Conditions, variables and
+  // the execution result or the block reason, with the on_fail run of a
+  // failed press as a row of the result. Conditions, variables and
   // the window context arrive with later slices. The frame is Drawer's;
   // its header carries the Debug switch, off until the daemon sends
   // HID-level events.
   import Drawer from "./Drawer.svelte";
   import Soon from "./Soon.svelte";
   import { t, type MessageKey } from "./lib/i18n";
+  import { describeAction, traceResult } from "./lib/pad";
   import type { TraceRecord } from "./lib/protocol";
 
-  let { entry, onclose }: { entry: TraceRecord; onclose: () => void } = $props();
+  let {
+    entry,
+    onFail,
+    onclose,
+  }: {
+    entry: TraceRecord;
+    /** The press's on_fail run, after `entry` failed. */
+    onFail?: TraceRecord;
+    onclose: () => void;
+  } = $props();
 
   interface Row {
     term: MessageKey;
@@ -62,6 +73,7 @@
       },
       { term: "drawer.type", value: entry.action?.type ?? t("drawer.none") },
     ];
+    if (entry.branch === "on_fail") rows.unshift({ term: "drawer.branch", value: entry.branch });
     if (entry.action?.type === "chord") rows.push({ term: "drawer.keys", value: entry.action.keys });
     if (entry.action?.type === "exec" || entry.action?.type === "launch") {
       rows.push({ term: "drawer.command", value: entry.action.cmd });
@@ -128,7 +140,23 @@
     }
   }
 
-  const sections: Section[] = $derived([trigger(entry), context(entry), action(entry), outcome(entry)]);
+  /** The result of `entry` and the row of its on_fail run. */
+  function outcomes(entry: TraceRecord, onFail: TraceRecord | undefined): Section {
+    const section = outcome(entry);
+    if (onFail === undefined) return section;
+    const value = t("drawer.onFailRun", {
+      action: describeAction(onFail.action) ?? t("drawer.none"),
+      result: traceResult(onFail),
+    });
+    return { ...section, rows: [...(section.rows ?? []), { term: "drawer.onFail", value }] };
+  }
+
+  const sections: Section[] = $derived([
+    trigger(entry),
+    context(entry),
+    action(entry),
+    outcomes(entry, onFail),
+  ]);
 </script>
 
 <Drawer title={t("drawer.title")} close={t("drawer.close")} {onclose}>

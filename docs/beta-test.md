@@ -198,6 +198,20 @@ profile shows at the return.
 - [ ] #194 The app on the GNOME runtime: the Inspector's Launch editor shows `Window class` with its hint and `Wait for the window` switched on; set the class of the `KCalc test` key 6 (`NoApp`) to `org.does.not.Exist`: the file carries `class = "org.does.not.Exist"`, the daemon reloads without a warning, the tile stays error on a press as in #155. Switching `Wait for the window` off writes `wait_focus = false`; on again removes it.
 - [ ] #194 `kreadconfig6 --file kwinrc --group Windows --key FocusStealingPreventionLevel` prints nothing (the default, Low), as `docs/hardware-notes.md` records.
 
+### #195: a key's on_fail (#183)
+
+This slice changes the example profiles: copy `contrib/profiles/global.toml`
+again (section 3). The daemon runs from `bin/keyvo-daemon` in T1, `bin/keyvo
+ctl subscribe '{"events":["trace"]}'` runs in T2. Key 2 of the global
+profile's context page (`Fail`, `exit 1`) now carries `on_fail = { type =
+"exec", cmd = "notify-send 'keyvo' 'key 2 failed'" }`.
+
+- [ ] #195 Press key 2 on the global context page: the key shows the red x badge and the notification "keyvo / key 2 failed" appears; T2 shows two `trace` events for the press, the first `exited` with code 1 and no `branch`, the second with `"branch":"on_fail"` and `exited` code 0. The badge stays after the notification.
+- [ ] #195 Change the `on_fail` command in `~/.config/keyvo/profiles/global.toml` to `keyvo-no-such-command`, save, press key 2: the badge shows again, the second trace record reads `exited` with code 127 (the shell's missing command), no notification, and no third record follows.
+- [ ] #195 Lock the session (Super+L), press key 2, unlock: T2 shows one `blocked` record with `session locked`, no `on_fail` record, no notification.
+- [ ] #195 Restore the `on_fail` command. In the app, select key 2 on the Pad: the Inspector shows the line "Runs `notify-send 'keyvo' 'key 2 failed'` when this fails. Edit it in the file." under the action. Copy the file (`cp ~/.config/keyvo/profiles/global.toml /tmp/global.before`), change the label to `Broken` in the Inspector, then `diff /tmp/global.before ~/.config/keyvo/profiles/global.toml`: only the `label` line differs.
+- [ ] #195 In the app, the trace strip shows the press of key 2 as one line ending in `; on_fail: exec notify-send 'keyvo' 'key 2 failed' -> exited 0 after <n> ms`; opening it, the drawer's Result section has an `on_fail` row with the same text.
+
 ## 6. What to post back
 
 Every slice block of section 5: on the slice's issue, the commit under

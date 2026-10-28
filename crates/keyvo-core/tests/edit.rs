@@ -224,6 +224,54 @@ fn an_edit_to_the_same_fields_changes_nothing() {
 }
 
 #[test]
+fn an_edit_of_the_other_fields_keeps_on_fail_byte_for_byte() {
+    let text = "schema_version = 1\n\
+                [profile]\n\
+                id = \"edits\"\n\
+                name = \"On fail\"\n\
+                [[pages]]\n\
+                [pages.keys.1]\n\
+                label = \"Build\"\n\
+                action = { type = \"exec\", cmd = \"make\" }\n\
+                on_fail  = {type=\"exec\", cmd=\"notify-send 'make failed'\"}   # tell me\n\
+                [pages.keys.2]\n\
+                label = \"Deploy\"\n\
+                action = { type = \"exec\", cmd = \"just deploy\" }\n\
+                [pages.keys.2.on_fail]\n\
+                type = \"launch\"   # the log viewer\n\
+                cmd  = \"konsole -e journalctl -f\"\n";
+    let mut doc = document(text);
+    let on_fail = |doc: &ProfileDocument| -> Vec<String> {
+        doc.to_string()
+            .lines()
+            .filter(|line| line.contains("on_fail") || line.contains("konsole"))
+            .map(str::to_owned)
+            .collect()
+    };
+    let kept = on_fail(&doc);
+    assert_eq!(kept.len(), 3, "{kept:?}");
+    for n in [1, 2] {
+        let slot = KeySlot::new(n).unwrap();
+        let mut fields = doc.key(1, slot).unwrap();
+        fields.label = Some(format!("Key {n}"));
+        fields.icon = Some("lucide:hammer".into());
+        fields.action = Some(keyvo_core::profile::Action::Exec { cmd: "true".into() });
+        doc.set_key(1, slot, &fields).unwrap();
+        fields.icon = None;
+        doc.set_key(1, slot, &fields).unwrap();
+    }
+    assert_eq!(on_fail(&doc), kept);
+    assert_eq!(
+        doc.profile().pages[0].keys[&KeySlot::new(2).unwrap()]
+            .on_fail
+            .as_ref()
+            .map(keyvo_core::profile::Action::summary)
+            .as_deref(),
+        Some("konsole -e journalctl -f")
+    );
+}
+
+#[test]
 fn inline_pages_and_keys_stay_inline() {
     let text = "schema_version = 1\n\
                 pages = [{ name = \"context\", keys = { 1 = { label = \"A\" } } }, { name = \"general\" }]\n\

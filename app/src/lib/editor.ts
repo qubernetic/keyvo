@@ -26,6 +26,8 @@ export interface KeyView {
   /** The line, from 1, on which the key's table starts in the file; absent
    * for a key the page does not define. */
   line?: number;
+  /** The key's `on_fail` action, shown read-only: no write touches it. */
+  on_fail?: Action;
 }
 
 /** What a write did (keyvo_client::editor::Edited). */
@@ -40,10 +42,23 @@ export interface Edited {
   snapshot?: string;
 }
 
-/** The key as the editor shows it after `edited`, its line included. */
-export function viewOf(edited: Edited): KeyView {
+/** The key as the editor shows it after `edited`, its line included, and
+ * the `on_fail` of `before`, the view of the same key the write kept it in. */
+export function viewOf(edited: Edited, before?: KeyView): KeyView {
   const { path, fields, line } = edited;
-  return { path, fields, ...(line !== undefined ? { line } : {}) };
+  const onFail = before?.on_fail;
+  return {
+    path,
+    fields,
+    ...(line !== undefined ? { line } : {}),
+    ...(onFail !== undefined ? { on_fail: onFail } : {}),
+  };
+}
+
+/** What `action` does in a few words, as keyvo_core's Action::summary: a
+ * chord's keys, the command line of `exec` and `launch`. */
+export function summaryOf(action: Action): string {
+  return action.type === "chord" ? action.keys : action.cmd;
 }
 
 /** Why a key cannot be read or written (keyvo_client::Problem): the file,

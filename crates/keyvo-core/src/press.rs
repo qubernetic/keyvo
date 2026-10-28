@@ -167,5 +167,6 @@ pub fn unbound(
         layer: None,
         action: None,
         result: Outcome::Unbound,
+        branch: None,
     }
 }

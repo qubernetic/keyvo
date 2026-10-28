@@ -163,7 +163,7 @@ tags, the MX triggers (M3-3, M3-4) and desk state (M3-5).
 | 0 | #181 | `docs(roadmap,beta-test): open the beta section and the beta test guide` | S | conventions | | merged |
 | 1 | #182 | `chore(flatpak): manifest, portal and device permissions` | S | M4b-1 | #181 | in review |
 | 2 | #179 | `feat(core,daemon,app): a launch keeps the global page until its window arrives` | S | pre-alpha follow-up | #182 | in review |
-| 3 | #183 | `feat(core,daemon): run the on_fail action when a key's action fails` | S | M1-5 | #179 | open |
+| 3 | #183 | `feat(core,daemon): run the on_fail action when a key's action fails` | S | M1-5 | #179 | in review |
 | 4 | #184 | `chore(contrib,cli): systemd user unit, udev rule and keyvo doctor` | S | M1-11 | #183 | open |
 | 5 | #185 | `research: static pass over the dialpad features` | H | M3-0 | | open, owner |
 | 6 | #186 | `feat(hid,cli): dialpad driver over bolt with a dial command` | S | M3-1 | #184, #185 | open |
