@@ -153,12 +153,11 @@ run *args: _host_only
     @[ -x bin/keyvo ] || { echo "bin/keyvo is missing: run 'just build' first" >&2; exit 1; }
     @[ "${1:-}" = "--" ] && shift; exec bin/keyvo "$@"
 
-# Hardware checks on the host; runs `keyvo doctor` once it exists (roadmap M0)
+# Hardware checks on the host: keyvo doctor (args go to it, such as --json);
+# for the Keypad itself: just run -- probe
 test-hw *args: _host_only
-    @echo "hidraw nodes:"; ls -l /dev/hidraw* 2>/dev/null || echo "  none"
-    @echo "uinput:"; ls -l /dev/uinput 2>/dev/null || echo "  none"
-    @echo "groups of $(id -un): $(id -nG)"
-    @echo "keyvo doctor lands with M0; for the Keypad itself: just run -- probe"
+    @[ -x bin/keyvo ] || { echo "bin/keyvo is missing: run 'just build' first" >&2; exit 1; }
+    @exec bin/keyvo doctor "$@"
 
 # ---- Docs ------------------------------------------------------------------
 
