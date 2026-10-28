@@ -1,0 +1,14 @@
+---
+source: crates/keyvo-cli/tests/doctor.rs
+expression: text
+---
+ok    keypad   the Keypad is [root]/dev/hidraw2, readable and writable
+fail  uinput   [root]/dev/uinput does not exist, chord keys will fail
+      fix: sudo modprobe uinput
+ok    rule     [root]/etc/udev/rules.d/70-keyvo.rules is the shipped rule
+ok    session  a KDE Plasma session on Wayland
+ok    focus    KWin's focus stealing prevention is Low (1)
+ok    unit     the user unit keyvo-daemon is active
+ok    daemon   keyvo-daemon 0.0.0 answers on [root]/run/keyvo/keyvo.sock, the Keypad is connected
+ok    solaar   Solaar is not running
+ok    flatpak  the app io.github.qubernetic.keyvo is installed

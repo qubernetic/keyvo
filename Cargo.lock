@@ -572,6 +572,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "image",
+ "insta",
  "keyvo-client",
  "keyvo-core",
  "keyvo-hid",

@@ -1,0 +1,15 @@
+---
+source: crates/keyvo-cli/tests/doctor.rs
+expression: text
+---
+ok    keypad   the Keypad is [root]/dev/hidraw2, readable and writable
+ok    uinput   [root]/dev/uinput is writable, chord keys can type
+ok    rule     [root]/etc/udev/rules.d/70-keyvo.rules is the shipped rule
+ok    session  a KDE Plasma session on Wayland
+warn  focus    KWin's focus stealing prevention is Medium (2): a launched application's window does not take the focus, so launch keys do not switch the pad
+      fix: kwriteconfig6 --file kwinrc --group Windows --key FocusStealingPreventionLevel 1
+      fix: qdbus6 org.kde.KWin /KWin reconfigure
+ok    unit     the user unit keyvo-daemon is active
+ok    daemon   keyvo-daemon 0.0.0 answers on [root]/run/keyvo/keyvo.sock, the Keypad is connected
+ok    solaar   Solaar is not running
+ok    flatpak  the app io.github.qubernetic.keyvo is installed

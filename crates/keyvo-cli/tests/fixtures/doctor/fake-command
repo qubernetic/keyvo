@@ -1,0 +1,10 @@
+#!/bin/sh
+# A fake systemctl or flatpak for tests/doctor.rs: prints
+# $FAKE_COMMANDS/<name>_<arguments joined by _>.out and exits with the
+# number in the .status file next to it, 0 without one; exits 1 when there
+# is no .out file.
+answer="$FAKE_COMMANDS/$(echo "${0##*/} $*" | tr ' ' '_')"
+[ -f "$answer.out" ] || exit 1
+cat "$answer.out"
+if [ -f "$answer.status" ]; then exit "$(cat "$answer.status")"; fi
+exit 0
