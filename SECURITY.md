@@ -128,13 +128,21 @@ user is trusted, and nothing else is.
   the user can assert a window (see below).
 - The daemon never runs as root. Device access comes from the udev rule
   `contrib/udev/70-keyvo.rules` (#184): it tags the Keypad's `hidraw` nodes
-  (`046d:c354`), the Bolt receiver's (`046d:c548`) and `/dev/uinput` with
-  `uaccess`, so logind gives the user at the active seat an ACL on them; no
-  mode change, no group. The ACL follows the seat: a user who is not at
-  the active seat (another session, an SSH login) gets none. Two
-  consequences to know: the receiver's nodes also carry the other Bolt
-  devices paired with it (keyboard, mouse), so a process of the seat user
-  can talk HID++ to them too; and `/dev/uinput` lets a process of the seat
+  (`046d:c354`), the Bolt receiver's own nodes (`046d:c548`, matched on
+  the immediate HID parent's `HID_ID`) and `/dev/uinput` with `uaccess`,
+  so logind gives the user at the active seat an ACL on them; no mode
+  change, no group. The child nodes hid-logitech-dj creates for the
+  devices paired with the receiver (keyboard, mouse) carry their own
+  product id and are not tagged, so a Bolt keyboard's input reports stay
+  closed. What the receiver's own node still carries in DJ mode is to be
+  measured on hardware (beta slice 6). The ACL follows the seat for new
+  opens: a user who is not at the active seat (another session, an SSH
+  login) cannot open the nodes. A descriptor opened before a seat switch
+  stays valid, because logind revokes evdev but not hidraw or uinput, and
+  the daemon does not yet release them while its session is inactive: a
+  switched-away user's daemon still reads the Keypad and types into the
+  session now at the seat (follow-up filed). Also to know: `/dev/uinput`
+  lets a process of the seat
   user create a virtual input device, which can type into any window of
   the session (the same reach the daemon's chord keys need). The pre-alpha
   guide's mode `0666` on the hidraw nodes and the `input` group are not
@@ -143,8 +151,9 @@ user is trusted, and nothing else is.
   unsupported and reduces isolation.
 - The systemd user unit `contrib/systemd/keyvo-daemon.service` runs the
   daemon as the user, from `~/.local/bin`, with `KillMode=process`: a
-  stop ends the daemon alone, and the applications it launched (their own
-  session, the unit's cgroup) keep running.
+  stop or an on-failure restart ends the daemon alone. Every other process
+  in the unit's cgroup keeps running: the applications it launched (their
+  own session) and also any stray child an `exec` command left behind.
 - `keyvo doctor` changes nothing: it opens the Keypad's node and
   `/dev/uinput` read-write and closes them without writing, reads files,
   sends `status` on the socket after the client's checks (`keyvo ctl`'s),
