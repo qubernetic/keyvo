@@ -134,7 +134,7 @@ impl Match {
 
 /// `rule` and `class` are the same name, or one is the last `.` segment
 /// of the other.
-fn class_matches(rule: &str, class: &str) -> bool {
+pub(crate) fn class_matches(rule: &str, class: &str) -> bool {
     fn short(name: &str) -> &str {
         name.rsplit('.').next().unwrap_or(name)
     }

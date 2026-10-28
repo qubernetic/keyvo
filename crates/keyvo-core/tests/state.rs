@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use keyvo_core::config::{self, Config, Timing};
 use keyvo_core::focus::WindowContext;
 use keyvo_core::layout::{self, Profiles};
+use keyvo_core::lineage::{FakeLineage, Lineage, NoLineage};
 use keyvo_core::profile::Profile;
 use keyvo_core::session::Session;
 use keyvo_core::state::{Mode, PageButton, State, View};
@@ -117,10 +118,20 @@ enum Step {
     Lock,
     /// The session is unlocked.
     Unlock,
+    /// A `launch` key opening windows of the class, if any, is pressed;
+    /// the number names the launch in later steps.
+    Launch(u8, Option<&'static str>, u64),
+    /// The launch's shell has the process id.
+    Started(u8, u32),
+    /// The launch failed to start or exited with an error.
+    Failed(u8),
+    /// The focus source reports a window of the class owned by the
+    /// process.
+    Owned(&'static str, u32, u64),
 }
 
 use PageButton::{Left, Right};
-use Step::{Down, Focus, Key, Lock, Poll, Short, Unlock, Up};
+use Step::{Down, Failed, Focus, Key, Launch, Lock, Owned, Poll, Short, Started, Unlock, Up};
 
 const AUTO: Mode = Mode::Auto;
 const MANUAL: Mode = Mode::Manual;
@@ -138,11 +149,18 @@ fn run(profiles: &Profiles, table: &[Row]) {
 }
 
 fn run_with(config: &Config, profiles: &Profiles, table: &[Row]) {
+    run_lineage(config, profiles, &NoLineage, table);
+}
+
+/// Runs `table` like [`run_with`], with `lineage` telling which window
+/// belongs to which launch.
+fn run_lineage(config: &Config, profiles: &Profiles, lineage: &dyn Lineage, table: &[Row]) {
     let start = Instant::now();
     let at = |ms: u64| start + Duration::from_millis(ms);
     let mut state = State::new(config, profiles);
     assert_eq!(state.view(profiles), view("global", 1, 1, AUTO));
     let mut locked = false;
+    let mut launches = BTreeMap::new();
     for (row, &(step, profile, page, index, mode)) in table.iter().enumerate() {
         match step {
             Lock => {
@@ -153,7 +171,26 @@ fn run_with(config: &Config, profiles: &Profiles, table: &[Row]) {
                 locked = false;
                 state.session(Session::Unlocked);
             }
-            Focus(class, title, ms) => state.focus(window(class, title), at(ms), profiles),
+            Focus(class, title, ms) => {
+                state.focus(window(class, title), at(ms), profiles, lineage);
+            }
+            Owned(class, pid, ms) => {
+                let owned = window(class, "x").with_pid(pid);
+                state.focus(owned, at(ms), profiles, lineage);
+            }
+            Launch(n, class, ms) => {
+                launches.insert(n, state.launched(class.map(str::to_owned), at(ms)));
+            }
+            Started(n, pid) => {
+                if let Some(&Some(id)) = launches.get(&n) {
+                    state.launch_started(id, pid);
+                }
+            }
+            Failed(n) => {
+                if let Some(&Some(id)) = launches.get(&n) {
+                    state.launch_failed(id);
+                }
+            }
             Down(button, ms) => state.press(button, at(ms), profiles),
             Up(button, ms) => state.release(button, at(ms), profiles),
             Short(button, ms) => {
@@ -487,7 +524,7 @@ fn the_next_deadline_includes_the_return() {
     let start = Instant::now();
     let at = |ms: u64| start + Duration::from_millis(ms);
     let mut state = State::new(&timing(10_000, 5000), &profiles);
-    state.focus(window("code", "main.rs"), start, &profiles);
+    state.focus(window("code", "main.rs"), start, &profiles, &NoLineage);
     state.poll(at(150), &profiles);
     assert_eq!(state.next_deadline(), None);
     state.press(Left, at(1000), &profiles);
@@ -593,7 +630,7 @@ fn a_zero_hysteresis_switches_at_the_report() {
     };
     let mut state = State::new(&config, &profiles);
     let now = Instant::now();
-    state.focus(window("code", "x"), now, &profiles);
+    state.focus(window("code", "x"), now, &profiles, &NoLineage);
     assert_eq!(state.view(&profiles), view("code", 2, 1, AUTO));
     assert_eq!(state.next_deadline(), None);
 }
@@ -606,7 +643,7 @@ fn the_next_deadline_is_the_pending_focus_or_the_long_press() {
     assert_eq!(state.next_deadline(), None);
     state.press(Left, now, &profiles);
     assert_eq!(state.next_deadline(), Some(now + Duration::from_secs(1)));
-    state.focus(window("code", "x"), now, &profiles);
+    state.focus(window("code", "x"), now, &profiles, &NoLineage);
     assert_eq!(
         state.next_deadline(),
         Some(now + Duration::from_millis(150))
@@ -620,7 +657,7 @@ fn a_reload_selects_again_and_falls_back_when_profiles_are_gone() {
     let profiles = profiles();
     let start = Instant::now();
     let mut state = State::new(&Config::default(), &profiles);
-    state.focus(window("code", "x"), start, &profiles);
+    state.focus(window("code", "x"), start, &profiles, &NoLineage);
     state.poll(start + Duration::from_secs(1), &profiles);
     assert_eq!(state.view(&profiles), view("code", 2, 1, AUTO));
 
@@ -659,7 +696,7 @@ fn a_reload_that_removes_the_shown_page_shows_the_nearest_end() {
         shaped("app", &["context", "edit", "debug"]),
     ]));
     let mut state = State::new(&Config::default(), &before);
-    state.focus(window("app", "x"), start, &before);
+    state.focus(window("app", "x"), start, &before, &NoLineage);
     state.poll(start + Duration::from_secs(1), &before);
     for _ in 0..2 {
         state.press(Right, start, &before);
@@ -776,12 +813,12 @@ fn the_state_tells_the_held_window_until_another_reports() {
     let now = Instant::now();
     let mut state = State::new(&Config::default(), &profiles);
     assert_eq!(state.held(), None);
-    state.focus(window("org.kde.konsole", "~"), now, &profiles);
-    state.focus(window("keyvo-app", "keyvo"), now, &profiles);
+    state.focus(window("org.kde.konsole", "~"), now, &profiles, &NoLineage);
+    state.focus(window("keyvo-app", "keyvo"), now, &profiles, &NoLineage);
     assert_eq!(state.held(), Some(&window("keyvo-app", "keyvo")));
     assert_eq!(state.next_deadline(), None);
     assert!(state.holds("KEYVO-APP"));
-    state.focus(window("code", "x"), now, &profiles);
+    state.focus(window("code", "x"), now, &profiles, &NoLineage);
     assert_eq!(state.held(), None);
 }
 
@@ -790,16 +827,248 @@ fn a_reload_while_held_keeps_the_profile() {
     let profiles = profiles();
     let start = Instant::now();
     let mut state = State::new(&Config::default(), &profiles);
-    state.focus(window("org.kde.konsole", "~"), start, &profiles);
+    state.focus(window("org.kde.konsole", "~"), start, &profiles, &NoLineage);
     state.poll(start + Duration::from_secs(1), &profiles);
     state.focus(
         window("keyvo-app", "keyvo"),
         start + Duration::from_secs(2),
         &profiles,
+        &NoLineage,
     );
     state.reload(&Config::default(), &profiles);
     assert_eq!(state.view(&profiles), view("konsole", 1, 1, AUTO));
     assert_eq!(state.held(), Some(&window("keyvo-app", "keyvo")));
     state.poll(start + Duration::from_secs(3), &profiles);
     assert_eq!(state.view(&profiles), view("konsole", 1, 1, AUTO));
+}
+
+/// From the vscode list, left twice to the global `third` page (index -1,
+/// the global profile's page 3); the release at 300 ms starts the return.
+const TO_THIRD: [Row; 4] = [
+    (Focus("code", "main.rs", 0), "global", 1, 1, AUTO),
+    (Poll(150), "vscode", 1, 1, AUTO),
+    (Short(Left, 100), "global", 2, 0, AUTO),
+    (Short(Left, 200), "global", 3, -1, AUTO),
+];
+
+fn launch_table(rows: &[Row]) -> Vec<Row> {
+    TO_THIRD.iter().chain(rows).copied().collect()
+}
+
+#[test]
+fn a_launch_keeps_the_global_page_and_restarts_the_return_at_its_window() {
+    let lineage = FakeLineage::new().with(4711, 4700);
+    let table = launch_table(&[
+        (Launch(1, None, 1000), "global", 3, -1, AUTO),
+        (Started(1, 4700), "global", 3, -1, AUTO),
+        // Konsole's window, from the launch's process tree.
+        (Owned("org.kde.konsole", 4711, 6000), "global", 3, -1, AUTO),
+        (Poll(6150), "global", 3, -1, AUTO),
+        // The return would have come 10 s after the release at 300 ms; it
+        // starts over at the window's arrival.
+        (Poll(10_300), "global", 3, -1, AUTO),
+        (Poll(16_149), "global", 3, -1, AUTO),
+        (Poll(16_150), "konsole", 1, 1, AUTO),
+    ]);
+    run_lineage(&Config::default(), &contrib(), &lineage, &table);
+}
+
+#[test]
+fn two_launches_in_flight_keep_the_page_whichever_window_comes_first() {
+    let table = launch_table(&[
+        (Launch(1, None, 1000), "global", 3, -1, AUTO),
+        (Launch(2, None, 2000), "global", 3, -1, AUTO),
+        (Focus("org.kde.konsole", "~", 3000), "global", 3, -1, AUTO),
+        (Poll(3150), "global", 3, -1, AUTO),
+        (Focus("code", "main.rs", 4000), "global", 3, -1, AUTO),
+        (Poll(4150), "global", 3, -1, AUTO),
+        // Both consumed: a third window is foreign.
+        (Focus("org.kde.konsole", "~", 5000), "global", 3, -1, AUTO),
+        (Poll(5150), "konsole", 1, 1, AUTO),
+    ]);
+    run(&contrib(), &table);
+}
+
+#[test]
+fn a_foreign_window_shows_the_context_page_and_leaves_the_launches() {
+    let table = launch_table(&[
+        (Launch(1, Some("code"), 1000), "global", 3, -1, AUTO),
+        // A window neither of the launch's class nor its descendant: the
+        // mouse made it.
+        (Focus("org.kde.konsole", "~", 2000), "global", 3, -1, AUTO),
+        (Poll(2150), "konsole", 1, 1, AUTO),
+        (Short(Left, 3000), "global", 2, 0, AUTO),
+        // The launch still waits for its window.
+        (Focus("code", "main.rs", 4000), "global", 2, 0, AUTO),
+        (Poll(4150), "global", 2, 0, AUTO),
+        (Poll(14_149), "global", 2, 0, AUTO),
+        (Poll(14_150), "vscode", 1, 1, AUTO),
+    ]);
+    run(&contrib(), &table);
+}
+
+#[test]
+fn a_window_matches_its_launch_by_lineage_then_class_then_the_oldest_without_one() {
+    let profiles = contrib();
+    let start = Instant::now();
+    let at = |ms: u64| start + Duration::from_millis(ms);
+    let lineage = FakeLineage::new().with(201, 200);
+    let mut state = State::new(&Config::default(), &profiles);
+    let code = state.launched(Some("code".into()), at(0)).unwrap();
+    let classless = state.launched(None, at(10)).unwrap();
+    let second = state.launched(Some("code".into()), at(20)).unwrap();
+    let later = state.launched(None, at(30)).unwrap();
+    state.launch_started(code, 100);
+    state.launch_started(second, 200);
+    assert_eq!(state.launches(), [code, classless, second, later]);
+    // The lineage picks the second `code` launch over the older one.
+    let owned = window("code", "x").with_pid(201);
+    state.focus(owned, at(100), &profiles, &lineage);
+    state.poll(at(250), &profiles);
+    assert_eq!(state.launches(), [code, classless, later]);
+    // A konsole window: no class, no lineage, the oldest classless one.
+    state.focus(window("org.kde.konsole", "~"), at(300), &profiles, &lineage);
+    state.poll(at(450), &profiles);
+    assert_eq!(state.launches(), [code, later]);
+    // A `code` window without a process: the class.
+    state.focus(window("Code", "y"), at(500), &profiles, &lineage);
+    state.poll(at(650), &profiles);
+    assert_eq!(state.launches(), [later]);
+}
+
+#[test]
+fn windows_out_of_order_consume_the_launch_of_their_class() {
+    let profiles = contrib();
+    let start = Instant::now();
+    let at = |ms: u64| start + Duration::from_millis(ms);
+    let mut state = State::new(&Config::default(), &profiles);
+    let code = state.launched(Some("com.visualstudio.code".into()), at(0));
+    let konsole = state.launched(Some("konsole".into()), at(10));
+    // The short class of the launch matches the window's reverse-DNS one.
+    state.focus(
+        window("org.kde.konsole", "~"),
+        at(100),
+        &profiles,
+        &NoLineage,
+    );
+    state.poll(at(250), &profiles);
+    assert_eq!(state.launches(), [code.unwrap()]);
+    assert_ne!(code, konsole);
+}
+
+#[test]
+fn a_launch_expires_after_launch_focus() {
+    // Without the page return, so only the launch keeps the page.
+    let mut config = Config::default();
+    config.timing.page_return_global = Duration::ZERO;
+    // Pressed at 1000, expected until 16 000: a window judged at 15 950
+    // is the launch's, one judged at 16 050 is not.
+    let kept = launch_table(&[
+        (Launch(1, None, 1000), "global", 3, -1, AUTO),
+        (Focus("org.kde.konsole", "~", 15_800), "global", 3, -1, AUTO),
+        (Poll(15_950), "global", 3, -1, AUTO),
+    ]);
+    run_with(&config, &contrib(), &kept);
+    let expired = launch_table(&[
+        (Launch(1, None, 1000), "global", 3, -1, AUTO),
+        (Focus("org.kde.konsole", "~", 15_900), "global", 3, -1, AUTO),
+        (Poll(16_050), "konsole", 1, 1, AUTO),
+    ]);
+    run_with(&config, &contrib(), &expired);
+    let profiles = contrib();
+    let start = Instant::now();
+    let mut state = State::new(&Config::default(), &profiles);
+    state.launched(None, start);
+    state.poll(start + Duration::from_millis(14_999), &profiles);
+    assert_eq!(state.launches().len(), 1);
+    state.poll(start + Duration::from_secs(15), &profiles);
+    assert_eq!(state.launches(), []);
+}
+
+#[test]
+fn a_failed_launch_waits_for_no_window() {
+    let table = launch_table(&[
+        (Launch(1, None, 1000), "global", 3, -1, AUTO),
+        (Failed(1), "global", 3, -1, AUTO),
+        (Focus("org.kde.konsole", "~", 2000), "global", 3, -1, AUTO),
+        (Poll(2150), "konsole", 1, 1, AUTO),
+    ]);
+    run(&contrib(), &table);
+}
+
+#[test]
+fn a_zero_launch_focus_opens_no_launch() {
+    let mut config = Config::default();
+    config.timing.launch_focus = Duration::ZERO;
+    let table = launch_table(&[
+        (Launch(1, None, 1000), "global", 3, -1, AUTO),
+        (Focus("org.kde.konsole", "~", 2000), "global", 3, -1, AUTO),
+        (Poll(2150), "konsole", 1, 1, AUTO),
+    ]);
+    run_with(&config, &contrib(), &table);
+    let profiles = contrib();
+    let mut state = State::new(&config, &profiles);
+    assert_eq!(state.launched(None, Instant::now()), None);
+    // A reload reads the value again.
+    state.reload(&Config::default(), &profiles);
+    assert!(state.launched(None, Instant::now()).is_some());
+}
+
+#[test]
+fn a_launch_from_an_own_page_shows_the_context_page_of_its_window() {
+    let table = [
+        (Focus("code", "main.rs", 0), "global", 1, 1, AUTO),
+        (Poll(150), "vscode", 1, 1, AUTO),
+        (Short(Right, 200), "vscode", 2, 2, AUTO),
+        (Launch(1, None, 1000), "vscode", 2, 2, AUTO),
+        (Focus("org.kde.konsole", "~", 2000), "vscode", 2, 2, AUTO),
+        (Poll(2150), "konsole", 1, 1, AUTO),
+        // The launch was the window's: none is left for the next one.
+        (Short(Left, 3000), "global", 2, 0, AUTO),
+        (Focus("code", "main.rs", 4000), "global", 2, 0, AUTO),
+        (Poll(4150), "vscode", 1, 1, AUTO),
+    ];
+    run(&contrib(), &table);
+}
+
+#[test]
+fn manual_mode_and_the_lock_judge_no_window() {
+    let table = launch_table(&[
+        (Launch(1, None, 1000), "global", 3, -1, AUTO),
+        // Manual mode: the window is recorded, the launch stays.
+        (Down(Left, 1100), "global", 3, -1, AUTO),
+        (Poll(2100), "global", 3, -1, MANUAL),
+        (Up(Left, 2200), "global", 3, -1, MANUAL),
+        (Focus("org.kde.konsole", "~", 2500), "global", 3, -1, MANUAL),
+        (Poll(2650), "global", 3, -1, MANUAL),
+        (Down(Left, 3000), "global", 3, -1, MANUAL),
+        (Poll(4000), "konsole", 1, 1, AUTO),
+        (Up(Left, 4100), "konsole", 1, 1, AUTO),
+        // Under the lock an app switch shows the context page and leaves
+        // the launch.
+        (Short(Left, 4200), "global", 2, 0, AUTO),
+        (Lock, "global", 2, 0, AUTO),
+        (Focus("code", "main.rs", 5000), "global", 2, 0, AUTO),
+        (Poll(5150), "vscode", 1, 1, AUTO),
+        (Unlock, "vscode", 1, 1, AUTO),
+        // Unlocked, the launch still keeps a global page for its window.
+        (Short(Left, 6000), "global", 2, 0, AUTO),
+        (Focus("org.kde.konsole", "~", 7000), "global", 2, 0, AUTO),
+        (Poll(7150), "global", 2, 0, AUTO),
+    ]);
+    run(&contrib(), &table);
+}
+
+#[test]
+fn a_title_change_in_the_same_app_consumes_no_launch() {
+    let profiles = contrib();
+    let start = Instant::now();
+    let at = |ms: u64| start + Duration::from_millis(ms);
+    let mut state = State::new(&Config::default(), &profiles);
+    state.focus(window("code", "a"), at(0), &profiles, &NoLineage);
+    state.poll(at(150), &profiles);
+    let launch = state.launched(None, at(200)).unwrap();
+    state.focus(window("code", "b"), at(300), &profiles, &NoLineage);
+    state.poll(at(450), &profiles);
+    assert_eq!(state.launches(), [launch]);
 }

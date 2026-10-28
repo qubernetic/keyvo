@@ -100,7 +100,12 @@ impl Engine {
 
     /// The focus source reports `window` at `now`.
     pub fn focus(&mut self, window: WindowContext, now: Instant) {
-        self.state.focus(window, now, &self.loaded.profiles);
+        self.state.focus(
+            window,
+            now,
+            &self.loaded.profiles,
+            &keyvo_core::lineage::NoLineage,
+        );
     }
 
     /// Whether a window of `class` holds the context
