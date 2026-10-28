@@ -179,6 +179,25 @@ profile, it is rewritten here for the example profiles.
 - [ ] #192 `just flatpak` on the host builds and installs the same app from the checkout (the first run downloads the SDK, about 2 GB) and `flatpak run io.github.qubernetic.keyvo` works the same.
 - [ ] #192 `flatpak info --show-permissions io.github.qubernetic.keyvo` lists only the six `finish-args`: `ipc`, `wayland`, `fallback-x11`, `dri`, `xdg-run/keyvo` and `xdg-config/keyvo:create`.
 
+### #194: a launch keeps the global page (#179)
+
+The owner's own profiles (the twelve `launch` keys of #155), with
+`~/.config/keyvo/config.toml` absent (defaults: `launch_focus` 15 s,
+`page_return_global` 10 s); the evidence is the log of
+`bin/keyvo ctl subscribe` in T2. On a global page the view names the
+global profile (spec §6.3), so a window that keeps the page brings a
+`context` event and no `profile` or `page` event; the switch to the new
+profile shows at the return.
+
+- [ ] #194 Brave, left twice to `apps`, press KCalc: KCalc comes up and the pad stays on `apps` (the `apps` tiles and accent stay); 10 s after KCalc appeared the pad shows the `KCalc test` context page. The subscriber shows KCalc's `context` event with no `profile` or `page` event after it, then 10 s later the `profile` and `page` events of the `KCalc test` context page.
+- [ ] #194 Brave, left twice to `apps`, press Spotify, then KCalc within 2 s: both come up, the pad stays on `apps` throughout; 10 s after the last window the context page of the profile in front.
+- [ ] #194 Brave, left twice to `apps`, press Mailspring (a slow cold start), then click Konsole with the mouse before Mailspring is up: the pad shows Konsole's context page at once; when Mailspring comes up and takes the focus, the pad shows the global profile's context page (index 1, as the index was already 1).
+- [ ] #194 KCalc already open, Brave, left twice to `apps`, press KCalc again: the launch exits at once (hand-over, the trace says `exited 0`), KCalc comes in front, the pad stays on `apps`; the `KCalc test` context page after 10 s.
+- [ ] #194 The KCalc key with `wait_focus = false` in `global.toml`: KCalc comes up and the pad shows the `KCalc test` context page at once. Restore the key.
+- [ ] #194 `config.toml` with `[timing] launch_focus = 0`: every launch key behaves as before this slice (the context page at once). Remove the file.
+- [ ] #194 The app on the GNOME runtime: the Inspector's Launch editor shows `Window class` with its hint and `Wait for the window` switched on; set the class of the `KCalc test` key 6 (`NoApp`) to `org.does.not.Exist`: the file carries `class = "org.does.not.Exist"`, the daemon reloads without a warning, the tile stays error on a press as in #155. Switching `Wait for the window` off writes `wait_focus = false`; on again removes it.
+- [ ] #194 `kreadconfig6 --file kwinrc --group Windows --key FocusStealingPreventionLevel` prints nothing (the default, Low), as `docs/hardware-notes.md` records.
+
 ## 6. What to post back
 
 Every slice block of section 5: on the slice's issue, the commit under

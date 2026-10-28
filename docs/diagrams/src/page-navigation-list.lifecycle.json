@@ -2,7 +2,7 @@
   "schema_version": 3,
   "diagram_type": "lifecycle",
   "meta": {
-    "title": "One page list per profile (#151, #157)",
+    "title": "One page list per profile (#151, #157, #179)",
     "subtitle": "The page buttons on VS Code with a second page, the owner's global profile with context, general and apps (spec §6.1, §6.3)",
     "output": "docs/diagrams/page-navigation-list.html",
     "quality_profile": "showcase"
@@ -14,7 +14,8 @@
     { "id": "context", "type": "start", "label": "context", "sublabel": "VS Code page 1, index 1", "tag": "VS Code", "step": "1" },
     { "id": "page-2", "type": "active", "label": "Page 2", "sublabel": "VS Code page 2, index 2", "tag": "VS Code", "step": "2" },
     { "id": "locked", "type": "waiting", "label": "Locked", "sublabel": "manual mode keeps profile and index", "tag": "manual" },
-    { "id": "other-context", "type": "active", "label": "Brave context", "sublabel": "index 1 of the new profile", "tag": "app switch" },
+    { "id": "other-context", "type": "active", "label": "New app context", "sublabel": "index 1 of the new profile", "tag": "app switch" },
+    { "id": "launched-apps", "type": "active", "label": "apps, kept", "sublabel": "global page 3, index -1, under the launched app", "tag": "launch" },
     { "id": "global-context", "type": "decision", "label": "Global context", "sublabel": "index 1, auto mode", "tag": "escape" }
   ],
   "transitions": [
@@ -28,6 +29,8 @@
     { "id": "general-other", "from": "global-general", "to": "other-context", "label": "app switch", "note": "at once", "variant": "dashed" },
     { "id": "general-return", "from": "global-general", "to": "context", "label": "return", "note": "no press for page_return_global (10 s)", "variant": "dashed" },
     { "id": "apps-return", "from": "global-apps", "to": "context", "label": "return", "note": "no press for page_return_global (10 s)", "variant": "dashed" },
+    { "id": "apps-launched", "from": "global-apps", "to": "launched-apps", "label": "launch's window", "note": "within launch_focus (15 s): index kept, the return starts over", "variant": "dashed" },
+    { "id": "launched-return", "from": "launched-apps", "to": "other-context", "label": "return", "note": "page_return_global after the window arrived", "variant": "dashed" },
     { "id": "page-2-return", "from": "page-2", "to": "context", "label": "return", "note": "only with page_return_own set (off by default)", "variant": "dashed" },
     { "id": "page-2-locked", "from": "page-2", "to": "locked", "label": "long press" },
     { "id": "locked-other", "from": "locked", "to": "other-context", "label": "long press", "note": "the focused window's profile" },
@@ -47,7 +50,7 @@
       "dot": "amber",
       "title": "Focus and lock",
       "items": [
-        "An app switch shows index 1 of the new profile at once",
+        "An app switch shows index 1 of the new profile at once; a pending launch's window keeps an index of 0 or below",
         "No page-button or key press for page_return_global: a global page returns to index 1; page_return_own (off by default) does it for page 2 and on",
         "A title change in the same app keeps the index",
         "The lock records focus changes, walks the same list and never returns"
