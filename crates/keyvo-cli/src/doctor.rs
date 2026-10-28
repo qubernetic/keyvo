@@ -175,10 +175,10 @@ pub fn write_text(checks: &[Check], out: &mut impl Write) -> std::io::Result<()>
             "{:<4}  {:<7}  {}",
             check.status.as_str(),
             check.name,
-            check.message
+            printable(&check.message)
         )?;
         for line in check.fix.iter().flat_map(|fix| fix.lines()) {
-            writeln!(out, "      fix: {line}")?;
+            writeln!(out, "      fix: {}", printable(line))?;
         }
     }
     Ok(())
@@ -467,10 +467,33 @@ fn unit(runner: &mut dyn Runner) -> Check {
     .fix("systemctl --user enable --now keyvo-daemon\njournalctl --user -u keyvo-daemon")
 }
 
+/// `path` in single quotes for a fix line, or `None` when it is not UTF-8
+/// or holds a control character, which no quoting keeps on one line.
+fn shell_quoted(path: &Path) -> Option<String> {
+    let text = path.to_str()?;
+    if text.chars().any(char::is_control) {
+        return None;
+    }
+    Some(format!("'{}'", text.replace('\'', r"'\''")))
+}
+
+/// `text` with its control characters escaped, so a path or a version
+/// from the daemon cannot move the cursor or start a new line.
+fn printable(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_control() {
+                c.escape_default().to_string()
+            } else {
+                c.to_string()
+            }
+        })
+        .collect()
+}
+
 /// `Err` with the problem unless `dir` is a directory of `uid` nobody else
 /// may enter, the predicate of the daemon's `runtime::ensure_private`.
-fn private_dir(dir: &Path, uid: u32) -> Result<(), String> {
-    let meta = std::fs::symlink_metadata(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+fn private_dir(dir: &Path, meta: &std::fs::Metadata, uid: u32) -> Result<(), String> {
     if !meta.is_dir() || meta.uid() != uid || meta.mode() & 0o077 != 0 {
         return Err(format!(
             "{} is mode {:o}, owner {}: not a directory of this user that only it may enter",
@@ -496,6 +519,39 @@ fn private_socket(path: &Path, socket: &std::fs::Metadata, uid: u32) -> Result<(
     Ok(())
 }
 
+/// Check 7 when keyvo's runtime directory `runtime` belongs to `owner`,
+/// another user: no `rm` line, which would fail in a sticky `/tmp` anyway.
+fn foreign_runtime(inputs: &Inputs<'_>, runtime: &Path, owner: u32) -> Check {
+    let check = Check::new(
+        "daemon",
+        Status::Fail,
+        format!(
+            "{} belongs to another user (uid {owner}): the daemon cannot use it; \
+             set XDG_RUNTIME_DIR or ask an administrator to remove it",
+            runtime.display()
+        ),
+    );
+    if inputs.var("XDG_RUNTIME_DIR").is_none() {
+        check.fix(format!("export XDG_RUNTIME_DIR=/run/user/{}", inputs.uid))
+    } else {
+        check
+    }
+}
+
+/// The fix for a socket or directory with the wrong mode: remove keyvo's
+/// runtime directory `runtime` and start again when the socket lies in it,
+/// else restart. No `rm` line for a path the shell would split or the
+/// terminal would garble; the message names the directory.
+fn restart_fix(runtime: Option<&Path>) -> String {
+    const STOP: &str = "systemctl --user stop keyvo-daemon";
+    const START: &str = "systemctl --user start keyvo-daemon";
+    match runtime.map(shell_quoted) {
+        None => "systemctl --user restart keyvo-daemon".to_owned(),
+        Some(Some(quoted)) => format!("{STOP}\nrm -r {quoted}\n{START}"),
+        Some(None) => format!("{STOP}\n{START}"),
+    }
+}
+
 /// Check 7: the socket `0600`, the daemon's runtime directory private when
 /// the socket lies in it, and `status` answered within
 /// `[timing].doctor_reply`. The fix removes only keyvo's runtime directory,
@@ -514,6 +570,16 @@ fn daemon(inputs: &Inputs<'_>) -> Check {
         inputs.uid,
     );
     let shown = path.display();
+    let in_runtime = path.parent() == Some(runtime.as_path());
+    // Without `XDG_RUNTIME_DIR` the directory is `/tmp/keyvo-<uid>`, which
+    // another user can create first; this user cannot remove it there.
+    let runtime_meta = std::fs::symlink_metadata(&runtime).ok();
+    let foreign = runtime_meta
+        .as_ref()
+        .filter(|meta| in_runtime && meta.uid() != inputs.uid);
+    if let Some(meta) = foreign {
+        return foreign_runtime(inputs, &runtime, meta.uid());
+    }
     let socket = match std::fs::symlink_metadata(&path) {
         Ok(meta) => meta,
         Err(error) if error.kind() == ErrorKind::NotFound => {
@@ -528,19 +594,11 @@ fn daemon(inputs: &Inputs<'_>) -> Check {
             return Check::new(NAME, Status::Warn, format!("{shown}: {error}")).fix(START);
         }
     };
-    let in_runtime = path.parent() == Some(runtime.as_path());
-    let restart = if in_runtime {
-        format!(
-            "systemctl --user stop keyvo-daemon\nrm -r {}\n{START}",
-            runtime.display()
-        )
-    } else {
-        "systemctl --user restart keyvo-daemon".to_owned()
-    };
-    let checked = if in_runtime {
-        private_dir(&runtime, inputs.uid)
-    } else {
-        Ok(())
+    let restart = restart_fix(in_runtime.then_some(runtime.as_path()));
+    let checked = match (in_runtime, &runtime_meta) {
+        (false, _) => Ok(()),
+        (true, Some(meta)) => private_dir(&runtime, meta, inputs.uid),
+        (true, None) => Err(format!("{} cannot be read", runtime.display())),
     };
     if let Err(problem) = checked.and_then(|()| private_socket(&path, &socket, inputs.uid)) {
         return Check::new(NAME, Status::Fail, problem).fix(restart);
@@ -936,10 +994,83 @@ mod tests {
         assert_eq!(
             open_socket.fix.unwrap(),
             format!(
-                "systemctl --user stop keyvo-daemon\nrm -r {}\nsystemctl --user start keyvo-daemon",
+                "systemctl --user stop keyvo-daemon\nrm -r '{}'\nsystemctl --user start keyvo-daemon",
                 path.parent().unwrap().display()
             )
         );
+    }
+
+    /// An `XDG_RUNTIME_DIR` named `name` below `root` holding keyvo's
+    /// runtime directory with mode `0755` and a live socket in it.
+    fn open_runtime(root: &Path, name: &str) -> (UnixListener, BTreeMap<String, OsString>) {
+        let run = root.join(name);
+        let dir = run.join("keyvo");
+        std::fs::create_dir_all(&dir).unwrap();
+        let listener = UnixListener::bind(dir.join("keyvo.sock")).unwrap();
+        mode(&dir.join("keyvo.sock"), 0o600);
+        mode(&dir, 0o755);
+        (listener, env(&[("XDG_RUNTIME_DIR", &run)]))
+    }
+
+    #[test]
+    fn the_rm_line_quotes_its_path_or_is_left_out() {
+        let root = tempfile::tempdir().unwrap();
+        let (_quote, vars) = open_runtime(root.path(), "run x'y");
+        let fix = daemon(&inputs(root.path(), &vars)).fix.unwrap();
+        let rm: Vec<_> = fix.lines().filter(|line| line.starts_with("rm ")).collect();
+        assert_eq!(
+            rm,
+            [format!(
+                "rm -r '{}/run x'\\''y/keyvo'",
+                root.path().display()
+            )]
+        );
+        let (_newline, vars) = open_runtime(root.path(), "run\nz");
+        let check = daemon(&inputs(root.path(), &vars));
+        assert_eq!(check.status, Status::Fail);
+        assert_eq!(
+            check.fix.as_deref(),
+            Some("systemctl --user stop keyvo-daemon\nsystemctl --user start keyvo-daemon")
+        );
+        let mut out = Vec::new();
+        write_text(&[check], &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert_eq!(text.lines().count(), 3, "{text}");
+        assert!(text.contains(r"run\nz"), "{text}");
+    }
+
+    #[test]
+    fn a_runtime_directory_of_another_user_is_never_removed() {
+        let root = tempfile::tempdir().unwrap();
+        let (_listener, vars) = open_runtime(root.path(), "run");
+        let other = Inputs {
+            uid: uid() + 1,
+            ..inputs(root.path(), &vars)
+        };
+        let check = daemon(&other);
+        assert_eq!(check.status, Status::Fail);
+        assert!(
+            check
+                .message
+                .contains(&format!("belongs to another user (uid {})", uid())),
+            "{}",
+            check.message
+        );
+        assert_eq!(check.fix, None);
+        let unset = BTreeMap::new();
+        let tmp = keyvo_core::layout::runtime_dir(None, &std::env::temp_dir(), uid() + 1);
+        if std::fs::create_dir(&tmp).is_ok() {
+            let check = daemon(&Inputs {
+                uid: uid() + 1,
+                ..inputs(root.path(), &unset)
+            });
+            std::fs::remove_dir(&tmp).unwrap();
+            assert_eq!(check.status, Status::Fail);
+            assert_eq!(
+                check.fix,
+                Some(format!("export XDG_RUNTIME_DIR=/run/user/{}", uid() + 1))
+            );
+        }
     }
 
     #[test]
