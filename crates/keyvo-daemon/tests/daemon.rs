@@ -16,13 +16,13 @@ use keyvo_core::focus::{FakeWindowWatcher, WindowContext};
 use keyvo_core::inject::FakeInputInjector;
 use keyvo_core::lineage::{Lineage, NoLineage};
 use keyvo_core::press::PressKind;
-use keyvo_core::profile::{KeySlot, Profile};
+use keyvo_core::profile::{Action, KeySlot, Profile};
 use keyvo_core::render::{self, Canvas, KeyPlace, KeySpec, Renderer};
 use keyvo_core::session::{FakeSessionWatcher, Session};
 use keyvo_core::socket::{Command, Context, ContextSource, DeviceStatus, Edge, Geometry, Status};
 use keyvo_core::stack::Layer;
 use keyvo_core::state::{Mode, View};
-use keyvo_core::trace::{Outcome, TraceRecord};
+use keyvo_core::trace::{Branch, Outcome, TraceRecord};
 use keyvo_daemon::daemon::{self, Answer, Event, Request, Sources};
 use keyvo_hid::display;
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -658,6 +658,266 @@ async fn a_failed_injection_is_traced() {
             error: "input injection failed: no uinput".into()
         }
     );
+    daemon.stop().await;
+}
+
+/// A global profile whose keys fail in every way and each carry an
+/// `on_fail` that writes `$KEYVO_FAILED_CODE` and `$KEYVO_KEY` to
+/// `<marks>/<key>`; key 4's own `on_fail` fails, key 3 and key 5 succeed.
+fn failing(marks: &Path) -> String {
+    let mark = |key: u8| {
+        format!(
+            "on_fail = {{ type = \"exec\", cmd = \"printf '%s %s' \\\"$KEYVO_FAILED_CODE\\\" \\\"$KEYVO_KEY\\\" > '{}'\" }}",
+            marks.join(key.to_string()).display()
+        )
+    };
+    format!(
+        "schema_version = 1
+[profile]
+id = \"global\"
+name = \"Global\"
+
+[[pages]]
+[pages.keys.1]
+label = \"Exit 3\"
+action = {{ type = \"exec\", cmd = \"exit 3\" }}
+{}
+
+[pages.keys.2]
+label = \"Missing\"
+action = {{ type = \"launch\", cmd = \"keyvo-no-such-command-183\" }}
+{}
+
+[pages.keys.3]
+label = \"App\"
+action = {{ type = \"launch\", cmd = \"sleep 5\", wait_focus = false }}
+{}
+
+[pages.keys.4]
+label = \"Twice\"
+action = {{ type = \"exec\", cmd = \"exit 1\" }}
+on_fail = {{ type = \"launch\", cmd = \"keyvo-no-such-command-183\" }}
+
+[pages.keys.5]
+label = \"Fine\"
+action = {{ type = \"exec\", cmd = \"true\" }}
+{}
+
+[pages.keys.6]
+label = \"Slow\"
+action = {{ type = \"exec\", cmd = \"sleep 5\" }}
+{}
+",
+        mark(1),
+        mark(2),
+        mark(3),
+        mark(5),
+        mark(6),
+    )
+}
+
+/// A daemon on [`failing`] with [`LAUNCH_CONFIG`]: `exec_timeout` 300 ms,
+/// `launch_settle` 100 ms.
+async fn failer(marks: &Path) -> (Daemon, Pad, String) {
+    let global = failing(marks);
+    let pad = Pad::new(&startup());
+    let mut daemon = Daemon::start_on(
+        LAUNCH_CONFIG,
+        &[("global", &global)],
+        vec![pad.clone()],
+        FakeInputInjector::new(),
+        FakeWindowWatcher::failing("no focus source"),
+    );
+    assert_eq!(daemon.painted().await, (1..=9).collect::<Vec<_>>());
+    (daemon, pad, global)
+}
+
+impl Daemon {
+    /// Fails when a trace entry comes within `quiet`.
+    async fn no_trace_for(&mut self, quiet: Duration) {
+        let more = tokio::time::timeout(quiet, self.trace()).await;
+        assert!(more.is_err(), "one more trace entry: {more:?}");
+    }
+}
+
+/// Waits until `path` holds its whole text, the `on_fail` mark.
+async fn mark_of(path: &Path) -> String {
+    let deadline = std::time::Instant::now() + PATIENCE;
+    loop {
+        if let Ok(text) = std::fs::read_to_string(path)
+            && !text.is_empty()
+        {
+            return text;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no mark {}",
+            path.display()
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_exec_runs_its_on_fail_once_and_keeps_the_error_look() {
+    let marks = tempfile::tempdir().unwrap();
+    let (mut daemon, pad, global) = failer(marks.path()).await;
+    pad.hold(&[1]);
+    pad.hold(&[]);
+    let primary = daemon.trace().await;
+    assert!(
+        matches!(primary.result, Outcome::Exited { code: Some(3), .. }),
+        "{primary:?}"
+    );
+    assert_eq!(primary.branch, None);
+    let on_fail = daemon.trace().await;
+    assert_eq!(on_fail.branch, Some(Branch::OnFail));
+    assert_eq!(
+        (on_fail.timestamp_ms, on_fail.key, on_fail.trigger),
+        (primary.timestamp_ms, primary.key, primary.trigger)
+    );
+    assert!(matches!(on_fail.action, Some(Action::Exec { .. })));
+    assert!(on_fail.result.is_success(), "{on_fail:?}");
+    // The key's environment and the failed code.
+    assert_eq!(mark_of(&marks.path().join("1")).await, "3 1");
+    daemon.no_trace_for(Duration::from_millis(300)).await;
+    // The successful on_fail leaves the primary's error look.
+    daemon.shows(&pad, &image_of(&global, 1, Look::Error)).await;
+    assert_ne!(
+        pad.images().last(),
+        Some(&image_of(&global, 1, Look::Success))
+    );
+    // An action that succeeds runs no on_fail.
+    pad.hold(&[5]);
+    pad.hold(&[]);
+    assert!(daemon.trace().await.result.is_success());
+    daemon.no_trace_for(Duration::from_millis(300)).await;
+    assert!(!marks.path().join("5").exists());
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_exec_past_the_timeout_runs_its_on_fail_with_timeout() {
+    let marks = tempfile::tempdir().unwrap();
+    let (mut daemon, pad, _) = failer(marks.path()).await;
+    pad.hold(&[6]);
+    pad.hold(&[]);
+    assert!(matches!(
+        daemon.trace().await.result,
+        Outcome::Failed { .. }
+    ));
+    assert_eq!(daemon.trace().await.branch, Some(Branch::OnFail));
+    assert_eq!(mark_of(&marks.path().join("6")).await, "timeout 6");
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_launch_that_fails_runs_its_on_fail_and_one_that_started_does_not() {
+    let marks = tempfile::tempdir().unwrap();
+    let (mut daemon, pad, _) = failer(marks.path()).await;
+    pad.hold(&[2]);
+    pad.hold(&[]);
+    assert!(daemon.trace().await.result.is_error());
+    let on_fail = daemon.trace().await;
+    assert_eq!(on_fail.branch, Some(Branch::OnFail));
+    // `sh` reports a command it cannot find with 127.
+    assert_eq!(mark_of(&marks.path().join("2")).await, "127 2");
+
+    pad.hold(&[3]);
+    pad.hold(&[]);
+    let Outcome::Started { pid } = daemon.trace().await.result else {
+        panic!("not started");
+    };
+    daemon.no_trace_for(Duration::from_millis(300)).await;
+    assert!(!marks.path().join("3").exists());
+    let killed = std::process::Command::new("sh")
+        .args(["-c", &format!("kill -9 -{pid}")])
+        .status()
+        .unwrap();
+    assert!(killed.success());
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failing_on_fail_is_traced_and_not_retried() {
+    let marks = tempfile::tempdir().unwrap();
+    let (mut daemon, pad, _) = failer(marks.path()).await;
+    pad.hold(&[4]);
+    pad.hold(&[]);
+    assert!(daemon.trace().await.result.is_error());
+    let on_fail = daemon.trace().await;
+    assert_eq!(on_fail.branch, Some(Branch::OnFail));
+    assert!(
+        matches!(
+            on_fail.result,
+            Outcome::Exited {
+                code: Some(127),
+                ..
+            }
+        ),
+        "{on_fail:?}"
+    );
+    daemon.no_trace_for(Duration::from_millis(500)).await;
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dry_run_and_a_press_under_the_lock_run_no_on_fail() {
+    let marks = tempfile::tempdir().unwrap();
+    let (mut daemon, pad, _) = failer(marks.path()).await;
+    assert_eq!(daemon.press(1, true).await.result, Outcome::DryRun);
+    assert_eq!(daemon.trace().await.result, Outcome::DryRun);
+    assert!(daemon.session.report(Session::Locked));
+    daemon.switched().await;
+    pad.hold(&[1]);
+    pad.hold(&[]);
+    assert_eq!(daemon.trace().await.result, blocked());
+    assert_eq!(daemon.press(6, false).await.result, blocked());
+    assert_eq!(daemon.trace().await.result, blocked());
+    // An unbound key has nothing to fail.
+    assert!(daemon.session.report(Session::Unlocked));
+    daemon.switched().await;
+    assert_eq!(daemon.press(9, false).await.result, Outcome::Unbound);
+    assert_eq!(daemon.trace().await.result, Outcome::Unbound);
+    daemon.no_trace_for(Duration::from_millis(500)).await;
+    assert!(!marks.path().join("1").exists());
+    assert!(!marks.path().join("6").exists());
+    daemon.stop().await;
+}
+
+/// A chord key whose `on_fail` writes `marker`.
+fn chord_with_on_fail(marker: &Path) -> String {
+    GLOBAL.replace(
+        "action = { type = \"chord\", keys = \"ctrl+c\" }",
+        &format!(
+            "action = {{ type = \"chord\", keys = \"ctrl+c\" }}\n\
+             on_fail = {{ type = \"exec\", cmd = \"printf '%s' \\\"$KEYVO_FAILED_CODE\\\" > '{}'\" }}",
+            marker.display()
+        ),
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_chord_the_injector_cannot_send_runs_its_on_fail() {
+    let marks = tempfile::tempdir().unwrap();
+    let marker = marks.path().join("chord");
+    let pad = Pad::new(&startup());
+    let mut daemon = Daemon::start(
+        &chord_with_on_fail(&marker),
+        vec![pad.clone()],
+        FakeInputInjector::failing("no uinput"),
+    );
+    daemon.painted().await;
+    pad.hold(&[2]);
+    pad.hold(&[]);
+    assert!(matches!(
+        daemon.trace().await.result,
+        Outcome::Failed { .. }
+    ));
+    let on_fail = daemon.trace().await;
+    assert_eq!(on_fail.branch, Some(Branch::OnFail));
+    assert!(on_fail.result.is_success(), "{on_fail:?}");
+    assert_eq!(mark_of(&marker).await, "failed");
     daemon.stop().await;
 }
 

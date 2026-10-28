@@ -8,8 +8,9 @@
 //! `exec_timeout` and past the daemon.
 //!
 //! Pre-alpha environment: `KEYVO_KEY`, `KEYVO_PROFILE`, `KEYVO_PAGE`,
-//! `KEYVO_PRESS`, `KEYVO_LAYER` and `KEYVO_SOCKET`. The window and project
-//! variables come with their slices.
+//! `KEYVO_PRESS`, `KEYVO_LAYER` and `KEYVO_SOCKET`; a key's `on_fail` run
+//! also gets `KEYVO_FAILED_CODE`. The window and project variables come
+//! with their slices.
 
 use std::path::Path;
 use std::process::Stdio;
@@ -42,6 +43,33 @@ pub fn env(record: &TraceRecord, socket: &Path) -> Vec<(&'static str, String)> {
         ("KEYVO_SOCKET", socket.to_string_lossy().into_owned()),
     ]
 }
+
+/// The variables of an `on_fail` run after the press `record` failed with
+/// `failed`: those of [`env`] and `KEYVO_FAILED_CODE`, the exit code, or
+/// `timeout` past `[timing].exec_timeout`, `signal` for a process a signal
+/// ended, `failed` when the action did not run at all (no `sh`, a chord
+/// the injector could not send).
+#[must_use]
+pub fn on_fail_env(
+    record: &TraceRecord,
+    failed: &Outcome,
+    socket: &Path,
+) -> Vec<(&'static str, String)> {
+    let code = match failed {
+        Outcome::Exited {
+            code: Some(code), ..
+        } => code.to_string(),
+        Outcome::Exited { code: None, .. } => "signal".to_owned(),
+        Outcome::Failed { error } if error.starts_with(TIMED_OUT) => "timeout".to_owned(),
+        _ => "failed".to_owned(),
+    };
+    let mut env = env(record, socket);
+    env.push(("KEYVO_FAILED_CODE", code));
+    env
+}
+
+/// How the error of a command past its timeout starts.
+const TIMED_OUT: &str = "timed out after";
 
 /// Runs `cmd` with `env` added to the daemon's environment and waits for
 /// it at most `timeout`. Its output is not read; stderr goes to the
@@ -80,7 +108,7 @@ pub async fn run(cmd: &str, env: &[(&'static str, String)], timeout: Duration) -
             // the shell itself.
             let _ = child.kill().await;
             Outcome::Failed {
-                error: format!("timed out after {} ms", millis(timeout)),
+                error: format!("{TIMED_OUT} {} ms", millis(timeout)),
             }
         }
     }
@@ -258,6 +286,35 @@ mod tests {
         );
         assert_eq!(fallen[1], ("KEYVO_PROFILE", "konsole".to_owned()));
         assert_eq!(fallen[4], ("KEYVO_LAYER", "global".to_owned()));
+    }
+
+    #[test]
+    fn an_on_fail_run_learns_how_the_action_failed() {
+        let record = record("global", Layer::Global, PressKind::Short);
+        let code = |failed: Outcome| {
+            on_fail_env(&record, &failed, Path::new(SOCKET))
+                .pop()
+                .unwrap()
+        };
+        let exited = |code| Outcome::Exited {
+            code,
+            duration_ms: 1,
+        };
+        let failed = |error: &str| Outcome::Failed {
+            error: error.into(),
+        };
+        let table = [
+            (exited(Some(3)), "3"),
+            (exited(None), "signal"),
+            (failed("timed out after 300 ms"), "timeout"),
+            (failed("cannot start `sh`: no such file"), "failed"),
+            (failed("input injection failed: no uinput"), "failed"),
+        ];
+        for (outcome, value) in table {
+            assert_eq!(code(outcome), ("KEYVO_FAILED_CODE", value.to_owned()));
+        }
+        let env = on_fail_env(&record, &exited(Some(3)), Path::new(SOCKET));
+        assert_eq!(env[..6], super::env(&record, Path::new(SOCKET))[..]);
     }
 
     #[tokio::test]

@@ -261,6 +261,14 @@ impl Engine {
         record
     }
 
+    /// The `on_fail` action of the key at `slot` on the active page, a key
+    /// the profile lacks on the global layer, as [`Engine::press`] resolves
+    /// its action.
+    #[must_use]
+    pub fn on_fail(&self, slot: KeySlot) -> Option<Action> {
+        self.key(slot).and_then(|(key, _)| key.on_fail.clone())
+    }
+
     /// The action of the press `record` started running at `now`.
     pub fn started(&mut self, record: &TraceRecord, now: Instant) {
         self.feedback(record).started(now);
@@ -450,6 +458,27 @@ action = { type = "exec", cmd = "true" }
         assert!(matches!(record.action, Some(Action::Chord { .. })));
         let own = engine.press(slot(1), short(), SystemTime::UNIX_EPOCH);
         assert_eq!(own.layer, Some(Layer::App));
+    }
+
+    #[test]
+    fn a_key_brings_its_on_fail_from_the_layer_that_supplies_it() {
+        let notify = "on_fail = { type = \"exec\", cmd = \"notify-send copy\" }\n";
+        let global = GLOBAL.replace(
+            "action = { type = \"chord\", keys = \"ctrl+c\" }\n",
+            &format!("action = {{ type = \"chord\", keys = \"ctrl+c\" }}\n{notify}"),
+        );
+        let mut engine = Engine::new(loaded_with(&[&global, CODE]));
+        engine.set_key_count(9);
+        focus_code(&mut engine, Instant::now());
+        // `code` has no key 2: the global key and its on_fail.
+        assert_eq!(
+            engine.on_fail(slot(2)),
+            Some(Action::Exec {
+                cmd: "notify-send copy".into()
+            })
+        );
+        assert_eq!(engine.on_fail(slot(1)), None);
+        assert_eq!(engine.on_fail(slot(9)), None);
     }
 
     #[test]
