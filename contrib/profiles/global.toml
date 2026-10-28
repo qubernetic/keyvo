@@ -26,10 +26,11 @@ icon   = "lucide:play"
 label  = "Notify"
 action = { type = "exec", cmd = "notify-send keyvo \"key $KEYVO_KEY $KEYVO_PRESS\"" }
 
-[pages.keys.2]                # exits 1: the red x until the next press
-icon   = "lucide:x"
-label  = "Fail"
-action = { type = "exec", cmd = "exit 1" }
+[pages.keys.2]                # exits 1: the red x until the next press, and a notification from its on_fail
+icon    = "lucide:x"
+label   = "Fail"
+action  = { type = "exec", cmd = "exit 1" }
+on_fail = { type = "exec", cmd = "notify-send 'keyvo' 'key 2 failed'" }
 
 [pages.keys.3]                # types "Key" into the focused window
 icon   = "lucide:terminal"

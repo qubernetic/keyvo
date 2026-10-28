@@ -97,6 +97,20 @@ fn the_keys_cover_a_chord_and_the_running_success_and_error_looks() {
 }
 
 #[test]
+fn the_error_key_notifies_from_its_on_fail() {
+    let loaded = loaded();
+    let fail = loaded.profiles.global().pages[0]
+        .keys
+        .values()
+        .find(|key| key.action == Some(exec("exit 1")))
+        .expect("the error key");
+    assert_eq!(
+        fail.on_fail,
+        Some(exec("notify-send 'keyvo' 'key 2 failed'"))
+    );
+}
+
+#[test]
 fn the_global_profile_has_a_context_a_general_and_a_third_page() {
     let loaded = loaded();
     let pages: Vec<_> = loaded
