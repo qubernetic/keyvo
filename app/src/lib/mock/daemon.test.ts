@@ -110,7 +110,7 @@ describe("the mock daemon", () => {
     expect(third[1]).toEqual({
       image: SNAPSHOTS.iconLabel,
       label: "Launch",
-      action: { type: "launch", cmd: "sleep 60" },
+      action: { type: "launch", cmd: "sleep 60", class: "sleep" },
       layer: "global",
     });
     expect(third[2]).toEqual({ image: SNAPSHOTS.background });
