@@ -1,0 +1,34 @@
+# keyvo daemon as a systemd user unit (spec §3, §8).
+#
+# Install (docs/beta-test.md section 2):
+#   install -Dm755 bin/keyvo-daemon ~/.local/bin/keyvo-daemon
+#   install -Dm644 contrib/systemd/keyvo-daemon.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now keyvo-daemon
+# Log: journalctl --user -u keyvo-daemon -f
+#
+# PATH: a user service does not see the shell's PATH (~/.bashrc and the
+# like are not read). `exec` and `launch` commands run with the manager's
+# PATH, so name their binaries with a full path, or set PATH in a file
+# under ~/.config/environment.d/ (for example 50-path.conf with
+# PATH=$HOME/.local/bin:$PATH) and log in again.
+
+[Unit]
+Description=keyvo daemon
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+# No readiness notification; stderr goes to the journal.
+Type=simple
+ExecStart=%h/.local/bin/keyvo-daemon
+Restart=on-failure
+RestartSec=2
+# `launch` puts an application in a new session (setsid), which does not
+# leave the unit's cgroup: with the default control-group, stopping the
+# unit would kill every launched application. `process` stops the daemon
+# alone and the applications survive.
+KillMode=process
+Slice=app.slice
+
+[Install]
+WantedBy=graphical-session.target

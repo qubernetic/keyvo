@@ -111,6 +111,13 @@
           "minimum": 0,
           "type": "integer"
         },
+        "doctor_reply": {
+          "default": 1000,
+          "description": "How long `keyvo doctor` waits for the daemon's answer to `status`\n(spec §12). Default 1000 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "exec_timeout": {
           "default": 30000,
           "description": "An `exec` action still running after this long is killed and fails\n(spec §8). Default 30000 ms.",
@@ -260,6 +267,7 @@
         "claim_splash_timeout": 10000,
         "divert_settle": 100,
         "divert_spacing": 20,
+        "doctor_reply": 1000,
         "exec_timeout": 30000,
         "focus_hysteresis": 150,
         "keep_alive_period": 1000,

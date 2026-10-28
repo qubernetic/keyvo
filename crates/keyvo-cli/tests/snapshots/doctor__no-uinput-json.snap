@@ -1,0 +1,13 @@
+---
+source: crates/keyvo-cli/tests/doctor.rs
+expression: json
+---
+{"check":"keypad","fix":null,"message":"the Keypad is [root]/dev/hidraw2, readable and writable","status":"ok"}
+{"check":"uinput","fix":"sudo modprobe uinput","message":"[root]/dev/uinput does not exist, chord keys will fail","status":"fail"}
+{"check":"rule","fix":null,"message":"[root]/etc/udev/rules.d/70-keyvo.rules is the shipped rule","status":"ok"}
+{"check":"session","fix":null,"message":"a KDE Plasma session on Wayland","status":"ok"}
+{"check":"focus","fix":null,"message":"KWin's focus stealing prevention is Low (1)","status":"ok"}
+{"check":"unit","fix":null,"message":"the user unit keyvo-daemon is active","status":"ok"}
+{"check":"daemon","fix":null,"message":"keyvo-daemon 0.0.0 answers on [root]/run/keyvo/keyvo.sock, the Keypad is connected","status":"ok"}
+{"check":"solaar","fix":null,"message":"Solaar is not running","status":"ok"}
+{"check":"flatpak","fix":null,"message":"the app io.github.qubernetic.keyvo is installed","status":"ok"}

@@ -73,6 +73,11 @@ reconnect, with the `[timing].divert_settle` and `divert_spacing` waits.
 the daemon at start so that painted images replace the Logitech logo and
 released on exit. Part of the Keypad driver in `keyvo-hid`.
 
+**Doctor**: `keyvo doctor`, the CLI's nine checks of the setup (device
+access, the udev rule, the session, KWin's focus stealing prevention, the
+user unit, the daemon, Solaar, the Flatpak app), one line each with `ok`,
+`warn` or `fail` and the fix; it exits 1 on a `fail` and changes nothing.
+
 **Feature index**: The per-device slot number under which an HID++ feature
 (such as `0x1B04`) answers; it differs between Keypad and Dialpad and is resolved
 through `ROOT.getFeature` at connect time, never hard-coded.
@@ -265,6 +270,16 @@ the file in the daemon.
 actions, bound in `~/.config/keyvo/trust.toml` to the content hash of its
 three files and re-asked whenever they change (direnv style). Granted with
 `keyvo project trust` or the GUI prompt.
+
+**udev rule**: `contrib/udev/70-keyvo.rules`, installed into
+`/etc/udev/rules.d/`: it tags the Keypad's and the Bolt receiver's hidraw
+nodes and `/dev/uinput` `uaccess`, so the user at the seat gets an ACL on
+them; no mode, no group.
+
+**User unit**: `contrib/systemd/keyvo-daemon.service`, the systemd user
+unit that runs the daemon from `~/.local/bin` with the graphical session,
+restarts it on failure and stops the daemon alone (`KillMode=process`), so
+launched applications survive.
 
 **Variant**: One "What it does" choice of a recipe pack, an action of the
 profile schema; the first is the default.

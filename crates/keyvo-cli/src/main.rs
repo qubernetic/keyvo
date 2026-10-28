@@ -1,6 +1,7 @@
 //! keyvo command-line interface.
 
 mod ctl;
+mod doctor;
 mod fill;
 mod keys;
 mod preview;
@@ -78,6 +79,19 @@ enum Command {
         /// `$XDG_RUNTIME_DIR/keyvo/keyvo.sock`
         #[arg(long, value_name = "PATH")]
         socket: Option<PathBuf>,
+    },
+    /// Check the setup: the Keypad's node, `/dev/uinput`, the udev rule,
+    /// the session, `KWin`'s focus stealing prevention, the user unit, the
+    /// daemon, Solaar and the Flatpak app; one line each with `ok`, `warn`
+    /// or `fail` and the fix. Exits 1 when a check fails
+    Doctor {
+        /// One JSON object per check (NDJSON)
+        #[arg(long)]
+        json: bool,
+        /// The directory sysfs, `/dev`, `/etc` and `/proc` are read below
+        /// (for the tests)
+        #[arg(long, value_name = "DIR", default_value = "/", hide = true)]
+        root: PathBuf,
     },
 }
 
@@ -297,6 +311,39 @@ fn main() -> anyhow::Result<()> {
                 &mut std::io::stdout().lock(),
             );
         }
+        Command::Doctor { json, root } => {
+            // A broken config.toml is no reason to skip the checks; its
+            // defaults apply then.
+            let timing = config_timing(
+                layout::config_dir(
+                    std::env::var_os("XDG_CONFIG_HOME").as_deref(),
+                    std::env::var_os("HOME").as_deref(),
+                )
+                .as_deref(),
+            )
+            .unwrap_or_default();
+            let env = std::env::vars_os()
+                .filter_map(|(name, value)| Some((name.into_string().ok()?, value)))
+                .collect();
+            let inputs = doctor::Inputs {
+                root: &root,
+                env: &env,
+                uid: rustix::process::getuid().as_raw(),
+                reply: timing.doctor_reply,
+            };
+            let checks = doctor::doctor(&inputs, &mut doctor::System);
+            let mut out = std::io::stdout().lock();
+            if json {
+                doctor::write_json(&checks, &mut out)?;
+            } else {
+                doctor::write_text(&checks, &mut out)?;
+            }
+            out.flush()?;
+            if doctor::failed(&checks) {
+                std::process::exit(1);
+            }
+            return Ok(());
+        }
     };
     // probe reads nothing from the configuration, so a broken file cannot
     // stop it.
@@ -515,7 +562,9 @@ mod tests {
             .command
         {
             Command::Device(command) => command,
-            Command::Preview { .. } | Command::Ctl { .. } => panic!("not a device command"),
+            Command::Preview { .. } | Command::Ctl { .. } | Command::Doctor { .. } => {
+                panic!("not a device command")
+            }
         }
     }
 

@@ -48,7 +48,7 @@ just flatpak-sources        # regenerate contrib/flatpak/{cargo,node}-sources.js
 just flatpak-sources-check  # fail when those files are stale against the three lockfiles (CI `app` job)
 just flatpak      # host: flatpak-builder build and user install of contrib/flatpak/, then flatpak-builder-lint
 just run -- probe # run the built binary (bin/keyvo) on the host against real hardware
-just test-hw      # host checks: hidraw nodes, /dev/uinput, groups (keyvo doctor is planned)
+just test-hw      # host checks: bin/keyvo doctor (device access, rule, session, unit, daemon, Solaar)
 just diagrams     # placeholder: regenerating docs/diagrams with archify lands with Issue #4
 just docs         # placeholder: the mdBook lands with Issue #3
 ```
@@ -68,10 +68,10 @@ keyvo/
 │   │                   #   socket protocol types, chord parser; sync, hardware-free, >=85 % covered;
 │   │                   #   assets/: bundled Inter font and lucide icons, origin and licence in its README
 │   ├── keyvo-daemon    # tokio runtime: socket server, KWin watcher and logind session watcher
-│   │                   #   (zbus), uinput injector (evdev), inotify hot-reload, /proc lineage; planned: X11 watcher (x11rb), plugin supervisor, systemd unit
+│   │                   #   (zbus), uinput injector (evdev), inotify hot-reload, /proc lineage; planned: X11 watcher (x11rb), plugin supervisor
 │   ├── keyvo-client    # socket client, mirror state, tile rendering through keyvo-core, key
 │   │                   #   editor file side (round-trip write, snapshot) for the GUI; sync, hardware-free
-│   └── keyvo-cli       # `keyvo probe|keys|fill|preview|ctl`; planned: `paint-test|doctor|profile`
+│   └── keyvo-cli       # `keyvo probe|keys|fill|preview|ctl|doctor`; planned: `paint-test|profile`
 ├── app/                # Tauri 2 + Svelte 5 GUI (M4a); src-tauri/ outside the root workspace
 ├── integrations/       # planned: claude-code/ (plugin: hooks, commands, MCP), vscode/, tmux/, nvim/ ...
 ├── plugins/logi/       # planned: C# Logi Actions SDK plugin (M5), built in the Windows VM
@@ -79,7 +79,8 @@ keyvo/
 │                       #   recipes/ are the bundled recipe packs of the actions catalogue (test: keyvo-core
 │                       #   contrib.rs); flatpak/ is the Flatpak io.github.qubernetic.keyvo (manifest,
 │                       #   desktop file, metainfo, icon, generated cargo/node sources, lint exceptions;
-│                       #   test: contrib.rs); planned: udev rule, systemd unit
+│                       #   test: contrib.rs); systemd/ is the daemon's user unit, udev/ the uaccess rule
+│                       #   for the hidraw nodes and /dev/uinput (test: contrib.rs)
 ├── captures/           # README + derived fixtures; raw pcapng external (release assets)
 ├── tools/windows-vm/   # planned: libvirt VM scripts
 ├── tools/keycodes/     # generator of the evdev key code table of the chord parser and the app's key names

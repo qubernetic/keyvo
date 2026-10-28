@@ -97,6 +97,21 @@ metainfo's, the icons' and the Tauri identifier; the D-Bus interface stays
 host; the CI `flatpak` job builds the bundle `keyvo.flatpak`. The Flathub
 manifest (M4b-2) is a copy with a `git` source.
 
+**As built (beta, #184).** The udev rule `contrib/udev/70-keyvo.rules`
+tags the Keypad's hidraw nodes (`046d:c354`), the Bolt receiver's own
+(`046d:c548`, the Dialpad's path; matched on the immediate HID parent's
+`HID_ID`, so the child nodes of the paired keyboard and mouse stay
+closed) and `/dev/uinput` (a `static_node`, so
+the tag applies before the module loads) with `uaccess`; named `70-` so it
+sorts before `73-seat-late.rules`, where logind turns the tag into an ACL
+for the user at the active seat. No mode, no group. Install it with
+`sudo install -m 644 contrib/udev/70-keyvo.rules /etc/udev/rules.d/ &&
+sudo udevadm control --reload && sudo udevadm trigger`, then replug the
+Keypad. The daemon runs under the systemd user unit
+`contrib/systemd/keyvo-daemon.service` (§8) from `~/.local/bin`, and
+`keyvo doctor` (§5.10, §12) checks both. The cargo-dist packages and the
+hwdb upstreaming stay after the beta.
+
 Immutable-distro constraints (Aurora DX, Fedora Atomic, Bazzite): nothing
 may require writing to `/usr`. Allowed locations: `/etc/udev/rules.d/`,
 `~/.config/systemd/user/`, `~/.local/share/kwin/scripts/`, `~/.local/bin`.
@@ -119,14 +134,14 @@ keyvo/
 │   │                   #   socket protocol types, chord parser; sync, hardware-free, ≥85 % covered
 │   ├── keyvo-daemon    # tokio runtime: socket server, KWin watcher (zbus), uinput injector
 │   │                   #   (evdev), inotify hot-reload; planned: X11 watcher (x11rb), plugin
-│   │                   #   supervisor, systemd unit
+│   │                   #   supervisor
 │   ├── keyvo-client    # socket client, mirror state, tile rendering through keyvo-core, key
 │   │                   #   editor file side, for the GUI and later clients; sync, hardware-free
-│   └── keyvo-cli       # `keyvo probe|keys|fill|preview|ctl`; planned: `paint-test|doctor|profile`
+│   └── keyvo-cli       # `keyvo probe|keys|fill|preview|ctl|doctor`; planned: `paint-test|profile`
 ├── app/                # Tauri 2 + Svelte 5 GUI (M4a); src-tauri/ is outside the root workspace
 ├── integrations/       # planned: claude-code/ (plugin: hooks, commands, MCP), vscode/, tmux/, nvim/ …
 ├── plugins/logi/       # planned: C# Logi Actions SDK plugin (M5), built in the Windows VM
-├── contrib/            # KWin script, example profiles, flatpak/ (the manifest and its metadata); planned: udev rule, systemd unit
+├── contrib/            # KWin script, example profiles, flatpak/ (the manifest and its metadata), systemd/ (the user unit), udev/ (the uaccess rule)
 ├── captures/           # README + derived fixtures; raw pcapng external (release assets)
 ├── tools/keycodes/     # generator of the evdev key code table of the chord parser and the app's key names
 ├── tools/lucide/       # generator of the bundled lucide icons and their table
@@ -829,6 +844,12 @@ and `[timing].reply_timeout`.
   timeout is refused before the device is opened (§6.1), naming the flag
   or the `[timing]` key each value came from. `keys` reclaims a lost
   claim too and says so on stderr.
+- `keyvo doctor [--json]` (beta, #184): the nine checks of §12 on this
+  machine, without the daemon's help and without claiming the Keypad: it
+  opens the node of §5.1 and `/dev/uinput` read-write and closes them
+  again. Exit 1 when a check fails. It reads `config.toml` only for
+  `[timing].doctor_reply`, and a file that does not load leaves the
+  default.
 
 ---
 
@@ -912,6 +933,7 @@ Defaults, all configurable under `[timing]` in `config.toml`:
 | `accept_backoff` | 100 ms | wait after a failed `accept` on the control socket before the next one, so a full file table does not spin the daemon, §8 |
 | `claim_splash_retry` | 500 ms | while the display shows the plug-in splash (`a4`), the claim re-sends `setMode(a0)` this often, §5.4 |
 | `claim_splash_timeout` | 10000 ms | how long the claim waits for the plug-in splash to end before it fails, §5.4 |
+| `doctor_reply` | 1000 ms | how long `keyvo doctor` waits for the daemon's answer to `status`, §12 |
 
 `keep_alive_period` must be shorter than `keep_alive_timeout`: a period at
 or above the timeout lets the claim run out between two pings (§5.3). The
@@ -1563,8 +1585,21 @@ the system reaps it. `exec_timeout` does not apply. A failed `launch` runs
 the key's `on_fail` as a failed `exec` does; a `started` one does not. A
 daemon run as a systemd unit with the default
 `KillMode=control-group` would still stop a launched application with
-the unit, since `setsid` does not leave the cgroup; keyvo ships no unit
-yet.
+the unit, since `setsid` does not leave the cgroup.
+
+As built (beta, #184): the user unit `contrib/systemd/keyvo-daemon.service`
+sets `KillMode=process`, so `systemctl --user stop keyvo-daemon` (and a
+restart after a crash) signals the daemon alone and the launched
+applications keep running in the unit's cgroup. The unit's other keys:
+`After=` and `PartOf=graphical-session.target` (it starts with the
+graphical session and stops with it), `ExecStart=%h/.local/bin/keyvo-daemon`,
+`Type=simple` (no readiness notification; stderr goes to the journal,
+`journalctl --user -u keyvo-daemon`), `Restart=on-failure` with
+`RestartSec=2`, `Slice=app.slice`, `WantedBy=graphical-session.target`. A
+user service does not see the shell's `PATH`: `exec` and `launch` commands
+name their binaries with a full path, or the user sets `PATH` in
+`~/.config/environment.d/`. A transient scope per launch (so a launched
+application leaves the daemon's cgroup) is a later slice.
 
 A `launch` with `wait_focus` on also opens a pending launch (§6.3, #179)
 before the spawn; the daemon starts the shell itself and hands its pid to
@@ -1594,7 +1629,8 @@ Commands (v1): `set_key`, `set_badge`, `set_state`, `push_overlay`,
 control press from a client; with `"dry_run": true` the daemon resolves and
 traces but executes nothing: the simulator's path), `reload`, `status`,
 `trace` (`last`, `follow`), `project` (`trust`, `revoke`, `list`), `setup`
-(drive the first-run steps, §10), `doctor`, `subscribe` (event stream:
+(drive the first-run steps, §10), `doctor` (not built; the beta has the
+CLI's `keyvo doctor`, §5.10, §12), `subscribe` (event stream:
 key events, profile/page/mode changes, device connect/disconnect, focus and
 context changes, trace entries, config reloads, `trust_requested`,
 `recipe_unresolved`). `keyvo ctl <command> [json]` is the CLI front-end;
@@ -2409,9 +2445,36 @@ line and column, `?mock-locked` reports the session locked: the view says
 - No writes outside XDG dirs and `/etc/udev/rules.d/`; rules and units are
   installable from git and reversible.
 - Configuration is plain TOML; the GUI edits the same files.
-- Logging with levels (`tracing`); `keyvo doctor` (planned) diagnoses hidraw
+- Logging with levels (`tracing`); `keyvo doctor` diagnoses hidraw
   permissions, udev rule, `input` group / ACLs, `/dev/uinput`, KWin script
   state, socket ownership, Solaar presence, Options+ ownership (Windows).
+
+  As built (beta, #184): `keyvo doctor [--json]` (§5.10) runs nine
+  checks, one line each: `ok`, `warn` or `fail`, the check's name, one
+  sentence, and the fix commands on `fix:` lines below it; `--json`
+  prints one object per check and line (`check`, `status`, `message`,
+  `fix`: the lines joined by `\n`, or `null`). It exits 1 when a check
+  fails and 0 otherwise. Each check is a predicate over a root directory
+  (sysfs, `/dev`, `/etc`, `/proc`), the environment and a command runner,
+  so the tests fake all three.
+
+  | # | Check | `ok` | otherwise |
+  |---|---|---|---|
+  | 1 | `keypad` | the Keypad's node (§5.1) opens read-write | `fail`: not found (plug it in), or not accessible (the rule's install lines) |
+  | 2 | `uinput` | `/dev/uinput` opens read-write | `fail`: missing (`sudo modprobe uinput`) or not accessible (the rule) |
+  | 3 | `rule` | `/etc/udev/rules.d/70-keyvo.rules` is byte for byte the shipped rule | missing or different: `warn` while 1 and 2 pass (the access comes from another setup), else `fail`; the install lines |
+  | 4 | `session` | `XDG_SESSION_TYPE` is `wayland` and `XDG_CURRENT_DESKTOP` contains `KDE` | `warn`: profiles follow the focused window on KWin only |
+  | 5 | `focus` | `kwinrc` `[Windows]` `FocusStealingPreventionLevel` absent, `0` or `1` | `warn` at `2` or above: launch keys do not switch the pad (§6.3, #179); the `kwriteconfig6` line |
+  | 6 | `unit` | `systemctl --user is-active keyvo-daemon` says `active` | `warn`: not installed (the three install lines), or installed and not active (`enable --now`) |
+  | 7 | `daemon` | the socket is the user's with mode `0600`; when it lies in keyvo's runtime directory, that directory is the user's and nobody else may enter it (the daemon's predicate, `mode & 0o077 == 0`); `status` answers within `[timing].doctor_reply` | `warn`: no socket or nobody answers (start it), no answer in time (the journal); `fail`: a wrong mode or owner, or the client's checks (§8) refuse it. The fix removes only keyvo's runtime directory; for a `KEYVO_SOCKET` elsewhere it restarts the unit or unsets the variable |
+  | 8 | `solaar` | Solaar is not running (`flatpak ps`, a `solaar` process) | `warn`: it must set no divert on the Creative Console devices |
+  | 9 | `flatpak` | always `ok`: says whether `flatpak info io.github.qubernetic.keyvo` finds the app | |
+
+  It writes nothing, opens the two device nodes without writing to them,
+  and runs only `systemctl --user` and `flatpak` with fixed arguments;
+  the fix lines are printed, never run. A `config.toml` that does not load
+  leaves `[timing]` at its defaults. `just test-hw` runs `bin/keyvo
+  doctor`. The socket's `doctor` command (§8) stays for later.
 - Toolchain: pinned stable Rust (`rust-toolchain.toml`, edition 2024),
   clippy `-D warnings`, `cargo-deny`, `cargo-llvm-cov`, CodeQL, `cargo-dist`,
   mdBook, dependabot.
@@ -2562,6 +2625,12 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, beta slice 4 (2026-10-28)**: the systemd user unit, the udev
+  rule and `keyvo doctor` (#184). §3 the rule (`uaccess` on the Keypad's
+  and the receiver's hidraw nodes and `/dev/uinput`) and the unit as
+  built; §5.10 `keyvo doctor`; §6.1 `[timing].doctor_reply` (1000 ms);
+  §8 the unit's keys and `KillMode=process` as built, the socket `doctor`
+  command marked not built; §12 the nine checks; the layout trees.
 - **v0.3, beta slice 3 (2026-10-28)**: a key's `on_fail` runs when its
   action fails (#183). §7.2 `on_fail` as built: one per key, any action,
   a nested one a load error at its position, run once on a non-zero exit

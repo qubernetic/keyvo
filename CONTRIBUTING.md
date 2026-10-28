@@ -80,7 +80,7 @@ just flatpak-sources        # regenerate contrib/flatpak/{cargo,node}-sources.js
 just flatpak-sources-check  # fail when those files are stale (CI runs it)
 just flatpak      # host: build and install the Flatpak from the checkout, then lint it
 just run -- probe # run the container-built binary on the host against real hardware
-just test-hw      # host checks: hidraw nodes, /dev/uinput, groups (keyvo doctor is planned)
+just test-hw      # host checks: bin/keyvo doctor (device access, rule, session, unit, daemon, Solaar)
 just diagrams     # placeholder: regenerating docs/diagrams from the archify IR lands with Issue #4
 just docs         # placeholder: the mdBook lands with Issue #3
 just shell        # interactive shell in the container
@@ -372,7 +372,7 @@ Where the tests live:
 | `app/` frontend | vitest with jsdom (`just app-test`): the TypeScript protocol module and the Pad state against the same fixtures, component tests with a fake daemon fed the fixture events and a fake editor holding the editor steps' files (`app/src/lib/fixtures.ts`) | none |
 | `app/src-tauri` | No tests of its own: thin glue over `keyvo-client`, proven by the CI `app` build | none |
 | Renderer | [insta](https://insta.rs/) snapshot tests of rendered key images | none |
-| `just test-hw` | Hardware suite on the host: probe, paint, keep-alive, brightness, input | Keypad / Dialpad |
+| `just test-hw` | `keyvo doctor` on the host: device access, the udev rule, the session, the user unit, the daemon, Solaar | Keypad / Dialpad |
 
 Coverage is measured with `cargo-llvm-cov` and uploaded to Codecov. The
 organisation's Codecov gates are blocking: `codecov/patch` needs at least 80 %
