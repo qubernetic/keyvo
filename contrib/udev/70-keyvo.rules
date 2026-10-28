@@ -1,0 +1,23 @@
+# keyvo: device access for the user at the seat (spec §3).
+#
+# `uaccess` gives the logged-in user of the active seat an ACL on the node
+# (systemd-logind applies it in 73-seat-late.rules, hence the 70- prefix);
+# no mode change, no group. The ACL follows the seat: a user who switches
+# away loses it.
+#
+# Install, then replug the Keypad:
+#   sudo install -m 644 contrib/udev/70-keyvo.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload && sudo udevadm trigger
+# Check: keyvo doctor; getfacl /dev/uinput lists the user.
+
+# MX Creative Keypad, USB 046d:c354: every hidraw node of the device.
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c354", TAG+="uaccess"
+
+# Logi Bolt receiver, USB 046d:c548: the MX Creative Dialpad's path
+# (beta slice 6). The receiver also carries the other Bolt devices paired
+# with it (keyboard, mouse), so their HID++ channel is open to the user too.
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c548", TAG+="uaccess"
+
+# /dev/uinput: the daemon's virtual keyboard for chord keys.
+# static_node lets the tag apply before the uinput module is loaded.
+KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess"

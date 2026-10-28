@@ -1,7 +1,8 @@
 //! The example profiles under `contrib/profiles/`, which
 //! `docs/pre-alpha-test.md` installs into `~/.config/keyvo/profiles/`, and
 //! the recipe packs under `contrib/recipes/`, which keyvo bundles, and the
-//! Flatpak under `contrib/flatpak/`.
+//! Flatpak under `contrib/flatpak/`, the systemd user unit under
+//! `contrib/systemd/` and the udev rule under `contrib/udev/`.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -398,4 +399,74 @@ fn the_three_binaries_and_the_metainfo_report_one_version() {
         xml_text(&metainfo, "<release version=\"", "\""),
         Some(keyvo_core::VERSION)
     );
+}
+
+/// The `key=value` lines of an ini file (a systemd unit) by section, comments
+/// and blank lines dropped; a key may repeat, so each holds a list.
+fn ini(text: &str) -> Vec<(String, String, String)> {
+    let mut section = String::new();
+    let mut entries = Vec::new();
+    for line in text.lines().map(str::trim) {
+        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+            continue;
+        }
+        if let Some(name) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
+            name.clone_into(&mut section);
+            continue;
+        }
+        let (key, value) = line
+            .split_once('=')
+            .unwrap_or_else(|| panic!("not key=value: {line}"));
+        entries.push((
+            section.clone(),
+            key.trim().to_owned(),
+            value.trim().to_owned(),
+        ));
+    }
+    entries
+}
+
+/// The user unit starts the daemon from `~/.local/bin` with the graphical
+/// session, restarts it on failure and stops the daemon alone, so the
+/// applications it launched survive (spec §8, `KillMode=process`).
+#[test]
+fn the_user_unit_carries_exactly_the_documented_keys() {
+    let unit = ini(&repo_file("contrib/systemd/keyvo-daemon.service"));
+    let expected = [
+        ("Unit", "Description", "keyvo daemon"),
+        ("Unit", "After", "graphical-session.target"),
+        ("Unit", "PartOf", "graphical-session.target"),
+        ("Service", "Type", "simple"),
+        ("Service", "ExecStart", "%h/.local/bin/keyvo-daemon"),
+        ("Service", "Restart", "on-failure"),
+        ("Service", "RestartSec", "2"),
+        ("Service", "KillMode", "process"),
+        ("Service", "Slice", "app.slice"),
+        ("Install", "WantedBy", "graphical-session.target"),
+    ]
+    .map(|(s, k, v)| (s.to_owned(), k.to_owned(), v.to_owned()));
+    assert_eq!(unit, expected);
+}
+
+/// The udev rule: `uaccess` on the Keypad's and the Bolt receiver's hidraw
+/// nodes and on `/dev/uinput`, no mode, no group.
+#[test]
+fn the_udev_rule_tags_the_three_devices_uaccess_and_nothing_else() {
+    let rule = repo_file("contrib/udev/70-keyvo.rules");
+    let lines: Vec<_> = rule
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            r#"KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c354", TAG+="uaccess""#,
+            r#"KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c548", TAG+="uaccess""#,
+            r#"KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess""#,
+        ]
+    );
+    for forbidden in ["MODE", "GROUP", "0666"] {
+        assert!(!rule.contains(forbidden), "{forbidden}");
+    }
 }
