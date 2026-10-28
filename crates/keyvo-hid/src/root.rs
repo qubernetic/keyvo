@@ -17,6 +17,8 @@ pub mod feature {
     pub const KEEP_ALIVE: u16 = 0x0008;
     /// Classic `REPROG_CONTROLS_V4` (page buttons, Dialpad buttons).
     pub const REPROG_CONTROLS_V4: u16 = 0x1B04;
+    /// Classic `MULTI_ROLLER` (the Dialpad's dial and roller).
+    pub const MULTI_ROLLER: u16 = 0x4610;
     /// Classic `BRIGHTNESS_CONTROL`.
     pub const BRIGHTNESS_CONTROL: u16 = 0x8040;
     /// VLP contextual display (LCD keys).

@@ -17,6 +17,7 @@ use keyvo_hid::image::{
 };
 use keyvo_hid::input::{Control, Input, InputEvent};
 use keyvo_hid::keep_alive::{self, KeepAlive, KeepAliveTiming, TimeoutRange};
+use keyvo_hid::multiroller::{self, Mode, Roller};
 use keyvo_hid::reprog::{self, ControlInfo, DivertTiming};
 use keyvo_hid::root::{FeatureInfo, ProtocolVersion, VlpFeatureInfo, VlpProtocol, feature};
 
@@ -773,4 +774,37 @@ fn a_key_report_while_waiting_for_an_ack_is_kept_for_the_input_path() {
     let kept = hidpp.take_unmatched().unwrap();
     assert_eq!(kept[..7], [0x13, 0xff, 0x02, 0x00, 0xc0, 0x01, 0x01]);
     assert_eq!(hidpp.take_unmatched(), None);
+}
+
+/// The Dialpad's slot on the receiver in the receiver fixtures.
+const DIALPAD_SLOT: u8 = 3;
+
+fn replay_on(script: &str, device_index: u8) -> Hidpp<FakeHidTransport> {
+    let mut hidpp = replay(script);
+    hidpp.set_device_index(device_index);
+    hidpp
+}
+
+#[test]
+fn receiver_multiroller_reads_both_rollers_and_diverts_them() {
+    let mut hidpp = replay_on(fixture!("receiver-multiroller.txt"), DIALPAD_SLOT);
+    assert_eq!(
+        multiroller::rollers(&mut hidpp).unwrap(),
+        [
+            Roller {
+                id: 0,
+                increments: 40,
+                ratchets: 0,
+            },
+            Roller {
+                id: 1,
+                increments: 180,
+                ratchets: 0,
+            },
+        ]
+    );
+    for roller in [0, 1] {
+        multiroller::set_mode(&mut hidpp, roller, Mode::Diverted).unwrap();
+    }
+    assert!(hidpp.transport_mut().is_done());
 }

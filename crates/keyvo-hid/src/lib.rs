@@ -15,6 +15,7 @@ pub mod hidraw;
 pub mod image;
 pub mod input;
 pub mod keep_alive;
+pub mod multiroller;
 pub mod reprog;
 pub mod root;
 pub mod sysfs;
