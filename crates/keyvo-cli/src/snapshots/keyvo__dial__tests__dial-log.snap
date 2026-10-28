@@ -1,0 +1,8 @@
+---
+source: crates/keyvo-cli/src/dial.rs
+expression: log
+---
+Dialpad on slot 3: 4 buttons, roller 40 and dial 180 increments per rotation; Ctrl-C to stop
+Dialpad link lost (asleep or out of range)
+Dialpad back, diverts sent again
+diverts given back

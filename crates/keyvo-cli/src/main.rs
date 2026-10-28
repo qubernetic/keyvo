@@ -1,6 +1,7 @@
 //! keyvo command-line interface.
 
 mod ctl;
+mod dial;
 mod doctor;
 mod fill;
 mod keys;
@@ -10,6 +11,8 @@ mod session;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use anyhow::Context;
@@ -18,6 +21,7 @@ use keyvo_core::clock::{Clock, SystemClock};
 use keyvo_core::config::{self, Timing};
 use keyvo_core::hid::{HidTransport, to_hex};
 use keyvo_core::layout;
+use keyvo_hid::dialpad::Link;
 use keyvo_hid::display::SplashWait;
 use keyvo_hid::dump::Dump;
 use keyvo_hid::hidpp::{DEFAULT_REPLY_TIMEOUT, DEVICE_DIRECT, Hidpp, SoftwareId};
@@ -39,6 +43,7 @@ const REQUEST_SWID: u8 = 0xe;
 #[command(name = "keyvo", version = keyvo_core::VERSION)]
 struct Cli {
     /// The hidraw node to use, instead of searching sysfs for the Keypad
+    /// (for `dial`: the Bolt receiver)
     #[arg(long, global = true, value_name = "PATH")]
     device: Option<PathBuf>,
     /// Print every report written to and read from the Keypad to stderr:
@@ -120,6 +125,17 @@ enum DeviceCommand {
         json: bool,
         #[command(flatten)]
         keep_alive: KeepAliveArgs,
+    },
+    /// Find the Dialpad, divert its buttons and rollers and print every
+    /// press, release and turn until interrupted; then give the diverts back
+    ///
+    /// Without `--device` it talks to the Bolt receiver's HID++ node and
+    /// searches its slots for the Dialpad; `--device` on a Bluetooth
+    /// Dialpad's node talks to it directly.
+    Dial {
+        /// One JSON object per event (NDJSON)
+        #[arg(long)]
+        json: bool,
     },
     /// Claim the Keypad and paint a color or a PNG on the keys or the panel
     Fill {
@@ -247,7 +263,7 @@ impl DeviceCommand {
     /// The keep-alive flag errors.
     fn check(&self, timing: &Timing) -> anyhow::Result<()> {
         match self {
-            Self::Probe { .. } => Ok(()),
+            Self::Probe { .. } | Self::Dial { .. } => Ok(()),
             Self::Keys { keep_alive, .. } | Self::Fill { keep_alive, .. } => {
                 keep_alive.timing(timing).map(drop)
             }
@@ -345,34 +361,55 @@ fn main() -> anyhow::Result<()> {
             return Ok(());
         }
     };
+    device_main(command, cli.device.as_deref(), cli.dump)
+}
+
+/// `main` for the commands that talk to a device: the node of `device` or
+/// the one sysfs names, every report on stderr with `dump`.
+///
+/// # Errors
+///
+/// The command's errors.
+fn device_main(command: DeviceCommand, device: Option<&Path>, dump: bool) -> anyhow::Result<()> {
     // probe reads nothing from the configuration, so a broken file cannot
     // stop it.
     let timing = match command {
         DeviceCommand::Probe { .. } => Timing::default(),
-        DeviceCommand::Keys { .. } | DeviceCommand::Fill { .. } => config_timing(
-            layout::config_dir(
-                std::env::var_os("XDG_CONFIG_HOME").as_deref(),
-                std::env::var_os("HOME").as_deref(),
-            )
-            .as_deref(),
-        )?,
+        DeviceCommand::Keys { .. } | DeviceCommand::Fill { .. } | DeviceCommand::Dial { .. } => {
+            config_timing(
+                layout::config_dir(
+                    std::env::var_os("XDG_CONFIG_HOME").as_deref(),
+                    std::env::var_os("HOME").as_deref(),
+                )
+                .as_deref(),
+            )?
+        }
     };
     command.check(&timing)?;
-    let (transport, device) = open(
-        cli.device.as_deref(),
-        Path::new(sysfs::SYSFS_HIDRAW),
-        Path::new(sysfs::DEV_DIR),
-    )?;
+    let (class_dir, dev_dir) = (Path::new(sysfs::SYSFS_HIDRAW), Path::new(sysfs::DEV_DIR));
+    // `dial` stops on Ctrl-C (or SIGTERM) by itself, so it can give the
+    // diverts back; the other commands end with the default action.
+    let stop = Arc::new(AtomicBool::new(false));
+    let (transport, description, link) = if matches!(command, DeviceCommand::Dial { .. }) {
+        for signal in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
+            signal_hook::flag::register(signal, Arc::clone(&stop))?;
+        }
+        open_dialpad(device, class_dir, dev_dir)?
+    } else {
+        let (transport, description) = open(device, class_dir, dev_dir)?;
+        (transport, description, Link::Direct)
+    };
     let mut stderr = std::io::stderr();
     run_on(
         command,
         &timing,
         transport,
-        cli.dump.then_some(&mut stderr as &mut dyn Write),
-        &device,
+        dump.then_some(&mut stderr as &mut dyn Write),
+        &description,
+        link,
         &SystemClock,
         std::thread::sleep,
-        || true,
+        || !stop.load(Ordering::Relaxed),
         &mut std::io::stdout().lock(),
     )
 }
@@ -390,6 +427,7 @@ fn run_on<T: HidTransport, C: Clock>(
     transport: T,
     dump: Option<&mut dyn Write>,
     device: &str,
+    link: Link,
     clock: &C,
     sleep: impl FnMut(Duration),
     keep_going: impl FnMut() -> bool,
@@ -403,6 +441,7 @@ fn run_on<T: HidTransport, C: Clock>(
                 timing,
                 hidpp(transport)?,
                 device,
+                link,
                 clock,
                 sleep,
                 keep_going,
@@ -414,6 +453,7 @@ fn run_on<T: HidTransport, C: Clock>(
             timing,
             hidpp(transport)?,
             device,
+            link,
             clock,
             sleep,
             keep_going,
@@ -422,10 +462,11 @@ fn run_on<T: HidTransport, C: Clock>(
     }
 }
 
-/// Runs `command` on the Keypad behind `hidpp`, described as `device`, with
-/// the user's `timing` under the flags.
-/// Time comes from `clock`, waits go through `sleep`, and `keys` streams
-/// until `keep_going` says stop.
+/// Runs `command` on the device behind `hidpp`, described as `device`, with
+/// the user's `timing` under the flags; `dial` reaches the Dialpad over
+/// `link`, the Keypad's commands ignore it.
+/// Time comes from `clock`, waits go through `sleep`, and `keys` and `dial`
+/// stream until `keep_going` says stop.
 ///
 /// # Errors
 ///
@@ -436,6 +477,7 @@ fn run<T: HidTransport, C: Clock>(
     timing: &Timing,
     mut hidpp: Hidpp<T>,
     device: &str,
+    link: Link,
     clock: &C,
     sleep: impl FnMut(Duration),
     keep_going: impl FnMut() -> bool,
@@ -445,6 +487,19 @@ fn run<T: HidTransport, C: Clock>(
         DeviceCommand::Probe { feature: None } => probe::probe(&mut hidpp, device, out),
         DeviceCommand::Probe { feature: Some(id) } => {
             probe::probe_feature(&mut hidpp, device, id, out)
+        }
+        DeviceCommand::Dial { json } => {
+            eprintln!("keyvo dial on {device}");
+            dial::dial(
+                &mut hidpp,
+                link,
+                timing,
+                sleep,
+                json,
+                out,
+                &mut std::io::stderr(),
+                keep_going,
+            )
         }
         DeviceCommand::Keys { json, keep_alive } => {
             let mut session =
@@ -521,17 +576,57 @@ fn open(
         (path.to_path_buf(), path.display().to_string())
     } else {
         let node = sysfs::find_keypad(class_dir, dev_dir)?;
-        let description = format!(
-            "{} ({}, {}, reports {})",
-            node.path.display(),
-            node.hid_name,
-            node.id,
-            to_hex(&node.report_ids)
-        );
+        let description = describe(&node);
         (node.path, description)
     };
     let transport = HidrawTransport::open(&path).context("cannot open the Keypad")?;
     Ok((transport, description))
+}
+
+/// Opens the node `dial` talks to the Dialpad on: `device`, else the Bolt
+/// receiver's HID++ node found under `class_dir`. A `device` that sysfs
+/// knows as a Bluetooth Dialpad is reached directly, any other node as a
+/// receiver.
+fn open_dialpad(
+    device: Option<&Path>,
+    class_dir: &Path,
+    dev_dir: &Path,
+) -> anyhow::Result<(HidrawTransport, String, Link)> {
+    let (path, description, link) = dialpad_node(device, class_dir, dev_dir)?;
+    let transport = HidrawTransport::open(&path).context("cannot open the Dialpad's node")?;
+    Ok((transport, description, link))
+}
+
+/// The path, description and link of [`open_dialpad`].
+fn dialpad_node(
+    device: Option<&Path>,
+    class_dir: &Path,
+    dev_dir: &Path,
+) -> anyhow::Result<(PathBuf, String, Link)> {
+    if let Some(path) = device {
+        let link = match sysfs::node_at(class_dir, dev_dir, path)? {
+            Some(node) if node.is_bluetooth_dialpad() => Link::Direct,
+            _ => Link::Receiver,
+        };
+        return Ok((path.to_path_buf(), path.display().to_string(), link));
+    }
+    let node = sysfs::find_receiver(class_dir, dev_dir)?.context(
+        "no Bolt receiver node (046d:c548 with reports 10 11); \
+         pass the Dialpad's node with --device",
+    )?;
+    let description = describe(&node);
+    Ok((node.path, description, Link::Receiver))
+}
+
+/// `/dev/hidraw2 (Logitech MX Creative Keypad, 046d:c354, reports 04 05 11 13 14)`.
+fn describe(node: &sysfs::Node) -> String {
+    format!(
+        "{} ({}, {}, reports {})",
+        node.path.display(),
+        node.hid_name,
+        node.id,
+        to_hex(&node.report_ids)
+    )
 }
 
 /// The HID++ endpoint of a Keypad attached by USB.
@@ -550,6 +645,7 @@ mod tests {
     use clap::Parser;
     use keyvo_core::clock::FakeClock;
     use keyvo_core::hid::FakeHidTransport;
+    use keyvo_hid::dialpad::Link;
     use keyvo_hid::hidpp::Hidpp;
     use keyvo_hid::image::{ImageConfig, Target};
     use std::path::Path;
@@ -618,6 +714,7 @@ mod tests {
             timing,
             replay(script),
             "/dev/hidraw2",
+            Link::Direct,
             &clock,
             |wait| {
                 waits.push(wait);
@@ -668,6 +765,7 @@ mod tests {
             &timing(6000),
             replay(&script),
             "/dev/hidraw2",
+            Link::Direct,
             &FakeClock::new(),
             |_| {},
             || false,
@@ -762,6 +860,7 @@ mod tests {
             FakeHidTransport::from_script(&crate::keys::tests::script()).unwrap(),
             Some(&mut log),
             "/dev/hidraw2",
+            Link::Direct,
             &clock,
             |wait| clock.advance(wait),
             || false,
@@ -855,6 +954,74 @@ mod tests {
 
         let error = super::open(None, Path::new("/absent"), &dev).unwrap_err();
         assert_eq!(error.to_string(), "no hidraw node for 046d:c354");
+    }
+
+    /// A sysfs class directory with one node per `(name, HID_ID)`, each
+    /// carrying the receiver's two HID++ reports.
+    fn class_dir(nodes: &[(&str, &str)]) -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        for (node, id) in nodes {
+            let device = root.path().join(node).join("device");
+            std::fs::create_dir_all(&device).unwrap();
+            std::fs::write(
+                device.join("uevent"),
+                format!("HID_ID={id}\nHID_NAME=Logitech USB Receiver\n"),
+            )
+            .unwrap();
+            std::fs::write(device.join("report_descriptor"), [0x85, 0x10, 0x85, 0x11]).unwrap();
+        }
+        root
+    }
+
+    #[test]
+    fn dial_finds_the_receiver_or_reaches_a_bluetooth_dialpad_directly() {
+        let root = class_dir(&[
+            ("hidraw3", "0005:0000046D:0000BC00"),
+            ("hidraw9", "0003:0000046D:0000C548"),
+        ]);
+        let dev = Path::new("/dev");
+        let (path, description, link) = super::dialpad_node(None, root.path(), dev).unwrap();
+        assert_eq!(path, Path::new("/dev/hidraw9"));
+        assert_eq!(
+            description,
+            "/dev/hidraw9 (Logitech USB Receiver, 046d:c548, reports 10 11)"
+        );
+        assert_eq!(link, Link::Receiver);
+        let bluetooth = Path::new("/dev/hidraw3");
+        let (_, description, link) =
+            super::dialpad_node(Some(bluetooth), root.path(), dev).unwrap();
+        assert_eq!((description.as_str(), link), ("/dev/hidraw3", Link::Direct));
+        // A node sysfs does not know is taken as a receiver.
+        let (_, _, link) =
+            super::dialpad_node(Some(Path::new("/tmp/x")), root.path(), dev).unwrap();
+        assert_eq!(link, Link::Receiver);
+        let error = super::dialpad_node(None, Path::new("/absent"), dev).unwrap_err();
+        assert!(
+            error.to_string().starts_with("no Bolt receiver node"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn run_dispatches_dial() {
+        let mut out = Vec::new();
+        super::run(
+            command(&["dial", "--json"]),
+            &Timing::default(),
+            replay(&crate::dial::tests::script()),
+            "/dev/hidraw9",
+            Link::Receiver,
+            &FakeClock::new(),
+            |_| {},
+            || false,
+            &mut out,
+        )
+        .unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.starts_with("{\"turn\":\"dial\",\"delta\":3}\n"),
+            "{text}"
+        );
     }
 
     fn keep_alive(args: &[&str]) -> Option<KeepAliveTiming> {
@@ -961,6 +1128,7 @@ mod tests {
             &Timing::default(),
             replay(""),
             "/dev/hidraw2",
+            Link::Direct,
             &clock,
             |_| {},
             || false,
