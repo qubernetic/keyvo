@@ -1029,7 +1029,7 @@ async fn the_page_buttons_walk_the_page_list_of_a_two_page_profile() {
 }
 
 /// The `page_return_global` of [`a_global_page_returns_after_the_last_key_press`].
-const PAGE_RETURN: Duration = Duration::from_millis(600);
+const PAGE_RETURN: Duration = Duration::from_millis(1000);
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_global_page_returns_after_the_last_key_press() {
@@ -1048,12 +1048,14 @@ async fn a_global_page_returns_after_the_last_key_press() {
     assert!(watcher.focus(WindowContext::new("org.kde.konsole", "~")));
     assert_eq!(daemon.switched().await, view("terminal", 1, 1, Mode::Auto));
     pad.buttons(&[0x01a1]);
+    let released = tokio::time::Instant::now();
     pad.buttons(&[]);
     assert_eq!(daemon.switched().await, view("global", 2, 0, Mode::Auto));
     daemon.shows(&pad, &union_on(&global, 2)).await;
     // A key press half way restarts the clock: the return comes the full
-    // time after it, with the event and the repaint.
-    tokio::time::sleep(PAGE_RETURN / 2).await;
+    // time after it, with the event and the repaint. Half way from the
+    // release, however long the repaint took to arrive.
+    tokio::time::sleep_until(released + PAGE_RETURN / 2).await;
     let pressed = std::time::Instant::now();
     pad.hold(&[2]);
     pad.hold(&[]);
@@ -1157,8 +1159,9 @@ async fn a_launched_window_keeps_the_global_page_until_the_return() {
     let Outcome::Started { pid } = open(&mut daemon, &pad, 1).await else {
         panic!("not started");
     };
-    // Past the return the key press alone would have started.
-    tokio::time::sleep(PAGE_RETURN * 2 / 3).await;
+    // Half the return time on: the return the key press started would come
+    // well before `page_return_global` after the window.
+    tokio::time::sleep(PAGE_RETURN / 2).await;
     // Konsole's window from the launch's session: not the launch's class,
     // so the lineage alone makes it the launch's.
     let arrived = std::time::Instant::now();
