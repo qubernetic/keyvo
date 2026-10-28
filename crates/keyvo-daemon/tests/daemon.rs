@@ -14,6 +14,7 @@ use keyvo_core::chord::Chord;
 use keyvo_core::feedback::Look;
 use keyvo_core::focus::{FakeWindowWatcher, WindowContext};
 use keyvo_core::inject::FakeInputInjector;
+use keyvo_core::lineage::{Lineage, NoLineage};
 use keyvo_core::press::PressKind;
 use keyvo_core::profile::{KeySlot, Profile};
 use keyvo_core::render::{self, Canvas, KeyPlace, KeySpec, Renderer};
@@ -136,6 +137,7 @@ impl Daemon {
             Sources {
                 window: watcher,
                 session: FakeSessionWatcher::new(),
+                lineage: NoLineage,
             },
         )
     }
@@ -147,7 +149,7 @@ impl Daemon {
         profiles: &[(&str, &str)],
         pads: Vec<Pad>,
         injector: FakeInputInjector,
-        sources: Sources<FakeWindowWatcher, FakeSessionWatcher>,
+        sources: Sources<FakeWindowWatcher, FakeSessionWatcher, impl Lineage + Send + 'static>,
     ) -> Self {
         let session = sources.session.clone();
         let dir = tempfile::tempdir().unwrap();
@@ -919,6 +921,7 @@ async fn a_daemon_started_under_the_lock_paints_the_lock_page() {
         Sources {
             window: FakeWindowWatcher::failing("no focus source"),
             session: FakeSessionWatcher::starting(Session::Locked),
+            lineage: NoLineage,
         },
     );
     daemon.shows(&pad, &lock_union(GLOBAL)).await;
@@ -940,6 +943,7 @@ async fn without_a_session_source_the_daemon_runs_unlocked() {
         Sources {
             window: FakeWindowWatcher::failing("no focus source"),
             session: FakeSessionWatcher::failing("no logind"),
+            lineage: NoLineage,
         },
     );
     assert_eq!(daemon.painted().await.len(), 9);
@@ -1066,6 +1070,170 @@ async fn a_global_page_returns_after_the_last_key_press() {
         daemon.status().await.view,
         view("terminal", 2, 2, Mode::Auto)
     );
+    daemon.stop().await;
+}
+
+/// A global profile whose `general` page opens applications: key 1 waits
+/// for a window of its class, key 2 does not, key 3 hands over to a
+/// running Konsole (exits 0 at once), key 4 fails.
+const OPENER: &str = r##"
+schema_version = 1
+
+[profile]
+id = "global"
+name = "Global"
+accent = "#4e8bd6"
+
+[[pages]]
+name = "context"
+[pages.keys.1]
+label = "Build"
+
+[[pages]]
+name = "general"
+[pages.keys.1]
+label = "App"
+action = { type = "launch", cmd = "sleep 5", class = "org.example.Launched" }
+
+[pages.keys.2]
+label = "Shy"
+action = { type = "launch", cmd = "sleep 5", class = "org.example.Launched", wait_focus = false }
+
+[pages.keys.3]
+label = "Handed over"
+action = { type = "launch", cmd = "true", class = "org.kde.konsole" }
+
+[pages.keys.4]
+label = "Broken"
+action = { type = "launch", cmd = "exit 3", class = "org.kde.konsole" }
+"##;
+
+/// A daemon on [`OPENER`] and [`TERMINAL`] with the `/proc` lineage,
+/// `page_return_global` of [`PAGE_RETURN`] and a `launch_settle` of
+/// 100 ms, showing the global `general` page.
+async fn opener() -> (Daemon, Pad, FakeWindowWatcher) {
+    let pad = Pad::new(&startup());
+    let watcher = FakeWindowWatcher::new();
+    let mut daemon = Daemon::start_in(
+        &format!(
+            "{CONFIG}page_return_global = {}\nlaunch_settle = 100\n",
+            PAGE_RETURN.as_millis()
+        ),
+        &[("global", OPENER), ("terminal", TERMINAL)],
+        vec![pad.clone()],
+        FakeInputInjector::new(),
+        Sources {
+            window: watcher.clone(),
+            session: FakeSessionWatcher::new(),
+            lineage: keyvo_daemon::lineage::ProcLineage::new(),
+        },
+    );
+    daemon.painted().await;
+    pad.buttons(&[0x01a1]);
+    pad.buttons(&[]);
+    assert_eq!(daemon.switched().await, view("global", 2, 0, Mode::Auto));
+    (daemon, pad, watcher)
+}
+
+/// Presses `key` and returns its trace entry once the launch settled.
+async fn open(daemon: &mut Daemon, pad: &Pad, key: u8) -> Outcome {
+    pad.hold(&[key]);
+    pad.hold(&[]);
+    daemon.trace().await.result
+}
+
+/// Ends the launch led by `pid` with everything it started.
+fn end(pid: u32) {
+    let killed = std::process::Command::new("sh")
+        .args(["-c", &format!("kill -9 -{pid}")])
+        .status()
+        .unwrap();
+    assert!(killed.success());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_launched_window_keeps_the_global_page_until_the_return() {
+    let (mut daemon, pad, watcher) = opener().await;
+    let Outcome::Started { pid } = open(&mut daemon, &pad, 1).await else {
+        panic!("not started");
+    };
+    // Past the return the key press alone would have started.
+    tokio::time::sleep(PAGE_RETURN * 2 / 3).await;
+    // Konsole's window from the launch's session: not the launch's class,
+    // so the lineage alone makes it the launch's.
+    let arrived = std::time::Instant::now();
+    assert!(watcher.focus(WindowContext::new("org.kde.konsole", "~").with_pid(pid)));
+    // The page stays under the terminal profile; the return comes
+    // `page_return_global` after the window, to its context page.
+    assert_eq!(daemon.switched().await, view("terminal", 1, 1, Mode::Auto));
+    assert!(arrived.elapsed() >= PAGE_RETURN, "{:?}", arrived.elapsed());
+    assert_eq!(daemon.status().await.context.unwrap().pid, Some(pid));
+    end(pid);
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_foreign_window_or_a_launch_that_does_not_wait_shows_the_context_page() {
+    let (mut daemon, pad, watcher) = opener().await;
+    let Outcome::Started { pid } = open(&mut daemon, &pad, 1).await else {
+        panic!("not started");
+    };
+    // Konsole, clicked with the mouse: another class, another process.
+    let clicked = std::time::Instant::now();
+    let foreign = WindowContext::new("org.kde.konsole", "~").with_pid(std::process::id());
+    assert!(watcher.focus(foreign));
+    assert_eq!(daemon.switched().await, view("terminal", 1, 1, Mode::Auto));
+    assert!(
+        clicked.elapsed() < PAGE_RETURN / 2,
+        "{:?}",
+        clicked.elapsed()
+    );
+    // `wait_focus = false`: its own window shows the context page at once.
+    pad.buttons(&[0x01a1]);
+    pad.buttons(&[]);
+    assert_eq!(daemon.switched().await, view("global", 2, 0, Mode::Auto));
+    let Outcome::Started { pid: shy } = open(&mut daemon, &pad, 2).await else {
+        panic!("not started");
+    };
+    let shown = std::time::Instant::now();
+    assert!(watcher.focus(WindowContext::new("org.example.Shy", "x").with_pid(shy)));
+    assert_eq!(daemon.switched().await, view("global", 1, 1, Mode::Auto));
+    assert!(shown.elapsed() < PAGE_RETURN / 2, "{:?}", shown.elapsed());
+    end(pid);
+    end(shy);
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_handover_keeps_the_page_for_its_class_and_a_failed_launch_does_not() {
+    let (mut daemon, pad, watcher) = opener().await;
+    let handed = open(&mut daemon, &pad, 3).await;
+    assert!(
+        matches!(handed, Outcome::Exited { code: Some(0), .. }),
+        "{handed:?}"
+    );
+    // The running Konsole's window, outside the launch's session: its
+    // class matches the launch.
+    let arrived = std::time::Instant::now();
+    let konsole = WindowContext::new("org.kde.konsole", "~").with_pid(std::process::id());
+    assert!(watcher.focus(konsole.clone()));
+    assert_eq!(daemon.switched().await, view("terminal", 1, 1, Mode::Auto));
+    assert!(arrived.elapsed() >= PAGE_RETURN, "{:?}", arrived.elapsed());
+    // Another window, back to the `general` page, the failing launch.
+    assert!(watcher.focus(WindowContext::new("org.example.Other", "x")));
+    assert_eq!(daemon.switched().await, view("global", 1, 1, Mode::Auto));
+    pad.buttons(&[0x01a1]);
+    pad.buttons(&[]);
+    assert_eq!(daemon.switched().await, view("global", 2, 0, Mode::Auto));
+    let broken = open(&mut daemon, &pad, 4).await;
+    assert!(
+        matches!(broken, Outcome::Exited { code: Some(3), .. }),
+        "{broken:?}"
+    );
+    let shown = std::time::Instant::now();
+    assert!(watcher.focus(konsole));
+    assert_eq!(daemon.switched().await, view("terminal", 1, 1, Mode::Auto));
+    assert!(shown.elapsed() < PAGE_RETURN / 2, "{:?}", shown.elapsed());
     daemon.stop().await;
 }
 

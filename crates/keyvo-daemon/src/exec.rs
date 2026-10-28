@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use keyvo_core::profile::GLOBAL_ID;
 use keyvo_core::stack::Layer;
 use keyvo_core::trace::{Outcome, TraceRecord};
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 
 /// The `KEYVO_*` variables an `exec` started by `record` receives.
 /// `KEYVO_PROFILE` is the active profile, `KEYVO_LAYER` the layer that
@@ -92,43 +92,73 @@ pub async fn run(cmd: &str, env: &[(&'static str, String)], timeout: Duration) -
 /// the daemon reaps it when it ends, so it leaves no zombie and changes no
 /// result; once the daemon exits, the system reaps it.
 pub async fn launch(cmd: &str, env: &[(&'static str, String)], settle: Duration) -> Outcome {
-    let start = Instant::now();
-    let mut command = Command::new("sh");
-    command
-        .arg("-c")
-        .arg(cmd)
-        .envs(env.iter().map(|(name, value)| (name, value)))
-        .stdin(Stdio::null())
-        .stdout(Stdio::null());
-    new_session(&mut command);
-    let mut child = match command.spawn() {
-        Ok(child) => child,
-        Err(error) => {
-            return Outcome::Failed {
-                error: format!("cannot start `sh`: {error}"),
-            };
-        }
-    };
-    match tokio::time::timeout(settle, child.wait()).await {
-        Ok(Ok(status)) => Outcome::Exited {
-            code: status.code(),
-            duration_ms: millis(start.elapsed()),
-        },
-        Ok(Err(error)) => Outcome::Failed {
-            error: format!("cannot wait for the command: {error}"),
-        },
-        Err(_) => {
-            let pid = child.id();
-            tokio::spawn(async move {
-                let _ = child.wait().await;
-            });
-            // A child not yet waited for always has its id.
-            pid.map_or_else(
-                || Outcome::Failed {
-                    error: "the command has no process id".into(),
-                },
-                |pid| Outcome::Started { pid },
-            )
+    match Launch::spawn(cmd, env) {
+        Ok(launch) => launch.settle(settle).await,
+        Err(outcome) => outcome,
+    }
+}
+
+/// A `launch` command started and not yet settled; [`launch`] in two
+/// steps, so the caller knows the process id before the settle.
+#[derive(Debug)]
+pub struct Launch {
+    child: Child,
+    start: Instant,
+}
+
+impl Launch {
+    /// Starts the `launch` command `cmd` in a new session with `env` added
+    /// to the daemon's environment.
+    ///
+    /// # Errors
+    ///
+    /// [`Outcome::Failed`] when `sh` cannot be started.
+    pub fn spawn(cmd: &str, env: &[(&'static str, String)]) -> Result<Self, Outcome> {
+        let start = Instant::now();
+        let mut command = Command::new("sh");
+        command
+            .arg("-c")
+            .arg(cmd)
+            .envs(env.iter().map(|(name, value)| (name, value)))
+            .stdin(Stdio::null())
+            .stdout(Stdio::null());
+        new_session(&mut command);
+        let child = command.spawn().map_err(|error| Outcome::Failed {
+            error: format!("cannot start `sh`: {error}"),
+        })?;
+        Ok(Self { child, start })
+    }
+
+    /// The process id of the shell, which leads the launch's session.
+    #[must_use]
+    pub fn pid(&self) -> Option<u32> {
+        self.child.id()
+    }
+
+    /// Watches the command at most `settle`, as [`launch`] describes.
+    pub async fn settle(self, settle: Duration) -> Outcome {
+        let Self { mut child, start } = self;
+        match tokio::time::timeout(settle, child.wait()).await {
+            Ok(Ok(status)) => Outcome::Exited {
+                code: status.code(),
+                duration_ms: millis(start.elapsed()),
+            },
+            Ok(Err(error)) => Outcome::Failed {
+                error: format!("cannot wait for the command: {error}"),
+            },
+            Err(_) => {
+                let pid = child.id();
+                tokio::spawn(async move {
+                    let _ = child.wait().await;
+                });
+                // A child not yet waited for always has its id.
+                pid.map_or_else(
+                    || Outcome::Failed {
+                        error: "the command has no process id".into(),
+                    },
+                    |pid| Outcome::Started { pid },
+                )
+            }
         }
     }
 }
