@@ -491,7 +491,10 @@ Open questions:
 - Does `bwrap` (or `flatpak run`) call `setsid` on the owner's version, so
   that the session id check fails for Flatpak and only the parent chain or
   the scope remains? To be measured on the host with
-  `cat /proc/<pid>/stat` for a launched Flatpak.
+  `cat /proc/<pid>/stat` for a launched Flatpak. Answered on 2026-10-28:
+  neither does; KCalc's session id equals the pid of the top `flatpak
+  run` process (`docs/hardware-notes.md`, "Launch focus on KWin and
+  Flatpak").
 - Should keyvo run launches in a transient systemd scope at all (it also
   fixes the `KillMode=control-group` note of §8 for a future unit), or is
   the `setsid` session id enough for the pre-alpha?
