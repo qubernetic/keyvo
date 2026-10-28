@@ -47,6 +47,7 @@ fn defaults_match_spec_6_1_and_9() {
             claim_splash_retry: ms(500),
             claim_splash_timeout: ms(10_000),
             doctor_reply: ms(1000),
+            slot_probe: ms(300),
         }
     );
     assert_eq!(

@@ -224,6 +224,11 @@ pub struct Timing {
     #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub doctor_reply: Duration,
+    /// How long the Dialpad search waits for one receiver slot's answer
+    /// before it counts the slot as silent (spec §5.1). Default 300 ms.
+    #[serde(with = "millis")]
+    #[schemars(with = "u64")]
+    pub slot_probe: Duration,
 }
 
 impl Default for Timing {
@@ -249,6 +254,7 @@ impl Default for Timing {
             claim_splash_retry: Duration::from_millis(500),
             claim_splash_timeout: Duration::from_millis(10_000),
             doctor_reply: Duration::from_millis(1000),
+            slot_probe: Duration::from_millis(300),
         }
     }
 }
