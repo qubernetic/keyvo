@@ -736,22 +736,46 @@ on a timer.
 - Identity `046d:bc00` over Bluetooth; over the Bolt receiver the HID++
   device index is 1–6 on the receiver's `0x11` reports (untested by anyone;
   M0-2 captures it under Options+ in the Windows VM, plan §5 item 15).
+- Bolt slot discovery (static pass,
+  `docs/research/2026-10-28-dialpad-static-pass.md` §8): the receiver's
+  `0x41` arrival names the slot (byte 1), the WPID (bytes 5..6, little
+  endian) and the link state (byte 4 bit 6 set = no link). Writing `0x02`
+  to register `0x02` makes the receiver replay `0x41` for every paired
+  device; long register `0xB5` at `0x51 + slot index` (0-based) holds the
+  Bolt pairing information, WPID in its bytes 2..3.
 - Feature table (measured over Bolt): `0x1B04` at index `0x0a` with four
-  divertable controls, CIDs `0x0053, 0x0056, 0x0059, 0x005A`; `0x4610`
-  MultiRoller at index `0x0d`; `0x1004 UNIFIED_BATTERY`; `0x1D4B
-  WIRELESS_DEVICE_STATUS`; **no `0x0008` keep-alive**.
-- Rollers (reported, shensquared / Julusian PR #22): `0x4610 fn0` → 2
-  rollers; roller 0 = small wheel, 40 increments per rotation; roller 1 =
-  large dial, 180 per rotation; `fn3 setMode(roller, 1)` diverts a roller
-  (native scroll stops); rotation notifications `11 ff <idx> 00 <roller>
-  <delta:i8> 00 <ts…>` with accelerated signed int8 deltas; roller 0 reports
-  the opposite sign of roller 1. Diverted button presses repeat while held.
-  There is no dial click.
-- Diverts are restored on exit and re-applied on reconnect; a Bluetooth
-  device that sleeps comes back as a new HID object. The mouse collection
-  floods report `0x02` while turning; keyvo ignores it and, as a
-  non-diverted fallback, can read the evdev axes (`REL_WHEEL*`,
-  `REL_HWHEEL*`, keys 275–278).
+  divertable controls, CIDs `0x0053, 0x0056, 0x0059, 0x005A` (Options+
+  numbers them buttons 1 to 4); `0x4610` MultiRoller at index `0x0d`;
+  `0x1004 UNIFIED_BATTERY`; `0x1D4B WIRELESS_DEVICE_STATUS`; **no `0x0008`
+  keep-alive**.
+- `0x4610` layouts (static pass §1 to §5; roller ids are `0..fn0 count`,
+  always masked `& 0x0F`): fn0 → roller count; fn1(roller) → byte 0
+  increments per rotation, byte 1 ratchet increments, byte 2 unnamed;
+  fn2/fn3 `ReportingMode` is one bit, `NATIVE = 0`, `DIVERTED = 1`
+  (`setMode` = `[roller, mode]`); fn4/fn5 settings = direction (bit 0,
+  `INVERTED = 1`), increments per rotation, ratchets per increment (the Plugin Service
+  never sends them to the Dialpad). Rotation event 0: payload byte 0
+  roller, byte 1 delta `i8`, bytes 2..5 an optional `u32` big-endian
+  timestamp (a 2-byte payload is valid). Options+ passes the delta on
+  unchanged and drops the timestamp.
+- Rollers (reported, shensquared / Julusian PR #22, consistent with the
+  static pass): 2 rollers; roller 0 = small wheel, 40 increments per
+  rotation; roller 1 = large dial, 180 per rotation; diverting a roller
+  stops native scrolling. Still open for M3-2: the physical mapping of the
+  ids, the reported opposite sign of roller 0, whether the deltas are
+  accelerated in firmware, the timestamp unit. keyvo reads count and
+  increments from fn0 and fn1 instead of hard-coding them. Diverted button
+  presses repeat while held; keyvo, like Options+, reports edges of the
+  held set only. There is no dial click.
+- Diverts use `0x1B04` flags `0x03` (no persist bit) and `setMode(roller,
+  DIVERTED)`; they are restored on exit and re-sent on every connect, as
+  Options+ does. A Bluetooth device that sleeps comes back as a new HID
+  object; over Bolt a `0x41` without the link-lost bit marks the wake.
+  Retryable errors: HID++ 1.0 `0x04` (connect fail), `0x07` (busy),
+  `0x09` (resource), HID++ 2.0 busy and timeouts; `0x08` (unknown device)
+  is not. The mouse collection floods report `0x02` while turning; keyvo
+  ignores it and, as a non-diverted fallback, can read the evdev axes
+  (`REL_WHEEL*`, `REL_HWHEEL*`, keys 275–278).
 - Nothing in the Dialpad path uses Solaar.
 
 ### 5.9 Verification
@@ -2625,6 +2649,12 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, beta slice 5 (2026-10-28)**: the Dialpad static pass (#185,
+  ADR-0008). §5.8 the Bolt slot discovery, the `0x4610` request, response
+  and event layouts, the one-bit reporting mode, the settings fields, the
+  `0x1B04` divert flags, re-divert on connect and the retryable errors;
+  the roller facts of shensquared and Julusian kept as consistent, their
+  physical mapping, sign and acceleration left to M3-2.
 - **v0.3, beta slice 4 (2026-10-28)**: the systemd user unit, the udev
   rule and `keyvo doctor` (#184). §3 the rule (`uaccess` on the Keypad's
   and the receiver's hidraw nodes and `/dev/uinput`) and the unit as
