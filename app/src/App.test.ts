@@ -158,7 +158,7 @@ describe("the drawers", () => {
 
   it("closes a trace entry on Escape and gives the focus back to its line", async () => {
     const { send } = app();
-    await send(nth(eventsOf("trace"), 2));
+    await send(nth(eventsOf("trace"), 3));
     const line = await screen.findByRole("button", { name: /failed: .*, open the trace entry$/ });
     line.focus();
     await fireEvent.click(line);
@@ -169,6 +169,17 @@ describe("the drawers", () => {
     await fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(line).toHaveFocus();
+  });
+
+  it("opens a failed press with its on_fail run in the drawer", async () => {
+    const { send } = app();
+    await send(nth(eventsOf("trace"), 1));
+    await send(nth(eventsOf("trace"), 2));
+    await fireEvent.click(await screen.findByRole("button", { name: /; on_fail: .*, open the trace entry$/ }));
+    const drawer = screen.getByRole("dialog", { name: "Trace entry" });
+    expect(within(drawer).getByRole("region", { name: "Result" })).toHaveTextContent(
+      "exec notify-send 'build failed' -> exited 0 after 41 ms",
+    );
   });
 
   it("keeps the trace drawer to the Pad", async () => {

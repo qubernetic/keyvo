@@ -63,6 +63,8 @@ export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemo
   /** The last focused window that is not held: it selects the view. */
   let selecting = focus;
   let replayed = 0;
+  /** The time of the last replayed press, which its on_fail run keeps. */
+  let pressedAt = 0;
 
   function context(): Context {
     return { ...(FOCUS[focus] ?? { class: "", title: "" }), source: "watcher" };
@@ -197,7 +199,9 @@ export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemo
       const traceTimer = setInterval(() => {
         const next = trace[replayed++ % trace.length];
         if (next === undefined) return;
-        const entry = { ...structuredClone(next), timestamp_ms: Date.now() };
+        // An on_fail run is a second entry of the press before it.
+        if (next.branch !== "on_fail") pressedAt = Date.now();
+        const entry = { ...structuredClone(next), timestamp_ms: pressedAt };
         record(entry);
         send({ event: "trace", entry });
       }, TRACE_MS);

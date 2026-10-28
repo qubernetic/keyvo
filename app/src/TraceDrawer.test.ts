@@ -8,8 +8,8 @@ import TraceDrawer from "./TraceDrawer.svelte";
 import { eventsOf, nth, responses } from "./lib/fixtures";
 import type { TraceRecord } from "./lib/protocol";
 
-/** The fixture entries: chord sent, exec exited 101, exec failed, dry run,
- * unbound, launch started, blocked under the session lock. */
+/** The fixture entries: chord sent, exec exited 101, its on_fail run, exec
+ * failed, dry run, unbound, launch started, blocked under the session lock. */
 const ENTRIES = eventsOf("trace").map((event) => event.entry);
 
 function drawer(entry: TraceRecord, onclose = vi.fn()) {
@@ -66,8 +66,25 @@ describe("TraceDrawer", () => {
     expect(value(result, "Duration")).toBe("2318 ms");
   });
 
+  it("shows the on_fail run of a failed press under its result", () => {
+    render(TraceDrawer, { props: { entry: nth(ENTRIES, 1), onFail: nth(ENTRIES, 2), onclose: vi.fn() } });
+    const dialog = screen.getByRole("dialog", { name: "Trace entry" });
+    expect(sections(dialog)).toEqual(["Trigger", "Context snapshot", "Resolved action", "Result"]);
+    const result = section(dialog, "Result");
+    expect(value(result, "Exit code")).toBe("101");
+    expect(value(result, "on_fail")).toBe("exec notify-send 'build failed' -> exited 0 after 41 ms");
+  });
+
+  it("names the branch of an on_fail entry opened alone", () => {
+    const { dialog } = drawer(nth(ENTRIES, 2));
+    const action = section(dialog, "Resolved action");
+    expect(value(action, "Branch")).toBe("on_fail");
+    expect(value(action, "Command")).toBe("notify-send 'build failed'");
+    expect(within(section(dialog, "Result")).queryByText("on_fail", { selector: "dt" })).toBeNull();
+  });
+
   it("shows a launch that was let go as started with its pid", () => {
-    const { dialog } = drawer(nth(ENTRIES, 5));
+    const { dialog } = drawer(nth(ENTRIES, 6));
     const action = section(dialog, "Resolved action");
     expect(value(action, "Type")).toBe("launch");
     expect(value(action, "Command")).toBe("flatpak run org.kde.kcalc");
@@ -81,14 +98,14 @@ describe("TraceDrawer", () => {
   });
 
   it("shows why an action failed", () => {
-    const { dialog } = drawer(nth(ENTRIES, 2));
+    const { dialog } = drawer(nth(ENTRIES, 3));
     const result = section(dialog, "Result");
     expect(value(result, "Status")).toBe("failed");
     expect(value(result, "Error")).toBe("no such file or directory: gh");
   });
 
   it("gives a dry run's block reason instead of a result", () => {
-    const { dialog } = drawer(nth(ENTRIES, 3));
+    const { dialog } = drawer(nth(ENTRIES, 4));
     expect(sections(dialog)).toEqual([
       "Trigger",
       "Context snapshot",
@@ -103,7 +120,7 @@ describe("TraceDrawer", () => {
   });
 
   it("says no layer binds an unbound key", () => {
-    const { dialog } = drawer(nth(ENTRIES, 4));
+    const { dialog } = drawer(nth(ENTRIES, 5));
     const action = section(dialog, "Resolved action");
     expect(value(action, "Layer")).toBe("none");
     expect(value(action, "Type")).toBe("none");
@@ -113,7 +130,7 @@ describe("TraceDrawer", () => {
   });
 
   it("gives a blocked press's reason instead of a result", () => {
-    const { dialog } = drawer(nth(ENTRIES, 6));
+    const { dialog } = drawer(nth(ENTRIES, 7));
     expect(sections(dialog)).toEqual([
       "Trigger",
       "Context snapshot",

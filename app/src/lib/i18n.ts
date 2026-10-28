@@ -186,6 +186,8 @@ export const messages = {
   "trace.started": "started, pid {pid}",
   "trace.failed": "failed: {error}",
   "trace.blocked": "blocked, {reason}",
+  "trace.onFail": "on_fail: {action} -> {result}",
+  "trace.withOnFail": "{line}; {onFail}",
 
   "drawer.debug": "Debug log",
   "soon.debug": "The debug log shows HID-level events once the daemon sends them.",
@@ -218,6 +220,9 @@ export const messages = {
   "drawer.duration": "Duration",
   "drawer.ms": "{ms} ms",
   "drawer.error": "Error",
+  "drawer.branch": "Branch",
+  "drawer.onFail": "on_fail",
+  "drawer.onFailRun": "{action} -> {result}",
   "drawer.block": "Block reason",
   "drawer.dryRun": "Dry run: resolved, nothing executed.",
   "drawer.unbound": "Unbound: no layer binds this key on this page.",

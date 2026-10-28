@@ -3,9 +3,9 @@
   // of #108): one line with the newest entries first and their 24 h times,
   // each a button that opens the drawer on itself. The chevron expands the
   // strip in place to every entry the Pad keeps (PAD_TRACE) and collapses
-  // it again.
+  // it again. A press and its on_fail run are one line (presses).
   import { t } from "./lib/i18n";
-  import { clock, STRIP_LINE, summarize } from "./lib/pad";
+  import { clock, presses, STRIP_LINE, summarize } from "./lib/pad";
   import type { TraceRecord } from "./lib/protocol";
 
   let {
@@ -17,12 +17,14 @@
     entries: TraceRecord[];
     /** True while the Pad connects: no empty-state sentence yet. */
     connecting?: boolean;
-    onopen: (entry: TraceRecord) => void;
+    /** Opens the drawer on a press's entry and its on_fail run. */
+    onopen: (entry: TraceRecord, onFail?: TraceRecord) => void;
   } = $props();
 
   const uid = $props.id();
   let expanded = $state(false);
-  const shown = $derived(expanded ? entries : entries.slice(0, STRIP_LINE));
+  const rows = $derived(presses(entries));
+  const shown = $derived(expanded ? rows : rows.slice(0, STRIP_LINE));
 </script>
 
 <section class="strip" class:expanded aria-labelledby={`kv-strip-${uid}`}>
@@ -34,15 +36,15 @@
       {/if}
     {:else}
       <ol aria-label={t("trace.strip")}>
-        {#each shown as entry, index (index)}
-          {@const line = summarize(entry)}
-          {@const time = clock(entry.timestamp_ms)}
+        {#each shown as row, index (index)}
+          {@const line = summarize(row.entry, row.onFail)}
+          {@const time = clock(row.entry.timestamp_ms)}
           <li class:newest={index === 0}>
             <button
               type="button"
               class="entry"
               aria-label={t("trace.open", { time, line })}
-              onclick={() => onopen(entry)}
+              onclick={() => onopen(row.entry, row.onFail)}
             >
               <time>{time}</time>
               {line}
@@ -51,7 +53,7 @@
         {/each}
       </ol>
     {/if}
-    {#if entries.length > STRIP_LINE}
+    {#if rows.length > STRIP_LINE}
       <button
         type="button"
         class="chevron"

@@ -14,8 +14,8 @@ import { t } from "./lib/i18n";
 import { PAD_TRACE, STRIP_LINE } from "./lib/pad";
 import type { TraceRecord } from "./lib/protocol";
 
-/** The fixture entries, newest first: chord sent, exec exited 101, exec
- * failed, dry run, unbound, launch started. */
+/** The fixture entries in file order: chord sent, exec exited 101, its
+ * on_fail run, exec failed, dry run, unbound, launch started, blocked. */
 const FIXTURE = eventsOf("trace").map((event) => event.entry);
 
 /** `count` entries one second apart from 15:04:05 local time on, newest first. */
@@ -72,10 +72,23 @@ describe("the trace strip", () => {
     const list = entries(5);
     const { region, onopen } = strip(list);
     await fireEvent.click(within(nth(items(region), 1)).getByRole("button"));
-    expect(onopen).toHaveBeenCalledWith(nth(list, 1));
+    expect(onopen).toHaveBeenCalledWith(nth(list, 1), undefined);
     expect(within(nth(items(region), 1)).getByRole("button")).toHaveAccessibleName(
       /^15:04:08 Key 2, app layer: exec cargo build, exited 101 after 2318 ms, open the trace entry$/,
     );
+  });
+
+  it("shows a press and its on_fail run as one line and opens both", async () => {
+    const [primary, onFail] = [nth(FIXTURE, 1), nth(FIXTURE, 2)];
+    const { region, onopen } = strip([onFail, primary]);
+    expect(items(region)).toHaveLength(1);
+    const line = within(nth(items(region), 0)).getByRole("button");
+    expect(line).toHaveTextContent(
+      "Key 1, app layer: exec cargo build, exited 101 after 2318 ms; " +
+        "on_fail: exec notify-send 'build failed' -> exited 0 after 41 ms",
+    );
+    await fireEvent.click(line);
+    expect(onopen).toHaveBeenCalledWith(primary, onFail);
   });
 
   it("expands in place to every entry the Pad keeps and collapses again", async () => {

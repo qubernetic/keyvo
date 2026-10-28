@@ -102,6 +102,25 @@ describe("server messages", () => {
     expect(EVENT_CLASSES).toContain("session");
   });
 
+  it("an on_fail run is a trace entry on its branch, after the press it belongs to", () => {
+    const entries = fixture("events.ndjson")
+      .map(parseServerMessage)
+      .flatMap((message) =>
+        message.kind === "event" && message.event.event === "trace" ? [message.event.entry] : [],
+      );
+    const at = entries.findIndex((entry) => entry.branch === "on_fail");
+    const [primary, onFail] = [entries[at - 1], entries[at]];
+    expect(onFail?.action).toEqual({ type: "exec", cmd: "notify-send 'build failed'" });
+    expect(primary?.branch).toBeUndefined();
+    expect(primary?.result).toMatchObject({ status: "exited", code: 101 });
+    expect({ ...onFail, action: null, result: null, branch: undefined }).toEqual({
+      ...primary,
+      action: null,
+      result: null,
+    });
+    expect(entries.filter((entry) => entry.branch === "on_fail")).toHaveLength(1);
+  });
+
   it("the status reply carries the configuration directory and the device geometry", () => {
     const statuses = fixture("responses.ndjson")
       .map(parseServerMessage)

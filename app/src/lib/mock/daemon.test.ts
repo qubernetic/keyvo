@@ -202,6 +202,14 @@ describe("the mock daemon", () => {
       (update) => update.kind === "event" && update.event.event === "trace",
     );
     expect(traces).toHaveLength((4 * FOCUS_MS) / TRACE_MS);
+    // The on_fail run keeps the time of its press, so the strip joins them.
+    const entries = traces.flatMap((update) =>
+      update.kind === "event" && update.event.event === "trace" ? [update.event.entry] : [],
+    );
+    const at = entries.findIndex((entry) => entry.branch === "on_fail");
+    expect(at).toBeGreaterThan(0);
+    expect(entries[at]?.timestamp_ms).toBe(entries[at - 1]?.timestamp_ms);
+    expect(entries[at + 1]?.timestamp_ms).toBe((entries[at]?.timestamp_ms ?? 0) + 2 * TRACE_MS);
     for (const update of updates) {
       if (update.kind === "event") expect(asEvent(update.event)).toEqual(update.event);
     }

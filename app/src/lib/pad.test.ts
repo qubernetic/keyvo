@@ -3,7 +3,19 @@
 // subscription, folded the way crates/keyvo-client/src/mirror.rs folds them.
 import { describe, expect, it } from "vitest";
 
-import { apply, caption, clock, fromStatus, grid, PAD_TRACE, initial, schemaError, summarize, type PadState } from "./pad";
+import {
+  apply,
+  caption,
+  clock,
+  fromStatus,
+  grid,
+  PAD_TRACE,
+  initial,
+  presses,
+  schemaError,
+  summarize,
+  type PadState,
+} from "./pad";
 import type { Event, Status, TraceRecord } from "./protocol";
 import { events, eventsOf, nth, responses } from "./fixtures";
 
@@ -239,17 +251,50 @@ describe("caption", () => {
   });
 });
 
+describe("presses", () => {
+  /** The fixture entries newest first, as the Pad keeps them. */
+  const kept = () => [...traces()].reverse();
+
+  it("puts an on_fail run under the press it belongs to: one row per press", () => {
+    const rows = presses(kept());
+    expect(rows).toHaveLength(traces().length - 1);
+    const failed = rows.find((row) => row.onFail !== undefined);
+    expect(failed?.entry).toEqual(nth(traces(), 1));
+    expect(failed?.onFail).toEqual(nth(traces(), 2));
+    expect(rows.map((row) => row.entry.branch ?? null)).not.toContain("on_fail");
+    // Newest first, as the entries came.
+    expect(rows.map((row) => row.entry)).toEqual(kept().filter((entry) => entry.branch !== "on_fail"));
+  });
+
+  it("keeps an on_fail run whose press is no longer kept as its own row", () => {
+    const onFail = nth(traces(), 2);
+    expect(presses([onFail])).toEqual([{ entry: onFail }]);
+    // Another press of the same key does not take it.
+    const other = { ...nth(traces(), 1), timestamp_ms: onFail.timestamp_ms + 1 };
+    expect(presses([onFail, other])).toEqual([{ entry: onFail }, { entry: other }]);
+  });
+});
+
 describe("summarize", () => {
   it("says what every fixture entry did on one line", () => {
-    expect(traces().map(summarize)).toEqual([
+    expect(traces().map((entry) => summarize(entry))).toEqual([
       "Key 4, app layer: chord ctrl+p, sent",
       "Key 1, app layer: exec cargo build, exited 101 after 2318 ms",
+      "Key 1, app layer: on_fail: exec notify-send 'build failed' -> exited 0 after 41 ms",
       "Key 9, app layer: exec gh pr view --web, failed: no such file or directory: gh",
       "Key 5 long, simulated, app layer: exec cargo test, dry run, nothing executed",
       "Key 1: unbound",
       "Key 2, global layer: launch flatpak run org.kde.kcalc, started, pid 4711",
       "Key 5: blocked, session locked",
     ]);
+  });
+
+  it("puts a press's on_fail run in its line", () => {
+    const [primary, onFail] = [nth(traces(), 1), nth(traces(), 2)];
+    expect(summarize(primary, onFail)).toBe(
+      "Key 1, app layer: exec cargo build, exited 101 after 2318 ms; " +
+        "on_fail: exec notify-send 'build failed' -> exited 0 after 41 ms",
+    );
   });
 
   it("says when an exec is still running", () => {

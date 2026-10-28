@@ -78,8 +78,9 @@
     /** What the pad shows, none until the daemon reports it, and the count
      * of configuration reloads, for the Profiles screen. */
     onview?: (view: View | undefined, reloads: number) => void;
-    /** Opens a trace entry in the drawer, which the shell shows. */
-    ontrace?: (entry: TraceRecord) => void;
+    /** Opens a trace entry, with the on_fail run of its press, in the
+     * drawer, which the shell shows. */
+    ontrace?: (entry: TraceRecord, onFail?: TraceRecord) => void;
   } = $props();
 
   /** The skeleton tiles of the drawing while the Pad connects. */
@@ -505,7 +506,7 @@
         recipes={recipes.recipes}
         browse={columns.right ? undefined : browse}
       />
-      <TraceStrip entries={pad.trace} {connecting} onopen={(entry) => ontrace?.(entry)} />
+      <TraceStrip entries={pad.trace} {connecting} onopen={(entry, onFail) => ontrace?.(entry, onFail)} />
     </div>
     {#if columns.right}
       <div class="catalogue scroll">

@@ -143,6 +143,10 @@ export interface TraceRecord {
   layer?: Layer;
   action: Action | null;
   result: { status: string; [field: string]: unknown };
+  /** `on_fail` for the run of the key's `on_fail` after its action failed,
+   * a second entry of the same press; absent or null for the key's own
+   * action (socket-api.md, "Trace entries"). */
+  branch?: "on_fail" | null;
 }
 
 export interface Pressed {
