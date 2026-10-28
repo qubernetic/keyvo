@@ -480,11 +480,12 @@ fn probe_slot<T: HidTransport>(
 }
 
 /// The slot a request error stands for; the transport errors end the
-/// search.
+/// search. The receiver errors the static pass names retryable (connect
+/// fail, busy, resource error) leave the slot silent, like a timeout.
 fn unanswered(error: HidppError) -> Result<Slot, HidppError> {
     match error {
         HidppError::Receiver {
-            code: ReceiverError::ConnectFail,
+            code: ReceiverError::ConnectFail | ReceiverError::Busy | ReceiverError::ResourceError,
             ..
         }
         | HidppError::Timeout { .. } => Ok(Slot::Silent),
@@ -535,9 +536,16 @@ mod tests {
             unanswered(receiver(ReceiverError::UnknownDevice)),
             Ok(Slot::Empty(ReceiverError::UnknownDevice))
         );
+        for retryable in [
+            ReceiverError::ConnectFail,
+            ReceiverError::Busy,
+            ReceiverError::ResourceError,
+        ] {
+            assert_eq!(unanswered(receiver(retryable)), Ok(Slot::Silent));
+        }
         assert_eq!(
-            unanswered(receiver(ReceiverError::ConnectFail)),
-            Ok(Slot::Silent)
+            unanswered(receiver(ReceiverError::RequestUnavailable)),
+            Ok(Slot::Empty(ReceiverError::RequestUnavailable))
         );
         assert_eq!(
             unanswered(HidppError::Device {
