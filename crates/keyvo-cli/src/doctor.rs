@@ -968,4 +968,195 @@ mod tests {
         assert!(!failed(&[ok.clone(), warn.clone()]));
         assert!(failed(&[ok, warn, Check::new("c", Status::Fail, "no")]));
     }
+
+    /// A Keypad below `root`: its sysfs entry (a descriptor with the bulk
+    /// report id) and an empty `dev/hidraw2`.
+    fn keypad_root(root: &Path) -> PathBuf {
+        let device = root.join("sys/class/hidraw/hidraw2/device");
+        std::fs::create_dir_all(&device).unwrap();
+        std::fs::write(
+            device.join("uevent"),
+            "HID_ID=0003:0000046D:0000C354\nHID_NAME=Logitech MX Creative Keypad\n",
+        )
+        .unwrap();
+        std::fs::write(device.join("report_descriptor"), [0x85, 0x14]).unwrap();
+        let node = root.join("dev/hidraw2");
+        std::fs::create_dir_all(node.parent().unwrap()).unwrap();
+        std::fs::write(&node, "").unwrap();
+        node
+    }
+
+    #[test]
+    fn the_keypad_node_is_ok_when_it_opens_and_fails_when_it_does_not() {
+        let root = tempfile::tempdir().unwrap();
+        let node = keypad_root(root.path());
+        let ok = keypad(root.path());
+        assert_eq!(ok.status, Status::Ok);
+        assert!(
+            ok.message.ends_with("hidraw2, readable and writable"),
+            "{}",
+            ok.message
+        );
+        mode(&node, 0o400);
+        if open_rw(&node).is_err() {
+            let denied = keypad(root.path());
+            assert_eq!(denied.status, Status::Fail);
+            assert_eq!(denied.fix.as_deref(), Some(RULE_INSTALL));
+        }
+        std::fs::remove_file(&node).unwrap();
+        std::fs::create_dir(&node).unwrap();
+        let odd = keypad(root.path());
+        assert_eq!(odd.status, Status::Fail);
+        assert!(odd.message.contains("cannot be opened"), "{}", odd.message);
+    }
+
+    #[test]
+    fn uinput_and_the_rule_report_other_errors_too() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("dev/uinput")).unwrap();
+        assert!(uinput(root.path()).message.contains("cannot be opened"));
+        std::fs::create_dir_all(root.path().join(RULE_PATH)).unwrap();
+        assert!(rule(root.path(), true).message.contains("cannot be read"));
+    }
+
+    /// A daemon on `path` that answers one request with `line`.
+    fn answering(path: &Path, line: String) -> std::thread::JoinHandle<()> {
+        let listener = UnixListener::bind(path).unwrap();
+        mode(path, 0o600);
+        std::thread::spawn(move || {
+            use std::io::BufRead;
+            let (stream, _) = listener.accept().unwrap();
+            let mut request = String::new();
+            std::io::BufReader::new(stream.try_clone().unwrap())
+                .read_line(&mut request)
+                .unwrap();
+            let mut stream = stream;
+            stream.write_all(format!("{line}\n").as_bytes()).unwrap();
+        })
+    }
+
+    #[test]
+    fn a_daemon_that_answers_status_is_ok() {
+        let root = tempfile::tempdir().unwrap();
+        let (path, vars) = runtime(root.path(), 0o700);
+        // The shared fixture's `status` answer, with the Keypad gone.
+        let status = include_str!("../../../tests/protocol-fixtures/socket/responses.ndjson")
+            .lines()
+            .next()
+            .unwrap()
+            .replace(r#""version":"0.0.0""#, r#""version":"9.9.9""#)
+            .replace(r#""connected":true"#, r#""connected":false"#);
+        let daemon_thread = answering(&path, status);
+        let check = daemon(&inputs(root.path(), &vars));
+        daemon_thread.join().unwrap();
+        assert_eq!(check.status, Status::Ok, "{}", check.message);
+        assert!(
+            check.message.starts_with("keyvo-daemon 9.9.9 answers on"),
+            "{}",
+            check.message
+        );
+        assert!(
+            check.message.ends_with("the Keypad is not connected"),
+            "{}",
+            check.message
+        );
+        std::fs::remove_file(&path).unwrap();
+        let other = answering(&path, r#"{"v":1,"id":1,"ok":true,"result":{}}"#.to_owned());
+        let check = daemon(&inputs(root.path(), &vars));
+        other.join().unwrap();
+        assert_eq!(check.status, Status::Warn);
+        assert!(
+            check.message.contains("another result"),
+            "{}",
+            check.message
+        );
+    }
+
+    #[test]
+    fn solaar_as_a_flatpak_warns_with_flatpak_kill() {
+        let root = tempfile::tempdir().unwrap();
+        let mut runner = Fake::default().with(
+            "flatpak ps --columns=application",
+            true,
+            "org.kde.okular\nio.github.pwr_solaar.solaar\n",
+        );
+        let check = solaar(root.path(), &mut runner);
+        assert_eq!(check.status, Status::Warn);
+        assert_eq!(
+            check.fix.as_deref(),
+            Some("flatpak kill io.github.pwr_solaar.solaar")
+        );
+    }
+
+    #[test]
+    fn doctor_runs_the_nine_checks_in_order() {
+        let root = tempfile::tempdir().unwrap();
+        keypad_root(root.path());
+        std::fs::write(root.path().join("dev/uinput"), "").unwrap();
+        let rule_path = root.path().join(RULE_PATH);
+        std::fs::create_dir_all(rule_path.parent().unwrap()).unwrap();
+        std::fs::write(&rule_path, RULE).unwrap();
+        let (_, mut vars) = runtime(root.path(), 0o700);
+        vars.insert("HOME".to_owned(), root.path().as_os_str().to_owned());
+        let mut runner = Fake::default()
+            .with("systemctl --user is-active keyvo-daemon", true, "active\n")
+            .with("flatpak info io.github.qubernetic.keyvo", true, "keyvo\n");
+        let checks = doctor(&inputs(root.path(), &vars), &mut runner);
+        let names: Vec<_> = checks.iter().map(|check| check.name).collect();
+        assert_eq!(
+            names,
+            [
+                "keypad", "uinput", "rule", "session", "focus", "unit", "daemon", "solaar",
+                "flatpak"
+            ]
+        );
+        let warned: Vec<_> = checks
+            .iter()
+            .filter(|check| check.status != Status::Ok)
+            .map(|check| check.name)
+            .collect();
+        assert_eq!(warned, ["session", "daemon"]);
+        assert!(!failed(&checks));
+    }
+
+    #[test]
+    fn the_text_has_the_fix_lines_and_the_json_one_object_per_check() {
+        let checks = [
+            Check::new("unit", Status::Warn, "not installed").fix("one\ntwo"),
+            Check::new("keypad", Status::Fail, "gone"),
+            Check::new("solaar", Status::Ok, "fine"),
+        ];
+        let mut text = Vec::new();
+        write_text(&checks, &mut text).unwrap();
+        assert_eq!(
+            String::from_utf8(text).unwrap(),
+            "warn  unit     not installed\n      fix: one\n      fix: two\n\
+             fail  keypad   gone\nok    solaar   fine\n"
+        );
+        let mut json = Vec::new();
+        write_json(&checks, &mut json).unwrap();
+        let lines: Vec<serde_json::Value> = String::from_utf8(json)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(
+            lines[0],
+            json!({"check": "unit", "status": "warn", "message": "not installed", "fix": "one\ntwo"})
+        );
+        assert_eq!(lines[1]["fix"], serde_json::Value::Null);
+        assert_eq!(lines[2]["status"], "ok");
+    }
+
+    #[test]
+    fn the_system_runner_captures_stdout_and_misses_unknown_programs() {
+        assert_eq!(
+            System.run("sh", &["-c", "echo out; echo err >&2; exit 3"]),
+            Some(Ran {
+                success: false,
+                stdout: "out\n".to_owned()
+            })
+        );
+        assert_eq!(System.run("keyvo-no-such-program", &[]), None);
+    }
 }
