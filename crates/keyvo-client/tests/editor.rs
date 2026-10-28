@@ -376,6 +376,34 @@ fn a_key_view_serializes_its_line_only_when_the_key_has_one() {
 }
 
 #[test]
+fn a_key_view_shows_the_on_fail_action_it_does_not_write() {
+    let text = "schema_version = 1\n[profile]\nid = \"t\"\nname = \"T\"\n[[pages]]\n\
+                [pages.keys.1]\nlabel = \"Build\"\naction = { type = \"exec\", cmd = \"make\" }\n\
+                on_fail = { type = \"exec\", cmd = \"notify-send failed\" }\n";
+    let dirs = Dirs::new(&[("t", text)]);
+    let editor = dirs.editor();
+    let view = editor.key("t", 1, slot(1)).unwrap();
+    assert_eq!(
+        view.on_fail,
+        Some(keyvo_core::profile::Action::Exec {
+            cmd: "notify-send failed".into()
+        })
+    );
+    assert_eq!(
+        serde_json::to_value(&view).unwrap()["on_fail"],
+        serde_json::json!({ "type": "exec", "cmd": "notify-send failed" })
+    );
+    let mut fields = view.fields;
+    fields.label = Some("Make".into());
+    editor
+        .set_key("t", 1, slot(1), &fields, SystemTime::UNIX_EPOCH)
+        .unwrap();
+    assert_eq!(dirs.profile("t"), text.replace("\"Build\"", "\"Make\""));
+    let blank = serde_json::to_value(editor.key("t", 1, slot(2)).unwrap()).unwrap();
+    assert_eq!(blank.get("on_fail"), None, "{blank}");
+}
+
+#[test]
 fn an_unreadable_file_is_an_io_error_naming_it() {
     let dirs = Dirs::new(&[]);
     std::fs::create_dir(dirs.config().join("profiles/terminal.toml")).unwrap();
