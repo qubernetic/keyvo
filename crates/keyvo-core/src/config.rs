@@ -185,6 +185,13 @@ pub struct Timing {
     #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub launch_settle: Duration,
+    /// How long a `launch` key's window is expected after the press (spec
+    /// §6.3): a window that comes within it and belongs to the launch
+    /// keeps a global page instead of showing the context page; 0 turns
+    /// this off. Default 15000 ms.
+    #[serde(with = "millis")]
+    #[schemars(with = "u64")]
+    pub launch_focus: Duration,
     /// Wait between two attempts to open the Keypad after it is gone (spec
     /// §5.1). Default 1000 ms.
     #[serde(with = "millis")]
@@ -230,6 +237,7 @@ impl Default for Timing {
             reply_timeout: Duration::from_millis(1000),
             exec_timeout: Duration::from_secs(30),
             launch_settle: Duration::from_millis(1000),
+            launch_focus: Duration::from_secs(15),
             reconnect_interval: Duration::from_millis(1000),
             reload_settle: Duration::from_millis(100),
             accept_backoff: Duration::from_millis(100),
