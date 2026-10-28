@@ -51,6 +51,7 @@ async fn main() -> anyhow::Result<()> {
     let sources = keyvo_daemon::daemon::Sources {
         window: keyvo_daemon::kwin::KWinWatcher::session(&runtime_dir),
         session: keyvo_daemon::logind::LogindSessionWatcher::system(),
+        lineage: keyvo_daemon::lineage::ProcLineage::new(),
     };
     keyvo_daemon::linux::serve(&config_dir, cli.device, &socket, sources, shutdown()).await?;
     Ok(())

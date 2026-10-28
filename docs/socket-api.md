@@ -207,7 +207,7 @@ the bundled one of the same id.
 | `recipes[].name` | string | The entry's name in the catalogue. |
 | `recipes[].icon` | string | The icon written into a key, `lucide:<name>`. |
 | `recipes[].label` | string | The label written into a key. |
-| `recipes[].variants` | array, at least one | "What it does": `id` (unique in the pack), `name`, and `action`, an action of the profile schema (`chord` or `exec`). The first is the default. |
+| `recipes[].variants` | array, at least one | "What it does": `id` (unique in the pack), `name`, and `action`, an action of the profile schema (`chord`, `exec` or `launch`). The first is the default. |
 | `problems` | array of strings, optional | One `file:line:column: message` per user pack left out; absent when every pack loaded. |
 
 Reading a pack runs nothing. Applying a recipe to a key is a profile edit
@@ -250,7 +250,9 @@ Unix epoch), `trigger` (`press`, `simulated`), `profile` (the active
 profile), `page`, `key`, `layer` (`app` or `global`: the layer that
 supplied the key, spec §6.1; `global` for a key the active app profile does
 not define; left out when no layer defines it), `action` (the key's action
-as in the profile, or `null`), and `result`
+as in the profile, or `null`; a `launch` carries `class` and `wait_focus`
+only where they differ from the defaults, no class and `true`, #179; a
+reader keeps both and drops other unknown action fields), and `result`
 with `status` set to one of the following:
 
 - `unbound`

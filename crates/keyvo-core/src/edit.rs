@@ -368,26 +368,50 @@ fn parts(action: &Action) -> (&'static str, &'static str, String) {
     match action {
         Action::Chord { keys } => ("chord", "keys", keys.to_string()),
         Action::Exec { cmd } => ("exec", "cmd", cmd.clone()),
-        Action::Launch { cmd } => ("launch", "cmd", cmd.clone()),
+        Action::Launch { cmd, .. } => ("launch", "cmd", cmd.clone()),
     }
+}
+
+/// The `class` and `wait_focus` values of a `launch`, each `None` at its
+/// default (absent, `true`); both `None` for the other actions.
+fn launch_values(action: &Action) -> [(&'static str, Option<Value>); 2] {
+    let (class, wait_focus) = match action {
+        Action::Launch {
+            class, wait_focus, ..
+        } => (
+            class.as_deref().map(Value::from),
+            (!wait_focus).then(|| false.into()),
+        ),
+        Action::Chord { .. } | Action::Exec { .. } => (None, None),
+    };
+    [("class", class), ("wait_focus", wait_focus)]
 }
 
 /// Changes the key's `action` from `before` to `after`. An action of the
 /// same type keeps its table and only its value changes; another type
 /// replaces the table's entries in place; a new action is an inline table.
+/// A `launch` writes `class` and `wait_focus` only where they differ from
+/// the defaults.
 fn set_action(key: &mut dyn TableLike, before: Option<&Action>, after: Option<&Action>) {
     let Some(after) = after else {
         key.remove("action");
         return;
     };
     let (kind, field, value) = parts(after);
+    let inline = key.get("action").is_some_and(Item::is_inline_table);
     let Some(table) = key.get_mut("action").and_then(Item::as_table_like_mut) else {
         let mut table = InlineTable::new();
         table.insert("type", kind.into());
         table.insert(field, value.into());
+        for (name, value) in launch_values(after) {
+            if let Some(value) = value {
+                table.insert(name, value);
+            }
+        }
         set_value(key, "action", Some(Value::InlineTable(table)));
         return;
     };
+    let end = inline.then(|| inline_end(table)).flatten();
     let old = before.map(parts);
     if old.as_ref().map(|(kind, ..)| *kind) != Some(kind) {
         set_value(table, "type", Some(kind.into()));
@@ -397,6 +421,43 @@ fn set_action(key: &mut dyn TableLike, before: Option<&Action>, after: Option<&A
         }
     }
     set_value(table, field, Some(value.into()));
+    for (name, value) in launch_values(after) {
+        set_value(table, name, value);
+    }
+    if let Some(end) = end {
+        end.restore(table);
+    }
+}
+
+/// The space before the `}` of an inline table, which `toml_edit` keeps as
+/// the suffix of the last value: an entry added or removed at the end
+/// would take it along.
+struct InlineEnd {
+    last: String,
+    suffix: toml_edit::RawString,
+}
+
+fn inline_end(table: &dyn TableLike) -> Option<InlineEnd> {
+    let (last, item) = table.iter().last()?;
+    let value = item.as_value()?;
+    Some(InlineEnd {
+        last: last.to_owned(),
+        suffix: value.decor().suffix()?.clone(),
+    })
+}
+
+impl InlineEnd {
+    /// Moves the space to the value that is last now.
+    fn restore(self, table: &mut dyn TableLike) {
+        if let Some(old) = table.get_mut(&self.last).and_then(Item::as_value_mut) {
+            old.decor_mut().set_suffix("");
+        }
+        if let Some((_, item)) = table.iter_mut().last()
+            && let Some(value) = item.as_value_mut()
+        {
+            value.decor_mut().set_suffix(self.suffix);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -424,6 +485,49 @@ schema_version = 1
 id = \"lines\"
 name = \"Lines\"
 ";
+
+    #[test]
+    fn a_launch_keeps_its_window_fields_only_while_they_differ_from_the_defaults() {
+        let mut doc = document(&format!(
+            "{HEADER}\n[[pages]]\n\n[pages.keys.1]\n\
+             action = {{ type = \"launch\", cmd = \"kcalc\", class = \"kcalc\", wait_focus = false }}\n"
+        ));
+        let line = |doc: &ProfileDocument| doc.to_string().lines().last().map(str::to_owned);
+        let action = |action: Action| KeyFields {
+            action: Some(action),
+            ..KeyFields::default()
+        };
+        doc.set_key(1, slot(1), &action(Action::launch("kcalc")))
+            .unwrap();
+        assert_eq!(
+            line(&doc).as_deref(),
+            Some("action = { type = \"launch\", cmd = \"kcalc\" }")
+        );
+        let waiting = Action::Launch {
+            cmd: "kcalc".into(),
+            class: Some("org.kde.kcalc".into()),
+            wait_focus: true,
+        };
+        doc.set_key(1, slot(1), &action(waiting.clone())).unwrap();
+        assert_eq!(
+            line(&doc).as_deref(),
+            Some("action = { type = \"launch\", cmd = \"kcalc\", class = \"org.kde.kcalc\" }")
+        );
+        assert_eq!(doc.key(1, slot(1)).unwrap().action, Some(waiting));
+        // Another type drops the launch's own fields.
+        doc.set_key(
+            1,
+            slot(1),
+            &action(Action::Exec {
+                cmd: "kcalc".into(),
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            line(&doc).as_deref(),
+            Some("action = { type = \"exec\", cmd = \"kcalc\" }")
+        );
+    }
 
     #[test]
     fn the_line_of_a_key_table_is_its_header() {

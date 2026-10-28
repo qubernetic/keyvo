@@ -112,16 +112,30 @@ export interface Form {
   actionType: ActionType;
   /** The chord's keys or the command, by `actionType`. */
   action: string;
+  /** A launch's window class; empty for none. */
+  windowClass: string;
+  /** Whether a launch waits for its window. */
+  waitFocus: boolean;
+}
+
+/** The action fields of the form for `action`. */
+export function actionForm(
+  action: Action | undefined,
+): Pick<Form, "actionType" | "action" | "windowClass" | "waitFocus"> {
+  return {
+    actionType: action?.type ?? "none",
+    action: action === undefined ? "" : action.type === "chord" ? action.keys : action.cmd,
+    windowClass: action?.type === "launch" ? (action.class ?? "") : "",
+    waitFocus: action?.type === "launch" ? (action.wait_focus ?? true) : true,
+  };
 }
 
 export function toForm(fields: KeyFields): Form {
-  const action = fields.action;
   return {
     label: fields.label ?? "",
     color: fields.color ?? "",
     icon: fields.icon ?? "",
-    actionType: action?.type ?? "none",
-    action: action === undefined ? "" : action.type === "chord" ? action.keys : action.cmd,
+    ...actionForm(fields.action),
   };
 }
 
@@ -179,19 +193,30 @@ export function fromForm(
       fields.action = { type: "chord", keys: action };
       break;
     case "exec":
-    case "launch":
       if (action === "") return { invalid: t("editor.noCommand"), field: "action" };
-      fields.action = { type: form.actionType, cmd: action };
+      fields.action = { type: "exec", cmd: action };
       break;
+    case "launch": {
+      if (action === "") return { invalid: t("editor.noCommand"), field: "action" };
+      const launch: Action = { type: "launch", cmd: action };
+      const windowClass = form.windowClass.trim();
+      if (windowClass !== "") launch.class = windowClass;
+      if (!form.waitFocus) launch.wait_focus = false;
+      fields.action = launch;
+      break;
+    }
   }
   return { fields };
 }
 
 export function sameFields(a: KeyFields, b: KeyFields): boolean {
-  const action = (fields: KeyFields) =>
-    fields.action === undefined
-      ? ""
-      : `${fields.action.type}:${fields.action.type === "chord" ? fields.action.keys : fields.action.cmd}`;
+  const action = (fields: KeyFields) => {
+    const action = fields.action;
+    if (action === undefined) return "";
+    if (action.type === "chord") return `chord:${action.keys}`;
+    if (action.type === "exec") return `exec:${action.cmd}`;
+    return `launch:${action.cmd}:${action.class ?? ""}:${action.wait_focus ?? true}`;
+  };
   return (
     a.icon === b.icon &&
     a.label === b.label &&

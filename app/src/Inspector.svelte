@@ -30,6 +30,7 @@
   } from "./lib/catalogue";
   import type { Tile } from "./lib/daemon";
   import {
+    actionForm,
     afterRedo,
     afterUndo,
     colorOf,
@@ -149,6 +150,7 @@
     color: `kv-inspector-${uid}-color`,
     action: `kv-inspector-${uid}-action`,
     hint: `kv-inspector-${uid}-hint`,
+    classHint: `kv-inspector-${uid}-class-hint`,
     select: `kv-inspector-${uid}-select`,
   };
   /** The action field's message, then the chord syntax under a chord. */
@@ -176,7 +178,9 @@
       a.color === b.color &&
       a.icon === b.icon &&
       a.actionType === b.actionType &&
-      a.action === b.action
+      a.action === b.action &&
+      a.windowClass === b.windowClass &&
+      a.waitFocus === b.waitFocus
     );
   }
 
@@ -320,16 +324,16 @@
     });
   }
 
-  /** A new action type starts with an empty chord or command; a preset of
-   * the collapsed catalogue is applied like an assigned one. */
+  /** A new action type starts with an empty chord or command, a launch
+   * without a window class that waits for its window; a preset of the
+   * collapsed catalogue is applied like an assigned one. */
   function switched(value: string) {
     const preset = entries?.find((entry) => entry.kind === "recipe" && entry.key === value);
     if (preset !== undefined) {
       form = applied(preset, form);
       invalid = undefined;
     } else {
-      form.actionType = value as ActionType;
-      form.action = "";
+      form = { ...form, ...actionForm(undefined), actionType: value as ActionType };
     }
     commit();
   }
@@ -568,6 +572,31 @@
             {/if}
           </div>
         {/if}
+        {#if form.actionType === "launch"}
+          <div class="field">
+            <label>
+              {t("inspector.windowClass")}
+              <input
+                type="text"
+                aria-label={t("inspector.windowClass")}
+                aria-describedby={ids.classHint}
+                bind:value={form.windowClass}
+                onchange={commit}
+              />
+            </label>
+            <p id={ids.classHint} class="hint">{t("inspector.windowClassHint")}</p>
+          </div>
+          <label class="switch">
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label={t("inspector.waitFocus")}
+              bind:checked={form.waitFocus}
+              onchange={commit}
+            />
+            {t("inspector.waitFocus")}
+          </label>
+        {/if}
       </form>
     {/if}
   {/if}
@@ -674,6 +703,13 @@
   .colour,
   .choice {
     display: flex;
+    gap: 8px;
+  }
+
+  /* The switch sits before its label on one line. */
+  label.switch {
+    flex-direction: row;
+    align-items: center;
     gap: 8px;
   }
 

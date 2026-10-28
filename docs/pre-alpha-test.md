@@ -883,9 +883,9 @@ with `~/.config/keyvo/config.toml` absent (defaults: `page_return_global`
 `contrib/profiles/` the same steps hold with `third` for `apps`, Dolphin
 for Brave and the `third` page's Launch key for KCalc and Spotify.
 
-- [ ] #157 Brave, left twice to `apps`, press KCalc: KCalc comes up and the pad shows the global context page at once (no grace). Click Brave: Brave's context page.
+- [ ] #157 Brave, left twice to `apps`, press KCalc: KCalc comes up and the pad shows the global context page at once (no grace). Click Brave: Brave's context page. (Since #179 the pad stays on `apps` until the return; [beta-test.md](beta-test.md) #194 has the step.)
 - [ ] #157 Brave, left to `general`, nothing for 10 s: Brave's context page comes back by itself; the app's tab strip follows.
-- [ ] #157 Brave, left to `apps`, press Spotify, wait 5 s, press KCalc, wait 5 s: still `apps` (each press restarted the clock); 10 s after the last press: the context page.
+- [ ] #157 Brave, left to `apps`, press Spotify, wait 5 s, press KCalc, wait 5 s: still `apps`, under the profile of the window in front (rewritten for #179: each launch's window keeps the page and starts the return over at its arrival); 10 s after KCalc appeared: the context page of the profile in front.
 - [ ] #157 VS Code, right to page 2, nothing for 30 s: page 2 stays (own-page return off by default).
 - [ ] #157 `config.toml` with `[timing] page_return_own = 5000`: VS Code page 2 returns after 5 s without activity; with `page_return_global = 0`: `general` stays.
 - [ ] #157 Long press on `general` (the lock), wait 15 s: `general` stays; long press again: the context page.

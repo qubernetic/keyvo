@@ -413,3 +413,32 @@ Not a first-light record: it comes from the owner's end-to-end check
   held: 204 key reports, none with the payload of the one before.
 - Settles: spec §5.6, the input gate on byte 3 and the held-set diff. The
   reports are the fixture `tests/protocol-fixtures/hid/key-input.txt`.
+
+### Launch focus on KWin and Flatpak (2026-10-28)
+
+Not a Keypad measurement: the desktop behaviour the launch rule of spec
+§6.3 (#179) depends on, measured by the owner on the host and reported on
+#179.
+
+- Host: Aurora (Fedora Kinoite), KDE Wayland, KWin 6.7.4 (the research
+  report `docs/research/2026-10-27-launch-focus-matching-prior-art.md`).
+  The Flatpak version was not noted with the measurement.
+- Method, focus stealing prevention: the `[Windows]` group of the owner's
+  `kwinrc` read for `FocusStealingPreventionLevel` (the issue body of
+  #179); the beta test (#194 block) repeats it with `kreadconfig6 --file
+  kwinrc --group Windows --key FocusStealingPreventionLevel`.
+- Result: `kwinrc` has no such key, so KWin runs at its default level, 1
+  (Low), where every new window is activated.
+- Method, session of a Flatpak launch: KCalc started with `flatpak run
+  org.kde.kcalc` in a new session (`setsid`, as keyvo starts a launch);
+  the session id (the fourth field after the command name in
+  `/proc/<pid>/stat`) of the `flatpak run` process, the `bwrap` processes
+  and the KCalc process compared.
+- Result: the `flatpak` to `bwrap` to application chain keeps the
+  session: KCalc's session id equals the pid of the top `flatpak run`
+  process. Neither `flatpak` nor `bwrap` starts a new session.
+- Settles: spec §6.3 and §8, the lineage check by session id holds for
+  Flatpak launches, and the whole launch rule depends on the Low level;
+  at Medium or above a launched window only demands attention and no app
+  switch reaches the pad. The open question of section 9 of the research
+  report is answered.

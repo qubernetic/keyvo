@@ -62,4 +62,6 @@ label = "Third"
 [pages.keys.2]                # a launch: running for 1 s, then success; `sleep` lives on (#155)
 icon   = "lucide:app-window"
 label  = "Launch"
-action = { type = "launch", cmd = "sleep 60" }
+# `sleep` opens no window: the class keeps the launch from claiming the
+# next window that takes the focus (#179).
+action = { type = "launch", cmd = "sleep 60", class = "sleep" }

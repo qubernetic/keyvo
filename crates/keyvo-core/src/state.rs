@@ -12,6 +12,14 @@
 //!   `[timing].focus_hysteresis`; an app switch (another window class)
 //!   shows index 1 of the new profile. A title change in the same app keeps
 //!   the index.
+//! - Pending launches: a `launch` key ([`State::launched`]) expects its
+//!   window for `[timing].launch_focus`. An app switch in auto mode without
+//!   the lock is judged against them, the first hit consuming its entry:
+//!   the window's process descends from the launch ([`Lineage`]), else a
+//!   launch of the window's class, else the oldest launch without a class.
+//!   A hit keeps an index of 0 or below (a global page exists under every
+//!   profile) and starts the page return over; otherwise, or for an index
+//!   of 2 or above, the switch shows index 1.
 //! - The page return: in auto mode, an index of 0 or below shows index 1
 //!   again after `[timing].page_return_global` without a page-button press
 //!   or release or a key press, an index of 2 or above after
@@ -41,9 +49,36 @@ use serde::{Deserialize, Serialize};
 use crate::config::{Config, Focus};
 use crate::focus::WindowContext;
 use crate::layout::Profiles;
+use crate::lineage::Lineage;
 use crate::press::{PressDetector, PressKind};
-use crate::profile::{GLOBAL_ID, Profile};
+use crate::profile::{GLOBAL_ID, Profile, class_matches};
 use crate::session::Session;
+
+/// Names one pending launch ([`State::launched`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LaunchId(u64);
+
+/// A `launch` whose window may still come.
+#[derive(Debug, Clone)]
+struct PendingLaunch {
+    id: LaunchId,
+    /// The window class the launch opens, when known.
+    class: Option<String>,
+    /// The process id of the launch's shell, once it started.
+    pid: Option<u32>,
+    /// The press plus `[timing].launch_focus`.
+    expires: Instant,
+}
+
+/// A reported window waiting out the focus hysteresis.
+#[derive(Debug, Clone)]
+struct Pending {
+    window: WindowContext,
+    /// When it applies.
+    at: Instant,
+    /// The launches its process descends from, as the report found them.
+    kin: Vec<LaunchId>,
+}
 
 /// Who chooses the profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,6 +137,7 @@ pub struct State {
     page_return_global: Duration,
     page_return_own: Duration,
     long_press: Duration,
+    launch_focus: Duration,
     mode: Mode,
     /// The profile the focused window selects.
     selected: String,
@@ -113,7 +149,11 @@ pub struct State {
     /// The focused window as last applied.
     window: Option<WindowContext>,
     /// A newer window and when it applies.
-    pending: Option<(WindowContext, Instant)>,
+    pending: Option<Pending>,
+    /// The launches whose windows may still come, oldest first.
+    launches: Vec<PendingLaunch>,
+    /// The id of the next launch.
+    next_launch: u64,
     /// The classes that hold the context.
     hold: Focus,
     /// The focused window while it holds the context.
@@ -137,12 +177,15 @@ impl State {
             page_return_global: timing.page_return_global,
             page_return_own: timing.page_return_own,
             long_press: timing.long_press,
+            launch_focus: timing.launch_focus,
             mode: Mode::Auto,
             selected: GLOBAL_ID.to_owned(),
             shown: GLOBAL_ID.to_owned(),
             index: 1,
             window: None,
             pending: None,
+            launches: Vec::new(),
+            next_launch: 0,
             hold: config.focus.clone(),
             in_front: None,
             last_use: None,
@@ -210,8 +253,15 @@ impl State {
     /// The focus source reports `window` at `now`. It applies once no other
     /// report came for `[timing].focus_hysteresis`; a report of the window
     /// already applied cancels a pending one, and so does a report of a
-    /// window that holds the context, which never applies.
-    pub fn focus(&mut self, window: WindowContext, now: Instant, profiles: &Profiles) {
+    /// window that holds the context, which never applies. `lineage` tells
+    /// the pending launches the window's process descends from.
+    pub fn focus(
+        &mut self,
+        window: WindowContext,
+        now: Instant,
+        profiles: &Profiles,
+        lineage: &dyn Lineage,
+    ) {
         if self.holds(&window.class) {
             self.pending = None;
             self.in_front = Some(window);
@@ -220,10 +270,60 @@ impl State {
             if self.window.as_ref() == Some(&window) {
                 self.pending = None;
             } else {
-                self.pending = Some((window, now + self.hysteresis));
+                let kin = window.pid.map_or_else(Vec::new, |pid| {
+                    self.launches
+                        .iter()
+                        .filter(|launch| {
+                            launch.pid.is_some_and(|shell| lineage.descends(pid, shell))
+                        })
+                        .map(|launch| launch.id)
+                        .collect()
+                });
+                self.pending = Some(Pending {
+                    window,
+                    at: now + self.hysteresis,
+                    kin,
+                });
             }
         }
         self.poll(now, profiles);
+    }
+
+    /// A `launch` key whose window carries `class`, when known, was pressed
+    /// at `now`: its window is expected until `[timing].launch_focus` from
+    /// now. `None` when that is 0, so no window is expected.
+    pub fn launched(&mut self, class: Option<String>, now: Instant) -> Option<LaunchId> {
+        if self.launch_focus.is_zero() {
+            return None;
+        }
+        let id = LaunchId(self.next_launch);
+        self.next_launch += 1;
+        self.launches.push(PendingLaunch {
+            id,
+            class,
+            pid: None,
+            expires: now + self.launch_focus,
+        });
+        Some(id)
+    }
+
+    /// The shell of launch `id` runs as process `pid`.
+    pub fn launch_started(&mut self, id: LaunchId, pid: u32) {
+        if let Some(launch) = self.launches.iter_mut().find(|launch| launch.id == id) {
+            launch.pid = Some(pid);
+        }
+    }
+
+    /// Launch `id` did not start or exited with an error: no window of it
+    /// comes.
+    pub fn launch_failed(&mut self, id: LaunchId) {
+        self.launches.retain(|launch| launch.id != id);
+    }
+
+    /// The pending launches, oldest first.
+    #[must_use]
+    pub fn launches(&self) -> Vec<LaunchId> {
+        self.launches.iter().map(|launch| launch.id).collect()
     }
 
     /// `button` went down at `now`. The second button held escapes. Nothing
@@ -261,16 +361,21 @@ impl State {
         self.last_use = Some(now);
     }
 
-    /// Applies what is due at `now`: the page return, a pending window, a
-    /// long press.
+    /// Applies what is due at `now`: the page return, the end of the
+    /// launches past `[timing].launch_focus`, a pending window, a long
+    /// press.
     pub fn poll(&mut self, now: Instant, profiles: &Profiles) {
         if self.return_at().is_some_and(|at| at <= now) {
             self.index = 1;
         }
-        if self.pending.as_ref().is_some_and(|(_, at)| *at <= now)
-            && let Some((window, _)) = self.pending.take()
+        self.launches.retain(|launch| launch.expires > now);
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|pending| pending.at <= now)
+            && let Some(pending) = self.pending.take()
         {
-            self.apply(window, profiles);
+            self.apply(pending, now, profiles);
         }
         for _ in self.buttons.poll(now) {
             self.toggle_mode();
@@ -280,7 +385,7 @@ impl State {
     /// When [`State::poll`] has something to do next.
     #[must_use]
     pub fn next_deadline(&self) -> Option<Instant> {
-        let focus = self.pending.as_ref().map(|(_, at)| *at);
+        let focus = self.pending.as_ref().map(|pending| pending.at);
         [focus, self.buttons.next_deadline(), self.return_at()]
             .into_iter()
             .flatten()
@@ -288,7 +393,8 @@ impl State {
     }
 
     /// The configuration and profiles were reloaded: the page return times
-    /// of `config` apply; the focused window (while one that holds the
+    /// and `launch_focus` of `config` apply to what comes next, the
+    /// pending launches stay; the focused window (while one that holds the
     /// context is in front, the one before it) selects again, as its rules
     /// may have changed; manual mode keeps its profile unless it is gone
     /// (then the global context page). An index the list no longer has
@@ -296,6 +402,7 @@ impl State {
     pub fn reload(&mut self, config: &Config, profiles: &Profiles) {
         self.page_return_global = config.timing.page_return_global;
         self.page_return_own = config.timing.page_return_own;
+        self.launch_focus = config.timing.launch_focus;
         self.selected = self.window.as_ref().map_or_else(
             || GLOBAL_ID.to_owned(),
             |window| profiles.select(window).profile.id.clone(),
@@ -333,7 +440,11 @@ impl State {
         self.last_use.map(|used| used + after)
     }
 
-    fn apply(&mut self, window: WindowContext, profiles: &Profiles) {
+    /// The window of `pending` applies at `now`. An app switch in auto mode
+    /// shows index 1, unless the window is a launch's and the index is 0
+    /// or below.
+    fn apply(&mut self, pending: Pending, now: Instant, profiles: &Profiles) {
+        let Pending { window, kin, .. } = pending;
         let app_switch = self
             .window
             .as_ref()
@@ -343,15 +454,47 @@ impl State {
             .profile
             .id
             .clone_into(&mut self.selected);
+        let launched = app_switch
+            && self.mode == Mode::Auto
+            && !self.locked
+            && self.claim(&window.class, &kin);
         self.window = Some(window);
         if self.mode == Mode::Auto {
             self.shown.clone_from(&self.selected);
-            self.index = if app_switch {
-                1
+            let list = PageList::of(profiles, self.shown(profiles));
+            self.index = if !app_switch {
+                list.clamp(self.index)
+            } else if launched && self.index <= 0 {
+                self.last_use = Some(now);
+                list.clamp(self.index)
             } else {
-                PageList::of(profiles, self.shown(profiles)).clamp(self.index)
+                1
             };
         }
+    }
+
+    /// Consumes the pending launch a window of `class` belongs to: the
+    /// first of `kin` (by lineage), else the first of its class, else the
+    /// oldest without a class; `false` when there is none.
+    fn claim(&mut self, class: &str, kin: &[LaunchId]) -> bool {
+        let at = self
+            .launches
+            .iter()
+            .position(|launch| kin.contains(&launch.id))
+            .or_else(|| {
+                self.launches.iter().position(|launch| {
+                    launch
+                        .class
+                        .as_deref()
+                        .is_some_and(|rule| class_matches(rule, class))
+                })
+            })
+            .or_else(|| {
+                self.launches
+                    .iter()
+                    .position(|launch| launch.class.is_none())
+            });
+        at.map(|at| self.launches.remove(at)).is_some()
     }
 
     /// A short press: the next index towards `button`, nothing past an end.

@@ -15,7 +15,10 @@
 //!   page-button long press, page return; a key press restarts the page
 //!   return). A changed profile, page or mode repaints and is reported as
 //!   [`Event::Switched`]. Without a watcher the daemon runs on, without
-//!   focus switching.
+//!   focus switching. A `launch` key that waits for its window opens a
+//!   pending launch with its shell's pid; a failed launch drops it, and
+//!   the [`Lineage`] tells the state machine which launch a focused
+//!   window's process belongs to.
 //! - The [`SessionWatcher`] reports the session lock. While locked the pad
 //!   shows the lock page, every press (a socket `press` and its dry run
 //!   included) is traced `blocked` and runs nothing, and the page buttons
@@ -46,6 +49,7 @@ use keyvo_core::config::Config;
 use keyvo_core::focus::{WindowContext, WindowWatcher};
 use keyvo_core::inject::InputInjector;
 use keyvo_core::layout::{self, Loaded, Profiles};
+use keyvo_core::lineage::Lineage;
 use keyvo_core::press::{PressDetector, PressKind};
 use keyvo_core::profile::{Action, KeySlot};
 use keyvo_core::recipe;
@@ -54,7 +58,7 @@ use keyvo_core::socket::{
     Command as Wire, Context, ContextSource, DeviceStatus, Edge as KeyEdge, Geometry, Recipes,
     Status,
 };
-use keyvo_core::state::{PageButton, View};
+use keyvo_core::state::{LaunchId, PageButton, View};
 use keyvo_core::trace::{Outcome, TraceRecord, Trigger};
 use keyvo_hid::input::{Control, Edge};
 use keyvo_hid::reprog::{PAGE_LEFT, PAGE_RIGHT};
@@ -151,14 +155,16 @@ pub struct Paths {
     pub socket: PathBuf,
 }
 
-/// The daemon's view of the desktop: the focused window and the session
-/// lock (spec §6.2).
+/// The daemon's view of the desktop: the focused window, the session lock
+/// (spec §6.2) and the process tree behind a window (§6.3).
 #[derive(Debug, Clone)]
-pub struct Sources<W, S> {
+pub struct Sources<W, S, L> {
     /// Reports the focused window.
     pub window: W,
     /// Reports the session lock.
     pub session: S,
+    /// Tells whether a window's process belongs to a launch.
+    pub lineage: L,
 }
 
 /// Runs the daemon on the configuration in `paths.config_dir` until
@@ -166,16 +172,17 @@ pub struct Sources<W, S> {
 /// that does not start is logged and the daemon runs without focus
 /// switching. `sources.session` reports the session lock; one that does
 /// not start is logged once and the daemon runs without lock detection.
+/// `sources.lineage` tells which launch a focused window belongs to.
 /// Socket clients' commands arrive on `requests`.
 ///
 /// # Errors
 ///
 /// When the device actor's thread cannot be started or ends in a panic.
-pub async fn run<C, I, W, S>(
+pub async fn run<C, I, W, S, L>(
     paths: &Paths,
     connector: C,
     injector: I,
-    sources: Sources<W, S>,
+    sources: Sources<W, S, L>,
     events: broadcast::Sender<Event>,
     mut requests: mpsc::UnboundedReceiver<Request>,
     shutdown: impl Future<Output = ()>,
@@ -185,10 +192,12 @@ where
     I: InputInjector + Send + 'static,
     W: WindowWatcher,
     S: SessionWatcher,
+    L: Lineage,
 {
     let Sources {
         window: mut watcher,
         session: mut session_watcher,
+        lineage,
     } = sources;
     let config_dir = paths.config_dir.as_path();
     let loaded = layout::load(config_dir).unwrap_or_else(|errors| {
@@ -246,6 +255,7 @@ where
         },
         context: None,
         ring: VecDeque::new(),
+        lineage,
     };
 
     tokio::pin!(shutdown);
@@ -266,7 +276,7 @@ where
             Some(()) = changed(&mut changes) => {
                 controller.reload_at = Some(now + controller.engine.config().timing.reload_settle);
             }
-            Some(record) = finished.recv() => controller.finished(record),
+            Some((record, launch)) = finished.recv() => controller.finished(record, launch),
             () = sleep(controller.reload_at) => { let _ = controller.reload(); }
             () = sleep(controller.flush_at) => controller.flush(),
             () = sleep(look_at) => controller.dirty(),
@@ -338,7 +348,7 @@ async fn sleep(deadline: Option<Instant>) {
     }
 }
 
-struct Controller<'a, I> {
+struct Controller<'a, I, L> {
     config_dir: &'a Path,
     socket: &'a Path,
     engine: Engine,
@@ -348,15 +358,18 @@ struct Controller<'a, I> {
     presses: PressDetector<u8>,
     flush_at: Option<Instant>,
     reload_at: Option<Instant>,
-    done: mpsc::UnboundedSender<TraceRecord>,
+    /// Where a finished `exec` or `launch` reports, with the pending launch
+    /// it opened.
+    done: mpsc::UnboundedSender<(TraceRecord, Option<LaunchId>)>,
     device: DeviceStatus,
     /// The last focus report.
     context: Option<Context>,
     /// The newest `[trace].ring` trace entries, oldest first.
     ring: VecDeque<TraceRecord>,
+    lineage: L,
 }
 
-impl<I: InputInjector> Controller<'_, I> {
+impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
     fn emit(&mut self, event: Event) {
         if let Event::Trace(record) = &event {
             let ring = self.engine.config().trace.ring;
@@ -477,7 +490,8 @@ impl<I: InputInjector> Controller<'_, I> {
         self.context = Some(context.clone());
         self.emit(Event::Context(context));
         let before = self.engine.view();
-        self.engine.focus(window, Instant::now().into_std());
+        self.engine
+            .focus(window, Instant::now().into_std(), &self.lineage);
         self.switched(&before);
     }
 
@@ -570,25 +584,42 @@ impl<I: InputInjector> Controller<'_, I> {
             Some(Action::Exec { cmd }) => {
                 let env = exec::env(&record, self.socket);
                 let timeout = self.engine.config().timing.exec_timeout;
-                self.spawn(&record, async move { exec::run(&cmd, &env, timeout).await });
+                self.spawn(&record, None, async move {
+                    exec::run(&cmd, &env, timeout).await
+                });
             }
-            Some(Action::Launch { cmd }) => {
-                let env = exec::env(&record, self.socket);
-                let settle = self.engine.config().timing.launch_settle;
-                self.spawn(
-                    &record,
-                    async move { exec::launch(&cmd, &env, settle).await },
-                );
-            }
+            Some(action @ Action::Launch { .. }) => self.launch(&record, &action),
         }
         record
     }
 
+    /// Starts the `launch` `action` of `record`. One that waits for its
+    /// window opens a pending launch first, which learns the shell's pid
+    /// at the spawn.
+    fn launch(&mut self, record: &TraceRecord, action: &Action) {
+        let Action::Launch { cmd, .. } = action else {
+            return;
+        };
+        let pending = self.engine.launched(action, Instant::now().into_std());
+        let env = exec::env(record, self.socket);
+        let settle = self.engine.config().timing.launch_settle;
+        match exec::Launch::spawn(cmd, &env) {
+            Ok(launch) => {
+                if let (Some(id), Some(pid)) = (pending, launch.pid()) {
+                    self.engine.launch_started(id, pid);
+                }
+                self.spawn(record, pending, launch.settle(settle));
+            }
+            Err(outcome) => self.spawn(record, pending, std::future::ready(outcome)),
+        }
+    }
+
     /// Runs `action`, the command of `record`, without blocking; its result
-    /// comes back through `done`.
+    /// comes back through `done` with the pending `launch` it opened.
     fn spawn(
         &mut self,
         record: &TraceRecord,
+        launch: Option<LaunchId>,
         action: impl Future<Output = Outcome> + Send + 'static,
     ) {
         self.engine.started(record, Instant::now().into_std());
@@ -596,11 +627,20 @@ impl<I: InputInjector> Controller<'_, I> {
         let mut running = record.clone();
         tokio::spawn(async move {
             running.finish(action.await);
-            let _ = done.send(running);
+            let _ = done.send((running, launch));
         });
     }
 
-    fn finished(&mut self, record: TraceRecord) {
+    /// The command of `record` finished. A `launch` that failed to start
+    /// or exited with an error expects no window any more; one that exited
+    /// 0 within the settle handed over to a running instance, whose window
+    /// still comes.
+    fn finished(&mut self, record: TraceRecord, launch: Option<LaunchId>) {
+        if let Some(id) = launch
+            && record.result.is_error()
+        {
+            self.engine.launch_failed(id);
+        }
         self.engine.finished(&record, Instant::now().into_std());
         self.dirty();
         self.emit(Event::Trace(record));

@@ -40,6 +40,7 @@ fn defaults_match_spec_6_1_and_9() {
             reply_timeout: ms(1000),
             exec_timeout: ms(30_000),
             launch_settle: ms(1000),
+            launch_focus: ms(15_000),
             reconnect_interval: ms(1000),
             reload_settle: ms(100),
             accept_backoff: ms(100),

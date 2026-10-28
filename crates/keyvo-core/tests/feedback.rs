@@ -131,9 +131,7 @@ fn only_exec_and_launch_actions_have_automatic_states() {
     let exec = Action::Exec {
         cmd: "make".to_owned(),
     };
-    let launch = Action::Launch {
-        cmd: "kcalc".to_owned(),
-    };
+    let launch = Action::launch("kcalc");
     let chord = Action::Chord {
         keys: Chord::parse("ctrl+s").unwrap(),
     };

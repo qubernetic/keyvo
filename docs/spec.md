@@ -155,6 +155,7 @@ trait HidTransport   // open/read/write HID reports; hidraw on Linux, hidapi els
 trait InputInjector  // Linux: uinput (evdev); Windows: SendInput
 trait WindowWatcher  // Linux: KWin script over D-Bus (KDE), X11 _NET_ACTIVE_WINDOW; Windows: SetWinEventHook
 trait SessionWatcher // Linux: systemd-logind on the system bus; Windows and X11 sources later
+trait Lineage        // Linux: /proc session id and parent chain; Windows: job object (M5); X11 pid through XRES
 ```
 
 `HidTransport` (`keyvo_core::hid`) moves whole reports, report id first:
@@ -202,10 +203,17 @@ returns the reason, and the daemon logs "lock detection off" once and runs
 on without it. The daemon binary uses the logind watcher
 (`keyvo_daemon::logind::LogindSessionWatcher`, §6.2); `FakeSessionWatcher`
 lets a test lock and unlock by hand, `FakeSessionWatcher::starting` reports
-a state at the start. The daemon takes both watchers as
-`keyvo_daemon::daemon::Sources { window, session }`.
+a state at the start.
 
-Clients implement none of the four traits: they reach the device only
+`Lineage` (`keyvo_core::lineage`, #179) answers whether a process belongs
+to a launch: `descends(pid, launch)` for a window's `pid` and the pid of
+a launch's shell, which leads its own session. The daemon binary uses
+`keyvo_daemon::lineage::ProcLineage` over `/proc` (§6.3); `FakeLineage`
+answers the pairs a test gives it, `NoLineage` knows no process. The
+daemon takes the two watchers and the lineage as
+`keyvo_daemon::daemon::Sources { window, session, lineage }`.
+
+Clients implement none of the five traits: they reach the device only
 through the daemon's socket. `keyvo-client` is that client side, used by the
 desktop app: `Client` sends one request at a time over any `Read + Write`
 stream (`Client::connect` for the Unix socket at `socket_path`:
@@ -898,6 +906,7 @@ Defaults, all configurable under `[timing]` in `config.toml`:
 | `reply_timeout` | 1000 ms | how long an HID++ request waits for its matching reply, §5.1 and §5.2 (captured replies come within about 1 ms) |
 | `exec_timeout` | 30000 ms | an `exec` action still running after this long is killed with its process group and fails, §8 |
 | `launch_settle` | 1000 ms | how long a `launch` action is watched for an early exit; a command still running after this long is let go and has started, §8 |
+| `launch_focus` | 15000 ms | how long a `launch` key's window is expected after the press: a window of the launch that takes the focus within it keeps a global page; 0 is off, §6.3 |
 | `reconnect_interval` | 1000 ms | wait between two attempts to open the Keypad after it is gone or not found, §5.1 |
 | `reload_settle` | 100 ms | quiet time after the last change in the configuration directory before the daemon reloads it, §7.2 |
 | `accept_backoff` | 100 ms | wait after a failed `accept` on the control socket before the next one, so a full file table does not spin the daemon, §8 |
@@ -1095,6 +1104,30 @@ view; the socket reports them as `session` events (§8). An animated lock
   index was. A title change in the same app keeps the index (#157; this
   replaces `page_grace` of #151, which kept the index across an app
   switch for 10 s after a page button's use).
+- A launch keeps the page (#179, decided by the owner on 2026-10-27 after
+  the first evening on the page return; prior art in
+  `docs/research/2026-10-27-launch-focus-matching-prior-art.md`): the pad
+  does not switch pages while the hand is on the pad. A press of a
+  `launch` key (§7.2) with `wait_focus` on opens a *pending launch* that
+  expects its window for `[timing].launch_focus` (15 s, 0 turns this
+  off). An app switch is judged against the pending launches, the first
+  hit consuming its entry:
+  1. lineage: the window's process is in the session the launch's shell
+     leads, or the shell is among its ancestors;
+  2. class: a launch whose `class` (explicit, or derived from a `flatpak
+     run <id>` command) matches the window's class like a `match.class`
+     entry; this covers the hand-over to a running instance and D-Bus
+     activated applications, where the lineage breaks;
+  3. the oldest launch without a class;
+  4. no hit: the switch is foreign.
+  A hit switches the profile to the window's, keeps an index of 0 or
+  below (a global page exists under every profile) and starts the page
+  return over at the window's arrival; an index of 2 or above shows
+  index 1, as the other profile may not have that page. A foreign switch
+  shows index 1 as before and leaves the pending launches until they
+  expire or match. A launch that fails to start or exits with an error
+  drops its entry; one that exits 0 within `launch_settle` keeps it (the
+  single-instance hand-over of `flatpak run`, `code` or a browser).
 - The page return: a page that was paged to does not stay on the pad
   once it is no longer used. The clock starts at the last activity on the
   pad, a page button's press or release or a key's press; a key press
@@ -1134,6 +1167,28 @@ view; the socket reports them as `session` events (§8). An animated lock
   global profile, index 1, auto mode; neither button then acts again
   until it is pressed anew. Until a later focus change the global profile
   shows. The visual mark for manual mode comes later.
+- As built, the launch rule (#179): `State::launched` opens a pending
+  launch with the class and an expiry at the press plus `launch_focus`;
+  the daemon spawns the shell itself, so `launch_started` gives it the
+  shell's pid before the settle, and `launch_failed` drops it on a spawn
+  error or a non-zero exit. A focus report records which pending launches
+  its process descends from (the `Lineage` platform trait of
+  `keyvo_core::lineage`; the daemon's `ProcLineage` reads the session id
+  from `/proc/<pid>/stat` and walks the parent chain, at most 64 levels);
+  the judgment runs when the window applies after the focus hysteresis,
+  in auto mode without the session lock, on an app switch only. Manual
+  mode, the lock, a title change and a window that holds the context
+  consume no launch. Expired launches are dropped at the next poll or
+  focus report; a reload reads `launch_focus` for the next press and keeps
+  the pending launches. The view's `profile` names the painted profile,
+  the global one at index 0 and below, so a launch's window that keeps a
+  global page changes no `profile`, `page` or `mode` event; the socket's
+  `context` event reports the window, and the return to the new profile's
+  context page comes as `profile` and `page` events
+  `page_return_global` after it. A `launch` whose command opens no window
+  of its own should name a `class` (the `sleep` key of
+  `contrib/profiles/global.toml` does), or it claims the next window
+  that takes the focus within `launch_focus`.
 
 ---
 
@@ -1266,7 +1321,13 @@ mouse.dpi            = 1200
   `keys.1` to `keys.9`, each with `icon`, `label`, `color`, `action` and
   `states.<name>` (`icon`, `label`, `color`, `badge`). Colors are
   `#rrggbb`. Actions are `chord` (`keys`), `exec` (`cmd`) and `launch`
-  (`cmd`, an application keyvo starts and lets go, §8). The other
+  (`cmd`, an application keyvo starts and lets go, §8; optional `class`,
+  the window class the launch opens, matched like a `match.class` entry
+  and derived from a `flatpak run <id>` command when absent, and
+  `wait_focus`, default `true`, whether the launch's window keeps a
+  global page, §6.3; both are unknown fields on a `chord` or an `exec`).
+  The editor writes `class` and `wait_focus` only where they differ from
+  the defaults. The other
   keys of the example above (`general_hint`, `on_fail`, the `recipe` action,
   `[dialpad]`, `[desk_state]`) are rejected as unknown until their issues
   add them.
@@ -1483,6 +1544,17 @@ to a failed `exec`. A daemon run as a systemd unit with the default
 `KillMode=control-group` would still stop a launched application with
 the unit, since `setsid` does not leave the cgroup; keyvo ships no unit
 yet.
+
+A `launch` with `wait_focus` on also opens a pending launch (§6.3, #179)
+before the spawn; the daemon starts the shell itself and hands its pid to
+the state machine at once, so a window that comes before the settle ends
+is judged by its lineage too. A spawn error or a non-zero exit drops the
+pending launch; an exit 0 within the settle (the hand-over to a running
+instance) and a `started` keep it. The whole rule depends on KWin's focus
+stealing prevention: at its default level (Low) every new window is
+activated, which is why a launch moves the focus at all; at Medium or
+above a new window only demands attention, no app switch comes and the
+pad stays where it is. `docs/hardware-notes.md` records the owner's level.
 
 **Inward (script → daemon).** Unix domain socket at
 `$XDG_RUNTIME_DIR/keyvo/keyvo.sock`, mode `0600`, owned by the session
@@ -2137,7 +2209,11 @@ key editor of the app; the key grid exists once, on the Pad.
   sets the field again. Color is a colour swatch and its `#rrggbb` text, kept in step.
 - **Action.** A select (No action, Chord, Exec, Launch) and the kind's
   field, the chord's keys or the `exec` or `launch` command; the working directory and hold of
-  an `exec` wait for the action schema to carry them. Under the Chord
+  an `exec` wait for the action schema to carry them. A Launch also shows
+  `Window class` (optional, with the hint "The class the launched window
+  carries; keyvo ctl status prints the focused one.") and the switch
+  `Wait for the window`, on by default (§6.3); another action type, a
+  tool or a preset starts both over (no class, waiting). Under the Chord
   field a hint line in the label size says the syntax: "Keys joined with
   +, for example ctrl+shift+g; modifiers ctrl, alt, shift, super." (the
   field is described by it). The form is at most `48ch` wide.
@@ -2453,6 +2529,17 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, beta slice 2 (2026-10-28)**: a launch keeps the global page
+  until its window arrives (#179). §6.1 `[timing].launch_focus` (15 s);
+  §6.3 pending launches, judged by lineage, class, then the oldest launch
+  without a class, a hit keeping an index of 0 or below and starting the
+  page return over at the window's arrival, and the as-built paragraph
+  (the `Lineage` platform trait, `/proc` in the daemon); §7.2 the
+  `launch` fields `class` and `wait_focus`; §8 the pending launch at the
+  spawn and the dependency on KWin's focus stealing prevention; §10 the
+  Inspector's `Window class` field and `Wait for the window` switch. The
+  research report `docs/research/2026-10-27-launch-focus-matching-prior-art.md`
+  is committed.
 - **v0.3, beta slice 1 (2026-10-28)**: keyvo's own Flatpak (#182). §3 the
   Flatpak as built: `io.github.qubernetic.keyvo` with the app and the CLI
   on `org.gnome.Platform//51`, the daemon on the host, built offline from

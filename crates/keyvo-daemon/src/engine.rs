@@ -15,12 +15,13 @@ use keyvo_core::config::Config;
 use keyvo_core::feedback::{Feedback, Look};
 use keyvo_core::focus::WindowContext;
 use keyvo_core::layout::Loaded;
+use keyvo_core::lineage::Lineage;
 use keyvo_core::press;
-use keyvo_core::profile::{Key, KeySlot, Profile};
+use keyvo_core::profile::{Action, Key, KeySlot, Profile};
 use keyvo_core::render::{self, KeySpec};
 use keyvo_core::session::Session;
 use keyvo_core::stack::{Layer, Stack};
-use keyvo_core::state::{PageButton, State, View};
+use keyvo_core::state::{LaunchId, PageButton, State, View};
 use keyvo_core::trace::{TraceRecord, Trigger};
 
 /// The reason of a press blocked while the session is locked.
@@ -98,9 +99,39 @@ impl Engine {
         self.view().page
     }
 
-    /// The focus source reports `window` at `now`.
-    pub fn focus(&mut self, window: WindowContext, now: Instant) {
-        self.state.focus(window, now, &self.loaded.profiles);
+    /// The focus source reports `window` at `now`; `lineage` tells which
+    /// launch its process belongs to.
+    pub fn focus(&mut self, window: WindowContext, now: Instant, lineage: &dyn Lineage) {
+        self.state
+            .focus(window, now, &self.loaded.profiles, lineage);
+    }
+
+    /// `action` was pressed at `now`: a `launch` with `wait_focus` set
+    /// expects its window ([`State::launched`]); `None` for every other
+    /// action, and when `[timing].launch_focus` is 0.
+    pub fn launched(&mut self, action: &Action, now: Instant) -> Option<LaunchId> {
+        match action {
+            Action::Launch {
+                wait_focus: true, ..
+            } => self.state.launched(action.launch_class(), now),
+            _ => None,
+        }
+    }
+
+    /// The shell of launch `id` runs as process `pid`.
+    pub fn launch_started(&mut self, id: LaunchId, pid: u32) {
+        self.state.launch_started(id, pid);
+    }
+
+    /// Launch `id` did not start or exited with an error.
+    pub fn launch_failed(&mut self, id: LaunchId) {
+        self.state.launch_failed(id);
+    }
+
+    /// The pending launches, oldest first.
+    #[must_use]
+    pub fn launches(&self) -> Vec<LaunchId> {
+        self.state.launches()
     }
 
     /// Whether a window of `class` holds the context
@@ -248,6 +279,7 @@ mod tests {
     use std::time::Duration;
 
     use keyvo_core::layout::Profiles;
+    use keyvo_core::lineage::NoLineage;
     use keyvo_core::press::PressKind;
     use keyvo_core::profile::{Action, GLOBAL_ID};
     use keyvo_core::session::Session;
@@ -323,11 +355,42 @@ action = { type = "exec", cmd = "true" }
 
     /// `engine` shows the profile for a `code` window from `now` on.
     fn focus_code(engine: &mut Engine, now: Instant) {
-        engine.focus(WindowContext::new("code", "main.rs"), now);
+        engine.focus(WindowContext::new("code", "main.rs"), now, &NoLineage);
         let at = engine.next_deadline().unwrap();
         assert_eq!(at, now + engine.config().timing.focus_hysteresis);
         engine.poll(at);
         assert_eq!(engine.active().profile.id, "code");
+    }
+
+    #[test]
+    fn only_a_launch_that_waits_for_its_window_expects_one() {
+        let mut engine = Engine::new(loaded(GLOBAL));
+        let now = Instant::now();
+        let flatpak = Action::launch("flatpak run org.kde.kcalc");
+        let id = engine.launched(&flatpak, now).unwrap();
+        let shy = Action::Launch {
+            cmd: "kcalc".into(),
+            class: Some("org.kde.kcalc".into()),
+            wait_focus: false,
+        };
+        assert_eq!(engine.launched(&shy, now), None);
+        assert_eq!(
+            engine.launched(&Action::Exec { cmd: "x".into() }, now),
+            None
+        );
+        assert_eq!(engine.launches(), [id]);
+        engine.launch_started(id, 4242);
+        // The derived class matches KCalc's window.
+        engine.focus(
+            WindowContext::new("org.kde.kcalc", "KCalc"),
+            now,
+            &NoLineage,
+        );
+        engine.poll(now + engine.config().timing.focus_hysteresis);
+        assert_eq!(engine.launches(), []);
+        let failed = engine.launched(&flatpak, now).unwrap();
+        engine.launch_failed(failed);
+        assert_eq!(engine.launches(), []);
     }
 
     #[test]

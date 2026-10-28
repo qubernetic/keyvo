@@ -10,6 +10,9 @@ checked against the same bytes. Every file is hand-written.
 | `steps.json` | the profile id, page and key edited, the file's path inside the configuration directory, the key's fields and `line` before the first step, and each step: the form field the GUI changes, the key's fields after it, the expected file, and the key's `line` in it; `line` is the line, from 1, of the key's `[pages.keys.2]` header, as `KeyView` and `Edited` answer it |
 | `terminal.1.toml` | after step 1: key 2's label `Copy` becomes `Paste` |
 | `terminal.2.toml` | after step 2: key 2's chord becomes an `exec` of `wl-paste` |
+| `terminal.3.toml` | after step 3: the `exec` becomes a `launch` of the same command |
+| `terminal.4.toml` | after step 4: the `launch` gets the window class `wl-paste` |
+| `terminal.5.toml` | after step 5: the `launch` does not wait for its window (`wait_focus = false`) |
 | `profile.json` | the same for the profile header (`docs/design/gui-ux.md` §3.2): the profile id, the file, its path, the header's name and accent before the first step, and each step: the header field the GUI changes, the name and accent after it, the expected file |
 | `terminal.name.toml` | after header step 1: the name `Terminal` becomes `Shell work` |
 | `terminal.accent.toml` | after header step 2: the accent `#2ecc71` becomes `#e67e22` |

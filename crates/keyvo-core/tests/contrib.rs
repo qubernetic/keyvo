@@ -217,7 +217,10 @@ fn the_third_global_page_has_a_launch_key() {
     assert!(
         third.keys.values().any(|key| key.action
             == Some(Action::Launch {
-                cmd: "sleep 60".into()
+                cmd: "sleep 60".into(),
+                // No window comes: the launch claims none.
+                class: Some("sleep".into()),
+                wait_focus: true,
             })),
         "{third:?}"
     );

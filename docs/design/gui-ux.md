@@ -180,7 +180,10 @@ holds, what is special in the right column.
   the write and the message under the field names the wrong token; a
   hint line in the label size under Chord says the syntax ("Keys joined
   with +, for example ctrl+shift+g; modifiers ctrl, alt, shift, super.",
-  #167). Forms capped at 48ch. Every change writes through
+  #167). A Launch adds `Window class` (optional, the hint "The class the
+  launched window carries; keyvo ctl status prints the focused one.") and
+  the switch `Wait for the window`, on by default (#179). Forms capped at
+  48ch. Every change writes through
   `toml_edit` immediately (§4.1), the result line with a time stamp under
   the fields. Empty: "Select a key to edit it."
 - **Actions catalogue** (right, from a 1200 px window; below it the

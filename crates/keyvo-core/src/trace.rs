@@ -52,7 +52,7 @@ pub struct TraceRecord {
 }
 
 /// The fields an [`Action`] reads; a record drops the others.
-const ACTION_FIELDS: [&str; 3] = ["type", "keys", "cmd"];
+const ACTION_FIELDS: [&str; 5] = ["type", "keys", "cmd", "class", "wait_focus"];
 
 /// Reads the action of a record. A profile rejects unknown action fields,
 /// a record ignores them, so a v1 client reads the records of a later

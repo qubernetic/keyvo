@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use keyvo_core::focus::FakeWindowWatcher;
 use keyvo_core::inject::FakeInputInjector;
+use keyvo_core::lineage::NoLineage;
 use keyvo_core::profile::KeySlot;
 use keyvo_core::session::{FakeSessionWatcher, Session};
 use keyvo_core::socket::{DeviceStatus, Edge, Event, Reply, Response, ServerMessage};
@@ -129,6 +130,7 @@ impl Running {
                 daemon::Sources {
                     window: FakeWindowWatcher::new(),
                     session: daemon_session,
+                    lineage: NoLineage,
                 },
                 events,
                 inbox,

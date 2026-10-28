@@ -45,6 +45,10 @@
           "additionalProperties": false,
           "description": "Open an application: run a command like `exec`, in its own session,\nand let it go once it outlives `[timing].launch_settle`.",
           "properties": {
+            "class": {
+              "description": "The window class the launch opens, matched like a profile's\n`match.class` entry; derived from a `flatpak run <id>` command\nwhen absent.",
+              "type": "string"
+            },
             "cmd": {
               "description": "The command line.",
               "type": "string"
@@ -52,6 +56,10 @@
             "type": {
               "const": "launch",
               "type": "string"
+            },
+            "wait_focus": {
+              "description": "Whether the launch's window keeps a global page (spec §6.3).\nDefault `true`.",
+              "type": "boolean"
             }
           },
           "required": [

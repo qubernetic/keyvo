@@ -15,6 +15,7 @@ pub mod focus;
 pub mod hid;
 pub mod inject;
 pub mod layout;
+pub mod lineage;
 pub mod press;
 pub mod profile;
 pub mod recipe;

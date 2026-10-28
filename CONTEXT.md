@@ -11,7 +11,8 @@ choices behind these terms are recorded in `docs/adr/`; defaults and numbers in
 TOML; executed by `keyvo-core` (internal kinds) or `keyvo-daemon` (injection,
 processes, HTTP). `exec` runs a command and its exit is the result; `launch`
 opens an application and lets it go once it outlives
-`[timing].launch_settle`. An optional `on_fail` action runs when the primary
+`[timing].launch_settle`, and may name its window `class` and whether it
+waits for that window (`wait_focus`, see Pending launch). An optional `on_fail` action runs when the primary
 one fails.
 
 **Blocked**: The trace result of a press that was not resolved and ran
@@ -165,6 +166,13 @@ itself after a time without a page-button or key press: after
 below), after `[timing].page_return_own` (default 0, off) on the shown
 profile's further pages (index 2 and above). Replaced the page grace, which
 kept the index across an app switch (#157).
+
+**Pending launch**: A press of a `launch` key with `wait_focus` on, waiting up
+to `[timing].launch_focus` (default 15 s) for its window. An app switch whose
+window descends from the launch's process, carries the launch's class, or
+comes while a launch without a class waits, consumes it and keeps a global
+page instead of showing the context page; the page return starts over at the
+window's arrival. A failed launch drops it (#179).
 
 **Plugin**: An executable under `~/.config/keyvo/plugins/<name>/` described by
 `plugin.toml`, started and restarted by the daemon, speaking the NDJSON socket

@@ -5,7 +5,7 @@
 // reply (spec §7.5); the raw tools Chord, Exec and Launch close General. A key
 // never names its pack, so the recipe a key carries is found from its icon
 // and action.
-import type { Form, KeyFields } from "./editor";
+import { actionForm, type Form, type KeyFields } from "./editor";
 import { t, type MessageKey } from "./i18n";
 import type { Action, Recipe, RecipeGroup } from "./protocol";
 import { tileIconValue } from "./tileIcons";
@@ -86,12 +86,6 @@ export function search(entries: readonly CatalogueEntry[], text: string): Catalo
   );
 }
 
-function actionForm(action: Action): Pick<Form, "actionType" | "action"> {
-  return action.type === "chord"
-    ? { actionType: "chord", action: action.keys }
-    : { actionType: action.type, action: action.cmd };
-}
-
 /** `form` with variant `variant` of `recipe`: its action, the pack's label
  * and icon, the colour kept (keyvo_client::Editor::apply_recipe); `form`
  * itself for a variant the pack does not have. */
@@ -111,7 +105,7 @@ export function applied(entry: CatalogueEntry, form: Form): Form {
   }
   const tool = TOOLS.find((candidate) => candidate.id === entry.id);
   if (tool === undefined) return form;
-  return { ...form, actionType: tool.id as ToolId, action: "" };
+  return { ...form, ...actionForm(undefined), actionType: tool.id as ToolId };
 }
 
 /** The `DataTransfer` type a dragged entry is carried under. */
