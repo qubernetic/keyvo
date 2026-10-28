@@ -2464,7 +2464,7 @@ line and column, `?mock-locked` reports the session locked: the view says
   | 4 | `session` | `XDG_SESSION_TYPE` is `wayland` and `XDG_CURRENT_DESKTOP` contains `KDE` | `warn`: profiles follow the focused window on KWin only |
   | 5 | `focus` | `kwinrc` `[Windows]` `FocusStealingPreventionLevel` absent, `0` or `1` | `warn` at `2` or above: launch keys do not switch the pad (§6.3, #179); the `kwriteconfig6` line |
   | 6 | `unit` | `systemctl --user is-active keyvo-daemon` says `active` | `warn`: not installed (the three install lines), or installed and not active (`enable --now`) |
-  | 7 | `daemon` | the socket's directory is the user's with mode `0700`, the socket has mode `0600`, and `status` answers within `[timing].doctor_reply` | `warn`: no socket or nobody answers (start it), no answer in time (the journal); `fail`: a wrong mode or owner, or the client's checks (§8) refuse it |
+  | 7 | `daemon` | the socket is the user's with mode `0600`; when it lies in keyvo's runtime directory, that directory is the user's and nobody else may enter it (the daemon's predicate, `mode & 0o077 == 0`); `status` answers within `[timing].doctor_reply` | `warn`: no socket or nobody answers (start it), no answer in time (the journal); `fail`: a wrong mode or owner, or the client's checks (§8) refuse it. The fix removes only keyvo's runtime directory; for a `KEYVO_SOCKET` elsewhere it restarts the unit or unsets the variable |
   | 8 | `solaar` | Solaar is not running (`flatpak ps`, a `solaar` process) | `warn`: it must set no divert on the Creative Console devices |
   | 9 | `flatpak` | always `ok`: says whether `flatpak info io.github.qubernetic.keyvo` finds the app | |
 

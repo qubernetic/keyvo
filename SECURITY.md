@@ -151,7 +151,9 @@ user is trusted, and nothing else is.
   and runs `systemctl --user is-active|is-enabled keyvo-daemon`, `flatpak
   ps` and `flatpak info io.github.qubernetic.keyvo` from `PATH` with fixed
   arguments. The fix lines it prints (some with `sudo`) are for the user to
-  read and run; it runs none of them.
+  read and run; it runs none of them. The only `rm -r` it prints is for
+  keyvo's own runtime directory (`$XDG_RUNTIME_DIR/keyvo`), never for the
+  directory a `KEYVO_SOCKET` points into.
 
 ### The desktop app
 

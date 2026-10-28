@@ -467,34 +467,47 @@ fn unit(runner: &mut dyn Runner) -> Check {
     .fix("systemctl --user enable --now keyvo-daemon\njournalctl --user -u keyvo-daemon")
 }
 
-/// `Err` with the problem unless `dir` is a directory of `uid` with mode
-/// `0700` and `socket` (the metadata of `path`) a socket with mode `0600`,
-/// as the daemon creates them.
-fn private(dir: &Path, path: &Path, socket: &std::fs::Metadata, uid: u32) -> Result<(), String> {
+/// `Err` with the problem unless `dir` is a directory of `uid` nobody else
+/// may enter, the predicate of the daemon's `runtime::ensure_private`.
+fn private_dir(dir: &Path, uid: u32) -> Result<(), String> {
     let meta = std::fs::symlink_metadata(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    if !meta.is_dir() || meta.uid() != uid || meta.mode() & 0o777 != 0o700 {
+    if !meta.is_dir() || meta.uid() != uid || meta.mode() & 0o077 != 0 {
         return Err(format!(
-            "{} is mode {:o}, owner {}: not a directory of this user with mode 700",
+            "{} is mode {:o}, owner {}: not a directory of this user that only it may enter",
             dir.display(),
             meta.mode() & 0o7777,
             meta.uid()
         ));
     }
-    if !socket.file_type().is_socket() || socket.mode() & 0o777 != 0o600 {
+    Ok(())
+}
+
+/// `Err` with the problem unless `socket` (the metadata of `path`) is a
+/// socket of `uid` with mode `0600`, as the daemon creates it.
+fn private_socket(path: &Path, socket: &std::fs::Metadata, uid: u32) -> Result<(), String> {
+    if !socket.file_type().is_socket() || socket.uid() != uid || socket.mode() & 0o777 != 0o600 {
         return Err(format!(
-            "{} is mode {:o}: not a socket with mode 600",
+            "{} is mode {:o}, owner {}: not a socket of this user with mode 600",
             path.display(),
-            socket.mode() & 0o7777
+            socket.mode() & 0o7777,
+            socket.uid()
         ));
     }
     Ok(())
 }
 
-/// Check 7: the daemon's runtime directory `0700`, its socket `0600`, and
-/// `status` answered within `[timing].doctor_reply`.
+/// Check 7: the socket `0600`, the daemon's runtime directory private when
+/// the socket lies in it, and `status` answered within
+/// `[timing].doctor_reply`. The fix removes only keyvo's runtime directory,
+/// never a directory `KEYVO_SOCKET` points into.
 fn daemon(inputs: &Inputs<'_>) -> Check {
     const NAME: &str = "daemon";
     const START: &str = "systemctl --user start keyvo-daemon";
+    let runtime = keyvo_core::layout::runtime_dir(
+        inputs.var("XDG_RUNTIME_DIR"),
+        &std::env::temp_dir(),
+        inputs.uid,
+    );
     let path = keyvo_client::socket_path(
         inputs.var("KEYVO_SOCKET"),
         inputs.var("XDG_RUNTIME_DIR"),
@@ -515,12 +528,21 @@ fn daemon(inputs: &Inputs<'_>) -> Check {
             return Check::new(NAME, Status::Warn, format!("{shown}: {error}")).fix(START);
         }
     };
-    let dir = path.parent().unwrap_or(Path::new("."));
-    let restart = format!(
-        "systemctl --user stop keyvo-daemon\nrm -r {}\n{START}",
-        dir.display()
-    );
-    if let Err(problem) = private(dir, &path, &socket, inputs.uid) {
+    let in_runtime = path.parent() == Some(runtime.as_path());
+    let restart = if in_runtime {
+        format!(
+            "systemctl --user stop keyvo-daemon\nrm -r {}\n{START}",
+            runtime.display()
+        )
+    } else {
+        "systemctl --user restart keyvo-daemon".to_owned()
+    };
+    let checked = if in_runtime {
+        private_dir(&runtime, inputs.uid)
+    } else {
+        Ok(())
+    };
+    if let Err(problem) = checked.and_then(|()| private_socket(&path, &socket, inputs.uid)) {
         return Check::new(NAME, Status::Fail, problem).fix(restart);
     }
     let stream = match keyvo_client::open(&path) {
@@ -532,6 +554,11 @@ fn daemon(inputs: &Inputs<'_>) -> Check {
                 format!("nobody answers on {shown}: the daemon is not running"),
             )
             .fix(START);
+        }
+        // Outside the runtime directory the client refuses a socket whose
+        // directory others may enter; the daemon refuses to bind there too.
+        Err(error) if !in_runtime => {
+            return Check::new(NAME, Status::Fail, error.to_string()).fix("unset KEYVO_SOCKET");
         }
         Err(error) => return Check::new(NAME, Status::Fail, error.to_string()).fix(restart),
     };
@@ -906,7 +933,70 @@ mod tests {
             "{}",
             open_socket.message
         );
-        assert!(open_socket.fix.unwrap().contains("rm -r"));
+        assert_eq!(
+            open_socket.fix.unwrap(),
+            format!(
+                "systemctl --user stop keyvo-daemon\nrm -r {}\nsystemctl --user start keyvo-daemon",
+                path.parent().unwrap().display()
+            )
+        );
+    }
+
+    #[test]
+    fn a_runtime_directory_the_daemon_accepts_passes() {
+        let root = tempfile::tempdir().unwrap();
+        let (path, vars) = runtime(root.path(), 0o500);
+        mode(path.parent().unwrap(), 0o700);
+        let _listener = UnixListener::bind(&path).unwrap();
+        mode(&path, 0o600);
+        mode(path.parent().unwrap(), 0o500);
+        let check = daemon(&inputs(root.path(), &vars));
+        mode(path.parent().unwrap(), 0o700);
+        assert_ne!(check.status, Status::Fail, "{}", check.message);
+    }
+
+    #[test]
+    fn a_socket_outside_the_runtime_directory_never_removes_its_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let (_, mut vars) = runtime(root.path(), 0o700);
+        let shared = root.path().join("shared");
+        std::fs::create_dir(&shared).unwrap();
+        mode(&shared, 0o1777);
+        let path = shared.join("other.sock");
+        let _listener = UnixListener::bind(&path).unwrap();
+        mode(&path, 0o600);
+        vars.insert("KEYVO_SOCKET".to_owned(), path.clone().into_os_string());
+        // The client and the daemon refuse a socket in a shared directory,
+        // so the check fails, but it never suggests removing that directory.
+        let check = daemon(&inputs(root.path(), &vars));
+        assert_eq!(check.status, Status::Fail);
+        assert!(check.message.contains("not private"), "{}", check.message);
+        assert_eq!(check.fix.as_deref(), Some("unset KEYVO_SOCKET"));
+        mode(&path, 0o666);
+        let open_socket = daemon(&inputs(root.path(), &vars));
+        assert_eq!(open_socket.status, Status::Fail);
+        assert_eq!(
+            open_socket.fix.as_deref(),
+            Some("systemctl --user restart keyvo-daemon")
+        );
+        // The session's own runtime directory is not keyvo's either.
+        let run = root.path().join("run");
+        mode(&run, 0o755);
+        let beside = run.join("keyvo.sock");
+        let _beside = UnixListener::bind(&beside).unwrap();
+        mode(&beside, 0o600);
+        vars.insert("KEYVO_SOCKET".to_owned(), beside.clone().into_os_string());
+        let check = daemon(&inputs(root.path(), &vars));
+        assert_eq!(check.fix.as_deref(), Some("unset KEYVO_SOCKET"));
+        // A private directory of its own is fine.
+        mode(&run, 0o700);
+        let check = daemon(&inputs(root.path(), &vars));
+        assert_ne!(check.status, Status::Fail, "{}", check.message);
+        assert!(
+            !check.fix.as_deref().unwrap_or_default().contains("rm -r"),
+            "{:?}",
+            check.fix
+        );
     }
 
     #[test]
