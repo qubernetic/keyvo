@@ -1,0 +1,26 @@
+# The Dialpad's diverts given back on a clean stop, slot 3 (spec §5.8): per
+# button setCidReporting(cid, 0x02), the divert bit valid and clear, in CID
+# order, then setMode(roller, NATIVE) for both rollers.
+#
+# Source: synthetic until the owner's capture of slice 7 (#187) replaces it;
+# the flags are the static pass (docs/research/2026-10-28-dialpad-static-pass.md
+# facts 3 and 7: `0x02` and NATIVE on stop). Requests use keyvo's swid 0xe.
+#
+# 1. setCidReporting(0x0053, 0x02) echoed
+> 11 03 0a 3e 00 53 02 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 0a 3e 00 53 02 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 2. setCidReporting(0x0056, 0x02) echoed
+> 11 03 0a 3e 00 56 02 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 0a 3e 00 56 02 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 3. setCidReporting(0x0059, 0x02) echoed
+> 11 03 0a 3e 00 59 02 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 0a 3e 00 59 02 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 4. setCidReporting(0x005A, 0x02) echoed
+> 11 03 0a 3e 00 5a 02 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 0a 3e 00 5a 02 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 5. setMode(0, NATIVE)
+> 11 03 0d 3e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 0d 3e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 6. setMode(1, NATIVE)
+> 11 03 0d 3e 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 0d 3e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00

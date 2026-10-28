@@ -82,3 +82,29 @@ The image writer's golden tests also reproduce the LCD writes of
 `02-binding-paint.pcap` (frames #521, #639, #640, software id `0xd`) from
 `captures/external/hcooper/derived/binding-paint-frames.tsv`, which carries
 the whole 4095-byte reports.
+
+## Dialpad over the Bolt receiver (synthetic)
+
+No capture of the Dialpad exists yet; the owner's capture of slice 7
+(#187) replaces these files. Until then they are built from the measured
+feature and control walks (`docs/research/hidpp-features-dump.txt`,
+`hidpp-reprog-controls-dump.txt`), Solaar's device page
+(`solaar-show-dialpad.txt`), the static pass
+(`docs/research/2026-10-28-dialpad-static-pass.md`) and the third-party
+decode it quotes, and the HID++ 1.0 error layout of the public Unifying
+receiver specification; each file's `#` lines say which part comes from
+where and what is a guess. The Dialpad sits on slot 3 (device index `03`),
+as on the owner's receiver; keyvo uses software id `0xe`. The golden tests
+in `crates/keyvo-hid/tests/golden.rs` join them in keyvo's order, and the
+Bluetooth test replays them with device index `ff`.
+
+| File | Content |
+|---|---|
+| `receiver-slot-probe.txt` | the slot search: slot 1 empty (`10 01 8f 00 0e 08`), slot 2 silent (no answer), slot 3 getFeature(0x4610) = 0x0d, getFeature(0x0003) = 0x02, getDeviceInfo with model id `bc 00 00 00 00 00` |
+| `receiver-asleep.txt` | the search while the Dialpad sleeps: slots 1, 2, 4 to 6 empty, slot 3 silent, then the arrival of slot 3 |
+| `receiver-controls.txt` | getFeature(0x1B04) = 0x0a, getCount = 4, getCidInfo for CIDs 0x0053, 0x0056, 0x0059, 0x005A (flags 0x31) |
+| `receiver-multiroller.txt` | 0x4610 getCapabilities = 2 rollers, getRollerCapabilities 40 and 180 increments |
+| `receiver-divert.txt` | setCidReporting(cid, 0x03) and getCidReporting per button, setMode(roller, DIVERTED) for both |
+| `receiver-restore.txt` | setCidReporting(cid, 0x02) per button, setMode(roller, NATIVE) for both |
+| `receiver-input.txt` | rotations of both rollers (+3, -2, +127, -128, -1, with and without timestamp), a button held across three reports, two buttons together, another slot's notification and a DJ report `0x20` |
+| `receiver-arrival.txt` | the arrival of slot 3 with the link lost (`10 03 41 10 40 00 bc`), then established |

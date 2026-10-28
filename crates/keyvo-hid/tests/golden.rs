@@ -9,15 +9,18 @@ use std::time::Duration;
 
 use keyvo_core::clock::FakeClock;
 use keyvo_core::hid::FakeHidTransport;
+use keyvo_hid::dialpad::{
+    self, Dialpad, DialpadError, DialpadEvent, DialpadTiming, Link, Slot, Slots,
+};
 use keyvo_hid::display::{self, DisplayMode};
 use keyvo_hid::firmware::{self, FirmwareEntity, FirmwareKind};
-use keyvo_hid::hidpp::{DEVICE_DIRECT, Hidpp, HidppError, Plane, SoftwareId};
+use keyvo_hid::hidpp::{DEVICE_DIRECT, Hidpp, HidppError, Plane, ReceiverError, SoftwareId};
 use keyvo_hid::image::{
     self, ImageConfig, ImageError, ImageHeader, IndexBase, Rect, Target, Written,
 };
 use keyvo_hid::input::{Control, Input, InputEvent};
 use keyvo_hid::keep_alive::{self, KeepAlive, KeepAliveTiming, TimeoutRange};
-use keyvo_hid::multiroller::{self, Mode, Roller};
+use keyvo_hid::multiroller::Roller;
 use keyvo_hid::reprog::{self, ControlInfo, DivertTiming};
 use keyvo_hid::root::{FeatureInfo, ProtocolVersion, VlpFeatureInfo, VlpProtocol, feature};
 
@@ -779,17 +782,57 @@ fn a_key_report_while_waiting_for_an_ack_is_kept_for_the_input_path() {
 /// The Dialpad's slot on the receiver in the receiver fixtures.
 const DIALPAD_SLOT: u8 = 3;
 
-fn replay_on(script: &str, device_index: u8) -> Hidpp<FakeHidTransport> {
+/// The Dialpad's CIDs, buttons 1 to 4 (measured).
+const DIALPAD_BUTTONS: [u16; 4] = [0x0053, 0x0056, 0x0059, 0x005a];
+
+/// The search, the control walk, the roller capabilities and the diverts:
+/// everything `Dialpad::open` sends on the receiver.
+fn receiver_open() -> String {
+    [
+        fixture!("receiver-slot-probe.txt"),
+        fixture!("receiver-controls.txt"),
+        fixture!("receiver-multiroller.txt"),
+        fixture!("receiver-divert.txt"),
+    ]
+    .concat()
+}
+
+/// `Dialpad::open` on `script`, the waits it asked for in ms.
+fn open_dialpad(script: &str, link: Link) -> (Hidpp<FakeHidTransport>, Dialpad, Vec<u128>) {
     let mut hidpp = replay(script);
-    hidpp.set_device_index(device_index);
-    hidpp
+    let mut slept = Vec::new();
+    let dialpad = Dialpad::open(&mut hidpp, link, &DialpadTiming::default(), |pause| {
+        slept.push(pause.as_millis());
+    })
+    .unwrap();
+    (hidpp, dialpad, slept)
+}
+
+/// Every event until the script runs dry.
+fn dialpad_events(hidpp: &mut Hidpp<FakeHidTransport>, dialpad: &mut Dialpad) -> Vec<DialpadEvent> {
+    std::iter::from_fn(|| dialpad.next_event(hidpp, REPLY_TIMEOUT, |_| {}).unwrap()).collect()
 }
 
 #[test]
-fn receiver_multiroller_reads_both_rollers_and_diverts_them() {
-    let mut hidpp = replay_on(fixture!("receiver-multiroller.txt"), DIALPAD_SLOT);
+fn receiver_open_finds_the_dialpad_on_its_slot_and_diverts_it() {
+    let (mut hidpp, dialpad, slept) = open_dialpad(&receiver_open(), Link::Receiver);
+    assert_eq!(dialpad.device_index(), DIALPAD_SLOT);
+    assert_eq!(hidpp.device_index(), DIALPAD_SLOT);
     assert_eq!(
-        multiroller::rollers(&mut hidpp).unwrap(),
+        dialpad.slots(),
+        &Slots(vec![
+            (1, Slot::Empty(ReceiverError::UnknownDevice)),
+            (2, Slot::Silent),
+            (3, Slot::Dialpad),
+        ])
+    );
+    assert_eq!(dialpad.reprog_index(), 0x0a);
+    assert_eq!(dialpad.roller_index(), 0x0d);
+    assert_eq!(dialpad.buttons(), DIALPAD_BUTTONS);
+    assert_eq!(dialpad.button(0x0059), Some(3));
+    assert_eq!(dialpad.button(0x0001), None);
+    assert_eq!(
+        dialpad.rollers(),
         [
             Roller {
                 id: 0,
@@ -803,8 +846,167 @@ fn receiver_multiroller_reads_both_rollers_and_diverts_them() {
             },
         ]
     );
-    for roller in [0, 1] {
-        multiroller::set_mode(&mut hidpp, roller, Mode::Diverted).unwrap();
-    }
+    // The settle before the walk, the spacing before every further 0x1B04
+    // request (four getCidInfo, set and verify per button) and every
+    // setMode.
+    let mut expected = vec![100];
+    expected.extend([20; 4 + 8 + 2]);
+    assert_eq!(slept, expected);
+    assert!(hidpp.transport_mut().is_done());
+}
+
+#[test]
+fn receiver_input_gives_turns_and_button_edges_of_the_dialpad_only() {
+    let script = receiver_open() + fixture!("receiver-input.txt");
+    let (mut hidpp, mut dialpad, _) = open_dialpad(&script, Link::Receiver);
+    let turn = |roller, delta| DialpadEvent::Input(InputEvent::Rotate { roller, delta });
+    let button = |cid| Control::Page(cid);
+    assert_eq!(
+        dialpad_events(&mut hidpp, &mut dialpad),
+        [
+            turn(1, 3),
+            turn(1, -2),
+            turn(0, 127),
+            turn(0, -128),
+            turn(0, -1),
+            DialpadEvent::Input(InputEvent::press(button(0x0053))),
+            DialpadEvent::Input(InputEvent::release(button(0x0053))),
+            DialpadEvent::Input(InputEvent::press(button(0x0059))),
+            DialpadEvent::Input(InputEvent::press(button(0x005a))),
+            DialpadEvent::Input(InputEvent::release(button(0x0059))),
+            DialpadEvent::Input(InputEvent::release(button(0x005a))),
+        ]
+    );
+    // The kernel's DJ report is not a frame.
+    assert_eq!(hidpp.dropped_reports(), 1);
+    assert!(hidpp.transport_mut().is_done());
+}
+
+#[test]
+fn receiver_restore_gives_every_divert_back() {
+    let script = receiver_open() + fixture!("receiver-restore.txt");
+    let (mut hidpp, dialpad, _) = open_dialpad(&script, Link::Receiver);
+    let mut slept = Vec::new();
+    dialpad
+        .restore(&mut hidpp, |pause| slept.push(pause.as_millis()))
+        .unwrap();
+    assert_eq!(slept, [20; 6]);
+    assert!(hidpp.transport_mut().is_done());
+}
+
+#[test]
+fn receiver_arrival_after_a_lost_link_rediverts_the_dialpad() {
+    // Button 1 held when the link goes; the arrival re-sends every divert,
+    // and the stop restores them.
+    let held = "< 11 03 0a 00 00 53 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n";
+    let script = [
+        receiver_open().as_str(),
+        held,
+        fixture!("receiver-arrival.txt"),
+        fixture!("receiver-divert.txt"),
+        held,
+        fixture!("receiver-restore.txt"),
+    ]
+    .concat();
+    let (mut hidpp, mut dialpad, _) = open_dialpad(&script, Link::Receiver);
+    let mut slept = Vec::new();
+    let mut next = || {
+        dialpad
+            .next_event(&mut hidpp, REPLY_TIMEOUT, |pause| {
+                slept.push(pause.as_millis());
+            })
+            .unwrap()
+    };
+    let press = DialpadEvent::Input(InputEvent::press(Control::Page(0x0053)));
+    assert_eq!(next(), Some(press));
+    assert_eq!(next(), Some(DialpadEvent::LinkLost));
+    assert_eq!(next(), Some(DialpadEvent::Rediverted));
+    // Nothing was held after the lost link: the button presses again.
+    assert_eq!(next(), Some(press));
+    assert_eq!(next(), None);
+    let mut expected = vec![100];
+    expected.extend([20; 8 + 2]);
+    assert_eq!(slept, expected);
+    dialpad.restore(&mut hidpp, |_| {}).unwrap();
+    assert!(hidpp.transport_mut().is_done());
+}
+
+#[test]
+fn receiver_search_without_an_awake_dialpad_waits_for_its_arrival() {
+    let mut hidpp = replay(fixture!("receiver-asleep.txt"));
+    let timing = DialpadTiming::default();
+    let Err(DialpadError::NotFound(slots)) =
+        Dialpad::open(&mut hidpp, Link::Receiver, &timing, |_| {})
+    else {
+        panic!("found a Dialpad in the asleep fixture");
+    };
+    let empty = Slot::Empty(ReceiverError::UnknownDevice);
+    assert_eq!(
+        slots,
+        Slots(vec![
+            (1, empty),
+            (2, empty),
+            (3, Slot::Silent),
+            (4, empty),
+            (5, empty),
+            (6, empty),
+        ])
+    );
+    assert_eq!(slots.silent(), [3]);
+    let slot = dialpad::wait_for_arrival(&mut hidpp, &slots.silent(), REPLY_TIMEOUT).unwrap();
+    assert_eq!(slot, Some(DIALPAD_SLOT));
+    assert!(hidpp.transport_mut().is_done());
+
+    // The slot alone is asked again.
+    let open = receiver_open();
+    let from_slot_3 = format!("#{}", open.split("# 3. slot 3").nth(1).unwrap());
+    let mut hidpp = replay(&from_slot_3);
+    let dialpad = Dialpad::open(&mut hidpp, Link::Slot(DIALPAD_SLOT), &timing, |_| {}).unwrap();
+    assert_eq!(dialpad.slots(), &Slots(vec![(3, Slot::Dialpad)]));
+    assert!(hidpp.transport_mut().is_done());
+}
+
+#[test]
+fn a_bluetooth_dialpad_is_the_same_driver_on_device_index_0xff() {
+    let open = receiver_open();
+    let from_slot_3 = format!("#{}", open.split("# 3. slot 3").nth(1).unwrap());
+    let script = from_slot_3.replace("11 03 ", "11 ff ")
+        + &fixture!("receiver-input.txt")
+            .lines()
+            .filter(|line| line.starts_with("< 11 03 0d"))
+            .map(|line| line.replace("11 03 ", "11 ff ") + "\n")
+            .collect::<String>();
+    let (mut hidpp, mut dialpad, _) = open_dialpad(&script, Link::Direct);
+    assert_eq!(dialpad.device_index(), DEVICE_DIRECT);
+    assert_eq!(dialpad.slots().to_string(), "direct dialpad");
+    assert_eq!(dialpad_events(&mut hidpp, &mut dialpad).len(), 5);
+    assert!(hidpp.transport_mut().is_done());
+}
+
+#[test]
+fn a_device_index_whose_model_is_not_the_dialpad_is_skipped() {
+    // Slot 3 answers with the MX Master 4's WPID B042 in its model id.
+    let script = fixture!("receiver-slot-probe.txt").replace("29 00 04 bc 00", "29 00 04 b0 42")
+        + &[4, 5, 6]
+            .map(|slot| {
+                format!(
+                    "> 11 0{slot} 00 0e 46 10{}\n< 10 0{slot} 8f 00 0e 08 00\n",
+                    " 00".repeat(14)
+                )
+            })
+            .concat();
+    let mut hidpp = replay(&script);
+    let error = Dialpad::find(
+        &mut hidpp,
+        Link::Receiver,
+        &DialpadTiming::default(),
+        |_| {},
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "no MX Creative Dialpad found (slots: 1 empty, 2 silent, 3 model b0 42 00 00 00 00, \
+         4 empty, 5 empty, 6 empty)"
+    );
     assert!(hidpp.transport_mut().is_done());
 }

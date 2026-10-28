@@ -1,0 +1,25 @@
+# The Dialpad search while the Dialpad sleeps: slots 1 and 2 are empty (the
+# receiver's error 0x08), slot 3 does not answer within [timing].slot_probe,
+# slots 4 to 6 are empty. The search finds no Dialpad. Then the receiver
+# announces slot 3 with the link established, and keyvo asks that slot
+# alone again (receiver-slot-probe.txt from step 3 on).
+#
+# Source: synthetic until the owner's capture of slice 7 (#187) replaces it;
+# layouts as in receiver-slot-probe.txt and receiver-arrival.txt.
+#
+# 1. slots 1 and 2: receiver error 0x08, no device paired
+> 11 01 00 0e 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 10 01 8f 00 0e 08 00
+> 11 02 00 0e 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 10 02 8f 00 0e 08 00
+# 2. slot 3: no answer (asleep)
+> 11 03 00 0e 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 3. slots 4 to 6: receiver error 0x08
+> 11 04 00 0e 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 10 04 8f 00 0e 08 00
+> 11 05 00 0e 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 10 05 8f 00 0e 08 00
+> 11 06 00 0e 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 10 06 8f 00 0e 08 00
+# 4. later: slot 3, WPID BC00, link established
+< 10 03 41 10 00 00 bc

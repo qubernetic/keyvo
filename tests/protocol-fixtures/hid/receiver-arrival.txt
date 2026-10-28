@@ -1,0 +1,15 @@
+# The receiver's arrival notifications for the Dialpad on slot 3, as
+# unsolicited reports: first the link lost (the Dialpad went to sleep), then
+# the link established again (it woke), after which keyvo re-sends every
+# divert (receiver-divert.txt).
+#
+# Source: synthetic until the owner's capture of slice 7 (#187) replaces it.
+# The layout is the static pass (docs/research/2026-10-28-dialpad-static-pass.md
+# §8): `10 <slot> 41 <protocol> <flags> <wpid lo> <wpid hi>`, flags bit 6
+# set = no link, WPID BC00 little-endian. The protocol byte 0x10 and the
+# device type nibble 0 are guesses; keyvo reads neither.
+#
+# 1. slot 3, WPID BC00, link not established
+< 10 03 41 10 40 00 bc
+# 2. slot 3, WPID BC00, link established
+< 10 03 41 10 00 00 bc
