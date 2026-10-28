@@ -13,7 +13,7 @@ processes, HTTP). `exec` runs a command and its exit is the result; `launch`
 opens an application and lets it go once it outlives
 `[timing].launch_settle`, and may name its window `class` and whether it
 waits for that window (`wait_focus`, see Pending launch). An optional `on_fail` action runs when the primary
-one fails.
+one fails (see on_fail).
 
 **Blocked**: The trace result of a press that was not resolved and ran
 nothing, with its reason (`Outcome::Blocked { reason }`): as built
@@ -147,6 +147,14 @@ socket.
 for Windows and macOS. Assumed to share the Keypad's hardware; its PID and feature
 table are unverified, so geometry and features are always queried at runtime.
 
+**on_fail**: A key's second action, next to `action`, run once when the
+key's action fails: a non-zero exit, a timeout, a command that does not
+start, a chord not sent. Any `chord`, `exec` or `launch`, with the key's
+`KEYVO_*` variables and `KEYVO_FAILED_CODE`; never retried, no `on_fail` of
+its own, not run on a block, a dry run or an unbound key. The key keeps its
+`error` look; the run is a second trace record of the press on the
+`on_fail` branch. The GUI shows it read-only.
+
 **Overlay**: A transient layer pushed onto the context page by a plugin or the
 socket (`push_overlay`), for example a coding agent's working/waiting status.
 Overlays stack in push order and are removed with `pop_overlay`.
@@ -246,7 +254,8 @@ of a page on the panel and writes a PNG.
 
 **Trace**: One record per press, real or simulated: trigger, context snapshot,
 layer resolution, condition results, resolved action with substituted
-variables, execution result, `on_fail` branch and block reason. Kept in a ring
+variables, execution result, `on_fail` branch and block reason; a key's
+`on_fail` run is a second record of the same press (`branch: "on_fail"`). Kept in a ring
 buffer and in `~/.local/state/keyvo/trace.ndjson`; reachable from the GUI
 drawer, `keyvo ctl trace|tail` and `subscribe`. The record type
 (`TraceRecord`) and the press resolution are in `keyvo-core`, the buffer and

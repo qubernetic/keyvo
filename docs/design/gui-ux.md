@@ -315,7 +315,9 @@ stays the unit of truth.
     fields, and the optional `on_fail` action. For `recipe` the card shows the
     resolved concrete action for the current project (d10) and "Expand to a
     concrete action". For `exec` the script path has "Open in editor"; the GUI
-    never embeds a code editor.
+    never embeds a code editor. As built (beta, #183): the pre-alpha
+    Inspector shows `on_fail` read-only, "Runs `<keys or command>` when this
+    fails. Edit it in the file."; its editor comes later.
   - **Feedback**: desktop notification (off, on error, always; default on
     error), state overrides for `running`, `success`, `error` (colour, badge),
     `long_run_threshold`. No sound toggle in v1.
@@ -705,7 +707,10 @@ badge. It renders the entry as sections in resolution order:
 6. Execution result: `exec` exit code, duration, bounded stdout and stderr tail
    (default 2 KiB each, *design detail*); `http` status and body excerpt;
    `chord` event sequence; `on_fail` branch taken; block reason (untrusted
-   project, disabled, dry run).
+   project, disabled, dry run). As built (beta, #183): the daemon traces the
+   `on_fail` run as a second entry of the press (`branch: "on_fail"`); the
+   drawer shows it as an `on_fail` row "<action> -> <result>" in the
+   primary's Result, and the trace strip keeps the press on one line.
 
 The same entries stream on the socket (`subscribe` with the `trace` event
 class), print with `keyvo ctl trace` (last N) and `keyvo ctl tail` (follow),
