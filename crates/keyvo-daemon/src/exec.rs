@@ -222,6 +222,7 @@ mod tests {
             layer: Some(layer),
             action: Some(Action::Exec { cmd: "true".into() }),
             result: Outcome::Pending,
+            branch: None,
         }
     }
 

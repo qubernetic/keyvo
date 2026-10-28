@@ -79,7 +79,7 @@ mod resolution {
     use keyvo_core::press::{self, PressKind};
     use keyvo_core::profile::{Action, KeySlot, Profile};
     use keyvo_core::stack::{Layer, Stack};
-    use keyvo_core::trace::{Outcome, TraceRecord, Trigger};
+    use keyvo_core::trace::{Branch, Outcome, TraceRecord, Trigger};
 
     fn demo() -> Profile {
         let path =
@@ -124,7 +124,35 @@ mod resolution {
                     keys: Chord::parse("ctrl+shift+g").unwrap()
                 }),
                 result: Outcome::Pending,
+                branch: None,
             }
+        );
+    }
+
+    #[test]
+    fn an_on_fail_run_is_a_record_of_the_same_press_on_its_branch() {
+        let mut primary = resolve(1, 1, REAL_SHORT);
+        primary.finish(Outcome::Exited {
+            code: Some(3),
+            duration_ms: 12,
+        });
+        let notify = Action::Exec {
+            cmd: "notify-send failed".into(),
+        };
+        let record = primary.on_fail(notify.clone());
+        assert_eq!(
+            record,
+            TraceRecord {
+                action: Some(notify),
+                result: Outcome::Pending,
+                branch: Some(Branch::OnFail),
+                ..primary.clone()
+            }
+        );
+        assert_eq!(primary.branch, None);
+        assert_eq!(
+            serde_json::to_value(Branch::OnFail).unwrap(),
+            serde_json::json!("on_fail")
         );
     }
 
@@ -177,6 +205,7 @@ mod resolution {
                     result: Outcome::Blocked {
                         reason: "locked".to_owned()
                     },
+                    branch: None,
                 }
             );
         }
@@ -277,7 +306,14 @@ mod resolution {
         let unbound = resolve(2, 1, REAL_SHORT);
         let blocked =
             keyvo_core::press::blocked("demo", 1, slot(5), REAL_SHORT, at(), "session locked");
-        let lines: String = [chord, exec, failed, dry, unbound, blocked]
+        let mut on_fail = exec.on_fail(Action::Exec {
+            cmd: "notify-send 'build failed'".to_owned(),
+        });
+        on_fail.finish(Outcome::Exited {
+            code: Some(0),
+            duration_ms: 41,
+        });
+        let lines: String = [chord, exec, on_fail, failed, dry, unbound, blocked]
             .iter()
             .map(|record| serde_json::to_string(record).unwrap() + "\n")
             .collect();
