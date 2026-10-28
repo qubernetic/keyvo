@@ -114,6 +114,28 @@ app-build profile="dev": _up
     install -m 755 "app/src-tauri/target/$dir/keyvo-app" bin/; \
     echo "binary in bin/: keyvo-app ($dir)"
 
+# ---- Flatpak (contrib/flatpak/) --------------------------------------------
+
+# Regenerate the manifest's offline sources (cargo-sources.json from both
+# Cargo.lock files, node-sources.json from app/package-lock.json) with the
+# pinned flatpak-builder-tools generators (tools/flatpak/)
+flatpak-sources: _up
+    {{ exec }} python3 tools/flatpak/generate.py
+
+# Fail when the committed Flatpak sources differ from the lockfiles
+flatpak-sources-check: _up
+    {{ exec }} python3 tools/flatpak/generate.py --check
+
+# Host: build and install the Flatpak from the checkout with flatpak-builder
+# (the first run downloads the GNOME SDK), then lint it when
+# flatpak-builder-lint is on the path
+flatpak: _host_only
+    flatpak-builder --user --install --install-deps-from=flathub --force-clean --ccache build/flatpak contrib/flatpak/io.github.qubernetic.keyvo.yml
+    @if command -v flatpak-builder-lint >/dev/null; then \
+        flatpak-builder-lint --exceptions --user-exceptions contrib/flatpak/lint-exceptions.json manifest contrib/flatpak/io.github.qubernetic.keyvo.yml; \
+        flatpak-builder-lint --exceptions --user-exceptions contrib/flatpak/lint-exceptions.json builddir build/flatpak; \
+    else echo "flatpak-builder-lint not on the path: lint skipped"; fi
+
 # The exact sequence CI runs (.github/workflows/ci.yml), tests in the nextest ci profile
 ci: fmt-check lint (test "--profile" "ci") deny cov
 

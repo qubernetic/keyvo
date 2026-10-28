@@ -54,8 +54,8 @@ keyvo separates *where code is built* from *where it touches hardware*
 
 | Layer | Where | What runs there |
 |---|---|---|
-| Build, test, lint, coverage, docs, CI parity | devcontainer (docker compose, Rust + Node image) | `just setup dev down clean rebuild shell build test lint fmt fmt-check deny cov ci app-test app-build diagrams docs` |
-| Hardware execution | host | the binary built in the container, via `just run` and `just test-hw`; the app's mock dev server, via `just app-dev` |
+| Build, test, lint, coverage, docs, CI parity | devcontainer (docker compose, Rust + Node image) | `just setup dev down clean rebuild shell build test lint fmt fmt-check deny cov ci app-test app-build flatpak-sources flatpak-sources-check diagrams docs` |
+| Hardware execution | host | the binary built in the container, via `just run` and `just test-hw`; the app's mock dev server, via `just app-dev`; the Flatpak, via `just flatpak` (flatpak-builder on the host) |
 
 ```bash
 git clone https://github.com/qubernetic/keyvo.git
@@ -76,6 +76,9 @@ just ci           # fmt-check, lint, test (nextest ci profile), deny, cov: the s
 just app-test     # desktop app: npm ci, svelte-check, vitest, npm audit, cargo deny on the app lock
 just app-build    # desktop app: frontend build, then the Tauri shell; bin/keyvo-app
 just app-dev      # host: the app on the Vite dev server against a mock daemon, http://localhost:1420
+just flatpak-sources        # regenerate contrib/flatpak/{cargo,node}-sources.json from the lockfiles
+just flatpak-sources-check  # fail when those files are stale (CI runs it)
+just flatpak      # host: build and install the Flatpak from the checkout, then lint it
 just run -- probe # run the container-built binary on the host against real hardware
 just test-hw      # host checks: hidraw nodes, /dev/uinput, groups (keyvo doctor is planned)
 just diagrams     # placeholder: regenerating docs/diagrams from the archify IR lands with Issue #4
@@ -86,12 +89,12 @@ just clean        # stop the container, drop the cargo volumes, delete target/ a
 
 **Native mode.** With `AGENT_HORDE=1` in the environment the check and build
 recipes (`test`, `lint`, `fmt`, `fmt-check`, `deny`, `cov`, `ci`, `build`,
-`app-test`, `app-build`) run
+`app-test`, `app-build`, `flatpak-sources`, `flatpak-sources-check`) run
 the toolchain directly instead of through `docker compose exec`. It is for a
 shell that already is the container: the project's agent sandbox sets the
 variable for every agent, and it works the same inside `just shell`. The
 lifecycle recipes (`setup`, `dev`, `down`, `clean`, `rebuild`, `shell`) and the
-host recipes (`run`, `test-hw`, `app-dev`) refuse to run in native mode. The host
+host recipes (`run`, `test-hw`, `app-dev`, `flatpak`) refuse to run in native mode. The host
 never uses it: the host has no toolchain, and the hardware stays on the host.
 
 **Mock dev server.** For work on the app's layout, `just app-dev` runs on the
@@ -212,6 +215,20 @@ commit:
   `--disable-strategies quick-install,compile`, so it installs from the tool's
   own release assets or fails; it never falls back to a third-party mirror or a
   source build.
+- **Flatpak source generators.** `TOOLS_COMMIT` in `tools/flatpak/generate.py`
+  is a commit of flatpak-builder-tools. Move it, run `just flatpak-sources`,
+  review the diff of `contrib/flatpak/cargo-sources.json` and
+  `node-sources.json`, and let the CI `flatpak` job build the bundle.
+- **The Flatpak's CI.** The `flatpak` job's image
+  (`ghcr.io/flathub-infra/flatpak-github-actions:gnome-<N>`) carries its index
+  digest and moves with the manifest's `runtime-version`; the
+  `flatpak/flatpak-github-actions/flatpak-builder` action is pinned by the
+  commit SHA of its release tag, with the tag in a comment, like every other
+  action.
+- **The Flatpak's runtime.** `runtime-version` in
+  `contrib/flatpak/io.github.qubernetic.keyvo.yml` names the GNOME runtime;
+  the SDK extensions follow its freedesktop branch, and the CI image's tag
+  moves with it.
 
 After a bump, `just setup` from a clean cache (`just clean` first) must build.
 

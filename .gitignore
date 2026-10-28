@@ -62,5 +62,10 @@ AUDIT.md
 # Host-runnable binaries copied by `just build`
 /bin/
 
+# Flatpak builds (`just flatpak`, the CI `flatpak` job) and flatpak-builder's state
+/build/
+/.flatpak-builder/
+/keyvo.flatpak
+
 # Private session handoffs of the owner, never committed
 docs/superpowers/

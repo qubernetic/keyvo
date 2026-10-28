@@ -315,7 +315,9 @@ impl Default for Daemon {
 #[serde(default, deny_unknown_fields)]
 pub struct Focus {
     /// Window classes, compared without case; an empty list holds nothing.
-    /// Default `["keyvo-app"]`, the keyvo app's own window.
+    /// Default `["keyvo-app", "io.github.qubernetic.keyvo"]`, the keyvo
+    /// app's own window: its class is the binary name on the host and the
+    /// application id under Flatpak.
     pub hold_classes: Vec<String>,
 }
 
@@ -332,7 +334,10 @@ impl Focus {
 impl Default for Focus {
     fn default() -> Self {
         Self {
-            hold_classes: vec!["keyvo-app".to_owned()],
+            hold_classes: vec![
+                "keyvo-app".to_owned(),
+                "io.github.qubernetic.keyvo".to_owned(),
+            ],
         }
     }
 }

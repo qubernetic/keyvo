@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=keyvo
+GenericName=Control surface editor
+Comment=Edit the keys of the MX Creative Keypad and follow the pad
+Exec=keyvo-app
+Icon=io.github.qubernetic.keyvo
+Terminal=false
+Categories=Utility;Settings;
+Keywords=Logitech;MX Creative;Keypad;Dialpad;macro;shortcut;
+StartupWMClass=io.github.qubernetic.keyvo

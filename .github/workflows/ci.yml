@@ -257,9 +257,79 @@ jobs:
           docker exec "$CONTAINER" cargo clippy --manifest-path app/src-tauri/Cargo.toml --locked --all-targets -- -D warnings
           docker exec "$CONTAINER" cargo build --manifest-path app/src-tauri/Cargo.toml --locked --profile dev --features tauri/custom-protocol
 
+      # `just flatpak-sources-check`: the Flatpak's offline sources match the
+      # three lockfiles, so a lockfile change without `just flatpak-sources`
+      # fails here.
+      - name: flatpak-sources-check
+        run: docker exec "$CONTAINER" python3 tools/flatpak/generate.py --check
+
       - name: Stop the dev container
         if: always()
         run: docker rm --force "$CONTAINER"
+
+  # keyvo's Flatpak (contrib/flatpak/, roadmap M4b-1): the bundle built
+  # offline from the manifest the way Flathub builds it, the manifest and
+  # repository lints and the metainfo validation. `just flatpak` is the same
+  # build on the owner's host. The bundle is the job's artifact.
+  flatpak:
+    name: flatpak
+    runs-on: ubuntu-24.04
+    # Downloading the GNOME 51 SDK and a release build of the app and the
+    # CLI; 60 minutes leaves room for a cold cache and a slow runner.
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    container:
+      # flatpak, flatpak-builder, flatpak-builder-lint and appstreamcli, with
+      # the Flathub remote; the tag is the manifest's runtime, pinned by its
+      # index digest.
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51@sha256:78d969b18225ae107ca29497bf09c4a3f791e5f1838a9a912a529d0024fb6210
+      # flatpak-builder's bubblewrap sandbox needs it inside the container
+      # (the documented setup of flatpak-github-actions).
+      options: --privileged
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Lint the manifest
+        run: >-
+          flatpak-builder-lint --exceptions
+          --user-exceptions contrib/flatpak/lint-exceptions.json
+          manifest contrib/flatpak/io.github.qubernetic.keyvo.yml
+
+      # Everything the build writes stays under build/, which the manifest's
+      # `dir` source skips. Pull requests only restore the flatpak-builder
+      # cache, as the other jobs do; the bundle goes up in the step below.
+      - name: Build the bundle
+        uses: flatpak/flatpak-github-actions/flatpak-builder@79327416609af08178ad73b352877e51450790b3 # v6.8
+        with:
+          manifest-path: contrib/flatpak/io.github.qubernetic.keyvo.yml
+          bundle: keyvo.flatpak
+          build-dir: build/flatpak
+          repo-dir: build/repo
+          state-dir: build/flatpak-builder
+          cache-key: flatpak-${{ hashFiles('Cargo.lock', 'app/src-tauri/Cargo.lock', 'app/package-lock.json') }}
+          save-cache: ${{ github.event_name == 'push' }}
+          upload-artifact: false
+
+      - name: Validate the metainfo
+        run: appstreamcli validate --no-net --explain contrib/flatpak/io.github.qubernetic.keyvo.metainfo.xml
+
+      - name: Lint the repository
+        run: >-
+          flatpak-builder-lint --exceptions
+          --user-exceptions contrib/flatpak/lint-exceptions.json
+          repo build/repo
+
+      - name: Upload the bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: keyvo.flatpak
+          path: keyvo.flatpak
+          if-no-files-found: error
+          retention-days: 14
 
   # The only job with an OIDC token. It never builds or runs repository code:
   # it checks out the commit for the Codecov metadata, takes the reports from

@@ -25,7 +25,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Debian packages come unpinned from the digest-pinned base image's trixie
 # repository. webkit2gtk-4.1 and the rest of the list from build-essential
-# on are the Tauri 2 build prerequisites for the desktop app (app/src-tauri).
+# on are the Tauri 2 build prerequisites for the desktop app (app/src-tauri);
+# python3 with aiohttp, tomlkit and PyYAML runs the Flatpak source generators
+# (tools/flatpak/generate.py, `just flatpak-sources`).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -41,6 +43,10 @@ RUN apt-get update \
         librsvg2-dev \
         libwebkit2gtk-4.1-dev \
         libxdo-dev \
+        python3 \
+        python3-aiohttp \
+        python3-tomlkit \
+        python3-yaml \
     && rm -rf /var/lib/apt/lists/*
 
 # Node LTS from the official tarball (no distro package, no nvm), verified

@@ -1,0 +1,8 @@
+{
+    "io.github.qubernetic.keyvo": {
+        "appstream-missing-screenshots": "No screenshots before the Flathub submission (roadmap M4b-2); the owner adds them from the beta.",
+        "metainfo-missing-screenshots": "No screenshots before the Flathub submission (roadmap M4b-2); the owner adds them from the beta.",
+        "appstream-screenshots-not-mirrored-in-ostree": "No screenshots yet, so no screenshots/<arch> ref; Flathub's builders mirror them (--mirror-screenshots-url) once the metainfo has some (M4b-2).",
+        "finish-args-unnecessary-xdg-config-keyvo-create-access": "The editor writes the profiles the host daemon loads from ~/.config/keyvo, not a configuration of the app's own; flatpak-builder-lint dropped this check on 2026-10-23 (1d036a8), the pinned CI image predates that."
+    }
+}

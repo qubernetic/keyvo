@@ -1764,7 +1764,7 @@ dependencies = [
 
 [[package]]
 name = "keyvo-app"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "keyvo-client",
@@ -1777,7 +1777,7 @@ dependencies = [
 
 [[package]]
 name = "keyvo-client"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "keyvo-core",
  "libc",
@@ -1789,7 +1789,7 @@ dependencies = [
 
 [[package]]
 name = "keyvo-core"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "image",
  "regex",

@@ -123,6 +123,29 @@ just run -- preview vscode --page 2 -o grid.png   # an id from ~/.config/keyvo/p
 - **Windows bridge**: a Logi Actions SDK plugin so the same profiles work next to
   Logi Options+.
 
+## Install
+
+The beta installs in two parts (the [beta test guide](docs/beta-test.md),
+section 2, has every step):
+
+- **The daemon** runs on the host and owns the device: build it in the
+  devcontainer (`just build`) and start `bin/keyvo-daemon`.
+- **The app** (and the `keyvo` CLI) is the Flatpak
+  `io.github.qubernetic.keyvo` on the GNOME 51 runtime. Take `keyvo.flatpak`
+  from the CI `flatpak` job's artifacts and install it, or build and install
+  it from the checkout with `just flatpak` (needs `flatpak-builder` on the
+  host):
+
+  ```bash
+  flatpak install --user keyvo.flatpak
+  flatpak run io.github.qubernetic.keyvo
+  ```
+
+  The sandbox gets the display, the GPU, the daemon's socket directory and
+  `~/.config/keyvo`, nothing else (`contrib/flatpak/`).
+
+Flathub follows after the beta.
+
 ## Hardware
 
 | Device | Connection | Support |
