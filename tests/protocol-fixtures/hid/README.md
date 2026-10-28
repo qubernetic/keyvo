@@ -103,6 +103,7 @@ Bluetooth test replays them with device index `ff`.
 | `receiver-slot-probe.txt` | the slot search: slot 1 empty (`10 01 8f 00 0e 08`), slot 2 silent (no answer), slot 3 getFeature(0x4610) = 0x0d, getFeature(0x0003) = 0x02, getDeviceInfo with model id `bc 00 00 00 00 00` |
 | `receiver-asleep.txt` | the search while the Dialpad sleeps: slots 1, 2, 4 to 6 empty, slot 3 silent, then the arrival of slot 3 |
 | `receiver-controls.txt` | getFeature(0x1B04) = 0x0a, getCount = 4, getCidInfo for CIDs 0x0053, 0x0056, 0x0059, 0x005A (flags 0x31) |
+| `receiver-firmware.txt` | getDeviceInfo and getFwInfo for Solaar's four entities: `BL2 18.00.B0016`, `RBO 07.00.B0016` (active), type 3, hardware `72` (replayed by `crates/keyvo-cli/src/probe.rs`) |
 | `receiver-multiroller.txt` | 0x4610 getCapabilities = 2 rollers, getRollerCapabilities 40 and 180 increments |
 | `receiver-divert.txt` | setCidReporting(cid, 0x03) and getCidReporting per button, setMode(roller, DIVERTED) for both |
 | `receiver-restore.txt` | setCidReporting(cid, 0x02) per button, setMode(roller, NATIVE) for both |

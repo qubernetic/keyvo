@@ -111,6 +111,11 @@ enum DeviceCommand {
     /// maxImageFPS, and the flags deferrableDisplayUpdate, rgb565, rgb888,
     /// jpeg, calibrated, origin) and the geometry (fn1: panel size, button
     /// count, visible-area count, every button's rectangle).
+    ///
+    /// With a Bolt receiver, a receiver block follows: the slots asked,
+    /// the Dialpad's feature indices, firmware, buttons and rollers. With
+    /// `--device` on a receiver's or a Bluetooth Dialpad's node, only that
+    /// block.
     Probe {
         /// Only ask both ROOT planes for this feature id, in hex (`0x1b04`
         /// or `1b04`): index and version, `absent`, or the error reply
@@ -387,6 +392,9 @@ fn device_main(command: DeviceCommand, device: Option<&Path>, dump: bool) -> any
     };
     command.check(&timing)?;
     let (class_dir, dev_dir) = (Path::new(sysfs::SYSFS_HIDRAW), Path::new(sysfs::DEV_DIR));
+    if matches!(command, DeviceCommand::Probe { feature: None }) {
+        return probe_main(device, dump, class_dir, dev_dir);
+    }
     // `dial` stops on Ctrl-C (or SIGTERM) by itself, so it can give the
     // diverts back; the other commands end with the default action.
     let stop = Arc::new(AtomicBool::new(false));
@@ -412,6 +420,99 @@ fn device_main(command: DeviceCommand, device: Option<&Path>, dump: bool) -> any
         || !stop.load(Ordering::Relaxed),
         &mut std::io::stdout().lock(),
     )
+}
+
+/// `keyvo probe`: the Keypad, then the Bolt receiver's Dialpad block when
+/// sysfs has a receiver; with `device`, the Dialpad block alone when sysfs
+/// knows the node as a receiver or a Bluetooth Dialpad, else the Keypad.
+///
+/// # Errors
+///
+/// No Keypad and no receiver, and the probes' errors.
+fn probe_main(
+    device: Option<&Path>,
+    dump: bool,
+    class_dir: &Path,
+    dev_dir: &Path,
+) -> anyhow::Result<()> {
+    let timing = Timing::default();
+    let mut stderr = std::io::stderr();
+    let mut out = std::io::stdout().lock();
+    let keypad = |transport, description: &str, mut out: &mut dyn Write| {
+        run_on(
+            DeviceCommand::Probe { feature: None },
+            &timing,
+            transport,
+            dump.then_some(&mut std::io::stderr() as &mut dyn Write),
+            description,
+            Link::Direct,
+            &SystemClock,
+            std::thread::sleep,
+            || true,
+            &mut out,
+        )
+    };
+    if let Some(path) = device {
+        let node = sysfs::node_at(class_dir, dev_dir, path)?;
+        let link = match node {
+            Some(node) if node.is_bluetooth_dialpad() => Some(Link::Direct),
+            Some(node) if node.id.product == sysfs::BOLT_RECEIVER => Some(Link::Receiver),
+            _ => None,
+        };
+        let description = path.display().to_string();
+        let Some(link) = link else {
+            let (transport, description) = open(Some(path), class_dir, dev_dir)?;
+            return keypad(transport, &description, &mut out);
+        };
+        let transport = HidrawTransport::open(path).context("cannot open the Dialpad's node")?;
+        let dump = dump.then_some(&mut stderr as &mut dyn Write);
+        return receiver_on(transport, dump, &description, link, &timing, &mut out);
+    }
+    let receiver = sysfs::find_receiver(class_dir, dev_dir)?;
+    match (open(None, class_dir, dev_dir), &receiver) {
+        (Err(error), None) => return Err(error),
+        (Err(error), Some(_)) => eprintln!("no Keypad: {error:#}"),
+        (Ok((transport, description)), _) => keypad(transport, &description, &mut out)?,
+    }
+    if let Some(node) = receiver {
+        writeln!(out)?;
+        let transport =
+            HidrawTransport::open(&node.path).context("cannot open the receiver's node")?;
+        let dump = dump.then_some(&mut stderr as &mut dyn Write);
+        receiver_on(
+            transport,
+            dump,
+            &describe(&node),
+            Link::Receiver,
+            &timing,
+            &mut out,
+        )?;
+    }
+    Ok(())
+}
+
+/// [`probe::receiver`] on `transport`, every report printed to `dump` when
+/// one is given.
+///
+/// # Errors
+///
+/// The probe's errors.
+fn receiver_on<T: HidTransport>(
+    transport: T,
+    dump: Option<&mut dyn Write>,
+    node: &str,
+    link: Link,
+    timing: &Timing,
+    out: &mut impl Write,
+) -> anyhow::Result<()> {
+    let driver = dial::dialpad_timing(timing);
+    match dump {
+        Some(log) => {
+            let mut hidpp = hidpp(Dump::new(transport, &SystemClock, log))?;
+            probe::receiver(&mut hidpp, node, link, &driver, out)
+        }
+        None => probe::receiver(&mut hidpp(transport)?, node, link, &driver, out),
+    }
 }
 
 /// [`run`] on `transport`, with every report it carries printed to `dump`
