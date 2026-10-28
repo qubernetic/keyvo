@@ -54,7 +54,15 @@ pub fn keys<T: HidTransport, C: Clock>(
 /// `press key 5`, `release page left`, or the NDJSON form
 /// `{"edge":"press","key":5}`, `{"edge":"release","page":"left"}`.
 fn format_event(event: InputEvent, json: bool) -> String {
-    let edge = match event.edge {
+    let (control, edge) = match event {
+        InputEvent::Button { control, edge } => (control, edge),
+        // The Keypad's decoder knows no rollers; `keyvo dial` prints them.
+        InputEvent::Rotate { roller, delta } if json => {
+            return format!(r#"{{"roller":{roller},"delta":{delta}}}"#);
+        }
+        InputEvent::Rotate { roller, delta } => return format!("roller {roller} {delta:+}"),
+    };
+    let edge = match edge {
         Edge::Press => "press",
         Edge::Release => "release",
     };
@@ -63,7 +71,7 @@ fn format_event(event: InputEvent, json: bool) -> String {
         PAGE_RIGHT => Some("right"),
         _ => None,
     };
-    match (event.control, json) {
+    match (control, json) {
         (Control::Key(key), false) => format!("{edge} key {key}"),
         (Control::Key(key), true) => format!(r#"{{"edge":"{edge}","key":{key}}}"#),
         (Control::Page(cid), false) => page(cid).map_or_else(
@@ -164,6 +172,12 @@ release page right
         let event = InputEvent::press(Control::Page(0x0053));
         assert_eq!(format_event(event, false), "press control 0x0053");
         assert_eq!(format_event(event, true), r#"{"edge":"press","cid":83}"#);
+        let turn = InputEvent::Rotate {
+            roller: 1,
+            delta: -2,
+        };
+        assert_eq!(format_event(turn, false), "roller 1 -2");
+        assert_eq!(format_event(turn, true), r#"{"roller":1,"delta":-2}"#);
     }
 
     #[test]

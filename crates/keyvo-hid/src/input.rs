@@ -1,13 +1,15 @@
-//! Key input on the Keypad (spec §5.6): LCD key reports on the VLP plane and
-//! the diverted page-button notifications of `0x1B04` on the classic plane,
-//! both turned into press and release events by diffing the held set a
-//! report carries against the one before.
+//! Key input on the Keypad (spec §5.6) and the Dialpad (spec §5.8): LCD key
+//! reports on the VLP plane and the diverted-control notifications of
+//! `0x1B04` on the classic plane, both turned into press and release events
+//! by diffing the held set a report carries against the one before, and the
+//! Dialpad's rotation notifications of `0x4610`, one event each.
 //!
 //! Only reports with function 0 and software id 0 are input: an image
 //! fragment's ACK on the same VLP index carries the write's function and
 //! software id (spec §5.5), so it never reaches the diff.
 
 use crate::frame::{Frame, ReportId};
+use crate::multiroller;
 
 /// First parameter byte of an LCD key report, before the held keys
 /// (`13 ff 02 00 <seq> 01 <k1> <k2> … 00`; logilinux and Julusian check it).
@@ -32,20 +34,30 @@ pub enum Edge {
     Release,
 }
 
-/// One press or release.
+/// One press, release or turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InputEvent {
-    /// The control.
-    pub control: Control,
-    /// Down or up.
-    pub edge: Edge,
+pub enum InputEvent {
+    /// A control went down or up.
+    Button {
+        /// The control.
+        control: Control,
+        /// Down or up.
+        edge: Edge,
+    },
+    /// A diverted `0x4610` roller turned.
+    Rotate {
+        /// The roller id, `0..count` of `getCapabilities`.
+        roller: u8,
+        /// Signed increments, as the device sends them.
+        delta: i8,
+    },
 }
 
 impl InputEvent {
     /// `control` went down.
     #[must_use]
     pub const fn press(control: Control) -> Self {
-        Self {
+        Self::Button {
             control,
             edge: Edge::Press,
         }
@@ -54,7 +66,7 @@ impl InputEvent {
     /// `control` went up.
     #[must_use]
     pub const fn release(control: Control) -> Self {
-        Self {
+        Self::Button {
             control,
             edge: Edge::Release,
         }
@@ -66,9 +78,10 @@ impl InputEvent {
 #[derive(Debug, Clone)]
 pub struct Input {
     device_index: u8,
-    display_index: u8,
+    display_index: Option<u8>,
     key_count: u8,
     reprog_index: Option<u8>,
+    roller_index: Option<u8>,
     keys: Vec<Control>,
     pages: Vec<Control>,
 }
@@ -81,12 +94,36 @@ impl Input {
     pub const fn new(device_index: u8, display_index: u8, key_count: u8) -> Self {
         Self {
             device_index,
-            display_index,
+            display_index: Some(display_index),
             key_count,
             reprog_index: None,
+            roller_index: None,
             keys: Vec::new(),
             pages: Vec::new(),
         }
+    }
+
+    /// The Dialpad's decoder: no LCD keys, the diverted buttons of `0x1B04`
+    /// at `reprog_index` and the rotations of `0x4610` at `roller_index`
+    /// (`11 <index> <roller index> 00 <roller> <delta> …`).
+    #[must_use]
+    pub const fn dialpad(device_index: u8, reprog_index: u8, roller_index: u8) -> Self {
+        Self {
+            device_index,
+            display_index: None,
+            key_count: 0,
+            reprog_index: Some(reprog_index),
+            roller_index: Some(roller_index),
+            keys: Vec::new(),
+            pages: Vec::new(),
+        }
+    }
+
+    /// Forgets what is held, without events: the device lost its link, and
+    /// its next report starts from nothing held.
+    pub fn forget_held(&mut self) {
+        self.keys.clear();
+        self.pages.clear();
     }
 
     /// Also decodes the diverted-control notifications of `0x1B04` at
@@ -106,13 +143,22 @@ impl Input {
             return Vec::new();
         }
         if frame.report == ReportId::VlpControl
-            && frame.feature_index == self.display_index
+            && Some(frame.feature_index) == self.display_index
             && let Some(held) = self.held_keys(&frame.params)
         {
             return diff(&mut self.keys, held);
         }
         if frame.report == ReportId::Long && Some(frame.feature_index) == self.reprog_index {
             return diff(&mut self.pages, held_cids(&frame.params));
+        }
+        if frame.report == ReportId::Long
+            && Some(frame.feature_index) == self.roller_index
+            && let Some(rotation) = multiroller::rotation(&frame.params)
+        {
+            return vec![InputEvent::Rotate {
+                roller: rotation.roller,
+                delta: rotation.delta,
+            }];
         }
         Vec::new()
     }
@@ -320,6 +366,72 @@ mod tests {
         }
         // Without the reprog index nothing on the classic plane is input.
         assert_eq!(self::input().feed(&frame("11 ff 0b 00 01 a1")), []);
+    }
+
+    /// The Dialpad on receiver slot 3: `0x1B04` at 0x0a, `0x4610` at 0x0d.
+    fn dialpad() -> Input {
+        Input::dialpad(0x03, 0x0a, 0x0d)
+    }
+
+    #[test]
+    fn a_rotation_notification_is_a_rotate_event() {
+        let events = feed(
+            &mut dialpad(),
+            &["11 03 0d 00 01 03 00 00 12 34", "11 03 0d 00 00 ff"],
+        );
+        assert_eq!(
+            events,
+            [
+                InputEvent::Rotate {
+                    roller: 1,
+                    delta: 3
+                },
+                InputEvent::Rotate {
+                    roller: 0,
+                    delta: -1
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn the_dialpad_buttons_press_once_while_the_device_repeats_them() {
+        let events = feed(
+            &mut dialpad(),
+            &[
+                "11 03 0a 00 00 53",
+                "11 03 0a 00 00 53",
+                "11 03 0a 00 00 53",
+                "11 03 0a 00",
+            ],
+        );
+        assert_eq!(
+            events,
+            [
+                InputEvent::press(Control::Page(0x0053)),
+                InputEvent::release(Control::Page(0x0053)),
+            ]
+        );
+    }
+
+    #[test]
+    fn other_multiroller_reports_are_not_rotations() {
+        let mut input = dialpad();
+        for other in [
+            "11 03 0d 3e 00 01", // setMode reply
+            "11 03 0d 10 01 03", // another event number
+            "11 02 0d 00 01 03", // another slot
+            "13 03 0d 00 c0 01", // VLP plane
+        ] {
+            assert_eq!(input.feed(&frame(other)), [], "{other}");
+        }
+        // The Keypad's decoder knows no rollers.
+        assert_eq!(
+            self::input()
+                .with_page_buttons(0x0b)
+                .feed(&frame("11 ff 0d 00 01 03")),
+            []
+        );
     }
 
     #[test]
