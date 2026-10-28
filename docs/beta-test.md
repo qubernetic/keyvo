@@ -10,8 +10,8 @@ saw; section 6 says what goes back on the issues. The pre-alpha guide
 extended.
 
 **Binaries.** The daemon and the CLI are built in the devcontainer and run
-on the host: from `bin/` after `just build`, and from `~/.local/bin` under
-the systemd user unit once #184 is merged. The app comes from the Flatpak
+on the host: the CLI from `bin/` after `just build`, the daemon from
+`~/.local/bin` under the systemd user unit (section 2, #184). The app comes from the Flatpak
 bundle of the CI `flatpak` job, or from `just flatpak` on the host
 (section 2).
 
@@ -20,8 +20,9 @@ bundle of the CI `flatpak` job, or from `just flatpak` on the host
 daemon. Under the Flatpak the app's window class is the same id.
 
 **Terminals.** Keep three terminals open in the repository checkout
-(called T1, T2 and T3 below): T1 for the daemon, T2 for `keyvo ctl` and
-the CLI, T3 for the app.
+(called T1, T2 and T3 below): T1 for the daemon's log (`journalctl
+--user -u keyvo-daemon -f`) or, where an item says so, the daemon itself,
+T2 for `keyvo ctl` and the CLI, T3 for the app.
 
 ## 1. Preconditions
 
@@ -44,18 +45,31 @@ git rev-parse --short HEAD      # note it: the commit under test
    must also have no divert set on the Keypad or the Dialpad (never set
    one there; it conflicts with keyvo's own `0x1B04` diverts).
 
-2. **hidraw and uinput permissions.**
+2. **hidraw and uinput access: the udev rule.** Build first (section 2,
+   `just build`), then check what is there, install the rule
+   ([`contrib/udev/70-keyvo.rules`](../contrib/udev/70-keyvo.rules)),
+   replug the Keypad and check again:
 
    ```bash
+   just test-hw                     # runs bin/keyvo doctor
+   sudo install -m 644 contrib/udev/70-keyvo.rules /etc/udev/rules.d/
+   sudo udevadm control --reload && sudo udevadm trigger
+   # unplug the Keypad and plug it in again
    just test-hw
+   getfacl /dev/uinput
    ```
 
-   Expected: every `/dev/hidraw*` line reads `crw-rw-rw-` (mode `0666`),
-   `/dev/uinput` is group `input`, and the `groups of <you>` line contains
-   `input`. Then `test -w /dev/uinput && echo uinput ok` prints
-   `uinput ok`; without it the chord keys fail and the daemon logs
-   `cannot create the uinput keyboard: ...; chord keys will fail`. The
-   udev rule and `keyvo doctor` of #184 replace this step when they land.
+   Expected: after the install, the `keypad`, `uinput` and `rule` lines of
+   `keyvo doctor` read `ok`, and `getfacl /dev/uinput` lists
+   `user:<you>:rw-`. Before it, a machine with the pre-alpha's hand-made
+   setup (mode `0666`, the `input` group) shows `keypad` and `uinput`
+   `ok` and `rule` `warn`; a fresh one shows `fail` on both with the
+   install lines. The rule needs no group and no mode: it tags the nodes
+   `uaccess`, so the user at the seat gets an ACL. Without `/dev/uinput`
+   access the chord keys fail and the daemon logs `cannot create the
+   uinput keyboard: ...; chord keys will fail`. `keyvo doctor` exits 1
+   while any line is `fail`; the other lines (session, focus stealing
+   prevention, unit, daemon, Solaar, Flatpak) come back in section 2.
 
 3. **`AGENT_HORDE` unset.** With `AGENT_HORDE=1` the justfile runs the
    toolchain natively and refuses `just run` and `just test-hw`.
@@ -108,7 +122,46 @@ downloads the GNOME SDK, about 2 GB):
 just flatpak
 ```
 
-With the daemon running in T1 (`bin/keyvo-daemon`), in T3:
+**The daemon under the systemd user unit** (#184). Install the binary
+and the unit
+([`contrib/systemd/keyvo-daemon.service`](../contrib/systemd/keyvo-daemon.service)),
+start it, follow its log in T1:
+
+```bash
+install -Dm755 bin/keyvo-daemon ~/.local/bin/keyvo-daemon
+install -Dm644 contrib/systemd/keyvo-daemon.service ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now keyvo-daemon
+systemctl --user status keyvo-daemon
+journalctl --user -u keyvo-daemon -f      # T1
+```
+
+Expected: `status` reads `active (running)`, the pad paints, and the log
+shows the KWin script loaded. The unit starts the daemon with the
+graphical session, restarts it 2 s after a crash, and a stop ends the
+daemon alone: applications it launched keep running (`KillMode=process`).
+After every `just build` that changes the daemon, install the binary
+again and `systemctl --user restart keyvo-daemon`. A user service does
+not see the shell's `PATH`: a `launch` or `exec` command that names a
+binary outside the systemd manager's `PATH` (`systemctl --user
+show-environment`) needs its full path, or a `PATH=` line in a file under
+`~/.config/environment.d/` and a new login. An item that runs
+`bin/keyvo-daemon` in T1 itself stops the unit first (`systemctl --user
+stop keyvo-daemon`) and starts it again afterwards; two daemons cannot
+share the socket.
+
+Then the whole check:
+
+```bash
+just test-hw
+```
+
+Expected: `keypad`, `uinput`, `rule`, `session`, `unit` and `daemon`
+read `ok`; `focus` reads `ok` at KWin's default level (Low); `solaar`
+reads `ok` with Solaar stopped (section 1, step 1); `flatpak` says
+whether the app is installed (it is after the install above). The exit
+status is 0 (`echo $?`).
+
+With the daemon running, in T3:
 
 ```bash
 flatpak run io.github.qubernetic.keyvo
@@ -117,8 +170,8 @@ flatpak run --command=keyvo io.github.qubernetic.keyvo ctl status
 
 Expected: the app opens on the Pad screen; the `ctl status` line has
 `"connected":true`. Inside the Flatpak the CLI reaches only the daemon:
-`keyvo probe`, `keys`, `fill` and `preview` run from `bin/keyvo` on the
-host. #184 adds the install of the daemon under the user unit.
+`keyvo probe`, `keys`, `fill`, `preview` and `doctor` run from
+`bin/keyvo` on the host.
 
 ## 3. Profiles
 
@@ -164,9 +217,11 @@ Every `## User test` item of the slice PRs merged into `epic/180-beta`,
 PR number first, one block per slice. Items sections 1 to 4 already
 covered say so; tick them from that result. Unless an item says
 otherwise: Solaar stopped, the binaries from section 2, the profiles from
-section 3, the daemon started with `bin/keyvo-daemon` in T1 when the item
-needs it and stopped (Ctrl-C) when the item uses `keyvo fill`, `keys`,
-`probe` or `dial`. Where an item's original text used its own test
+section 3, the daemon running under the user unit (section 2) when the
+item needs it and stopped (`systemctl --user stop keyvo-daemon`) when the
+item uses `keyvo fill`, `keys`, `probe` or `dial`. An item that starts
+`bin/keyvo-daemon` in T1 (the blocks before #196) stops the unit first
+and starts it again afterwards. Where an item's original text used its own test
 profile, it is rewritten here for the example profiles.
 
 ### #192: the Flatpak (#182)
@@ -211,6 +266,19 @@ profile's context page (`Fail`, `exit 1`) now carries `on_fail = { type =
 - [ ] #195 Lock the session (Super+L), press key 2, unlock: T2 shows one `blocked` record with `session locked`, no `on_fail` record, no notification.
 - [ ] #195 Restore the `on_fail` command. In the app, select key 2 on the Pad: the Inspector shows the line "Runs `notify-send 'keyvo' 'key 2 failed'` when this fails. Edit it in the file." under the action. Copy the file (`cp ~/.config/keyvo/profiles/global.toml /tmp/global.before`), change the label to `Broken` in the Inspector, then `diff /tmp/global.before ~/.config/keyvo/profiles/global.toml`: only the `label` line differs.
 - [ ] #195 In the app, the trace strip shows the press of key 2 as one line ending in `; on_fail: exec notify-send 'keyvo' 'key 2 failed' -> exited 0 after <n> ms`; opening it, the drawer's Result section has an `on_fail` row with the same text.
+
+### #196: the user unit, the udev rule and keyvo doctor (#184)
+
+The rule and the unit are installed as in sections 1 and 2. `bin/keyvo`
+is the CLI of the commit under test (`just build`).
+
+- [ ] #196 Remove the hand-made permissions for the test (or on a fresh boot): `bin/keyvo doctor` reports `fail` on the Keypad node and `/dev/uinput` with the install line; install the rule, replug the Keypad: both `ok`; `getfacl /dev/uinput` shows the user's ACL. (Section 1, step 2.)
+- [ ] #196 Install the unit as in the guide: `systemctl --user status keyvo-daemon` is `active`; the pad paints within two seconds of login; `journalctl --user -u keyvo-daemon` shows the KWin script loaded. (Section 2.)
+- [ ] #196 `systemctl --user stop keyvo-daemon` while a launched KCalc is open: the pad goes to the logo, KCalc stays. `start` again: the pad paints.
+- [ ] #196 Kill the daemon (`kill -9 $(systemctl --user show -p MainPID --value keyvo-daemon)`): the unit restarts it within about 2 s (`journalctl --user -u keyvo-daemon` shows the restart, the pad paints again).
+- [ ] #196 `bin/keyvo doctor` with Solaar running (`flatpak run io.github.pwr_solaar.solaar --window=hide &`) warns on `solaar`; with the session level set to 2 (`kwriteconfig6 --file kwinrc --group Windows --key FocusStealingPreventionLevel 2`) it warns on `focus`; then reset (`kwriteconfig6 --file kwinrc --group Windows --key FocusStealingPreventionLevel --delete`) and stop Solaar (`flatpak kill io.github.pwr_solaar.solaar`). Both warnings leave the exit status 0.
+- [ ] #196 Lock and unlock the session with the daemon under the unit: the lock page shows and goes (logind over the system bus works from a user service).
+- [ ] #196 `bin/keyvo doctor --json`: nine lines, each one JSON object with `check`, `status`, `message` and `fix`.
 
 ## 6. What to post back
 

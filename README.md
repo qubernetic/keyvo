@@ -42,6 +42,7 @@ just run -- keys --json             # one JSON object per press and release
 just run -- fill '#ff8000' --key 5  # or a PNG; --all (default), --panel or --full
 just run -- probe --feature 0x1b04  # one feature id on both ROOT planes
 just run -- --dump probe            # every frame in and out on stderr
+just run -- doctor                  # device access, udev rule, session, unit, daemon, Solaar
 bin/keyvo-daemon                    # paint ~/.config/keyvo/profiles/global.toml, run its keys, page buttons
 ```
 
@@ -125,11 +126,36 @@ just run -- preview vscode --page 2 -o grid.png   # an id from ~/.config/keyvo/p
 
 ## Install
 
-The beta installs in two parts (the [beta test guide](docs/beta-test.md),
-section 2, has every step):
+The beta installs in three parts (the [beta test guide](docs/beta-test.md),
+sections 1 and 2, has every step):
+
+- **Device access** comes from the udev rule
+  [contrib/udev/70-keyvo.rules](contrib/udev/70-keyvo.rules): it gives the
+  user at the seat access to the Keypad, the Bolt receiver and
+  `/dev/uinput` (`uaccess`, no group). Install it once, then replug the
+  Keypad:
+
+  ```bash
+  sudo install -m 644 contrib/udev/70-keyvo.rules /etc/udev/rules.d/
+  sudo udevadm control --reload && sudo udevadm trigger
+  ```
 
 - **The daemon** runs on the host and owns the device: build it in the
-  devcontainer (`just build`) and start `bin/keyvo-daemon`.
+  devcontainer (`just build`) and run it under the systemd user unit
+  [contrib/systemd/keyvo-daemon.service](contrib/systemd/keyvo-daemon.service),
+  which starts it with the graphical session and restarts it after a crash:
+
+  ```bash
+  install -Dm755 bin/keyvo-daemon ~/.local/bin/keyvo-daemon
+  install -Dm644 contrib/systemd/keyvo-daemon.service ~/.config/systemd/user/
+  systemctl --user daemon-reload && systemctl --user enable --now keyvo-daemon
+  journalctl --user -u keyvo-daemon -f
+  ```
+
+  A user service does not see the shell's `PATH`: give `exec` and `launch`
+  commands full paths, or set `PATH` in `~/.config/environment.d/`.
+  `bin/keyvo doctor` (or `just test-hw`) checks the rule, the unit, the
+  daemon and the session, one line each with the fix.
 - **The app** (and the `keyvo` CLI) is the Flatpak
   `io.github.qubernetic.keyvo` on the GNOME 51 runtime. Take `keyvo.flatpak`
   from the CI `flatpak` job's artifacts and install it, or build and install
