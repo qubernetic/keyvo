@@ -118,6 +118,8 @@ describe("applied", () => {
       color: "#ff0000",
       actionType: "exec",
       action: "spectacle --fullscreen",
+      windowClass: "",
+      waitFocus: true,
     });
   });
 
@@ -128,7 +130,15 @@ describe("applied", () => {
       color: "#ff0000",
       actionType: "launch",
       action: "kcalc",
+      windowClass: "",
+      waitFocus: true,
     });
+  });
+
+  it("drops the window class and the wait of the launch it replaces", () => {
+    const launch = toForm({ action: { type: "launch", cmd: "kcalc", class: "org.kde.kcalc", wait_focus: false } });
+    expect(applied(entry("calculator"), launch)).toMatchObject({ windowClass: "", waitFocus: true });
+    expect(applied(entry("launch"), launch)).toMatchObject({ action: "", windowClass: "", waitFocus: true });
   });
 
   it("rewrites the action for another variant, across action types", () => {

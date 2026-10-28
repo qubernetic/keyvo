@@ -118,7 +118,16 @@ export interface Subscribed {
 export type Action =
   | { type: "chord"; keys: string }
   | { type: "exec"; cmd: string }
-  | { type: "launch"; cmd: string };
+  | {
+      type: "launch";
+      cmd: string;
+      /** The window class the launch opens; derived from a `flatpak run
+       * <id>` command when absent (spec §6.3). */
+      class?: string;
+      /** Whether the launch's window keeps a global page; `true` when
+       * absent. */
+      wait_focus?: boolean;
+    };
 
 /** The layer of the stack that supplied a key (spec §6.1). */
 export type Layer = "global" | "app";

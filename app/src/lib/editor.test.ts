@@ -26,7 +26,15 @@ import {
 } from "./editor";
 import { chordCases, editorSteps } from "./fixtures";
 
-const BLANK: Form = { label: "", color: "", icon: "", actionType: "none", action: "" };
+const BLANK: Form = {
+  label: "",
+  color: "",
+  icon: "",
+  actionType: "none",
+  action: "",
+  windowClass: "",
+  waitFocus: true,
+};
 
 describe("the form", () => {
   it("round-trips the fixture's fields", () => {
@@ -39,7 +47,14 @@ describe("the form", () => {
   it("shows every field as text", () => {
     expect(
       toForm({ icon: "lucide:hammer", label: "Build", color: "#aa3300", action: { type: "exec", cmd: "make" } }),
-    ).toEqual({ label: "Build", color: "#aa3300", icon: "lucide:hammer", actionType: "exec", action: "make" });
+    ).toEqual({
+      ...BLANK,
+      label: "Build",
+      color: "#aa3300",
+      icon: "lucide:hammer",
+      actionType: "exec",
+      action: "make",
+    });
     expect(toForm({})).toEqual(BLANK);
   });
 
@@ -61,10 +76,44 @@ describe("the form", () => {
     );
   });
 
+  it("writes a launch's window class and wait_focus only where they differ from the defaults", () => {
+    const launch: KeyFields = {
+      action: { type: "launch", cmd: "kcalc", class: "org.kde.kcalc", wait_focus: false },
+    };
+    const form = toForm(launch);
+    expect(form).toEqual({
+      ...BLANK,
+      actionType: "launch",
+      action: "kcalc",
+      windowClass: "org.kde.kcalc",
+      waitFocus: false,
+    });
+    expect(fromForm(form)).toEqual({ fields: launch });
+    expect(fromForm({ ...form, windowClass: "  ", waitFocus: true })).toEqual({
+      fields: { action: { type: "launch", cmd: "kcalc" } },
+    });
+    expect(fromForm({ ...form, windowClass: " kcalc " })).toEqual({
+      fields: { action: { type: "launch", cmd: "kcalc", class: "kcalc", wait_focus: false } },
+    });
+    // Another action type writes neither.
+    expect(fromForm({ ...form, actionType: "exec" })).toEqual({ fields: { action: { type: "exec", cmd: "kcalc" } } });
+    // The class and the wait tell two launches apart.
+    const plain: KeyFields = { action: { type: "launch", cmd: "kcalc" } };
+    expect(sameFields(launch, plain)).toBe(false);
+    expect(sameFields(plain, { action: { type: "launch", cmd: "kcalc", wait_focus: true } })).toBe(true);
+  });
+
   it("leaves empty inputs out and trims icon, color and action", () => {
     expect(fromForm(BLANK)).toEqual({ fields: {} });
     expect(
-      fromForm({ label: " A ", color: " #AA3300 ", icon: " lucide:x ", actionType: "chord", action: " ctrl+c " }),
+      fromForm({
+        ...BLANK,
+        label: " A ",
+        color: " #AA3300 ",
+        icon: " lucide:x ",
+        actionType: "chord",
+        action: " ctrl+c ",
+      }),
     ).toEqual({
       fields: { label: " A ", color: "#aa3300", icon: "lucide:x", action: { type: "chord", keys: "ctrl+c" } },
     });

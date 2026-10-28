@@ -115,17 +115,28 @@ async function mounted(editor = fake(), { target = TARGET, global, tile, onpress
   };
 }
 
-/** The steps of the fixture, driven through the form. */
-async function edit() {
+function waitSwitch(): HTMLInputElement {
+  return screen.getByRole("switch", { name: "Wait for the window" }) as HTMLInputElement;
+}
+
+/** The steps of the fixture, driven through the form, each written before
+ * the next. */
+async function edit(editor: { readonly file: string }) {
   for (const step of STEPS.steps) {
+    const written = step.fields.action;
     if (step.field === "label") {
       await type(field("Label"), step.fields.label ?? "");
-    } else {
-      const written = step.fields.action;
-      if (written?.type !== "exec") throw new Error("the fixture's action step is an exec");
-      await fireEvent.change(action(), { target: { value: "exec" } });
+    } else if (step.field === "action") {
+      if (written === undefined || written.type === "chord") throw new Error("an action step writes a command");
+      await fireEvent.change(action(), { target: { value: written.type } });
       await type(field("Command"), written.cmd);
+    } else if (step.field === "class") {
+      if (written?.type !== "launch") throw new Error("the class step is a launch's");
+      await type(field("Window class"), written.class ?? "");
+    } else {
+      await fireEvent.click(waitSwitch());
     }
+    await waitFor(() => expect(editor.file).toBe(editorFile(step.file)));
   }
 }
 
@@ -215,26 +226,61 @@ describe("Inspector, the key editor's cases", () => {
     );
   });
 
+  it("shows a launch's window class with its hint and the wait switch, and no other action does", async () => {
+    await mounted();
+    expect(screen.queryByRole("textbox", { name: "Window class" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+    await fireEvent.change(action(), { target: { value: "launch" } });
+    expect(field("Window class")).toHaveValue("");
+    expect(field("Window class")).toHaveAccessibleDescription(
+      "The class the launched window carries; keyvo ctl status prints the focused one.",
+    );
+    expect(waitSwitch()).toBeChecked();
+    await fireEvent.change(action(), { target: { value: "exec" } });
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+  });
+
+  it("forgets a launch's class and wait when the action type changes", async () => {
+    const launch: KeyFields = {
+      label: "Calc",
+      action: { type: "launch", cmd: "kcalc", class: "org.kde.kcalc", wait_focus: false },
+    };
+    const editor = accepting(launch);
+    editor.editor.key = vi.fn(() => Promise.resolve({ path: PATH, fields: launch, line: STEPS.line }));
+    render(Inspector, { props: { editor: editor.editor, target: TARGET } });
+    await waitFor(() => expect(field("Window class")).toHaveValue("org.kde.kcalc"));
+    expect(waitSwitch()).not.toBeChecked();
+    await fireEvent.change(action(), { target: { value: "exec" } });
+    await fireEvent.change(action(), { target: { value: "launch" } });
+    expect(field("Window class")).toHaveValue("");
+    expect(waitSwitch()).toBeChecked();
+  });
+
   it("undoes and redoes the session's writes with Ctrl+Z and Ctrl+Shift+Z", async () => {
     const editor = await mounted();
-    await edit();
-    await waitFor(() => expect(editor.file).toBe(editorFile(nth(STEPS.steps, 1).file)));
+    const files = [STEPS.file, ...STEPS.steps.map((step) => step.file)];
+    await edit(editor);
 
-    await fireEvent.keyDown(window, { key: "z", ctrlKey: true });
-    await waitFor(() => expect(editor.file).toBe(editorFile(nth(STEPS.steps, 0).file)));
-    await waitFor(() => expect(field("Chord")).toHaveValue("ctrl+shift+c"));
-    await fireEvent.keyDown(window, { key: "z", ctrlKey: true });
-    await waitFor(() => expect(editor.file).toBe(editorFile(STEPS.file)));
+    for (let at = files.length - 2; at >= 0; at--) {
+      await fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+      await waitFor(() => expect(editor.file).toBe(editorFile(nth(files, at))));
+      if (at === 1) await waitFor(() => expect(field("Chord")).toHaveValue("ctrl+shift+c"));
+    }
     await waitFor(() => expect(field("Label")).toHaveValue("Copy"));
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
 
     await fireEvent.keyDown(window, { key: "Z", ctrlKey: true, shiftKey: true });
-    await waitFor(() => expect(editor.file).toBe(editorFile(nth(STEPS.steps, 0).file)));
-    await fireEvent.click(screen.getByRole("button", { name: "Redo" }));
-    await waitFor(() => expect(editor.file).toBe(editorFile(nth(STEPS.steps, 1).file)));
+    await waitFor(() => expect(editor.file).toBe(editorFile(nth(files, 1))));
+    for (let at = 2; at < files.length; at++) {
+      await fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+      await waitFor(() => expect(editor.file).toBe(editorFile(nth(files, at))));
+    }
     expect(screen.getByRole("button", { name: "Redo" })).toBeDisabled();
+    await waitFor(() => expect(waitSwitch()).not.toBeChecked());
+    expect(field("Window class")).toHaveValue("wl-paste");
     await fireEvent.click(screen.getByRole("button", { name: "Undo" }));
-    await waitFor(() => expect(editor.file).toBe(editorFile(nth(STEPS.steps, 0).file)));
+    await waitFor(() => expect(editor.file).toBe(editorFile(nth(files, files.length - 2))));
+    await waitFor(() => expect(waitSwitch()).toBeChecked());
     expect(result()).toHaveTextContent("Undid the change to key 2 at");
   });
 

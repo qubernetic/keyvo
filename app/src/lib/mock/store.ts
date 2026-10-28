@@ -35,9 +35,15 @@ function text(value: unknown): string | undefined {
 }
 
 function action(value: unknown): Action | undefined {
-  const { type, keys, cmd } = table(value);
+  const { type, keys, cmd, class: windowClass, wait_focus } = table(value);
   if (type === "chord" && typeof keys === "string") return { type, keys };
-  if ((type === "exec" || type === "launch") && typeof cmd === "string") return { type, cmd };
+  if (type === "exec" && typeof cmd === "string") return { type, cmd };
+  if (type === "launch" && typeof cmd === "string") {
+    const launch: Action = { type, cmd };
+    if (typeof windowClass === "string") launch.class = windowClass;
+    if (typeof wait_focus === "boolean") launch.wait_focus = wait_focus;
+    return launch;
+  }
   return undefined;
 }
 
