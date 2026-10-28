@@ -304,7 +304,7 @@ did (#86). Every M3 slice depends on it.
 
 | Issue | Title | Layer | Proof or User test | Depends on | Status |
 |---|---|---|---|---|---|
-| M3-0 | `research: static pass over the Dialpad features` (ADR-0008, inventory deeper-pass item 3: `0x4610` getCapabilities, getRollerCapabilities, getMode, setMode, getRollerSettings, setRollerSettings, RotationEvent) | S (research, sandbox) | report under `docs/research/` | | beta (#185, run by the owner) |
+| M3-0 | `research: static pass over the Dialpad features` (ADR-0008, inventory deeper-pass item 3: `0x4610` getCapabilities, getRollerCapabilities, getMode, setMode, getRollerSettings, setRollerSettings, RotationEvent) | S (research, sandbox) | report under `docs/research/` (done, #185: `docs/research/2026-10-28-dialpad-static-pass.md`) | | beta (#185, run by the owner) |
 | M3-1 | `feat(hid): Dialpad driver over Bolt` (0x1B04 buttons, 0x4610 dial and roller, device index) | S | `just test`; fixtures `own` and M3-0 | M0-3, M0-2, M3-0 | beta (#186 the driver, #188 the profile bindings) |
 | M3-2 | `hardware: Dialpad over Bolt and Bluetooth verified` | H | owner | M3-1, M3-0 | beta (#187) |
 | M3-3 | `feat(hid): MX Master 4 and MX Mechanical as trigger sources` (`getCidInfo` walk, volatile diverts) | S | `just test`; fixtures from `docs/research/hidpp-features-dump.txt` | M3-1, M3-0 | |
