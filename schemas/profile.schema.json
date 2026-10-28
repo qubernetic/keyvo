@@ -100,6 +100,10 @@
           "description": "Text drawn on the key.",
           "type": "string"
         },
+        "on_fail": {
+          "$ref": "#/$defs/Action",
+          "description": "An action run once when `action` fails (spec §7.2); it has no\n`on_fail` of its own."
+        },
         "states": {
           "additionalProperties": {
             "$ref": "#/$defs/KeyState"
