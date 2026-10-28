@@ -462,7 +462,7 @@ fn the_udev_rule_tags_the_three_devices_uaccess_and_nothing_else() {
         lines,
         [
             r#"KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c354", TAG+="uaccess""#,
-            r#"KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c548", TAG+="uaccess""#,
+            r#"KERNEL=="hidraw*", SUBSYSTEM=="hidraw", IMPORT{parent}="HID_ID", ENV{HID_ID}=="0003:0000046D:0000C548", TAG+="uaccess""#,
             r#"KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess""#,
         ]
     );

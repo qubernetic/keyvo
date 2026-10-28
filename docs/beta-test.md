@@ -278,6 +278,7 @@ is the CLI of the commit under test (`just build`).
 - [ ] #196 Kill the daemon (`kill -9 $(systemctl --user show -p MainPID --value keyvo-daemon)`): the unit restarts it within about 2 s (`journalctl --user -u keyvo-daemon` shows the restart, the pad paints again).
 - [ ] #196 `bin/keyvo doctor` with Solaar running (`flatpak run io.github.pwr_solaar.solaar --window=hide &`) warns on `solaar`; with the session level set to 2 (`kwriteconfig6 --file kwinrc --group Windows --key FocusStealingPreventionLevel 2`) it warns on `focus`; then reset (`kwriteconfig6 --file kwinrc --group Windows --key FocusStealingPreventionLevel --delete`) and stop Solaar (`flatpak kill io.github.pwr_solaar.solaar`). Both warnings leave the exit status 0.
 - [ ] #196 Lock and unlock the session with the daemon under the unit: the lock page shows and goes (logind over the system bus works from a user service).
+- [ ] #196 The receiver's rule reaches its own node only: find the receiver's node and a paired device's child node (`for n in /dev/hidraw*; do echo "$n $(udevadm info -q property -n "$n" | grep '^HID_ID=')"; done` shows the receiver's own nodes with `HID_ID` ending in `0000C548` (from its parent), the keyboard's with its wireless product id), then `udevadm info -a -n <node>` on both and `getfacl` on both: the receiver's node lists `user:<you>`, the keyboard's child node does not. Note what `getfacl` shows in the PR.
 - [ ] #196 `bin/keyvo doctor --json`: nine lines, each one JSON object with `check`, `status`, `message` and `fix`.
 
 ## 6. What to post back

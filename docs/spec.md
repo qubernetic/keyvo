@@ -98,8 +98,10 @@ host; the CI `flatpak` job builds the bundle `keyvo.flatpak`. The Flathub
 manifest (M4b-2) is a copy with a `git` source.
 
 **As built (beta, #184).** The udev rule `contrib/udev/70-keyvo.rules`
-tags the Keypad's hidraw nodes (`046d:c354`), the Bolt receiver's
-(`046d:c548`, the Dialpad's path) and `/dev/uinput` (a `static_node`, so
+tags the Keypad's hidraw nodes (`046d:c354`), the Bolt receiver's own
+(`046d:c548`, the Dialpad's path; matched on the immediate HID parent's
+`HID_ID`, so the child nodes of the paired keyboard and mouse stay
+closed) and `/dev/uinput` (a `static_node`, so
 the tag applies before the module loads) with `uaccess`; named `70-` so it
 sorts before `73-seat-late.rules`, where logind turns the tag into an ACL
 for the user at the active seat. No mode, no group. Install it with
