@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use keyvo_core::chord::Chord;
 use keyvo_core::diagnostic::{Diagnostic, Position};
-use keyvo_core::profile::{Action, Color, KeySlot, Profile};
+use keyvo_core::profile::{Action, Color, KeySlot, Profile, derived_class};
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -233,9 +233,7 @@ fn a_launch_action_is_a_command_line_like_exec() {
     }
     let text = "schema_version = 1\n[profile]\nid = \"t\"\nname = \"T\"\n[[pages]]\n[pages.keys.1]\naction = { type = \"launch\", cmd = \"flatpak run org.kde.kcalc\" }\n";
     let profile = Profile::from_toml(text, Path::new("t.toml")).unwrap();
-    let launch = Action::Launch {
-        cmd: "flatpak run org.kde.kcalc".into(),
-    };
+    let launch = Action::launch("flatpak run org.kde.kcalc");
     assert_eq!(
         profile.pages[0].keys[&KeySlot::new(1).unwrap()].action,
         Some(launch.clone())
@@ -244,4 +242,116 @@ fn a_launch_action_is_a_command_line_like_exec() {
         serde_json::to_value(&launch).unwrap(),
         serde_json::json!({ "type": "launch", "cmd": "flatpak run org.kde.kcalc" })
     );
+}
+
+fn action_of(action: &str) -> Result<Option<Action>, Diagnostic> {
+    let text = format!(
+        "schema_version = 1\n[profile]\nid = \"t\"\nname = \"T\"\n[[pages]]\n[pages.keys.1]\naction = {action}\n"
+    );
+    Profile::from_toml(&text, Path::new("t.toml")).map(|profile| {
+        profile.pages[0].keys[&KeySlot::new(1).unwrap()]
+            .action
+            .clone()
+    })
+}
+
+#[test]
+fn a_launch_names_its_window_class_and_whether_it_waits_for_the_window() {
+    let action = action_of(
+        r#"{ type = "launch", wait_focus = false, cmd = "kcalc", class = "org.kde.kcalc" }"#,
+    )
+    .unwrap();
+    let launch = Action::Launch {
+        cmd: "kcalc".into(),
+        class: Some("org.kde.kcalc".into()),
+        wait_focus: false,
+    };
+    assert_eq!(action, Some(launch.clone()));
+    assert_eq!(
+        serde_json::to_value(&launch).unwrap(),
+        serde_json::json!({
+            "type": "launch",
+            "cmd": "kcalc",
+            "class": "org.kde.kcalc",
+            "wait_focus": false
+        })
+    );
+    // Both fields are optional: no class, waiting for the window.
+    assert_eq!(
+        action_of(r#"{ type = "launch", cmd = "kcalc", wait_focus = true }"#).unwrap(),
+        Some(Action::launch("kcalc"))
+    );
+    let table = [
+        (
+            r#"{ type = "exec", cmd = "true", class = "x" }"#,
+            "unknown field `class`",
+        ),
+        (
+            r#"{ type = "exec", cmd = "true", wait_focus = false }"#,
+            "unknown field `wait_focus`",
+        ),
+        (
+            r#"{ type = "chord", keys = "a", class = "x" }"#,
+            "unknown field `class`",
+        ),
+        (
+            r#"{ type = "chord", keys = "a", wait_focus = true }"#,
+            "unknown field `wait_focus`",
+        ),
+        (
+            r#"{ type = "launch", cmd = "kcalc", wait_focus = 1 }"#,
+            "invalid type: integer `1`, expected a boolean",
+        ),
+        (
+            r#"{ type = "launch", cmd = "kcalc", class = 1 }"#,
+            "invalid type: integer `1`, expected a string",
+        ),
+    ];
+    for (action, message) in table {
+        let diagnostic = action_of(action).unwrap_err();
+        assert!(
+            diagnostic.message.starts_with(message),
+            "{action}: {diagnostic}"
+        );
+    }
+}
+
+#[test]
+fn a_flatpak_launch_derives_its_class_from_the_app_id() {
+    let table = [
+        ("flatpak run org.kde.kcalc", Some("org.kde.kcalc")),
+        (
+            "flatpak run --branch=stable org.kde.kcalc",
+            Some("org.kde.kcalc"),
+        ),
+        (
+            "/usr/bin/flatpak run org.kde.kcalc --help",
+            Some("org.kde.kcalc"),
+        ),
+        (
+            "flatpak  run\tcom.spotify.Client",
+            Some("com.spotify.Client"),
+        ),
+        // Not a Flatpak launch, or no app id where one belongs.
+        ("kcalc", None),
+        ("flatpak list", None),
+        ("flatpak run", None),
+        ("flatpak run --branch stable", None),
+        ("flatpak run kcalc", None),
+        ("echo flatpak run org.kde.kcalc", None),
+    ];
+    for (cmd, class) in table {
+        assert_eq!(derived_class(cmd).as_deref(), class, "{cmd}");
+    }
+    // A launch's class is its own, else the derived one.
+    let derived = Action::launch("flatpak run org.kde.kcalc");
+    assert_eq!(derived.launch_class().as_deref(), Some("org.kde.kcalc"));
+    let own = Action::Launch {
+        cmd: "flatpak run org.kde.kcalc".into(),
+        class: Some("kcalc".into()),
+        wait_focus: true,
+    };
+    assert_eq!(own.launch_class().as_deref(), Some("kcalc"));
+    assert_eq!(Action::launch("kcalc").launch_class(), None);
+    assert_eq!(Action::Exec { cmd: "x".into() }.launch_class(), None);
 }

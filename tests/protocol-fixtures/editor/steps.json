@@ -18,6 +18,30 @@
       "fields": { "label": "Paste", "action": { "type": "exec", "cmd": "wl-paste" } },
       "file": "terminal.2.toml",
       "line": 20
+    },
+    {
+      "field": "action",
+      "fields": { "label": "Paste", "action": { "type": "launch", "cmd": "wl-paste" } },
+      "file": "terminal.3.toml",
+      "line": 20
+    },
+    {
+      "field": "class",
+      "fields": {
+        "label": "Paste",
+        "action": { "type": "launch", "cmd": "wl-paste", "class": "wl-paste" }
+      },
+      "file": "terminal.4.toml",
+      "line": 20
+    },
+    {
+      "field": "wait_focus",
+      "fields": {
+        "label": "Paste",
+        "action": { "type": "launch", "cmd": "wl-paste", "class": "wl-paste", "wait_focus": false }
+      },
+      "file": "terminal.5.toml",
+      "line": 20
     }
   ]
 }

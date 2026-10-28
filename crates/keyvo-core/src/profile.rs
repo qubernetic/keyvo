@@ -205,10 +205,67 @@ pub enum Action {
     Launch {
         /// The command line.
         cmd: String,
+        /// The window class the launch opens, matched like a profile's
+        /// `match.class` entry; derived from a `flatpak run <id>` command
+        /// when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        class: Option<String>,
+        /// Whether the launch's window keeps a global page (spec §6.3).
+        /// Default `true`.
+        #[serde(default = "yes", skip_serializing_if = "is_yes")]
+        wait_focus: bool,
     },
 }
 
+const fn yes() -> bool {
+    true
+}
+
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if passes a reference"
+)]
+const fn is_yes(value: &bool) -> bool {
+    *value
+}
+
+/// The window class a `flatpak run <id>` command opens: the app id, which
+/// `KWin` reports as the window's `resourceClass`. `None` for any other
+/// command, and where the app id is not a valid one (at least three
+/// `.`-separated parts).
+#[must_use]
+pub fn derived_class(cmd: &str) -> Option<String> {
+    let mut words = cmd.split_whitespace();
+    let program = words.next()?;
+    if program.rsplit('/').next() != Some("flatpak") || words.next() != Some("run") {
+        return None;
+    }
+    let id = words.find(|word| !word.starts_with('-'))?;
+    (id.split('.').filter(|part| !part.is_empty()).count() >= 3).then(|| id.to_owned())
+}
+
 impl Action {
+    /// A `launch` of `cmd` without a class, waiting for its window.
+    #[must_use]
+    pub fn launch(cmd: &str) -> Self {
+        Self::Launch {
+            cmd: cmd.to_owned(),
+            class: None,
+            wait_focus: true,
+        }
+    }
+
+    /// The window class a `launch` opens: its own `class`, else the one
+    /// derived from its command ([`derived_class`]); `None` for the other
+    /// actions.
+    #[must_use]
+    pub fn launch_class(&self) -> Option<String> {
+        match self {
+            Self::Launch { cmd, class, .. } => class.clone().or_else(|| derived_class(cmd)),
+            Self::Chord { .. } | Self::Exec { .. } => None,
+        }
+    }
+
     /// Whether the key shows the automatic `running`, `success` and
     /// `error` states while and after the action runs (spec §7.2): `exec`
     /// and `launch` do, a chord is instant and does not.
@@ -242,13 +299,16 @@ impl<'de> Deserialize<'de> for Action {
             }
 
             fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<Action, A::Error> {
-                const FIELDS: &[&str] = &["type", "keys", "cmd"];
+                const FIELDS: &[&str] = &["type", "keys", "cmd", "class", "wait_focus"];
                 let (mut kind, mut keys, mut cmd, mut unknown) = (None, None, None, None);
+                let (mut class, mut wait_focus) = (None, None);
                 while let Some(name) = map.next_key::<String>()? {
                     match name.as_str() {
                         "type" => kind = Some(map.next_value::<Type>()?),
                         "keys" => keys = Some(map.next_value::<Chord>()?),
                         "cmd" => cmd = Some(map.next_value::<String>()?),
+                        "class" => class = Some(map.next_value::<String>()?),
+                        "wait_focus" => wait_focus = Some(map.next_value::<bool>()?),
                         _ => {
                             map.next_value::<de::IgnoredAny>()?;
                             unknown.get_or_insert(name);
@@ -258,11 +318,28 @@ impl<'de> Deserialize<'de> for Action {
                 if let Some(name) = unknown {
                     return Err(de::Error::unknown_field(&name, FIELDS));
                 }
+                // `class` and `wait_focus` belong to a `launch` alone.
+                if let Some(other @ (Type::Chord | Type::Exec)) = &kind {
+                    let expected: &[&str] = match other {
+                        Type::Chord => &["type", "keys"],
+                        _ => &["type", "cmd"],
+                    };
+                    if class.is_some() {
+                        return Err(de::Error::unknown_field("class", expected));
+                    }
+                    if wait_focus.is_some() {
+                        return Err(de::Error::unknown_field("wait_focus", expected));
+                    }
+                }
                 match (kind, keys, cmd) {
                     (None, _, _) => Err(de::Error::missing_field("type")),
                     (Some(Type::Chord), Some(keys), None) => Ok(Action::Chord { keys }),
                     (Some(Type::Exec), None, Some(cmd)) => Ok(Action::Exec { cmd }),
-                    (Some(Type::Launch), None, Some(cmd)) => Ok(Action::Launch { cmd }),
+                    (Some(Type::Launch), None, Some(cmd)) => Ok(Action::Launch {
+                        cmd,
+                        class,
+                        wait_focus: wait_focus.unwrap_or(true),
+                    }),
                     (Some(Type::Chord), _, Some(_)) => {
                         Err(de::Error::unknown_field("cmd", &["type", "keys"]))
                     }

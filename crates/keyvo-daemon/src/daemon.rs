@@ -572,7 +572,7 @@ impl<I: InputInjector> Controller<'_, I> {
                 let timeout = self.engine.config().timing.exec_timeout;
                 self.spawn(&record, async move { exec::run(&cmd, &env, timeout).await });
             }
-            Some(Action::Launch { cmd }) => {
+            Some(Action::Launch { cmd, .. }) => {
                 let env = exec::env(&record, self.socket);
                 let settle = self.engine.config().timing.launch_settle;
                 self.spawn(

@@ -20,6 +20,8 @@ const CASES: &[&str] = &[
     "action-compact",
     "action-type",
     "action-launch",
+    "action-launch-window",
+    "action-launch-subtable",
     "action-removed",
     "key-added",
     "second-page",
