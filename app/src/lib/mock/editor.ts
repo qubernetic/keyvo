@@ -41,11 +41,16 @@ function refused(store: Store, target: Target): Problem {
 export function mockEditor(store: Store, options: MockEditorOptions = {}): Editor {
   return {
     key: (target) =>
-      attempt(() => ({
-        path: store.path(target.profile),
-        fields: structuredClone(page(store, target).keys.get(target.key) ?? {}),
-        ...line(store, target),
-      })),
+      attempt(() => {
+        const found = page(store, target);
+        const onFail = found.onFail.get(target.key);
+        return {
+          path: store.path(target.profile),
+          fields: structuredClone(found.keys.get(target.key) ?? {}),
+          ...line(store, target),
+          ...(onFail === undefined ? {} : { on_fail: structuredClone(onFail) }),
+        };
+      }),
     editKey: (target, fields) =>
       attempt(() => {
         const keys = page(store, target).keys;

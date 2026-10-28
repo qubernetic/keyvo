@@ -28,6 +28,18 @@ describe("the mock key editor", () => {
     }
   });
 
+  it("shows the error key's on_fail and keeps it through a write", async () => {
+    const editor = mockEditor(new Store(contribProfiles()));
+    const target = { profile: "global", page: 1, key: 2 };
+    const onFail = { type: "exec", cmd: "notify-send 'keyvo' 'key 2 failed'" };
+    const view = await editor.key(target);
+    expect(view.on_fail).toEqual(onFail);
+    expect(view.fields).not.toHaveProperty("on_fail");
+    await editor.editKey(target, { ...view.fields, label: "Broken" });
+    expect(await editor.key(target)).toMatchObject({ fields: { label: "Broken" }, on_fail: onFail });
+    expect((await editor.key({ ...target, key: 1 })).on_fail).toBeUndefined();
+  });
+
   it("answers the line of a key's header on its own page", async () => {
     const steps = editorSteps();
     const text = `${editorFile(steps.file)}\n[[pages]]\nname = "two"\n\n[pages.keys.2]\nlabel = "Two"\n`;

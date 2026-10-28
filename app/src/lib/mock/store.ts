@@ -12,6 +12,8 @@ export interface MockPage {
   name: string | null;
   /** The keys the page defines, by key number from 1. */
   keys: Map<number, KeyFields>;
+  /** The `on_fail` actions of the keys, by key number; no edit writes them. */
+  onFail: Map<number, Action>;
 }
 
 export interface MockProfile {
@@ -81,9 +83,16 @@ export function parseProfile(toml: string): MockProfile {
     },
     pages: pages.map((page: unknown) => {
       const { name, keys } = table(page);
+      const entries = Object.entries(table(keys));
       return {
         name: text(name) ?? null,
-        keys: new Map(Object.entries(table(keys)).map(([n, fields]) => [Number(n), key(fields)])),
+        keys: new Map(entries.map(([n, fields]) => [Number(n), key(fields)])),
+        onFail: new Map(
+          entries.flatMap(([n, fields]) => {
+            const onFail = action(table(fields).on_fail);
+            return onFail === undefined ? [] : [[Number(n), onFail] as const];
+          }),
+        ),
       };
     }),
   };

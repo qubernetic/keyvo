@@ -252,6 +252,8 @@ export const messages = {
   "inspector.command": "Command",
   "inspector.windowClass": "Window class",
   "inspector.windowClassHint": "The class the launched window carries; keyvo ctl status prints the focused one.",
+  "inspector.onFailRuns": "Runs",
+  "inspector.onFailWhen": "when this fails. Edit it in the file.",
   "inspector.waitFocus": "Wait for the window",
   "inspector.result": "Inspector result",
   "inspector.wroteAt": "Wrote key {key} to {path} at {time}",
