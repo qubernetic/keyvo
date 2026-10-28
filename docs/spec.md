@@ -127,8 +127,9 @@ integrations and the Logi plugin.
 keyvo/
 ├── crates/
 │   ├── keyvo-hid       # HidTransport impls, HID++ 2.0 core (root, feature set, 0x0008, 0x1B04,
-│   │                   #   0x8040, 0x4610), VLP display plane (0x13/0x14, 0x19A1), Keypad + Dialpad
-│   │                   #   drivers, hot-plug, keep-alive task, ACK-driven image writer
+│   │                   #   0x8040, 0x4610), VLP display plane (0x13/0x14, 0x19A1), Keypad driver,
+│   │                   #   Dialpad driver (Bolt receiver node, slot search, 0xff over Bluetooth),
+│   │                   #   hot-plug, keep-alive task, ACK-driven image writer
 │   ├── keyvo-core      # profiles (TOML, toml_edit round-trip, JSON Schema), state machine
 │   │                   #   (mode/page/overlay), renderer (tiny-skia/resvg/Inter → JPEG), actions,
 │   │                   #   socket protocol types, chord parser; sync, hardware-free, ≥85 % covered
@@ -137,7 +138,7 @@ keyvo/
 │   │                   #   supervisor
 │   ├── keyvo-client    # socket client, mirror state, tile rendering through keyvo-core, key
 │   │                   #   editor file side, for the GUI and later clients; sync, hardware-free
-│   └── keyvo-cli       # `keyvo probe|keys|fill|preview|ctl|doctor`; planned: `paint-test|profile`
+│   └── keyvo-cli       # `keyvo probe|keys|dial|fill|preview|ctl|doctor`; planned: `paint-test|profile`
 ├── app/                # Tauri 2 + Svelte 5 GUI (M4a); src-tauri/ is outside the root workspace
 ├── integrations/       # planned: claude-code/ (plugin: hooks, commands, MCP), vscode/, tmux/, nvim/ …
 ├── plugins/logi/       # planned: C# Logi Actions SDK plugin (M5), built in the Windows VM
@@ -310,6 +311,33 @@ measured in M0-2 (plan §5 item 16).
   first light, `docs/hardware-notes.md` item 1); the search by `0x14` stays
   so a split topology is still handled. The sysfs fixtures carry the
   captured 140-byte descriptor.
+- The Bolt receiver as built (beta, #186; `keyvo_hid::sysfs::find_receiver`):
+  among the nodes of `046d:c548` the first, by node number, whose
+  descriptor carries both HID++ reports `0x10` and `0x11` (the kernel's
+  `hid-logitech-dj` owns the receiver and gives its keyboard and mouse
+  interfaces and every paired device nodes of their own). keyvo opens it
+  read-write, non-exclusive, like the Keypad's, and talks to a paired
+  device by its device index next to the kernel and Solaar. The
+  Dialpad's slot is found at runtime, never a constant
+  (`keyvo_hid::dialpad`): for device index 1 to 6, `ROOT.getFeature(0x4610)`
+  waiting at most `[timing].slot_probe`; a present feature makes the slot
+  a candidate, and the candidate's `0x0003 getDeviceInfo` model id must
+  carry `BC00` in one of its three product ids. The search stops at the
+  Dialpad. The receiver's HID++ 1.0 error report for a slot (`10 <index>
+  8f <feature index> <fn|swid> <code> 00`, codes of the public Unifying
+  receiver specification) answers the pending request at once
+  (`HidppError::Receiver`): `0x04` connect fail, `0x07` busy and `0x09`
+  resource error (retryable, §5.8) mark the slot silent like a timeout,
+  `0x08` unknown device and the other codes mark it empty. A
+  device without `0x4610` and one with another model id are skipped. When
+  no slot is the Dialpad, the caller waits for the receiver's arrival
+  notification (`0x41`) with the link established for the Dialpad's WPID
+  or a silent slot, at most `[timing].reconnect_interval`, then asks that
+  slot alone (or every slot again after the wait). `--device` on a node
+  sysfs knows as a Bluetooth Dialpad (`0005:046d:bc00`) reaches it on
+  device index `0xff` with the same driver; any other `--device` node is
+  taken as a receiver. The static pass's register `0x02` replay of the
+  arrivals is not used yet.
 - The Linux transport (`keyvo_hid::hidraw::HidrawTransport`) opens the node
   read-write, never exclusively. One `read` is one report (up to 4096
   bytes), its timeout a `poll`; `write` must take the whole report at once.
@@ -777,6 +805,29 @@ on a timer.
   ignores it and, as a non-diverted fallback, can read the evdev axes
   (`REL_WHEEL*`, `REL_HWHEEL*`, keys 275–278).
 - Nothing in the Dialpad path uses Solaar.
+- As built (beta, #186; `keyvo_hid::dialpad`, `multiroller`, `reprog`,
+  `input`), on fixtures that are synthetic until the hardware check of
+  #187 records the real bytes: after the slot search (§5.1),
+  `Dialpad::find` walks the `0x1B04` controls after `[timing].divert_settle`
+  (`getCount`, `getCidInfo` per control, each after
+  `[timing].divert_spacing`) and keeps every divertable one, in CID order
+  (buttons 1 to 4), then reads `fn0 getCapabilities` and `fn1
+  getRollerCapabilities` per roller; both indices come from
+  `ROOT.getFeature`. `Dialpad::open` then diverts, each request after the
+  spacing: per button `setCidReporting(cid, 0x03)` checked with
+  `getCidReporting`, per roller `setMode(roller, 1)`. `Dialpad::restore`
+  sends `setCidReporting(cid, 0x02)` and `setMode(roller, 0)`. The input
+  decoder (`Input::dialpad`) turns a `0x4610` notification (function 0,
+  swid 0) into `InputEvent::Rotate { roller, delta }` and the diverted
+  `0x1B04` notifications into button edges by the held-CID diff, so a
+  button the firmware repeats while held is one press and one release.
+  `Dialpad::next_event` also reads the receiver's arrival for the
+  Dialpad's slot: the link lost forgets what is held
+  (`DialpadEvent::LinkLost`), the link established re-sends every divert
+  after the settle (`DialpadEvent::Rediverted`). Reports of other slots
+  and of other software are skipped; the DJ reports (`0x20`, `0x21`) do
+  not parse as frames and are dropped and counted. The daemon does not
+  drive the Dialpad yet (#188); `keyvo dial` does (§5.10).
 
 ### 5.9 Verification
 
@@ -819,6 +870,45 @@ and `[timing].reply_timeout`.
   | `deferrableDisplayUpdate 0/1  rgb565 0/1  rgb888 0/1  jpeg 0/1  calibrated 0/1  origin N` | fn0 byte 7, bits 0..4 and bits 5..6 | `1  1  0  1  1  0` |
   | `geometry WxH, N buttons, N visible areas` | fn1 bytes 3..6, byte 7, byte 8 | `480x480, 9 buttons, 0 visible areas` |
   | `key N  WxH at X,Y` | fn1 button records | nine lines, §5.4 |
+- `keyvo probe` and the Dialpad (beta, #186): when sysfs has a Bolt
+  receiver node (§5.1), a receiver block follows the Keypad's, after an
+  empty line; without a Keypad but with a receiver only the block is
+  printed (the missing Keypad goes to stderr). It is read-only like the
+  rest: the slot search with `[timing].slot_probe`'s default (probe reads
+  no `config.toml`), the control walk and the roller capabilities, no
+  divert. `--device` on a node sysfs knows as the receiver or as a
+  Bluetooth Dialpad prints the block alone (its first label `dialpad`
+  then, its slots line `direct dialpad`); any other node is probed as the
+  Keypad. On the synthetic fixtures (§5.8):
+
+  ```
+  receiver    /dev/hidraw9 (Logitech USB Receiver, 046d:c548, reports 10 11)
+  slots       1 empty, 2 silent, 3 dialpad
+  features    0x1b04 REPROG_CONTROLS_V4 index 0x0a, 0x4610 MULTI_ROLLER index 0x0d
+  firmware    BL2 18.00.B0016  bootloader
+              RBO 07.00.B0016  application, active
+  buttons     1 0x0053, 2 0x0056, 3 0x0059, 4 0x005a
+  rollers     0 roller  40 increments per rotation, 0 ratchet increments
+              1 dial  180 increments per rotation, 0 ratchet increments
+  ```
+
+  A receiver without the Dialpad prints the slots line and `dialpad
+  not found`; a step the Dialpad refuses ends the block with its error.
+- `keyvo dial [--json]` (beta, #186): opens the receiver's node (or
+  `--device`, §5.1), finds the Dialpad and diverts it (§5.8), then prints
+  one line per event until Ctrl-C or SIGTERM: `button 1 press`, `button 1
+  release` (buttons numbered 1 to 4 in CID order), `dial +3`, `roller -1`,
+  or with `--json` one NDJSON object each, `{"edge":"press","button":1}`,
+  `{"turn":"dial","delta":3}`. Roller 1 is named `dial` and roller 0
+  `roller` after the third-party reading (M3-2 measures the mapping); a
+  further roller is `roller N`. On stop it gives every divert back and
+  says `diverts given back` on stderr. A receiver without an awake Dialpad
+  is reported once on stderr (`no Dialpad answers (<slots>); waiting for
+  it`), and the search runs again on the next arrival or after
+  `[timing].reconnect_interval`. The lost link and the re-divert after the
+  arrival are lines on stderr. Stop is checked whenever a read found
+  nothing; a read waits at most `[timing].reply_timeout`. It reads
+  `[timing]` from `config.toml` like `keys`; `--dump` applies.
 - `keyvo probe --feature <id>`: the feature id (hex, `0x` optional) asked
   of the classic ROOT and of the VLP root, one line per plane with the
   index and version, `absent` (index 0), or the error reply (the classic
@@ -958,6 +1048,7 @@ Defaults, all configurable under `[timing]` in `config.toml`:
 | `claim_splash_retry` | 500 ms | while the display shows the plug-in splash (`a4`), the claim re-sends `setMode(a0)` this often, §5.4 |
 | `claim_splash_timeout` | 10000 ms | how long the claim waits for the plug-in splash to end before it fails, §5.4 |
 | `doctor_reply` | 1000 ms | how long `keyvo doctor` waits for the daemon's answer to `status`, §12 |
+| `slot_probe` | 300 ms | how long the Dialpad search waits for one receiver slot's answer to `getFeature(0x4610)` before it counts the slot as silent (asleep), §5.1 and §5.8 |
 
 `keep_alive_period` must be shorter than `keep_alive_timeout`: a period at
 or above the timeout lets the claim run out between two pings (§5.3). The
@@ -2649,6 +2740,15 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, beta slice 6 (2026-10-28)**: the Dialpad driver over Bolt and
+  `keyvo dial` (#186). §5.1 the receiver's node (`046d:c548` with `0x10`
+  and `0x11`), the slot search by `getFeature(0x4610)` and the model id,
+  the receiver's HID++ 1.0 error report as the pending request's error;
+  §5.8 as built: the diverts of every divertable `0x1B04` control and of
+  every roller, the rotation and button input, the restore on stop, the
+  re-divert on the arrival, the Bluetooth node on `0xff`; §5.10 the
+  receiver block of `keyvo probe` and `keyvo dial`; §6.1
+  `[timing].slot_probe` (300 ms).
 - **v0.3, beta slice 5 (2026-10-28)**: the Dialpad static pass (#185,
   ADR-0008). §5.8 the Bolt slot discovery, the `0x4610` request, response
   and event layouts, the one-bit reporting mode, the settings fields, the

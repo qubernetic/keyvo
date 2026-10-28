@@ -1,0 +1,15 @@
+---
+source: crates/keyvo-cli/src/dial.rs
+expression: out
+---
+dial +3
+dial -2
+roller +127
+roller -128
+roller -1
+button 1 press
+button 1 release
+button 3 press
+button 4 press
+button 3 release
+button 4 release

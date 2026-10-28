@@ -3,6 +3,8 @@
 //! in `device/uevent`, and its report descriptor in
 //! `device/report_descriptor`. keyvo picks the node whose descriptor carries
 //! the bulk report `0x14`, never the first node that matches on VID/PID.
+//! The Bolt receiver's node, the Dialpad's path, is the receiver node that
+//! carries the HID++ reports `0x10` and `0x11`.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -18,6 +20,15 @@ pub const MX_CREATIVE_KEYPAD: u16 = 0xc354;
 /// The report a node must carry to be the Keypad's: the VLP bulk report of
 /// the LCD image fragments.
 pub const BULK_REPORT: u8 = 0x14;
+/// USB product id of the Logi Bolt receiver.
+pub const BOLT_RECEIVER: u16 = 0xc548;
+/// Product id of the MX Creative Dialpad (its Bolt WPID too).
+pub const MX_CREATIVE_DIALPAD: u16 = 0xbc00;
+/// The reports a receiver node must carry to be the one keyvo talks
+/// HID++ on: the short and the long HID++ report.
+pub const RECEIVER_REPORTS: [u8; 2] = [0x10, 0x11];
+/// Bus type of a Bluetooth HID device.
+pub const BUS_BLUETOOTH: u16 = 0x0005;
 
 /// Bus, vendor and product of a HID device (`HID_ID` in its uevent).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -269,6 +280,52 @@ pub fn find_keypad(class_dir: &Path, dev_dir: &Path) -> Result<Node, SysfsError>
     select(&nodes, LOGITECH, MX_CREATIVE_KEYPAD, BULK_REPORT).cloned()
 }
 
+/// The Bolt receiver's HID++ node: among the nodes of
+/// [`BOLT_RECEIVER`] the first that carries both [`RECEIVER_REPORTS`]
+/// (the kernel's `hid-logitech-dj` gives the receiver's keyboard and mouse
+/// interfaces nodes of their own). `None` without one.
+///
+/// # Errors
+///
+/// The errors of [`enumerate`].
+pub fn find_receiver(class_dir: &Path, dev_dir: &Path) -> Result<Option<Node>, SysfsError> {
+    Ok(enumerate(class_dir, dev_dir)?.into_iter().find(|node| {
+        node.id.vendor == LOGITECH
+            && node.id.product == BOLT_RECEIVER
+            && RECEIVER_REPORTS
+                .iter()
+                .all(|report| node.report_ids.contains(report))
+    }))
+}
+
+/// The node behind a `--device` path, by its node name (`hidraw3` of
+/// `/dev/hidraw3`); `None` when sysfs has no node of that name.
+///
+/// # Errors
+///
+/// The errors of [`enumerate`].
+pub fn node_at(class_dir: &Path, dev_dir: &Path, path: &Path) -> Result<Option<Node>, SysfsError> {
+    let Some(name) = path.file_name() else {
+        return Ok(None);
+    };
+    Ok(enumerate(class_dir, dev_dir)?
+        .into_iter()
+        .find(|node| std::ffi::OsStr::new(&node.name) == name))
+}
+
+impl Node {
+    /// True for a Dialpad paired over Bluetooth, which answers on device
+    /// index `0xff` like a USB device. Over the receiver the kernel gives
+    /// the Dialpad a child node on the USB bus; keyvo talks to the
+    /// receiver's node instead.
+    #[must_use]
+    pub const fn is_bluetooth_dialpad(&self) -> bool {
+        self.id.bus == BUS_BLUETOOTH
+            && self.id.vendor == LOGITECH
+            && self.id.product == MX_CREATIVE_DIALPAD
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -404,6 +461,78 @@ mod tests {
             find_keypad(empty.path(), Path::new(DEV_DIR)),
             Err(SysfsError::NotFound { .. })
         ));
+    }
+
+    fn receiver(scenario: &str) -> Option<Node> {
+        let root = sysfs(scenario);
+        find_receiver(&root.path().join("class/hidraw"), Path::new(DEV_DIR)).unwrap()
+    }
+
+    #[test]
+    fn the_receiver_node_is_found_beside_the_keypad_and_alone() {
+        for scenario in ["keypad-and-receiver", "receiver-only"] {
+            let node = receiver(scenario).unwrap();
+            assert_eq!(node.name, "hidraw9", "{scenario}");
+            assert_eq!(node.id.to_string(), "046d:c548");
+            assert_eq!(node.report_ids, [0x10, 0x11]);
+            assert!(!node.is_bluetooth_dialpad());
+        }
+        assert_eq!(receiver("keypad-split"), None);
+    }
+
+    /// A class directory with one node per `(name, HID_ID, descriptor)`.
+    fn class_dir(nodes: &[(&str, &str, &[u8])]) -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        for (node, id, descriptor) in nodes {
+            let device = root.path().join(node).join("device");
+            fs::create_dir_all(&device).unwrap();
+            fs::write(device.join("uevent"), format!("HID_ID={id}\n")).unwrap();
+            fs::write(device.join("report_descriptor"), descriptor).unwrap();
+        }
+        root
+    }
+
+    #[test]
+    fn only_the_receiver_node_with_both_hidpp_reports_is_taken() {
+        // The receiver's keyboard and mouse interfaces have nodes of their
+        // own; the HID++ one carries 0x10 and 0x11.
+        let receiver = "0003:0000046D:0000C548";
+        let root = class_dir(&[
+            ("hidraw7", receiver, &[0x85, 0x01]),
+            ("hidraw8", receiver, &[0x85, 0x10]),
+            ("hidraw9", receiver, &[0x85, 0x10, 0x85, 0x11, 0x85, 0x20]),
+        ]);
+        let node = find_receiver(root.path(), Path::new(DEV_DIR)).unwrap();
+        assert_eq!(node.map(|n| n.name), Some("hidraw9".to_owned()));
+        let root = class_dir(&[("hidraw7", receiver, &[0x85, 0x01])]);
+        assert_eq!(find_receiver(root.path(), Path::new(DEV_DIR)), Ok(None));
+    }
+
+    #[test]
+    fn a_device_path_is_looked_up_by_its_node_name() {
+        let root = class_dir(&[
+            ("hidraw3", "0005:0000046D:0000BC00", &[0x85, 0x11]),
+            (
+                "hidraw9",
+                "0003:0000046D:0000C548",
+                &[0x85, 0x10, 0x85, 0x11],
+            ),
+        ]);
+        let dialpad = node_at(root.path(), Path::new(DEV_DIR), Path::new("/dev/hidraw3"))
+            .unwrap()
+            .unwrap();
+        assert!(dialpad.is_bluetooth_dialpad());
+        let receiver = node_at(root.path(), Path::new(DEV_DIR), Path::new("hidraw9")).unwrap();
+        assert!(!receiver.unwrap().is_bluetooth_dialpad());
+        assert_eq!(
+            node_at(root.path(), Path::new(DEV_DIR), Path::new("/tmp/fake")),
+            Ok(None)
+        );
+        // The Dialpad as a child of the receiver's DJ driver is not the
+        // Bluetooth one.
+        let root = class_dir(&[("hidraw4", "0003:0000046D:0000BC00", &[0x85, 0x11])]);
+        let child = node_at(root.path(), Path::new(DEV_DIR), Path::new("/dev/hidraw4"));
+        assert!(!child.unwrap().unwrap().is_bluetooth_dialpad());
     }
 
     #[test]

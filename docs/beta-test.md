@@ -208,8 +208,43 @@ Do not use `solaar show` for the Dialpad: it crashes on it (upstream bug
 in `settings_templates.py`, Solaar 1.1.20); the raw feature walk is in
 `docs/research/hidpp-features-dump.txt`.
 
-The driver and the `keyvo dial` command arrive with #186, the hardware
-check with #187; their steps go here when they land.
+The driver and `keyvo dial` came with #186 (PR #199), on fixtures that
+are synthetic until the hardware check of #187 records the real bytes.
+Stop Solaar and the daemon for these steps (`flatpak kill
+io.github.pwr_solaar.solaar`, `systemctl --user stop keyvo-daemon`); the
+Dialpad must be awake (turn the dial once).
+
+1. `bin/keyvo probe`: after the Keypad's lines, an empty line and the
+   receiver block: `receiver` names the receiver's node (`046d:c548`,
+   reports `10 11` among others), `slots` lists every slot asked up to the
+   Dialpad's (`3 dialpad` on the owner's receiver, where Solaar shows it as
+   device 3), `features` names `0x1b04` and `0x4610` with their indices
+   (`0x0a` and `0x0d` in the feature walk), `firmware` the Dialpad's
+   entities (Solaar shows `RBO 07.00.B0016`), `buttons` four CIDs `0x0053
+   0x0056 0x0059 0x005a`, `rollers` two lines with the increments per
+   rotation (40 and 180 reported).
+2. `bin/keyvo dial`: stderr says `Dialpad on slot N: 4 buttons, ...;
+   Ctrl-C to stop`. Each button prints `button K press` once while held
+   and `button K release` on letting go; turning the dial and the roller
+   prints `dial +N` / `roller -N` lines, one per notification, and the
+   desktop does not scroll while they are diverted. Note which physical
+   control is `dial` and which `roller`, the sign per direction, and
+   whether fast turns give larger deltas.
+3. Ctrl-C: stderr says `diverts given back`; the dial and the roller
+   scroll the desktop again, the buttons do what they did before.
+4. Let the Dialpad sleep (leave it alone until it goes dark) while `dial`
+   runs: stderr says `Dialpad link lost`; touch it: `Dialpad back, diverts
+   sent again`, and the events print again. Start `dial` with the Dialpad
+   asleep: `no Dialpad answers (...); waiting for it` once, then the
+   start line after it wakes.
+5. `bin/keyvo --dump dial`: every report on stderr; a turn shows `< 11 0N
+   0d 00 ...`, the HID++ 1.0 error replies of empty slots `< 10 0K 8f
+   ...`.
+6. Over Bluetooth (pair the Dialpad on its Bluetooth channel), with its
+   node from `grep -l 'HID_ID=0005:0000046D:0000BC00'
+   /sys/class/hidraw/*/device/uevent`: `bin/keyvo --device /dev/hidrawN
+   probe` prints the `dialpad` block with `slots  direct dialpad`;
+   `bin/keyvo --device /dev/hidrawN dial` works as in step 2.
 
 ## 5. Slice User test checklists
 
@@ -280,6 +315,18 @@ is the CLI of the commit under test (`just build`).
 - [ ] #196 Lock and unlock the session with the daemon under the unit: the lock page shows and goes (logind over the system bus works from a user service).
 - [ ] #196 The receiver's rule reaches its own node only: find the receiver's node and a paired device's child node (`for n in /dev/hidraw*; do echo "$n $(udevadm info -q property -n "$n" | grep '^HID_ID=')"; done` shows the receiver's own nodes with `HID_ID` ending in `0000C548` (from its parent), the keyboard's with its wireless product id), then `udevadm info -a -n <node>` on both and `getfacl` on both: the receiver's node lists `user:<you>`, the keyboard's child node does not. Note what `getfacl` shows in the PR.
 - [ ] #196 `bin/keyvo doctor --json`: nine lines, each one JSON object with `check`, `status`, `message` and `fix`.
+
+### #199: the Dialpad driver over Bolt and keyvo dial (#186)
+
+The hardware check of this driver is #187 (slice 7); these items are its
+starting point. Solaar and the daemon stopped.
+
+- [ ] #199 `bin/keyvo probe` prints the receiver block with the Dialpad's slot, the `0x1b04` and `0x4610` indices, the firmware, four buttons and two rollers (section 4, step 1). Post the block.
+- [ ] #199 `bin/keyvo dial` and `bin/keyvo dial --json` print one line per button edge and turn, a held button once (section 4, step 2); the desktop does not scroll while diverted. Post which control is `dial` and which `roller`, and the sign per direction.
+- [ ] #199 Ctrl-C gives the diverts back: scrolling and the buttons' own actions return (section 4, step 3).
+- [ ] #199 Sleep and wake while `dial` runs, and a start while asleep (section 4, step 4).
+- [ ] #199 `bin/keyvo --dump dial` with a few turns and presses: post the `--dump` lines of the start (slot search and diverts), one turn per roller, one button press and the Ctrl-C; they replace the synthetic fixtures.
+- [ ] #199 Over Bluetooth with `--device`: `probe` and `dial` (section 4, step 6).
 
 ## 6. What to post back
 

@@ -1,6 +1,8 @@
-//! Classic HID++ `0x1B04 REPROG_CONTROLS_V4` (spec §5.6): the control walk
-//! and the divert of the Keypad's page buttons, whose presses then arrive
-//! as notifications ([`crate::input::Input::with_page_buttons`]).
+//! Classic HID++ `0x1B04 REPROG_CONTROLS_V4` (spec §5.6, §5.8): the control
+//! walk, the divert of the Keypad's page buttons and of the Dialpad's four
+//! buttons, whose presses then arrive as notifications
+//! ([`crate::input::Input::with_page_buttons`]), and the undivert that
+//! gives them back.
 //!
 //! The divert is volatile: the caller sends it on every open and reconnect,
 //! after the keep-alive has started.
@@ -143,18 +145,10 @@ pub fn divert_page_buttons<T: HidTransport>(
     timing: &DivertTiming,
     mut sleep: impl FnMut(Duration),
 ) -> Result<Diverted, DivertError> {
-    sleep(timing.settle);
-    let index = hidpp.feature_index(Plane::Classic, feature::REPROG_CONTROLS_V4)?;
-    let reply = hidpp.request(Plane::Classic, index, FN_GET_COUNT, &[])?;
-    let count = reply.params.first().copied().unwrap_or_default();
-    let mut controls = Vec::with_capacity(usize::from(count));
-    for position in 0..count {
-        sleep(timing.spacing);
-        let reply = hidpp.request(Plane::Classic, index, FN_GET_CID_INFO, &[position])?;
-        controls.push(control_info(&reply.params)?);
-    }
+    let walked = controls(hidpp, timing, &mut sleep)?;
     for cid in PAGE_BUTTONS {
-        let control = controls
+        let control = walked
+            .controls
             .iter()
             .find(|control| control.cid == cid)
             .ok_or(DivertError::MissingControl { cid })?;
@@ -165,23 +159,69 @@ pub fn divert_page_buttons<T: HidTransport>(
             });
         }
     }
-    for cid in PAGE_BUTTONS {
+    divert(hidpp, walked.reprog_index, &PAGE_BUTTONS, timing, sleep)?;
+    Ok(walked)
+}
+
+/// The control walk: waits `timing.settle`, resolves the `0x1B04` index,
+/// then `getCount` and `getCidInfo` for every control, each after
+/// `timing.spacing`. Diverts nothing.
+///
+/// # Errors
+///
+/// [`HidppError::Malformed`] for a short `getCidInfo` reply, plus the
+/// request errors.
+pub fn controls<T: HidTransport>(
+    hidpp: &mut Hidpp<T>,
+    timing: &DivertTiming,
+    mut sleep: impl FnMut(Duration),
+) -> Result<Diverted, DivertError> {
+    sleep(timing.settle);
+    let index = hidpp.feature_index(Plane::Classic, feature::REPROG_CONTROLS_V4)?;
+    let reply = hidpp.request(Plane::Classic, index, FN_GET_COUNT, &[])?;
+    let count = reply.params.first().copied().unwrap_or_default();
+    let mut controls = Vec::with_capacity(usize::from(count));
+    for position in 0..count {
+        sleep(timing.spacing);
+        let reply = hidpp.request(Plane::Classic, index, FN_GET_CID_INFO, &[position])?;
+        controls.push(control_info(&reply.params)?);
+    }
+    Ok(Diverted {
+        reprog_index: index,
+        controls,
+    })
+}
+
+/// Diverts `cids` on the `0x1B04` index `reprog_index`: per control
+/// `setCidReporting(cid, 0x03)` (echoed) and `getCidReporting(cid)`, which
+/// must show the divert bit; every request after `timing.spacing`.
+///
+/// # Errors
+///
+/// [`DivertError::NotConfirmed`], and the request errors.
+pub fn divert<T: HidTransport>(
+    hidpp: &mut Hidpp<T>,
+    reprog_index: u8,
+    cids: &[u16],
+    timing: &DivertTiming,
+    mut sleep: impl FnMut(Duration),
+) -> Result<(), DivertError> {
+    for &cid in cids {
         let [hi, lo] = cid.to_be_bytes();
+        sleep(timing.spacing);
+        set_reporting(
+            hidpp,
+            reprog_index,
+            cid,
+            REPORTING_DIVERT | REPORTING_DIVERT_VALID,
+        )?;
         sleep(timing.spacing);
         let reply = hidpp.request(
             Plane::Classic,
-            index,
-            FN_SET_CID_REPORTING,
-            &[hi, lo, REPORTING_DIVERT | REPORTING_DIVERT_VALID],
+            reprog_index,
+            FN_GET_CID_REPORTING,
+            &[hi, lo],
         )?;
-        if reply.params.get(..2) != Some(&[hi, lo]) {
-            return Err(HidppError::Malformed(format!(
-                "setCidReporting(0x{cid:04x}) answered for another control"
-            ))
-            .into());
-        }
-        sleep(timing.spacing);
-        let reply = hidpp.request(Plane::Classic, index, FN_GET_CID_REPORTING, &[hi, lo])?;
         let [r_hi, r_lo, flags, ..] = reply.params[..] else {
             return Err(HidppError::Malformed("short getCidReporting reply".into()).into());
         };
@@ -189,10 +229,50 @@ pub fn divert_page_buttons<T: HidTransport>(
             return Err(DivertError::NotConfirmed { cid, flags });
         }
     }
-    Ok(Diverted {
-        reprog_index: index,
-        controls,
-    })
+    Ok(())
+}
+
+/// Gives `cids` back to the device: per control `setCidReporting(cid,
+/// 0x02)`, the divert bit valid and clear, echoed; every request after
+/// `timing.spacing`.
+///
+/// # Errors
+///
+/// The request errors.
+pub fn undivert<T: HidTransport>(
+    hidpp: &mut Hidpp<T>,
+    reprog_index: u8,
+    cids: &[u16],
+    timing: &DivertTiming,
+    mut sleep: impl FnMut(Duration),
+) -> Result<(), DivertError> {
+    for &cid in cids {
+        sleep(timing.spacing);
+        set_reporting(hidpp, reprog_index, cid, REPORTING_DIVERT_VALID)?;
+    }
+    Ok(())
+}
+
+/// `setCidReporting(cid, flags)`, whose reply must echo the CID.
+fn set_reporting<T: HidTransport>(
+    hidpp: &mut Hidpp<T>,
+    reprog_index: u8,
+    cid: u16,
+    flags: u8,
+) -> Result<(), HidppError> {
+    let [hi, lo] = cid.to_be_bytes();
+    let reply = hidpp.request(
+        Plane::Classic,
+        reprog_index,
+        FN_SET_CID_REPORTING,
+        &[hi, lo, flags],
+    )?;
+    if reply.params.get(..2) != Some(&[hi, lo]) {
+        return Err(HidppError::Malformed(format!(
+            "setCidReporting(0x{cid:04x}) answered for another control"
+        )));
+    }
+    Ok(())
 }
 
 /// Decodes a `getCidInfo` reply: cid (u16), task id (u16), flags,
@@ -248,7 +328,7 @@ mod tests {
     const LEFT: [u8; 5] = [0x01, 0xa1, 0x00, 0x00, 0x20];
     const RIGHT: [u8; 5] = [0x01, 0xa2, 0x00, 0x00, 0x20];
 
-    fn divert(script: &str) -> (Result<Diverted, DivertError>, FakeHidTransport) {
+    fn divert_pages(script: &str) -> (Result<Diverted, DivertError>, FakeHidTransport) {
         let mut hidpp = Hidpp::new(
             FakeHidTransport::from_script(script).unwrap(),
             DEVICE_DIRECT,
@@ -261,7 +341,7 @@ mod tests {
 
     #[test]
     fn a_missing_page_button_is_refused_before_anything_is_diverted() {
-        let (result, transport) = divert(&walk(&[LEFT]));
+        let (result, transport) = divert_pages(&walk(&[LEFT]));
         assert_eq!(result, Err(DivertError::MissingControl { cid: PAGE_RIGHT }));
         assert!(transport.is_done());
     }
@@ -269,7 +349,7 @@ mod tests {
     #[test]
     fn a_page_button_that_is_not_divertable_is_refused() {
         let fixed = [0x01, 0xa2, 0x00, 0x00, 0x10];
-        let (result, transport) = divert(&walk(&[LEFT, fixed]));
+        let (result, transport) = divert_pages(&walk(&[LEFT, fixed]));
         assert_eq!(
             result,
             Err(DivertError::NotDivertable {
@@ -290,7 +370,7 @@ mod tests {
                 long(FN_GET_CID_REPORTING, &[0x01, 0xa1]),
                 long(FN_GET_CID_REPORTING, &[0x01, 0xa1, 0x00]),
             );
-        let (result, _) = divert(&script);
+        let (result, _) = divert_pages(&script);
         assert_eq!(
             result,
             Err(DivertError::NotConfirmed {
@@ -308,11 +388,79 @@ mod tests {
                 long(FN_SET_CID_REPORTING, &[0x01, 0xa1, 0x03]),
                 long(FN_SET_CID_REPORTING, &[0x01, 0xa2, 0x03]),
             );
-        let (result, _) = divert(&script);
+        let (result, _) = divert_pages(&script);
         assert!(matches!(
             result,
             Err(DivertError::Hidpp(HidppError::Malformed(_)))
         ));
+    }
+
+    fn hidpp(script: &str) -> Hidpp<FakeHidTransport> {
+        Hidpp::new(
+            FakeHidTransport::from_script(script).unwrap(),
+            DEVICE_DIRECT,
+            SoftwareId::new(0x1).unwrap(),
+            Duration::from_secs(1),
+        )
+    }
+
+    #[test]
+    fn controls_walks_the_list_after_the_settle() {
+        let mut hidpp = hidpp(&walk(&[LEFT, RIGHT]));
+        let mut slept = Vec::new();
+        let walked = controls(&mut hidpp, &DivertTiming::default(), |d| {
+            slept.push(d.as_millis());
+        })
+        .unwrap();
+        assert_eq!(walked.reprog_index, 0x0b);
+        let cids: Vec<_> = walked.controls.iter().map(|c| c.cid).collect();
+        assert_eq!(cids, [PAGE_LEFT, PAGE_RIGHT]);
+        assert_eq!(slept, [100, 20, 20]);
+        assert!(hidpp.transport_mut().is_done());
+    }
+
+    #[test]
+    fn undivert_clears_the_divert_bit_of_every_control() {
+        let script = format!(
+            "> {}\n< {}\n> {}\n< {}\n",
+            long(FN_SET_CID_REPORTING, &[0x01, 0xa1, 0x02]),
+            long(FN_SET_CID_REPORTING, &[0x01, 0xa1, 0x02]),
+            long(FN_SET_CID_REPORTING, &[0x01, 0xa2, 0x02]),
+            long(FN_SET_CID_REPORTING, &[0x01, 0xa2, 0x02]),
+        );
+        let mut hidpp = hidpp(&script);
+        let mut slept = Vec::new();
+        undivert(
+            &mut hidpp,
+            0x0b,
+            &PAGE_BUTTONS,
+            &DivertTiming::default(),
+            |d| slept.push(d.as_millis()),
+        )
+        .unwrap();
+        assert_eq!(slept, [20, 20]);
+        assert!(hidpp.transport_mut().is_done());
+    }
+
+    #[test]
+    fn divert_sets_and_verifies_each_control_in_turn() {
+        let script = format!(
+            "> {}\n< {}\n> {}\n< {}\n",
+            long(FN_SET_CID_REPORTING, &[0x00, 0x53, 0x03]),
+            long(FN_SET_CID_REPORTING, &[0x00, 0x53, 0x03]),
+            long(FN_GET_CID_REPORTING, &[0x00, 0x53]),
+            long(FN_GET_CID_REPORTING, &[0x00, 0x53, 0x01]),
+        );
+        let mut hidpp = hidpp(&script);
+        divert(
+            &mut hidpp,
+            0x0b,
+            &[0x0053],
+            &DivertTiming::default(),
+            |_| {},
+        )
+        .unwrap();
+        assert!(hidpp.transport_mut().is_done());
     }
 
     #[test]

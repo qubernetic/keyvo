@@ -1,0 +1,22 @@
+# The Dialpad's 0x4610 MULTI_ROLLER capabilities over the Bolt receiver,
+# slot 3, in keyvo's order: getCapabilities, then getRollerCapabilities per
+# roller. The index 0x0d comes from the slot search
+# (receiver-slot-probe.txt), which resolved it with getFeature(0x4610).
+#
+# Source: synthetic until the owner's capture of slice 7 (#187) replaces it.
+# Feature index 0x0d is the measured feature walk
+# (docs/research/hidpp-features-dump.txt, MX Creative Dialpad). The layouts
+# are the static pass (docs/research/2026-10-28-dialpad-static-pass.md §1
+# and §2); the roller capabilities `28 00 1f 00` and `b4 00 1f 00` (40 and
+# 180 increments, no ratchet) are the third-party replies quoted there (§2,
+# shensquared / Julusian PR #22). Requests use keyvo's swid 0xe.
+#
+# 1. getCapabilities -> 2 rollers
+> 11 03 0d 0e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 0d 0e 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 2. getRollerCapabilities(0) -> 40 increments, 0 ratchet increments
+> 11 03 0d 1e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 0d 1e 28 00 1f 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 3. getRollerCapabilities(1) -> 180 increments, 0 ratchet increments
+> 11 03 0d 1e 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 0d 1e b4 00 1f 00 00 00 00 00 00 00 00 00 00 00 00 00

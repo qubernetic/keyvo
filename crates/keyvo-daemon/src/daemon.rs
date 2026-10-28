@@ -63,7 +63,7 @@ use keyvo_core::socket::{
 };
 use keyvo_core::state::{LaunchId, PageButton, View};
 use keyvo_core::trace::{Outcome, TraceRecord, Trigger};
-use keyvo_hid::input::{Control, Edge};
+use keyvo_hid::input::{Control, Edge, InputEvent};
 use keyvo_hid::reprog::{PAGE_LEFT, PAGE_RIGHT};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::time::Instant;
@@ -440,7 +440,12 @@ impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
             device::Event::Reclaimed => tracing::warn!("keypad: claim lost, display reclaimed"),
             device::Event::Input(input) => {
                 let now = Instant::now().into_std();
-                match (input.control, input.edge) {
+                // The Keypad has no rollers; the Dialpad is not the
+                // daemon's yet (roadmap M3).
+                let InputEvent::Button { control, edge } = input else {
+                    return;
+                };
+                match (control, edge) {
                     (Control::Key(key), edge) => {
                         if let Some(slot) = KeySlot::new(key) {
                             let edge = match edge {

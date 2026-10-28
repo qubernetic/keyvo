@@ -28,7 +28,9 @@ unit of truth. Spelled `behavior` in GUI labels and code.
 **Bolt receiver**: Logitech's USB dongle (`046d:c548`) through which the
 Dialpad, MX Master 4 and MX Mechanical connect; one hidraw node carries several
 devices distinguished by a device index. `keyvo-hid` opens it for the Dialpad
-(ADR-0006).
+(ADR-0006): the receiver's node is the `046d:c548` node that carries the HID++
+reports `0x10` and `0x11` (`keyvo_hid::sysfs::find_receiver`), shared with the
+kernel's `hid-logitech-dj` and Solaar. Short: the receiver. See Slot.
 
 **Context source**: Whatever tells the daemon which project the focused window
 belongs to: the working directory pushed by an integration with
@@ -61,11 +63,16 @@ and reconnects when the device is gone.
 
 **Dialpad**: The MX Creative Dialpad: four divertable buttons, a dial (180
 detents per revolution) and a small roller (40 per revolution), connected over the
-Bolt receiver or Bluetooth. Driven by `keyvo-hid` in M3.
+Bolt receiver or Bluetooth. Driven by `keyvo_hid::dialpad` (beta, #186):
+found on its slot, its buttons and rollers diverted, its turns read as
+rotations; `keyvo dial` prints them. Buttons 1 to 4 are its four CIDs in
+order; roller 1 is called the dial and roller 0 the roller until M3-2
+measures which is which.
 
 **Divert**: Taking a control's presses from the device's default action to
-keyvo: `setCidReporting(cid, 0x03)` on `0x1B04` for the page buttons (and the
-Dialpad's buttons in M3), after which the device sends their presses as HID++
+keyvo: `setCidReporting(cid, 0x03)` on `0x1B04` for the page buttons and the
+Dialpad's buttons, `setMode(roller, 1)` on `0x4610` for the Dialpad's
+rollers, after which the device sends their presses and turns as HID++
 notifications instead of acting on them. Volatile; re-sent on every open and
 reconnect, with the `[timing].divert_settle` and `divert_spacing` waits.
 
@@ -221,6 +228,12 @@ into a key; the profile does not reference it.
 in which several state changes are merged into one repaint of the nine keys, so
 that bursts of socket messages do not flood the device.
 
+**Rotation**: One turn notification of a diverted Dialpad roller (`0x4610`
+event 0): the roller id and a signed delta in increments (`i8`), plus an
+optional device timestamp keyvo ignores. `keyvo_hid::input` reports it as
+`InputEvent::Rotate { roller, delta }`; the delta is passed on as the device
+sends it.
+
 **Session lock**: The user's session locked by the screen locker, as
 systemd-logind reports it (`LockedHint`, `Lock`, `Unlock`) through the
 `SessionWatcher` platform trait (`keyvo_core::session`; the daemon's
@@ -228,6 +241,13 @@ systemd-logind reports it (`LockedHint`, `Lock`, `Unlock`) through the
 state, not a mode: the view keeps its profile, page and mode and says
 `locked`, the pad shows the lock page, every press is *blocked* and the
 page buttons do nothing; the socket reports it as a `session` event.
+
+**Slot**: One paired device's place on the Bolt receiver, addressed by its
+device index 1 to 6. keyvo finds the Dialpad's slot at runtime, never as a
+constant: `getFeature(0x4610)` per slot within `[timing].slot_probe`, then
+the model id. A slot is empty (the receiver's HID++ 1.0 error report), silent
+(no answer: asleep or out of range, asked again on its arrival notification),
+another device, or the Dialpad's.
 
 **Simulator**: The GUI's virtual pad, rendered by the same renderer as the
 device. In sandbox mode it works on a copy of the profiles that Apply merges

@@ -1,0 +1,15 @@
+---
+source: crates/keyvo-cli/src/dial.rs
+expression: out
+---
+{"turn":"dial","delta":3}
+{"turn":"dial","delta":-2}
+{"turn":"roller","delta":127}
+{"turn":"roller","delta":-128}
+{"turn":"roller","delta":-1}
+{"edge":"press","button":1}
+{"edge":"release","button":1}
+{"edge":"press","button":3}
+{"edge":"press","button":4}
+{"edge":"release","button":3}
+{"edge":"release","button":4}

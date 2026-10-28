@@ -208,6 +208,13 @@
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
+        },
+        "slot_probe": {
+          "default": 300,
+          "description": "How long the Dialpad search waits for one receiver slot's answer\nbefore it counts the slot as silent (spec §5.1). Default 300 ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "type": "object"
@@ -280,7 +287,8 @@
         "reconnect_interval": 1000,
         "reload_settle": 100,
         "render_coalesce": 50,
-        "reply_timeout": 1000
+        "reply_timeout": 1000,
+        "slot_probe": 300
       },
       "description": "Timing constants, all in milliseconds (spec §6.1)."
     },

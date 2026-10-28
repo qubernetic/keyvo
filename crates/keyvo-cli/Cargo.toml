@@ -22,6 +22,7 @@ keyvo-core.workspace = true
 keyvo-hid.workspace = true
 rustix = { version = "1", default-features = false, features = ["std", "process"] }
 serde_json.workspace = true
+signal-hook = { version = "0.4", default-features = false }
 
 [lints]
 workspace = true

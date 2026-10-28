@@ -1,0 +1,30 @@
+# The Dialpad's 0x1B04 control walk over the Bolt receiver, slot 3:
+# getFeature(0x1B04), getCount, getCidInfo for every control.
+#
+# Source: the CIDs, task ids, flags, groups and group masks are the measured
+# control walk (docs/research/hidpp-reprog-controls-dump.txt, MX Creative
+# Dialpad: four controls, flags mouse, reprogrammable, divertable = 0x31,
+# group 1, group mask 0x01; the additional flags byte is left out); the
+# index 0x0a and version 6 the measured feature walk
+# (docs/research/hidpp-features-dump.txt). The frames themselves are
+# synthetic until the owner's capture of slice 7 (#187) replaces them.
+# Requests use keyvo's swid 0xe.
+#
+# 1. ROOT getFeature(0x1B04) -> index 0x0a, version 6
+> 11 03 00 0e 1b 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 00 0e 0a 00 06 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 2. getCount -> 4 controls
+> 11 03 0a 0e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 0a 0e 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 3. getCidInfo(0) -> CID 0x0053, task 0x003c, flags 0x31, group 1
+> 11 03 0a 1e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 0a 1e 00 53 00 3c 31 00 01 01 00 00 00 00 00 00 00 00
+# 4. getCidInfo(1) -> CID 0x0056, task 0x003e
+> 11 03 0a 1e 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 0a 1e 00 56 00 3e 31 00 01 01 00 00 00 00 00 00 00 00
+# 5. getCidInfo(2) -> CID 0x0059, task 0x0109
+> 11 03 0a 1e 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 0a 1e 00 59 01 09 31 00 01 01 00 00 00 00 00 00 00 00
+# 6. getCidInfo(3) -> CID 0x005A, task 0x0109
+> 11 03 0a 1e 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 0a 1e 00 5a 01 09 31 00 01 01 00 00 00 00 00 00 00 00

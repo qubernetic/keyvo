@@ -61,8 +61,9 @@ just docs         # placeholder: the mdBook lands with Issue #3
 keyvo/
 ├── crates/
 │   ├── keyvo-hid       # HidTransport impls, HID++ 2.0 core (root, feature set, 0x0008, 0x1B04,
-│   │                   #   0x8040, 0x4610), VLP display plane (0x13/0x14, 0x19A1), Keypad + Dialpad
-│   │                   #   drivers, hot-plug, keep-alive task, ACK-driven image writer
+│   │                   #   0x8040, 0x4610), VLP display plane (0x13/0x14, 0x19A1), Keypad driver,
+│   │                   #   Dialpad driver (Bolt receiver node, slot search, 0xff over Bluetooth),
+│   │                   #   hot-plug, keep-alive task, ACK-driven image writer
 │   ├── keyvo-core      # profiles (TOML, toml_edit round-trip, JSON Schema), state machine
 │   │                   #   (mode/page/overlay), renderer (tiny-skia/resvg/Inter -> JPEG), actions,
 │   │                   #   socket protocol types, chord parser; sync, hardware-free, >=85 % covered;
@@ -71,7 +72,7 @@ keyvo/
 │   │                   #   (zbus), uinput injector (evdev), inotify hot-reload, /proc lineage; planned: X11 watcher (x11rb), plugin supervisor
 │   ├── keyvo-client    # socket client, mirror state, tile rendering through keyvo-core, key
 │   │                   #   editor file side (round-trip write, snapshot) for the GUI; sync, hardware-free
-│   └── keyvo-cli       # `keyvo probe|keys|fill|preview|ctl|doctor`; planned: `paint-test|profile`
+│   └── keyvo-cli       # `keyvo probe|keys|dial|fill|preview|ctl|doctor`; planned: `paint-test|profile`
 ├── app/                # Tauri 2 + Svelte 5 GUI (M4a); src-tauri/ outside the root workspace
 ├── integrations/       # planned: claude-code/ (plugin: hooks, commands, MCP), vscode/, tmux/, nvim/ ...
 ├── plugins/logi/       # planned: C# Logi Actions SDK plugin (M5), built in the Windows VM

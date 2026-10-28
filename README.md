@@ -39,6 +39,7 @@ From a checkout, the first device commands already run against a Keypad
 just build
 just run -- probe                   # features, firmware, display mode, capabilities, geometry
 just run -- keys --json             # one JSON object per press and release
+just run -- dial                    # the Dialpad over Bolt: button edges and turns, until Ctrl-C
 just run -- fill '#ff8000' --key 5  # or a PNG; --all (default), --panel or --full
 just run -- probe --feature 0x1b04  # one feature id on both ROOT planes
 just run -- --dump probe            # every frame in and out on stderr
@@ -177,7 +178,7 @@ Flathub follows after the beta.
 | Device | Connection | Support |
 |---|---|---|
 | MX Creative Keypad (`046d:c354`) | USB-C | primary target |
-| MX Creative Dialpad | Logi Bolt / Bluetooth | planned (M3) |
+| MX Creative Dialpad (`046d:bc00`) | Logi Bolt / Bluetooth | `keyvo dial` and `keyvo probe` (beta, #186); bindings planned (M3) |
 | MX Master 4, MX Mechanical | Logi Bolt | desk-state settings via Solaar (optional) |
 | MX Keypad (2026) | USB-C | unverified; geometry and features are queried at runtime |
 

@@ -99,6 +99,53 @@ pub fn entities<T: HidTransport>(hidpp: &mut Hidpp<T>) -> Result<Vec<FirmwareEnt
         .collect()
 }
 
+/// A `getDeviceInfo` answer (`fn0`, the call [`entities`] reads the count
+/// from): `<entities> <unit id:4> <transport:2> <model id:6> <extended>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeviceInfo {
+    /// Number of firmware entities.
+    pub entities: u8,
+    /// Unit id; Solaar prints it as the serial number.
+    pub unit_id: u32,
+    /// Transport bits (Bluetooth, BLE, eQuad, USB).
+    pub transport: u16,
+    /// Model id: one product id per transport, big-endian (`bc 00 00 00 00
+    /// 00` on the Dialpad, Solaar's `BC0000000000`).
+    pub model_id: [u8; 6],
+}
+
+impl DeviceInfo {
+    /// True when one of the model id's three product ids is `pid`.
+    #[must_use]
+    pub fn carries(&self, pid: u16) -> bool {
+        self.model_id
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .any(|pair| u16::from_be_bytes(*pair) == pid)
+    }
+}
+
+/// `getDeviceInfo`, resolving the `0x0003` index first.
+///
+/// # Errors
+///
+/// [`HidppError::FeatureNotPresent`] without the feature, plus the request
+/// errors.
+pub fn device_info<T: HidTransport>(hidpp: &mut Hidpp<T>) -> Result<DeviceInfo, HidppError> {
+    let index = hidpp.feature_index(Plane::Classic, feature::DEVICE_FW_VERSION)?;
+    let reply = hidpp.request(Plane::Classic, index, FN_GET_ENTITY_COUNT, &[])?;
+    let [entities, u0, u1, u2, u3, t0, t1, m0, m1, m2, m3, m4, m5, ..] = reply.params[..] else {
+        return Err(HidppError::Malformed("short getDeviceInfo reply".into()));
+    };
+    Ok(DeviceInfo {
+        entities,
+        unit_id: u32::from_be_bytes([u0, u1, u2, u3]),
+        transport: u16::from_be_bytes([t0, t1]),
+        model_id: [m0, m1, m2, m3, m4, m5],
+    })
+}
+
 /// The running application entity, the firmware version to record.
 #[must_use]
 pub fn active_application(entities: &[FirmwareEntity]) -> Option<&FirmwareEntity> {

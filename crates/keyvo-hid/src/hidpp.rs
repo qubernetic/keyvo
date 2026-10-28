@@ -18,6 +18,9 @@ pub const DEVICE_DIRECT: u8 = 0xff;
 /// Feature index byte that marks an HID++ 2.0 error reply.
 const ERROR_INDEX: u8 = 0xff;
 
+/// Sub id byte of a receiver's HID++ 1.0 error report.
+const RECEIVER_ERROR: u8 = 0x8f;
+
 /// Most reports kept for the input path while waiting for replies; past it
 /// the oldest is dropped (QUB-533). Generous for human input: a key report
 /// per press or release, and a write of sixteen fragments waits at most
@@ -120,6 +123,60 @@ impl From<u8> for ErrorCode {
     }
 }
 
+/// HID++ 1.0 error codes of a receiver's error report (`10 <index> 8f
+/// <sub id> <address> <code>`), from the public Unifying receiver
+/// specification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReceiverError {
+    /// `0x01`
+    InvalidSubId,
+    /// `0x02`
+    InvalidAddress,
+    /// `0x03`
+    InvalidValue,
+    /// `0x04`: the device is paired but does not answer (asleep, out of
+    /// range).
+    ConnectFail,
+    /// `0x05`
+    TooManyDevices,
+    /// `0x06`
+    AlreadyExists,
+    /// `0x07`
+    Busy,
+    /// `0x08`: no device is paired on that index.
+    UnknownDevice,
+    /// `0x09`
+    ResourceError,
+    /// `0x0a`
+    RequestUnavailable,
+    /// `0x0b`
+    InvalidParamValue,
+    /// `0x0c`
+    WrongPinCode,
+    /// Any code the specification does not name.
+    Other(u8),
+}
+
+impl From<u8> for ReceiverError {
+    fn from(code: u8) -> Self {
+        match code {
+            0x01 => Self::InvalidSubId,
+            0x02 => Self::InvalidAddress,
+            0x03 => Self::InvalidValue,
+            0x04 => Self::ConnectFail,
+            0x05 => Self::TooManyDevices,
+            0x06 => Self::AlreadyExists,
+            0x07 => Self::Busy,
+            0x08 => Self::UnknownDevice,
+            0x09 => Self::ResourceError,
+            0x0a => Self::RequestUnavailable,
+            0x0b => Self::InvalidParamValue,
+            0x0c => Self::WrongPinCode,
+            other => Self::Other(other),
+        }
+    }
+}
+
 /// Errors of the HID++ request layer.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum HidppError {
@@ -151,6 +208,22 @@ pub enum HidppError {
         function: u8,
         /// The error code.
         code: ErrorCode,
+    },
+    /// A receiver answered the request for its device index with an HID++
+    /// 1.0 error report: no device on that index, or one that cannot be
+    /// reached.
+    #[error(
+        "receiver error {code:?} for device index 0x{device_index:02x} on feature index 0x{feature_index:02x} function {function}"
+    )]
+    Receiver {
+        /// Device index of the request.
+        device_index: u8,
+        /// Feature index of the request.
+        feature_index: u8,
+        /// Function id of the request.
+        function: u8,
+        /// The error code.
+        code: ReceiverError,
     },
     /// A VLP error reply. Its layout past the classic header is not captured
     /// yet, so the report is kept whole (hex).
@@ -218,6 +291,25 @@ impl<T: HidTransport> Hidpp<T> {
         function: u8,
         params: &[u8],
     ) -> Result<Frame, HidppError> {
+        self.request_within(self.reply_timeout, plane, feature_index, function, params)
+    }
+
+    /// [`Hidpp::request`] waiting at most `timeout` instead of the reply
+    /// timeout: the slot search asks every receiver slot with a short one
+    /// (`[timing].slot_probe`).
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`Hidpp::request`], and [`HidppError::Receiver`] when
+    /// a receiver answers for the device index.
+    pub fn request_within(
+        &mut self,
+        timeout: Duration,
+        plane: Plane,
+        feature_index: u8,
+        function: u8,
+        params: &[u8],
+    ) -> Result<Frame, HidppError> {
         let report = plane.request_report();
         let mut request = Frame::new(
             report,
@@ -232,7 +324,7 @@ impl<T: HidTransport> Hidpp<T> {
         }
         self.transport.write(&request.encode()?)?;
 
-        let deadline = Instant::now() + self.reply_timeout;
+        let deadline = Instant::now() + timeout;
         // The packets of a VLP reply read so far, joined; the deadline covers
         // the whole reply.
         let mut partial: Option<Frame> = None;
@@ -403,6 +495,22 @@ impl<T: HidTransport> Hidpp<T> {
         self.device_index
     }
 
+    /// Talks to another device index on the same transport (a receiver
+    /// slot). The feature indices resolved so far belong to the old device
+    /// and are forgotten; the kept reports stay for the input path.
+    pub fn set_device_index(&mut self, device_index: u8) {
+        if device_index != self.device_index {
+            self.device_index = device_index;
+            self.features.clear();
+        }
+    }
+
+    /// The reply timeout [`Hidpp::request`] waits.
+    #[must_use]
+    pub const fn reply_timeout(&self) -> Duration {
+        self.reply_timeout
+    }
+
     /// The underlying transport.
     pub fn transport_mut(&mut self) -> &mut T {
         &mut self.transport
@@ -411,10 +519,28 @@ impl<T: HidTransport> Hidpp<T> {
     /// `Some` when `raw` answers `request`: the reply, or the error reply.
     fn answer(&self, request: &Frame, raw: &[u8]) -> Option<Result<Frame, HidppError>> {
         let frame = Frame::parse(raw).ok()?;
-        if frame.report != request.report || frame.device_index != self.device_index {
+        if frame.device_index != self.device_index {
             return None;
         }
         let tag = request.function_swid();
+        // A receiver refuses a request for one of its slots with a short
+        // HID++ 1.0 error report: `10 <index> 8f <feature index> <fn|swid>
+        // <code>` (spec §5.1).
+        if frame.report == ReportId::Short
+            && frame.feature_index == RECEIVER_ERROR
+            && raw.get(3) == Some(&request.feature_index)
+            && raw.get(4) == Some(&tag)
+        {
+            return Some(Err(HidppError::Receiver {
+                device_index: self.device_index,
+                feature_index: request.feature_index,
+                function: request.function,
+                code: ReceiverError::from(raw.get(5).copied().unwrap_or_default()),
+            }));
+        }
+        if frame.report != request.report {
+            return None;
+        }
         if frame.feature_index == request.feature_index && frame.function_swid() == tag {
             return Some(Ok(frame));
         }
@@ -655,6 +781,87 @@ mod tests {
                 code: ErrorCode::InvalidArgument,
             })
         );
+    }
+
+    fn short(bytes: &str) -> String {
+        pad(bytes, 7)
+    }
+
+    fn on_slot(script: &str, slot: u8) -> Hidpp<FakeHidTransport> {
+        let mut hidpp = hidpp(script);
+        hidpp.set_device_index(slot);
+        hidpp
+    }
+
+    #[test]
+    fn a_receiver_error_report_answers_the_pending_request() {
+        let script = format!(
+            "> {}\n< {}\n< {}\n< {}\n",
+            long("11 03 00 0e 46 10"),
+            short("10 02 8f 00 0e 08"), // another slot's error
+            short("10 03 8f 00 0d 08"), // another swid
+            short("10 03 8f 00 0e 08"),
+        );
+        let mut hidpp = on_slot(&script, 3);
+        assert_eq!(
+            hidpp.request(Plane::Classic, 0x00, 0x0, &[0x46, 0x10]),
+            Err(HidppError::Receiver {
+                device_index: 3,
+                feature_index: 0x00,
+                function: 0x0,
+                code: ReceiverError::UnknownDevice,
+            })
+        );
+        assert_eq!(hidpp.take_unmatched().map(|raw| raw[1]), Some(0x02));
+    }
+
+    #[test]
+    fn receiver_error_codes_follow_the_hidpp_1_0_table() {
+        let codes: Vec<_> = (0x01..=0x0d).map(ReceiverError::from).collect();
+        assert_eq!(
+            codes,
+            [
+                ReceiverError::InvalidSubId,
+                ReceiverError::InvalidAddress,
+                ReceiverError::InvalidValue,
+                ReceiverError::ConnectFail,
+                ReceiverError::TooManyDevices,
+                ReceiverError::AlreadyExists,
+                ReceiverError::Busy,
+                ReceiverError::UnknownDevice,
+                ReceiverError::ResourceError,
+                ReceiverError::RequestUnavailable,
+                ReceiverError::InvalidParamValue,
+                ReceiverError::WrongPinCode,
+                ReceiverError::Other(0x0d),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_new_device_index_forgets_the_resolved_features() {
+        let script = format!(
+            "> {}\n< {}\n> {}\n< {}\n",
+            long("11 01 00 0e 1b 04"),
+            long("11 01 00 0e 08 00 05"),
+            long("11 02 00 0e 1b 04"),
+            long("11 02 00 0e 0a 00 06"),
+        );
+        let mut hidpp = on_slot(&script, 1);
+        assert_eq!(hidpp.feature_index(Plane::Classic, 0x1b04), Ok(0x08));
+        hidpp.set_device_index(2);
+        assert_eq!(hidpp.device_index(), 2);
+        assert_eq!(hidpp.feature_index(Plane::Classic, 0x1b04), Ok(0x0a));
+        assert!(hidpp.transport_mut().is_done());
+    }
+
+    #[test]
+    fn request_within_waits_its_own_timeout() {
+        let mut hidpp = hidpp(&format!("> {}\n", long("11 ff 04 0e")));
+        assert!(matches!(
+            hidpp.request_within(Duration::ZERO, Plane::Classic, 0x04, 0x0, &[]),
+            Err(HidppError::Timeout { .. })
+        ));
     }
 
     #[test]

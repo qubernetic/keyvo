@@ -1510,6 +1510,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/signal-hook/signal-hook-0.4.5.crate",
+        "sha256": "b29ffa27d3d59a049bb328258de100f8012848d1b08d444e08bbc02ac468435e",
+        "dest": "cargo/vendor/signal-hook-0.4.5"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"b29ffa27d3d59a049bb328258de100f8012848d1b08d444e08bbc02ac468435e\", \"files\": {}}",
+        "dest": "cargo/vendor/signal-hook-0.4.5",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/signal-hook-registry/signal-hook-registry-1.4.8.crate",
         "sha256": "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b",
         "dest": "cargo/vendor/signal-hook-registry-1.4.8"

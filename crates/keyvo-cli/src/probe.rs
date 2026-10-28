@@ -5,6 +5,7 @@
 use std::io::Write;
 
 use keyvo_core::hid::HidTransport;
+use keyvo_hid::dialpad::{Dialpad, DialpadError, DialpadTiming, Link};
 use keyvo_hid::display;
 use keyvo_hid::firmware;
 use keyvo_hid::hidpp::{Hidpp, HidppError};
@@ -59,16 +60,7 @@ pub fn probe<T: HidTransport>(
 
     let entities = step(firmware::entities(hidpp))?;
     match entities {
-        Ok(entities) => report.lines(
-            "firmware",
-            &entities
-                .iter()
-                .map(|e| {
-                    let active = if e.active { ", active" } else { "" };
-                    format!("{e}  {}{active}", e.kind)
-                })
-                .collect::<Vec<_>>(),
-        )?,
+        Ok(entities) => report.lines("firmware", &entity_lines(&entities))?,
         Err(error) => report.line("firmware", Err::<String, _>(error))?,
     }
 
@@ -137,6 +129,92 @@ pub fn probe<T: HidTransport>(
         Err(error) => report.line("geometry", Err::<String, _>(error))?,
     }
     Ok(())
+}
+
+/// Writes the Dialpad block for the node described as `node` to `out`,
+/// read-only like [`probe`]: the slot search on a receiver (each slot
+/// waiting at most `timing.slot_probe`), the Dialpad's `0x1B04` and
+/// `0x4610` indices, its firmware, its buttons and its rollers. No divert.
+/// A Dialpad that is not found or refuses a step is reported in its line;
+/// a transport error ends the probe.
+///
+/// # Errors
+///
+/// The transport errors and write errors on `out`.
+pub fn receiver<T: HidTransport>(
+    hidpp: &mut Hidpp<T>,
+    node: &str,
+    link: Link,
+    timing: &DialpadTiming,
+    out: &mut impl Write,
+) -> anyhow::Result<()> {
+    let mut report = Report { out };
+    let label = if link == Link::Direct {
+        "dialpad"
+    } else {
+        "receiver"
+    };
+    report.line(label, node)?;
+    let dialpad = match Dialpad::find(hidpp, link, timing, |_| {}) {
+        Ok(dialpad) => dialpad,
+        Err(DialpadError::NotFound(slots)) => {
+            report.line("slots", slots.to_string().as_str())?;
+            return Ok(report.line("dialpad", "not found")?);
+        }
+        Err(DialpadError::Hidpp(HidppError::Transport(error))) => return Err(error.into()),
+        Err(error) => return Ok(report.line("dialpad", Err::<String, _>(error.to_string()))?),
+    };
+    report.line("slots", dialpad.slots().to_string().as_str())?;
+    report.line(
+        "features",
+        format!(
+            "0x1b04 REPROG_CONTROLS_V4 index 0x{:02x}, 0x4610 MULTI_ROLLER index 0x{:02x}",
+            dialpad.reprog_index(),
+            dialpad.roller_index()
+        )
+        .as_str(),
+    )?;
+    match step(firmware::entities(hidpp))? {
+        Ok(entities) => report.lines("firmware", &entity_lines(&entities))?,
+        Err(error) => report.line("firmware", Err::<String, _>(error))?,
+    }
+    report.line(
+        "buttons",
+        dialpad
+            .buttons()
+            .iter()
+            .enumerate()
+            .map(|(n, cid)| format!("{} 0x{cid:04x}", n + 1))
+            .collect::<Vec<_>>()
+            .join(", ")
+            .as_str(),
+    )?;
+    let rollers: Vec<_> = dialpad
+        .rollers()
+        .iter()
+        .map(|roller| {
+            format!(
+                "{} {}  {} increments per rotation, {} ratchet increments",
+                roller.id,
+                crate::dial::roller_name(roller.id),
+                roller.increments,
+                roller.ratchets
+            )
+        })
+        .collect();
+    report.lines("rollers", &rollers)?;
+    Ok(())
+}
+
+/// `U1 66.00.B0017  application, active`, one line per entity.
+fn entity_lines(entities: &[firmware::FirmwareEntity]) -> Vec<String> {
+    entities
+        .iter()
+        .map(|e| {
+            let active = if e.active { ", active" } else { "" };
+            format!("{e}  {}{active}", e.kind)
+        })
+        .collect()
 }
 
 /// The display fn0 fields under the names Options+ logs them by.
@@ -380,6 +458,80 @@ geometry    480x480, 9 buttons, 0 visible areas
         );
         assert_eq!(lines.len(), 3);
         assert!(run_feature("", 0x1234).is_err());
+    }
+
+    /// The receiver's search, walk and capabilities, then the firmware.
+    fn receiver_script() -> String {
+        [
+            fixture("receiver-slot-probe.txt"),
+            fixture("receiver-controls.txt"),
+            fixture("receiver-multiroller.txt"),
+            fixture("receiver-firmware.txt"),
+        ]
+        .concat()
+    }
+
+    fn run_receiver(script: &str, link: Link) -> anyhow::Result<String> {
+        let mut hidpp = replay(script);
+        let mut out = Vec::new();
+        receiver(
+            &mut hidpp,
+            "/dev/hidraw9",
+            link,
+            &DialpadTiming::default(),
+            &mut out,
+        )?;
+        assert!(hidpp.transport_mut().is_done(), "script not used up");
+        Ok(String::from_utf8(out)?)
+    }
+
+    #[test]
+    fn probe_reports_the_dialpad_behind_the_receiver() {
+        insta::assert_snapshot!(
+            "probe-receiver",
+            run_receiver(&receiver_script(), Link::Receiver).unwrap()
+        );
+    }
+
+    #[test]
+    fn probe_reports_a_bluetooth_dialpad_on_device_index_0xff() {
+        let script = receiver_script();
+        let from_slot_3 = format!("#{}", script.split("# 3. slot 3").nth(1).unwrap());
+        let text = run_receiver(&from_slot_3.replace("11 03 ", "11 ff "), Link::Direct).unwrap();
+        assert!(
+            text.starts_with("dialpad     /dev/hidraw9\nslots       direct dialpad\n"),
+            "{text}"
+        );
+        assert!(text.ends_with("1 dial  180 increments per rotation, 0 ratchet increments\n"));
+    }
+
+    #[test]
+    fn probe_reports_a_receiver_without_a_dialpad() {
+        let asleep = fixture("receiver-asleep.txt").replace("< 10 03 41 10 00 00 bc\n", "");
+        assert_eq!(
+            run_receiver(&asleep, Link::Receiver).unwrap(),
+            "receiver    /dev/hidraw9\n\
+             slots       1 empty, 2 empty, 3 silent, 4 empty, 5 empty, 6 empty\n\
+             dialpad     not found\n"
+        );
+    }
+
+    #[test]
+    fn probe_reports_a_refused_dialpad_step_and_ends_on_a_transport_error() {
+        // The walk's getCount answers an error.
+        let script = receiver_script().replace(
+            "< 11 03 0a 0e 04",
+            "< 11 03 ff 0a 0e 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n#",
+        );
+        let script = &script[..script.find("# 3. getCidInfo(0)").unwrap()];
+        let text = run_receiver(script, Link::Receiver).unwrap();
+        assert!(
+            text.ends_with(
+                "dialpad     error: device error InvalidArgument on feature index 0x0a function 0\n"
+            ),
+            "{text}"
+        );
+        assert!(run_receiver("", Link::Receiver).is_err());
     }
 
     #[test]

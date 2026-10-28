@@ -3,6 +3,8 @@
 //! plane, the one index the protocol fixes; every other index is resolved
 //! through `getFeature` and cached per connection (spec §5.2).
 
+use std::time::Duration;
+
 use keyvo_core::hid::HidTransport;
 
 use crate::hidpp::{Hidpp, HidppError, Plane};
@@ -17,6 +19,8 @@ pub mod feature {
     pub const KEEP_ALIVE: u16 = 0x0008;
     /// Classic `REPROG_CONTROLS_V4` (page buttons, Dialpad buttons).
     pub const REPROG_CONTROLS_V4: u16 = 0x1B04;
+    /// Classic `MULTI_ROLLER` (the Dialpad's dial and roller).
+    pub const MULTI_ROLLER: u16 = 0x4610;
     /// Classic `BRIGHTNESS_CONTROL`.
     pub const BRIGHTNESS_CONTROL: u16 = 0x8040;
     /// VLP contextual display (LCD keys).
@@ -107,7 +111,21 @@ impl<T: HidTransport> Hidpp<T> {
     ///
     /// The request errors.
     pub fn get_feature(&mut self, id: u16) -> Result<Option<FeatureInfo>, HidppError> {
-        let reply = self.request(
+        self.get_feature_within(self.reply_timeout(), id)
+    }
+
+    /// [`Hidpp::get_feature`] waiting at most `timeout` for the reply.
+    ///
+    /// # Errors
+    ///
+    /// The request errors.
+    pub fn get_feature_within(
+        &mut self,
+        timeout: Duration,
+        id: u16,
+    ) -> Result<Option<FeatureInfo>, HidppError> {
+        let reply = self.request_within(
+            timeout,
             Plane::Classic,
             ROOT_INDEX,
             FN_GET_FEATURE,
