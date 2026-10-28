@@ -219,6 +219,11 @@ pub struct Timing {
     #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub claim_splash_timeout: Duration,
+    /// How long `keyvo doctor` waits for the daemon's answer to `status`
+    /// (spec §12). Default 1000 ms.
+    #[serde(with = "millis")]
+    #[schemars(with = "u64")]
+    pub doctor_reply: Duration,
 }
 
 impl Default for Timing {
@@ -243,6 +248,7 @@ impl Default for Timing {
             accept_backoff: Duration::from_millis(100),
             claim_splash_retry: Duration::from_millis(500),
             claim_splash_timeout: Duration::from_millis(10_000),
+            doctor_reply: Duration::from_millis(1000),
         }
     }
 }

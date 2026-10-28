@@ -912,6 +912,7 @@ Defaults, all configurable under `[timing]` in `config.toml`:
 | `accept_backoff` | 100 ms | wait after a failed `accept` on the control socket before the next one, so a full file table does not spin the daemon, §8 |
 | `claim_splash_retry` | 500 ms | while the display shows the plug-in splash (`a4`), the claim re-sends `setMode(a0)` this often, §5.4 |
 | `claim_splash_timeout` | 10000 ms | how long the claim waits for the plug-in splash to end before it fails, §5.4 |
+| `doctor_reply` | 1000 ms | how long `keyvo doctor` waits for the daemon's answer to `status`, §12 |
 
 `keep_alive_period` must be shorter than `keep_alive_timeout`: a period at
 or above the timeout lets the claim run out between two pings (§5.3). The
