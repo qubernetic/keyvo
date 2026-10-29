@@ -459,18 +459,33 @@ fn search<T: HidTransport>(
 }
 
 /// What the device index `hidpp` talks to answers.
+///
+/// Each of the three requests carries a software id of its own, the three
+/// after `hidpp`'s: a cold Bolt receiver delivers a late reply twice, and
+/// every `getFeature` reply has the same header, so with one software id
+/// the copy of the `0x4610` answer would answer `getFeature(0x0003)` (#200).
 fn probe_slot<T: HidTransport>(
     hidpp: &mut Hidpp<T>,
     timeout: Duration,
 ) -> Result<Slot, HidppError> {
-    let found = match hidpp.get_feature_within(timeout, feature::MULTI_ROLLER) {
+    let probe = hidpp.swid().next();
+    let lookup = probe.next();
+    let info = lookup.next();
+    let found = match hidpp.with_swid(probe, |hidpp| {
+        hidpp.get_feature_within(timeout, feature::MULTI_ROLLER)
+    }) {
         Ok(found) => found,
         Err(error) => return unanswered(error),
     };
     if found.is_none() {
         return Ok(Slot::Absent);
     }
-    match firmware::device_info(hidpp) {
+    if let Err(error) = hidpp.with_swid(lookup, |hidpp| {
+        hidpp.feature_index(Plane::Classic, feature::DEVICE_FW_VERSION)
+    }) {
+        return unanswered(error);
+    }
+    match hidpp.with_swid(info, firmware::device_info) {
         Ok(info) if info.carries(MX_CREATIVE_DIALPAD) => Ok(Slot::Dialpad),
         Ok(info) => Ok(Slot::Other {
             model_id: info.model_id,

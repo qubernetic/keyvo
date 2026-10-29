@@ -990,7 +990,7 @@ fn a_device_index_whose_model_is_not_the_dialpad_is_skipped() {
         + &[4, 5, 6]
             .map(|slot| {
                 format!(
-                    "> 11 0{slot} 00 0e 46 10{}\n< 10 0{slot} 8f 00 0e 08 00\n",
+                    "> 11 0{slot} 00 0f 46 10{}\n< 10 0{slot} 8f 00 0f 08 00\n",
                     " 00".repeat(14)
                 )
             })

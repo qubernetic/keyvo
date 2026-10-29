@@ -76,6 +76,12 @@ impl SoftwareId {
     pub const fn get(self) -> u8 {
         self.0
     }
+
+    /// The software id after this one, `15` wrapping to `1`.
+    #[must_use]
+    pub const fn next(self) -> Self {
+        Self(self.0 % 0x0f + 1)
+    }
 }
 
 /// HID++ 2.0 error codes (Logitech HID++ 2.0 draft specification).
@@ -503,6 +509,23 @@ impl<T: HidTransport> Hidpp<T> {
             self.device_index = device_index;
             self.features.clear();
         }
+    }
+
+    /// The software id requests carry.
+    #[must_use]
+    pub const fn swid(&self) -> SoftwareId {
+        self.swid
+    }
+
+    /// Runs `requests` with their requests tagged `swid`, then goes back to
+    /// the software id before. A reply carries its request's software id,
+    /// so a late reply to a request tagged otherwise answers none of these:
+    /// it is kept for the input path.
+    pub fn with_swid<R>(&mut self, swid: SoftwareId, requests: impl FnOnce(&mut Self) -> R) -> R {
+        let before = std::mem::replace(&mut self.swid, swid);
+        let result = requests(self);
+        self.swid = before;
+        result
     }
 
     /// The reply timeout [`Hidpp::request`] waits.
@@ -942,5 +965,42 @@ mod tests {
             Err(HidppError::InvalidSoftwareId(0x10))
         );
         assert_eq!(SoftwareId::new(0xd).unwrap().get(), 0xd);
+    }
+
+    #[test]
+    fn the_next_software_id_skips_the_reserved_zero() {
+        let next = |value| SoftwareId::new(value).unwrap().next().get();
+        assert_eq!(next(0x1), 0x2);
+        assert_eq!(next(0xe), 0xf);
+        assert_eq!(next(0xf), 0x1);
+    }
+
+    #[test]
+    fn requests_under_another_swid_ignore_a_late_reply_tagged_with_the_old_one() {
+        // A reply to the swid 0xe request arrives twice; the second copy
+        // must not answer the next request, tagged 0xf.
+        let script = format!(
+            "> {}\n< {}\n> {}\n< {}\n< {}\n> {}\n< {}\n",
+            long("11 03 00 0e 46 10"),
+            long("11 03 00 0e 0d 00 01"),
+            long("11 03 00 0f 00 03"),
+            long("11 03 00 0e 0d 00 01"),
+            long("11 03 00 0f 02 00 07"),
+            long("11 03 00 0e 1b 04"),
+            long("11 03 00 0e 0a 00 06"),
+        );
+        let mut hidpp = on_slot(&script, 3);
+        assert_eq!(hidpp.feature_index(Plane::Classic, 0x4610), Ok(0x0d));
+        let swid = SoftwareId::new(0xf).unwrap();
+        let index = hidpp.with_swid(swid, |hidpp| {
+            assert_eq!(hidpp.swid(), swid);
+            hidpp.feature_index(Plane::Classic, 0x0003)
+        });
+        assert_eq!(index, Ok(0x02));
+        // Back on the software id before.
+        assert_eq!(hidpp.swid().get(), SWID);
+        assert_eq!(hidpp.feature_index(Plane::Classic, 0x1b04), Ok(0x0a));
+        assert_eq!(hidpp.take_unmatched().map(|raw| raw[4]), Some(0x0d));
+        assert!(hidpp.transport_mut().is_done());
     }
 }
