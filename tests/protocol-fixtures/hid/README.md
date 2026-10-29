@@ -14,6 +14,11 @@ itself.
 - `> <hex>`: a report the host writes; the test fails if keyvo writes anything else.
 - `< <hex>`: a report the device sends. After a `>` line it answers that write;
   before the first `>` line it is unsolicited and readable at once.
+- `< +<ms> <hex>`: the same report, readable only `<ms>` milliseconds after
+  the write it answers. `FakeHidTransport` counts the time on a clock of its
+  own that every waiting read advances, so a slow reply costs no wall-clock
+  time; a report that misses its request's wait stays queued for the next
+  read, like a late reply.
 - `#` starts a comment. Every file names its source capture, frame numbers and
   the line range in the decoded sequence.
 - Bytes are the whole report, report id first, padding included (20 bytes for

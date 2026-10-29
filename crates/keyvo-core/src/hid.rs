@@ -42,23 +42,30 @@ pub trait HidTransport {
 }
 
 /// One scripted exchange: the report the host must write next and the
-/// reports the device answers with.
+/// reports the device answers with, each after its delay.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Exchange {
     request: Vec<u8>,
-    responses: Vec<Vec<u8>>,
+    responses: Vec<(Duration, Vec<u8>)>,
 }
 
 /// A [`HidTransport`] that replays a script of request/response pairs.
 ///
 /// Every write must equal the next scripted request byte for byte; its
-/// responses then become readable in order. Reports queued with
-/// [`FakeHidTransport::inbound`] are readable before the first write, like
-/// unsolicited device events. A read with nothing queued is a timeout.
+/// responses then become readable in order. The `<` lines of a script before
+/// its first `>` are readable before the first write, like unsolicited
+/// device events. A read with nothing queued is a timeout.
+///
+/// A response can carry a delay counted from the write it answers: it is
+/// readable only once that much time has passed on the fake's own clock,
+/// which advances by the timeout of every read that waits. A slow device
+/// costs a test no wall-clock time.
 #[derive(Debug, Default)]
 pub struct FakeHidTransport {
     script: std::collections::VecDeque<Exchange>,
-    inbound: std::collections::VecDeque<Vec<u8>>,
+    /// Queued reports and the time on `clock` from which each is readable.
+    inbound: std::collections::VecDeque<(Duration, Vec<u8>)>,
+    clock: Duration,
     written: Vec<Vec<u8>>,
 }
 
@@ -75,7 +82,10 @@ impl FakeHidTransport {
     pub fn expect(mut self, request: &[u8], responses: &[&[u8]]) -> Self {
         self.script.push_back(Exchange {
             request: request.to_vec(),
-            responses: responses.iter().map(|r| r.to_vec()).collect(),
+            responses: responses
+                .iter()
+                .map(|r| (Duration::ZERO, r.to_vec()))
+                .collect(),
         });
         self
     }
@@ -83,7 +93,8 @@ impl FakeHidTransport {
     /// Parses a script in the fixture notation of `tests/protocol-fixtures/hid/`:
     /// `> <hex>` is a host write, `< <hex>` a device report, `#` starts a
     /// comment. `<` lines before the first `>` are unsolicited reports; the
-    /// others answer the `>` line above them.
+    /// others answer the `>` line above them. `< +<ms> <hex>` delays the
+    /// report by `<ms>` milliseconds after that write.
     ///
     /// # Errors
     ///
@@ -96,14 +107,15 @@ impl FakeHidTransport {
             let Some((direction, hex)) = content.split_at_checked(1) else {
                 continue;
             };
+            let (delay, hex) = parse_delay(hex).map_err(|message| ScriptError { line, message })?;
             let report = parse_hex(hex).map_err(|message| ScriptError { line, message })?;
             match direction {
                 ">" => {
                     fake = fake.expect(&report, &[]);
                 }
                 "<" => match fake.script.back_mut() {
-                    Some(exchange) => exchange.responses.push(report),
-                    None => fake.inbound.push_back(report),
+                    Some(exchange) => exchange.responses.push((delay, report)),
+                    None => fake.inbound.push_back((delay, report)),
                 },
                 _ => {
                     return Err(ScriptError {
@@ -135,7 +147,13 @@ impl HidTransport for FakeHidTransport {
         match self.script.front() {
             Some(next) if next.request == report => {
                 if let Some(exchange) = self.script.pop_front() {
-                    self.inbound.extend(exchange.responses);
+                    let now = self.clock;
+                    self.inbound.extend(
+                        exchange
+                            .responses
+                            .into_iter()
+                            .map(|(delay, report)| (now.saturating_add(delay), report)),
+                    );
                 }
                 self.written.push(report.to_vec());
                 Ok(())
@@ -147,8 +165,18 @@ impl HidTransport for FakeHidTransport {
         }
     }
 
-    fn read(&mut self, _timeout: Duration) -> Result<Option<Vec<u8>>, TransportError> {
-        Ok(self.inbound.pop_front())
+    fn read(&mut self, timeout: Duration) -> Result<Option<Vec<u8>>, TransportError> {
+        let until = self.clock.saturating_add(timeout);
+        match self.inbound.front() {
+            Some((due, _)) if *due <= until => {
+                self.clock = self.clock.max(*due);
+                Ok(self.inbound.pop_front().map(|(_, report)| report))
+            }
+            _ => {
+                self.clock = until;
+                Ok(None)
+            }
+        }
     }
 }
 
@@ -160,6 +188,17 @@ pub struct ScriptError {
     pub line: usize,
     /// What is wrong with the line.
     pub message: String,
+}
+
+/// The optional `+<ms>` delay in front of a report, and the rest.
+fn parse_delay(text: &str) -> Result<(Duration, &str), String> {
+    let text = text.trim_start();
+    let Some(rest) = text.strip_prefix('+') else {
+        return Ok((Duration::ZERO, text));
+    };
+    let (ms, hex) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+    let ms = ms.parse().map_err(|_| format!("invalid delay `+{ms}`"))?;
+    Ok((Duration::from_millis(ms), hex))
 }
 
 fn parse_hex(text: &str) -> Result<Vec<u8>, String> {
@@ -251,6 +290,36 @@ mod tests {
             Some(vec![0x11, 0xff, 0x00, 0x1e, 0x05])
         );
         assert!(fake.is_done());
+    }
+
+    #[test]
+    fn a_delayed_report_is_readable_once_its_delay_has_passed() {
+        let ms = Duration::from_millis;
+        let script = "\
+> 11 01
+< +734 11 01 00
+> 11 02
+< +6 11 01 01
+< +541 11 02 00
+";
+        let mut fake = FakeHidTransport::from_script(script).unwrap();
+        fake.write(&[0x11, 0x01]).unwrap();
+        // Not within 300 ms; a later read waits the rest.
+        assert_eq!(fake.read(ms(300)).unwrap(), None);
+        assert_eq!(fake.read(ms(434)).unwrap(), Some(vec![0x11, 0x01, 0x00]));
+        // The delay counts from the write the report answers.
+        fake.write(&[0x11, 0x02]).unwrap();
+        assert_eq!(fake.read(T).unwrap(), None);
+        assert_eq!(fake.read(ms(6)).unwrap(), Some(vec![0x11, 0x01, 0x01]));
+        assert_eq!(fake.read(ms(1000)).unwrap(), Some(vec![0x11, 0x02, 0x00]));
+        assert!(fake.is_done());
+        assert_eq!(
+            FakeHidTransport::from_script("< +x 11\n").unwrap_err(),
+            ScriptError {
+                line: 1,
+                message: "invalid delay `+x`".into()
+            }
+        );
     }
 
     #[test]
