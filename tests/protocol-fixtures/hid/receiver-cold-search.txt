@@ -1,0 +1,40 @@
+# The Dialpad search over the Bolt receiver from cold (spec §5.1, §5.8):
+# every paired device answers its first request late, and the receiver
+# delivers a late reply twice. Slot 1 and slot 2 hold devices without
+# 0x4610, slot 3 the Dialpad.
+#
+# Source: the owner's hardware check of slice 7 (#187, part 1, 2026-10-29,
+# https://github.com/qubernetic/keyvo/issues/187#issuecomment-6504351636).
+# The frames and the gaps between a request and its replies are the cold
+# run's raw `keyvo probe --dump` log (ms 0 to 396); the first replies of
+# slots 1 and 2 are delayed to the slowest cold replies the owner measured
+# (734 ms and 541 ms) instead of that run's 170 ms and 15 ms. The
+# getDeviceInfo reply is receiver-slot-probe.txt's: the cold run sent its
+# getDeviceInfo to index 0x0d, so it has no real one. The software ids are
+# the ones the search uses after the fix (spec §5.1): 0xf for every
+# getFeature(0x4610), 0x1 for getFeature(0x0003), 0x2 for getDeviceInfo;
+# the cold run had 0xe on all of them.
+#
+# 1. slot 1: getFeature(0x4610) -> index 0, not present, after 734 ms
+> 11 01 00 0f 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< +734 11 01 00 0f 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 2. slot 2: getFeature(0x4610) -> not present, after 541 ms; slot 1's
+#    reply comes a second time 6 ms after this request (ms 176)
+> 11 02 00 0f 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< +6 11 01 00 0f 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< +541 11 02 00 0f 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 3. slot 3: getFeature(0x4610) -> index 0x0d, version 1, after 180 ms
+#    (ms 186 to 366); slot 2's reply a second time on the way
+> 11 03 00 0f 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< +7 11 02 00 0f 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< +180 11 03 00 0f 0d 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 4. getFeature(0x0003): the 0x4610 reply a second time after 8 ms (ms 374,
+#    the defect: it carries 0x4610's header, swid 0xf), then the real
+#    answer, index 0x02, version 7, after 23 ms (ms 389)
+> 11 03 00 01 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< +8 11 03 00 0f 0d 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00
+< +23 11 03 00 01 02 00 07 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 5. getDeviceInfo -> 4 entities, unit id b978a829, transport 0x0004,
+#    model id bc00 0000 0000
+> 11 03 02 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< +7 11 03 02 02 04 b9 78 a8 29 00 04 bc 00 00 00 00 00 00 00 00

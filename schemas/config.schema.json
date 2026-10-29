@@ -210,8 +210,8 @@
           "type": "integer"
         },
         "slot_probe": {
-          "default": 300,
-          "description": "How long the Dialpad search waits for one receiver slot's answer\nbefore it counts the slot as silent (spec §5.1). Default 300 ms.",
+          "default": 1000,
+          "description": "How long the Dialpad search waits for one receiver slot's answer\nbefore it counts the slot as silent (spec §5.1). Default 1000 ms: a\ndevice's first reply from idle or sleep took up to 771 ms over Bolt.",
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
@@ -288,7 +288,7 @@
         "reload_settle": 100,
         "render_coalesce": 50,
         "reply_timeout": 1000,
-        "slot_probe": 300
+        "slot_probe": 1000
       },
       "description": "Timing constants, all in milliseconds (spec §6.1)."
     },

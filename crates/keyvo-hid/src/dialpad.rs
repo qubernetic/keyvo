@@ -30,8 +30,10 @@ pub const SLOTS: RangeInclusive<u8> = 1..=6;
 
 /// Default of `[timing].slot_probe` (spec §6.1): how long the search waits
 /// for one slot's answer. A receiver answers for an empty slot at once; a
-/// paired device answers within milliseconds when it is awake.
-pub const DEFAULT_SLOT_PROBE: Duration = Duration::from_millis(300);
+/// paired device answers within about 20 ms when it is awake, but its first
+/// reply from idle or sleep took up to 771 ms in the owner's measurements
+/// (#187), so the wait covers a wake.
+pub const DEFAULT_SLOT_PROBE: Duration = Duration::from_millis(1000);
 
 /// Sub id of the receiver's arrival notification (`10 <slot> 41 …`).
 const ARRIVAL: u8 = 0x41;
