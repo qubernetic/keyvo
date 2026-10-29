@@ -323,7 +323,21 @@ measured in M0-2 (plan §5 item 16).
   waiting at most `[timing].slot_probe`; a present feature makes the slot
   a candidate, and the candidate's `0x0003 getDeviceInfo` model id must
   carry `BC00` in one of its three product ids. The search stops at the
-  Dialpad. The receiver's HID++ 1.0 error report for a slot (`10 <index>
+  Dialpad. A paired device's first reply from idle or sleep is slow over
+  Bolt (measured on #187: 734 ms, 302 to 541 ms, and 180 to 294 ms or
+  none within 300 ms for the three slots, 771 ms for a raw request to the
+  sleeping Dialpad; 11 to 22 ms warm), so `slot_probe` defaults to
+  1000 ms; an empty slot still settles at once on the receiver's error.
+  The receiver delivers such a late reply twice, and every `getFeature`
+  reply carries the same header, so the search tags its three requests
+  per slot with software ids of their own, the three after the
+  connection's (`0xf` for `getFeature(0x4610)`, `0x1` for
+  `getFeature(0x0003)`, `0x2` for `getDeviceInfo` after keyvo's `0xe`):
+  the copy of one reply carries the previous request's id and answers
+  nothing; it is kept for the input path like any unsolicited report
+  (#200). The rest of the connection keeps its one software id: the
+  Keypad is on USB without a receiver in between, and its golden scripts
+  are captures with a fixed id. The receiver's HID++ 1.0 error report for a slot (`10 <index>
   8f <feature index> <fn|swid> <code> 00`, codes of the public Unifying
   receiver specification) answers the pending request at once
   (`HidppError::Receiver`): `0x04` connect fail, `0x07` busy and `0x09`
@@ -828,6 +842,14 @@ on a timer.
   and of other software are skipped; the DJ reports (`0x20`, `0x21`) do
   not parse as frames and are dropped and counted. The daemon does not
   drive the Dialpad yet (#188); `keyvo dial` does (§5.10).
+- Measured over Bolt from cold (#187, part 1, 2026-10-29): with the
+  Dialpad awake the search finds slot 3 and every expected value; from
+  sleep the first replies are slow and a late reply comes twice, which the
+  fix of #200 handles (§5.1: `slot_probe` 1000 ms, a software id per
+  search request). The fixture `receiver-cold-search.txt` replays that
+  run's frames with the slowest measured delays. The sleeping Dialpad can
+  also answer the receiver's `8f` connect fail (`0x04`), which leaves the
+  slot silent until its arrival.
 
 ### 5.9 Verification
 
@@ -1048,7 +1070,7 @@ Defaults, all configurable under `[timing]` in `config.toml`:
 | `claim_splash_retry` | 500 ms | while the display shows the plug-in splash (`a4`), the claim re-sends `setMode(a0)` this often, §5.4 |
 | `claim_splash_timeout` | 10000 ms | how long the claim waits for the plug-in splash to end before it fails, §5.4 |
 | `doctor_reply` | 1000 ms | how long `keyvo doctor` waits for the daemon's answer to `status`, §12 |
-| `slot_probe` | 300 ms | how long the Dialpad search waits for one receiver slot's answer to `getFeature(0x4610)` before it counts the slot as silent (asleep), §5.1 and §5.8 |
+| `slot_probe` | 1000 ms | how long the Dialpad search waits for one receiver slot's answer to `getFeature(0x4610)` before it counts the slot as silent (asleep); covers a first reply from idle or sleep (up to 771 ms measured over Bolt), §5.1 and §5.8 |
 
 `keep_alive_period` must be shorter than `keep_alive_timeout`: a period at
 or above the timeout lets the claim run out between two pings (§5.3). The
@@ -2740,6 +2762,11 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, beta fix of slice 7 (2026-10-29)**: a sleeping Dialpad over
+  Bolt in the slot search (#200, from the hardware check of #187). §5.1
+  the cold reply times, `[timing].slot_probe` from 300 ms to 1000 ms and a
+  software id per search request, so the receiver's repeated late reply
+  answers nothing; §5.8 the cold-run record; §6.1 the `slot_probe` row.
 - **v0.3, beta slice 6 (2026-10-28)**: the Dialpad driver over Bolt and
   `keyvo dial` (#186). §5.1 the receiver's node (`046d:c548` with `0x10`
   and `0x11`), the slot search by `getFeature(0x4610)` and the model id,

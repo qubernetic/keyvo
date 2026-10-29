@@ -245,6 +245,13 @@ Dialpad must be awake (turn the dial once).
    /sys/class/hidraw/*/device/uevent`: `bin/keyvo --device /dev/hidrawN
    probe` prints the `dialpad` block with `slots  direct dialpad`;
    `bin/keyvo --device /dev/hidrawN dial` works as in step 2.
+7. From sleep (the fix of #200, PR #201): leave the Dialpad alone for ten
+   minutes, then `bin/keyvo probe` over Bolt without touching it, three
+   times. Each run prints the receiver block with `3 dialpad` in its
+   `slots` line; the search waits up to `[timing].slot_probe` (1000 ms)
+   per slot, so the block can take a few seconds. A `3 silent` instead
+   means the receiver answered connect fail (`--dump` shows `< 10 03 8f
+   00 0f 04`): post the `--dump probe` lines.
 
 ## 5. Slice User test checklists
 
@@ -336,3 +343,10 @@ the PR number and item text of every unticked item, with what you saw.
 Every failure or contradiction becomes a new slice on the beta epic, or a
 `fix(...)` issue on `develop` when it is a finding of the pre-alpha
 re-test (roadmap, Beta, Rules).
+
+### #201: a sleeping Dialpad over Bolt in the slot search (#200)
+
+The fix of the cold-run defects of #187, part 1. Solaar and the daemon
+stopped, `bin/keyvo` from `just build` of this PR.
+
+- [ ] #201 With the Dialpad asleep (left alone for ten minutes) over Bolt, `bin/keyvo probe` three times: each run prints the receiver block with `3 dialpad` in its `slots` line (section 4, step 7). The remaining #199 items follow on this build.

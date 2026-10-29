@@ -261,7 +261,9 @@ with `keyvo profile restore`.
 **Software id (swid)**: The low nibble of byte 3 of every HID++ request,
 `(function << 4) | swid`, chosen by the host (1 to 15) and echoed in the reply
 so that replies can be matched to their requests; `0` marks device
-notifications.
+notifications. A connection keeps one; the Dialpad's slot search tags each of
+its requests with an id of its own, so a reply the receiver repeats late
+answers nothing.
 
 **Socket API**: The newline-delimited JSON protocol, every message tagged
 `"v": 1`, served on `$XDG_RUNTIME_DIR/keyvo/keyvo.sock` (mode 0600) and spoken by

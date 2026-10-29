@@ -168,6 +168,7 @@ tags, the MX triggers (M3-3, M3-4) and desk state (M3-5).
 | 5 | #185 | `research: static pass over the dialpad features` | H | M3-0 | | open, owner |
 | 6 | #186 | `feat(hid,cli): dialpad driver over bolt with a dial command` | S | M3-1 | #184, #185 | in review |
 | 7 | #187 | `test(hardware): verify the dialpad over bolt and bluetooth` | H | M3-2 | #186 | open, owner |
+| 7a | #200 | `fix(hid): find a sleeping dialpad over bolt in the slot search` | S | #187 part 1 | #186 | in review |
 | 8 | #188 | `feat(core,daemon,app): dialpad bindings and the dialpad panel` | S | M3-1, M4a-8 | #186, #187 | open |
 | 9 | #189 | `feat(core,daemon,app): a key as the dial modifier, held or toggled` | S | beta goal | #188 | open |
 | 10 | #156 | `feat(core,app): page switches, page deletion and per-profile global pages` | S | #156 | #189 | open |
