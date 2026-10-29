@@ -30,8 +30,10 @@ pub const SLOTS: RangeInclusive<u8> = 1..=6;
 
 /// Default of `[timing].slot_probe` (spec §6.1): how long the search waits
 /// for one slot's answer. A receiver answers for an empty slot at once; a
-/// paired device answers within milliseconds when it is awake.
-pub const DEFAULT_SLOT_PROBE: Duration = Duration::from_millis(300);
+/// paired device answers within about 20 ms when it is awake, but its first
+/// reply from idle or sleep took up to 771 ms in the owner's measurements
+/// (#187), so the wait covers a wake.
+pub const DEFAULT_SLOT_PROBE: Duration = Duration::from_millis(1000);
 
 /// Sub id of the receiver's arrival notification (`10 <slot> 41 …`).
 const ARRIVAL: u8 = 0x41;
@@ -459,18 +461,33 @@ fn search<T: HidTransport>(
 }
 
 /// What the device index `hidpp` talks to answers.
+///
+/// Each of the three requests carries a software id of its own, the three
+/// after `hidpp`'s: a cold Bolt receiver delivers a late reply twice, and
+/// every `getFeature` reply has the same header, so with one software id
+/// the copy of the `0x4610` answer would answer `getFeature(0x0003)` (#200).
 fn probe_slot<T: HidTransport>(
     hidpp: &mut Hidpp<T>,
     timeout: Duration,
 ) -> Result<Slot, HidppError> {
-    let found = match hidpp.get_feature_within(timeout, feature::MULTI_ROLLER) {
+    let probe = hidpp.swid().next();
+    let lookup = probe.next();
+    let info = lookup.next();
+    let found = match hidpp.with_swid(probe, |hidpp| {
+        hidpp.get_feature_within(timeout, feature::MULTI_ROLLER)
+    }) {
         Ok(found) => found,
         Err(error) => return unanswered(error),
     };
     if found.is_none() {
         return Ok(Slot::Absent);
     }
-    match firmware::device_info(hidpp) {
+    if let Err(error) = hidpp.with_swid(lookup, |hidpp| {
+        hidpp.feature_index(Plane::Classic, feature::DEVICE_FW_VERSION)
+    }) {
+        return unanswered(error);
+    }
+    match hidpp.with_swid(info, firmware::device_info) {
         Ok(info) if info.carries(MX_CREATIVE_DIALPAD) => Ok(Slot::Dialpad),
         Ok(info) => Ok(Slot::Other {
             model_id: info.model_id,

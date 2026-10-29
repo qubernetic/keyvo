@@ -856,6 +856,61 @@ fn receiver_open_finds_the_dialpad_on_its_slot_and_diverts_it() {
 }
 
 #[test]
+fn a_cold_search_waits_out_slow_slots_and_drops_a_repeated_reply() {
+    let script = [
+        fixture!("receiver-cold-search.txt"),
+        fixture!("receiver-controls.txt"),
+        fixture!("receiver-multiroller.txt"),
+    ]
+    .concat();
+    let mut hidpp = replay(&script);
+    let dialpad = Dialpad::find(
+        &mut hidpp,
+        Link::Receiver,
+        &DialpadTiming::default(),
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(
+        dialpad.slots(),
+        &Slots(vec![
+            (1, Slot::Absent),
+            (2, Slot::Absent),
+            (3, Slot::Dialpad)
+        ])
+    );
+    assert_eq!(dialpad.device_index(), DIALPAD_SLOT);
+    assert_eq!(dialpad.reprog_index(), 0x0a);
+    assert_eq!(dialpad.roller_index(), 0x0d);
+    assert_eq!(dialpad.buttons(), DIALPAD_BUTTONS);
+    assert!(hidpp.transport_mut().is_done());
+    // The repeated replies answered nothing; they wait for the input path.
+    let kept: Vec<_> = std::iter::from_fn(|| hidpp.take_unmatched())
+        .map(|raw| (raw[1], raw[3], raw[4]))
+        .collect();
+    assert_eq!(kept, [(1, 0x0f, 0x00), (2, 0x0f, 0x00), (3, 0x0f, 0x0d)]);
+}
+
+#[test]
+fn a_dialpad_waking_from_sleep_is_found_not_skipped_as_silent() {
+    // The slowest measured first reply of the sleeping Dialpad: 771 ms.
+    let script = fixture!("receiver-slot-probe.txt")
+        .replace("< 11 03 00 0f 0d 00 01", "< +771 11 03 00 0f 0d 00 01")
+        + fixture!("receiver-controls.txt")
+        + fixture!("receiver-multiroller.txt");
+    let mut hidpp = replay(&script);
+    let dialpad = Dialpad::find(
+        &mut hidpp,
+        Link::Receiver,
+        &DialpadTiming::default(),
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(dialpad.device_index(), DIALPAD_SLOT);
+    assert!(hidpp.transport_mut().is_done());
+}
+
+#[test]
 fn receiver_input_gives_turns_and_button_edges_of_the_dialpad_only() {
     let script = receiver_open() + fixture!("receiver-input.txt");
     let (mut hidpp, mut dialpad, _) = open_dialpad(&script, Link::Receiver);
@@ -990,7 +1045,7 @@ fn a_device_index_whose_model_is_not_the_dialpad_is_skipped() {
         + &[4, 5, 6]
             .map(|slot| {
                 format!(
-                    "> 11 0{slot} 00 0e 46 10{}\n< 10 0{slot} 8f 00 0e 08 00\n",
+                    "> 11 0{slot} 00 0f 46 10{}\n< 10 0{slot} 8f 00 0f 08 00\n",
                     " 00".repeat(14)
                 )
             })

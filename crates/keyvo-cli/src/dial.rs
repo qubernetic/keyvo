@@ -239,8 +239,8 @@ pub(crate) mod tests {
 
     #[test]
     fn a_bluetooth_dialpad_without_0x4610_is_an_error() {
-        let script = "> 11 ff 00 0e 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n\
-                      < 11 ff 00 0e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n";
+        let script = "> 11 ff 00 0f 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n\
+                      < 11 ff 00 0f 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n";
         let mut hidpp = replay(script);
         let error = dial(
             &mut hidpp,

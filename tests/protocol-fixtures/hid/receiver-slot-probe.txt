@@ -12,21 +12,22 @@
 # feature walk (docs/research/hidpp-features-dump.txt, MX Creative Dialpad);
 # the unit id b978a829 and the model id BC0000000000 are Solaar's
 # (docs/research/solaar-show-dialpad.txt); the entity count 4 is the four
-# entities Solaar lists; the transport bits 0x0004 are a guess. Requests use
-# keyvo's swid 0xe.
+# entities Solaar lists; the transport bits 0x0004 are a guess. The search's
+# requests carry the three software ids after keyvo's 0xe (spec §5.1): 0xf
+# for getFeature(0x4610), 0x1 for getFeature(0x0003), 0x2 for getDeviceInfo.
 #
 # 1. slot 1: getFeature(0x4610) -> receiver error 0x08, no device paired
-> 11 01 00 0e 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-< 10 01 8f 00 0e 08 00
+> 11 01 00 0f 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 10 01 8f 00 0f 08 00
 # 2. slot 2: getFeature(0x4610), no answer (asleep)
-> 11 02 00 0e 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+> 11 02 00 0f 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 # 3. slot 3: getFeature(0x4610) -> index 0x0d, version 1
-> 11 03 00 0e 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-< 11 03 00 0e 0d 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00
+> 11 03 00 0f 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 00 0f 0d 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00
 # 4. getFeature(0x0003) -> index 0x02, version 7
-> 11 03 00 0e 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-< 11 03 00 0e 02 00 07 00 00 00 00 00 00 00 00 00 00 00 00 00
+> 11 03 00 01 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 00 01 02 00 07 00 00 00 00 00 00 00 00 00 00 00 00 00
 # 5. getDeviceInfo -> 4 entities, unit id b978a829, transport 0x0004,
 #    model id bc00 0000 0000
-> 11 03 02 0e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-< 11 03 02 0e 04 b9 78 a8 29 00 04 bc 00 00 00 00 00 00 00 00
+> 11 03 02 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 02 02 04 b9 78 a8 29 00 04 bc 00 00 00 00 00 00 00 00
