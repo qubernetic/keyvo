@@ -282,8 +282,8 @@ pub fn find_keypad(class_dir: &Path, dev_dir: &Path) -> Result<Node, SysfsError>
 
 /// The Bolt receiver's HID++ node: among the nodes of
 /// [`BOLT_RECEIVER`] the first that carries both [`RECEIVER_REPORTS`]
-/// (the kernel's `hid-logitech-dj` gives the receiver's keyboard and mouse
-/// interfaces nodes of their own). `None` without one.
+/// (the receiver's keyboard, mouse and digitizer interfaces have nodes of
+/// their own; `docs/hardware-notes.md`, record D8). `None` without one.
 ///
 /// # Errors
 ///
@@ -315,9 +315,9 @@ pub fn node_at(class_dir: &Path, dev_dir: &Path, path: &Path) -> Result<Option<N
 
 impl Node {
     /// True for a Dialpad paired over Bluetooth, which answers on device
-    /// index `0xff` like a USB device. Over the receiver the kernel gives
-    /// the Dialpad a child node on the USB bus; keyvo talks to the
-    /// receiver's node instead.
+    /// index `0xff` like a USB device. Over the receiver the Dialpad has no
+    /// node of its own (record D8 of `docs/hardware-notes.md`); keyvo talks
+    /// to the receiver's HID++ node.
     #[must_use]
     pub const fn is_bluetooth_dialpad(&self) -> bool {
         self.id.bus == BUS_BLUETOOTH

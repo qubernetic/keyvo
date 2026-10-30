@@ -12,9 +12,9 @@ use keyvo_hid::hidpp::Hidpp;
 use keyvo_hid::input::{Control, Edge, InputEvent};
 use keyvo_hid::reprog::DivertTiming;
 
-/// The names of the rollers by id: the third-party reading of roller 0 as
-/// the small wheel and roller 1 as the large dial (spec §5.8); the
-/// physical mapping is measured in M3-2.
+/// The names of the rollers by id: roller 0 is the small wheel, roller 1
+/// the large dial (spec §5.8; measured, `docs/hardware-notes.md` record
+/// D5).
 const ROLLER_NAMES: [&str; 2] = ["roller", "dial"];
 
 /// The Dialpad's timing out of the user's `[timing]`.

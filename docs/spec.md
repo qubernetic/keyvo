@@ -313,9 +313,13 @@ measured in M0-2 (plan §5 item 16).
   captured 140-byte descriptor.
 - The Bolt receiver as built (beta, #186; `keyvo_hid::sysfs::find_receiver`):
   among the nodes of `046d:c548` the first, by node number, whose
-  descriptor carries both HID++ reports `0x10` and `0x11` (the kernel's
-  `hid-logitech-dj` owns the receiver and gives its keyboard and mouse
-  interfaces and every paired device nodes of their own). keyvo opens it
+  descriptor carries both HID++ reports `0x10` and `0x11`. The receiver
+  has four USB interfaces with one node each, keyboard, mouse, HID++ and
+  digitizer, and on the owner's host the kernel does not run it in DJ
+  mode, so no paired device gets a node of its own: every paired device
+  shares the receiver's interfaces (measured 2026-10-29 and 2026-10-30,
+  `docs/hardware-notes.md` record D8; this corrects the earlier text,
+  which had `hid-logitech-dj` give every paired device a node). keyvo opens it
   read-write, non-exclusive, like the Keypad's, and talks to a paired
   device by its device index next to the kernel and Solaar. The
   Dialpad's slot is found at runtime, never a constant
@@ -328,6 +332,8 @@ measured in M0-2 (plan §5 item 16).
   none within 300 ms for the three slots, 771 ms for a raw request to the
   sleeping Dialpad; 11 to 22 ms warm), so `slot_probe` defaults to
   1000 ms; an empty slot still settles at once on the receiver's error.
+  With 1000 ms the slow slots answer inside the wait (measured
+  2026-10-30: 791 ms and 819 ms; `docs/hardware-notes.md` record D3).
   The receiver delivers such a late reply twice, and every `getFeature`
   reply carries the same header, so the search tags its three requests
   per slot with software ids of their own, the three after the
@@ -335,19 +341,27 @@ measured in M0-2 (plan §5 item 16).
   `getFeature(0x0003)`, `0x2` for `getDeviceInfo` after keyvo's `0xe`):
   the copy of one reply carries the previous request's id and answers
   nothing; it is kept for the input path like any unsolicited report
-  (#200). The rest of the connection keeps its one software id: the
+  (#200; measured 2026-10-30: no copy matched in any run). The rest of the connection keeps its one software id: the
   Keypad is on USB without a receiver in between, and its golden scripts
   are captures with a fixed id. The receiver's HID++ 1.0 error report for a slot (`10 <index>
   8f <feature index> <fn|swid> <code> 00`, codes of the public Unifying
   receiver specification) answers the pending request at once
-  (`HidppError::Receiver`): `0x04` connect fail, `0x07` busy and `0x09`
-  resource error (retryable, §5.8) mark the slot silent like a timeout,
-  `0x08` unknown device and the other codes mark it empty. A
+  (`HidppError::Receiver`): `0x04` connect fail, which a paired device in
+  deep sleep answers at once, and `0x07` busy mark the slot silent like a
+  timeout; `0x09` resource error, which the Bolt receiver answers for a
+  slot with nothing paired, `0x08` unknown device and the other codes
+  mark it empty (measured 2026-10-29 and 2026-10-30,
+  `docs/hardware-notes.md` record D2; the static pass named `0x09`
+  retryable, and the search followed it until #202). A
   device without `0x4610` and one with another model id are skipped. When
   no slot is the Dialpad, the caller waits for the receiver's arrival
   notification (`0x41`) with the link established for the Dialpad's WPID
   or a silent slot, at most `[timing].reconnect_interval`, then asks that
-  slot alone (or every slot again after the wait). `--device` on a node
+  slot alone (or every slot again after the wait). On the owner's
+  receiver no `0x41` appeared: a waking Dialpad sends a `0x1D4B`
+  reconnect report on its own device index instead, so the search round
+  after the wait finds it (measured 2026-10-30, record D6; accepting the
+  reconnect report as an arrival is an open follow-up). `--device` on a node
   sysfs knows as a Bluetooth Dialpad (`0005:046d:bc00`) reaches it on
   device index `0xff` with the same driver; any other `--device` node is
   taken as a receiver. The static pass's register `0x02` replay of the
@@ -775,21 +789,28 @@ on a timer.
 
 ### 5.8 Dialpad (M3)
 
-- Identity `046d:bc00` over Bluetooth; over the Bolt receiver the HID++
-  device index is 1–6 on the receiver's `0x11` reports (untested by anyone;
-  M0-2 captures it under Options+ in the Windows VM, plan §5 item 15).
+- Identity `046d:bc00` over Bluetooth (not measured yet); over the Bolt
+  receiver the HID++ device index is 1–6 on the receiver's `0x11` reports
+  (measured 2026-10-29: slot 3 on the owner's receiver, found at runtime;
+  `docs/hardware-notes.md`, "Dialpad over Bolt", record D1).
 - Bolt slot discovery (static pass,
   `docs/research/2026-10-28-dialpad-static-pass.md` §8): the receiver's
   `0x41` arrival names the slot (byte 1), the WPID (bytes 5..6, little
   endian) and the link state (byte 4 bit 6 set = no link). Writing `0x02`
   to register `0x02` makes the receiver replay `0x41` for every paired
   device; long register `0xB5` at `0x51 + slot index` (0-based) holds the
-  Bolt pairing information, WPID in its bytes 2..3.
+  Bolt pairing information, WPID in its bytes 2..3. Not seen on the
+  owner's receiver (2026-10-30, record D6): neither a wake from deep sleep
+  nor a receiver replug gave a `0x41`.
 - Feature table (measured over Bolt): `0x1B04` at index `0x0a` with four
   divertable controls, CIDs `0x0053, 0x0056, 0x0059, 0x005A` (Options+
   numbers them buttons 1 to 4); `0x4610` MultiRoller at index `0x0d`;
   `0x1004 UNIFIED_BATTERY`; `0x1D4B WIRELESS_DEVICE_STATUS`; **no `0x0008`
-  keep-alive**.
+  keep-alive**. Measured again by keyvo (2026-10-29 and 2026-10-30,
+  record D1): `0x1b04` at `0x0a`, `0x4610` at `0x0d`, `0x1004` at `0x09`,
+  `0x1D4B` at `0x04`, firmware `RBO 07.00.B0016`. These are this device's
+  indices; keyvo resolves each with `ROOT.getFeature`. keyvo's buttons 1
+  to 4 in CID order are the physical numbering (owner confirmed).
 - `0x4610` layouts (static pass §1 to §5; roller ids are `0..fn0 count`,
   always masked `& 0x0F`): fn0 → roller count; fn1(roller) → byte 0
   increments per rotation, byte 1 ratchet increments, byte 2 unnamed;
@@ -799,29 +820,51 @@ on a timer.
   never sends them to the Dialpad). Rotation event 0: payload byte 0
   roller, byte 1 delta `i8`, bytes 2..5 an optional `u32` big-endian
   timestamp (a 2-byte payload is valid). Options+ passes the delta on
-  unchanged and drops the timestamp.
+  unchanged and drops the timestamp. Measured 2026-10-30 (record D5): the
+  reports carry the timestamp in bytes 2..5 and arrive about every
+  22 ms; `setMode` echoes `[roller, mode]` (records D5, D6).
 - Rollers (reported, shensquared / Julusian PR #22, consistent with the
   static pass): 2 rollers; roller 0 = small wheel, 40 increments per
   rotation; roller 1 = large dial, 180 per rotation; diverting a roller
-  stops native scrolling. Still open for M3-2: the physical mapping of the
-  ids, the reported opposite sign of roller 0, whether the deltas are
-  accelerated in firmware, the timestamp unit. keyvo reads count and
-  increments from fn0 and fn1 instead of hard-coding them. Diverted button
-  presses repeat while held; keyvo, like Options+, reports edges of the
-  held set only. There is no dial click.
+  stops native scrolling. Measured 2026-10-29 and 2026-10-30 (records D1,
+  D5, D6): the ids, the increments and the stop of native scrolling as
+  stated; + is clockwise on the dial and forward on the roller; the dial's
+  deltas are accelerated in firmware (up to 18 fast, 4 to 6 slow), the
+  roller's are not (1 to 2). Still open: the timestamp unit (it rises about
+  one per millisecond) and whether the roller's sign is the opposite one
+  the third party reported. keyvo reads count and increments from fn0 and
+  fn1 instead of hard-coding them. A held diverted button sends no
+  repeats (measured 2026-10-30, a 3.1 s and a 2.6 s hold, record D4; this
+  corrects the earlier text, which said the presses repeat); keyvo, like
+  Options+, reports edges of the held set only. There is no dial click.
 - Diverts use `0x1B04` flags `0x03` (no persist bit) and `setMode(roller,
   DIVERTED)`; they are restored on exit and re-sent on every connect, as
-  Options+ does. A Bluetooth device that sleeps comes back as a new HID
-  object; over Bolt a `0x41` without the link-lost bit marks the wake.
-  Retryable errors: HID++ 1.0 `0x04` (connect fail), `0x07` (busy),
-  `0x09` (resource), HID++ 2.0 busy and timeouts; `0x08` (unknown device)
-  is not. The mouse collection floods report `0x02` while turning; keyvo
-  ignores it and, as a non-diverted fallback, can read the evdev axes
-  (`REL_WHEEL*`, `REL_HWHEEL*`, keys 275–278).
+  Options+ does. The diverts are volatile: after a receiver replug the
+  roller scrolls again once the Dialpad reconnects (measured 2026-10-30,
+  record D7). A Bluetooth device that sleeps comes back as a new HID
+  object (not measured yet). Over Bolt the static pass expected a `0x41`
+  without the link-lost bit on the wake; measured 2026-10-30 (record D6),
+  the Dialpad announces it on its own device index instead, with a
+  `0x1D4B` reconnect report (`11 <slot> 04 00 01 01 01`) and a `0x1004`
+  battery report, and no `0x41` comes. Ten minutes idle is not deep
+  sleep: no frame, the diverts hold, no turn lost. From deep sleep
+  (overnight) the receiver answers connect fail at once and the host
+  cannot wake the Dialpad; the turn that wakes it is lost. Retryable
+  errors: HID++ 1.0 `0x04` (connect fail), `0x07` (busy), HID++ 2.0 busy
+  and timeouts; `0x08` (unknown device) is not, and neither is `0x09`
+  (resource), which the Bolt receiver answers for an empty slot
+  (measured 2026-10-29, record D2; this corrects the static pass). Undiverted, the
+  Dialpad's input arrives on the receiver's mouse interface node as
+  report `0x02`: the dial as AC Pan, the roller as the wheel, buttons 1
+  to 4 as mouse buttons 4 to 7 (measured 2026-10-30, record D8); diverted,
+  nothing scrolls. keyvo ignores report `0x02` and, as a non-diverted
+  fallback, can read the evdev axes (`REL_WHEEL*`, `REL_HWHEEL*`, keys
+  275–278).
 - Nothing in the Dialpad path uses Solaar.
 - As built (beta, #186; `keyvo_hid::dialpad`, `multiroller`, `reprog`,
-  `input`), on fixtures that are synthetic until the hardware check of
-  #187 records the real bytes: after the slot search (§5.1),
+  `input`), on fixtures that replay the owner's frames of the hardware
+  check of #187 (since #202; the receiver's `0x41` arrival stays
+  synthetic, as no check saw one): after the slot search (§5.1),
   `Dialpad::find` walks the `0x1B04` controls after `[timing].divert_settle`
   (`getCount`, `getCidInfo` per control, each after
   `[timing].divert_spacing`) and keeps every divertable one, in CID order
@@ -834,7 +877,8 @@ on a timer.
   decoder (`Input::dialpad`) turns a `0x4610` notification (function 0,
   swid 0) into `InputEvent::Rotate { roller, delta }` and the diverted
   `0x1B04` notifications into button edges by the held-CID diff, so a
-  button the firmware repeats while held is one press and one release.
+  held button is one press and one release (the firmware sends no
+  repeats, record D4, and a repeat would change nothing).
   `Dialpad::next_event` also reads the receiver's arrival for the
   Dialpad's slot: the link lost forgets what is held
   (`DialpadEvent::LinkLost`), the link established re-sends every divert
@@ -849,7 +893,13 @@ on a timer.
   search request). The fixture `receiver-cold-search.txt` replays that
   run's frames with the slowest measured delays. The sleeping Dialpad can
   also answer the receiver's `8f` connect fail (`0x04`), which leaves the
-  slot silent until its arrival.
+  slot silent until the Dialpad wakes and a search round finds it.
+- Measured over Bolt on the fixed build (#187, part 2, 2026-10-30): every
+  Bolt step passes; the buttons, the rollers, the diverts and their
+  restore, sleep and wake, the receiver unplug and the receiver's nodes
+  are in `docs/hardware-notes.md`, "Dialpad over Bolt", records D1 to D8,
+  and the fixtures `receiver-*.txt` replay the frames. Bluetooth is not
+  measured yet.
 
 ### 5.9 Verification
 
@@ -2762,6 +2812,13 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, beta docs of slice 7 (2026-10-30)**: the Dialpad over Bolt
+  measured (#202, from the hardware check of #187, parts 1 and 2). §5.1
+  the receiver's four interface nodes without DJ mode, `0x09` as an empty
+  slot, the `0x1D4B` reconnect instead of the `0x41` arrival; §5.8
+  "measured" marks on the slot, the feature table, the rollers, the
+  diverts and the undiverted input, and corrections: held buttons do not
+  repeat, no `0x41` on a wake, `0x09` is not retryable.
 - **v0.3, beta fix of slice 7 (2026-10-29)**: a sleeping Dialpad over
   Bolt in the slot search (#200, from the hardware check of #187). §5.1
   the cold reply times, `[timing].slot_probe` from 300 ms to 1000 ms and a
