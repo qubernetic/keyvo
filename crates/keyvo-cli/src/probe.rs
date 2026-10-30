@@ -324,7 +324,7 @@ impl From<Result<String, String>> for Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{fixture, replay};
+    use crate::tests::{asleep_search, fixture, replay};
 
     const EXPECTED: &str = "\
 device      /dev/hidraw2
@@ -507,11 +507,10 @@ geometry    480x480, 9 buttons, 0 visible areas
 
     #[test]
     fn probe_reports_a_receiver_without_a_dialpad() {
-        let asleep = fixture("receiver-asleep.txt").replace("< 10 03 41 10 00 00 bc\n", "");
         assert_eq!(
-            run_receiver(&asleep, Link::Receiver).unwrap(),
+            run_receiver(&asleep_search(), Link::Receiver).unwrap(),
             "receiver    /dev/hidraw9\n\
-             slots       1 empty, 2 empty, 3 silent, 4 empty, 5 empty, 6 empty\n\
+             slots       1 no 0x4610, 2 no 0x4610, 3 silent, 4 empty, 5 empty, 6 empty\n\
              dialpad     not found\n"
         );
     }

@@ -245,8 +245,9 @@ page buttons do nothing; the socket reports it as a `session` event.
 **Slot**: One paired device's place on the Bolt receiver, addressed by its
 device index 1 to 6. keyvo finds the Dialpad's slot at runtime, never as a
 constant: `getFeature(0x4610)` per slot within `[timing].slot_probe`, then
-the model id. A slot is empty (the receiver's HID++ 1.0 error report), silent
-(no answer: asleep or out of range, asked again on its arrival notification),
+the model id. A slot is empty (the receiver's HID++ 1.0 error report, `0x09`
+on the owner's receiver), silent (no answer or connect fail: asleep or out of
+range, asked again on its arrival notification or in the next search round),
 another device, or the Dialpad's.
 
 **Simulator**: The GUI's virtual pad, rendered by the same renderer as the

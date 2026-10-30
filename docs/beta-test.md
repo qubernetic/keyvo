@@ -208,8 +208,15 @@ Do not use `solaar show` for the Dialpad: it crashes on it (upstream bug
 in `settings_templates.py`, Solaar 1.1.20); the raw feature walk is in
 `docs/research/hidpp-features-dump.txt`.
 
-The driver and `keyvo dial` came with #186 (PR #199), on fixtures that
-are synthetic until the hardware check of #187 records the real bytes.
+The driver and `keyvo dial` came with #186 (PR #199). The hardware check
+of slice 7 (#187, part 1 on 2026-10-29, part 2 on 2026-10-30) ran steps 1
+to 5 and 7 over Bolt; what it measured is in `docs/hardware-notes.md`,
+section "Dialpad over Bolt" (records D1 to D8), and since #202 the
+fixtures replay its frames. Step 6, Bluetooth, is not measured yet. Read
+a step's expected lines against those records: ten minutes idle is not
+deep sleep there (record D6), and a wake from deep sleep sends no
+arrival, so a `dial` started while the Dialpad sleeps finds it in its
+next search round.
 Stop Solaar and the daemon for these steps (`flatpak kill
 io.github.pwr_solaar.solaar`, `systemctl --user stop keyvo-daemon`); the
 Dialpad must be awake (turn the dial once).
@@ -222,7 +229,7 @@ Dialpad must be awake (turn the dial once).
    (`0x0a` and `0x0d` in the feature walk), `firmware` the Dialpad's
    entities (Solaar shows `RBO 07.00.B0016`), `buttons` four CIDs `0x0053
    0x0056 0x0059 0x005a`, `rollers` two lines with the increments per
-   rotation (40 and 180 reported).
+   rotation (40 and 180, measured in record D1).
 2. `bin/keyvo dial`: stderr says `Dialpad on slot N: 4 buttons, ...;
    Ctrl-C to stop`. Each button prints `button K press` once while held
    and `button K release` on letting go; turning the dial and the roller
@@ -326,7 +333,8 @@ is the CLI of the commit under test (`just build`).
 ### #199: the Dialpad driver over Bolt and keyvo dial (#186)
 
 The hardware check of this driver is #187 (slice 7); these items are its
-starting point. Solaar and the daemon stopped.
+starting point, and its results over Bolt are in `docs/hardware-notes.md`,
+"Dialpad over Bolt". Solaar and the daemon stopped.
 
 - [ ] #199 `bin/keyvo probe` prints the receiver block with the Dialpad's slot, the `0x1b04` and `0x4610` indices, the firmware, four buttons and two rollers (section 4, step 1). Post the block.
 - [ ] #199 `bin/keyvo dial` and `bin/keyvo dial --json` print one line per button edge and turn, a held button once (section 4, step 2); the desktop does not scroll while diverted. Post which control is `dial` and which `roller`, and the sign per direction.

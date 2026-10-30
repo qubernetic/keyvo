@@ -1120,7 +1120,7 @@ mod tests {
         .unwrap();
         let text = String::from_utf8(out).unwrap();
         assert!(
-            text.starts_with("{\"turn\":\"dial\",\"delta\":3}\n"),
+            text.starts_with("{\"edge\":\"press\",\"button\":3}\n"),
             "{text}"
         );
     }
@@ -1401,6 +1401,13 @@ mod tests {
             "/../../tests/protocol-fixtures/hid/"
         );
         std::fs::read_to_string(format!("{path}{name}")).unwrap()
+    }
+
+    /// The search of `receiver-asleep.txt` without the Dialpad's wake
+    /// after it: no Dialpad, nothing left to read.
+    pub fn asleep_search() -> String {
+        let script = fixture("receiver-asleep.txt");
+        script[..script.find("# 4.").unwrap()].to_owned()
     }
 
     /// The exchanges `range` of a fixture script (a `>` line with the `<`

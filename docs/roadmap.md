@@ -161,20 +161,21 @@ tags, the MX triggers (M3-3, M3-4) and desk state (M3-5).
 | Slice | Issue | Title | Layer | From | Depends on | Status |
 |---|---|---|---|---|---|---|
 | 0 | #181 | `docs(roadmap,beta-test): open the beta section and the beta test guide` | S | conventions | | merged |
-| 1 | #182 | `chore(flatpak): manifest, portal and device permissions` | S | M4b-1 | #181 | in review |
-| 2 | #179 | `feat(core,daemon,app): a launch keeps the global page until its window arrives` | S | pre-alpha follow-up | #182 | in review |
-| 3 | #183 | `feat(core,daemon): run the on_fail action when a key's action fails` | S | M1-5 | #179 | in review |
-| 4 | #184 | `chore(contrib,cli): systemd user unit, udev rule and keyvo doctor` | S | M1-11 | #183 | in review |
-| 5 | #185 | `research: static pass over the dialpad features` | H | M3-0 | | open, owner |
-| 6 | #186 | `feat(hid,cli): dialpad driver over bolt with a dial command` | S | M3-1 | #184, #185 | in review |
+| 1 | #182 | `chore(flatpak): manifest, portal and device permissions` | S | M4b-1 | #181 | merged |
+| 2 | #179 | `feat(core,daemon,app): a launch keeps the global page until its window arrives` | S | pre-alpha follow-up | #182 | merged |
+| 3 | #183 | `feat(core,daemon): run the on_fail action when a key's action fails` | S | M1-5 | #179 | merged |
+| 4 | #184 | `chore(contrib,cli): systemd user unit, udev rule and keyvo doctor` | S | M1-11 | #183 | merged |
+| 5 | #185 | `research: static pass over the dialpad features` | H | M3-0 | | merged |
+| 6 | #186 | `feat(hid,cli): dialpad driver over bolt with a dial command` | S | M3-1 | #184, #185 | merged |
 | 7 | #187 | `test(hardware): verify the dialpad over bolt and bluetooth` | H | M3-2 | #186 | open, owner |
-| 7a | #200 | `fix(hid): find a sleeping dialpad over bolt in the slot search` | S | #187 part 1 | #186 | in review |
+| 7a | #200 | `fix(hid): find a sleeping dialpad over bolt in the slot search` | S | #187 part 1 | #186 | merged |
+| 7b | #202 | `docs(hardware-notes): record the dialpad over bolt with own fixtures` | S | #187 parts 1 and 2 | #200 | in review |
 | 8 | #188 | `feat(core,daemon,app): dialpad bindings and the dialpad panel` | S | M3-1, M4a-8 | #186, #187 | open |
 | 9 | #189 | `feat(core,daemon,app): a key as the dial modifier, held or toggled` | S | beta goal | #188 | open |
 | 10 | #156 | `feat(core,app): page switches, page deletion and per-profile global pages` | S | #156 | #189 | open |
 | 11 | #190 | `test(hardware): install the flatpak on the host and use it daily` | H | M4b-2 | #182, then the chain | open, owner |
 
-Status as of 2026-10-28: `merged` is merged into `epic/180-beta`,
+Status as of 2026-10-30: `merged` is merged into `epic/180-beta`,
 `passed` a hardware check the owner ran, `open, owner` a hardware or
 research slice the owner runs, `in review` an open pull request into the
 epic branch. Slice 5 runs in the owner's time from the start; its report
@@ -306,7 +307,7 @@ did (#86). Every M3 slice depends on it.
 | Issue | Title | Layer | Proof or User test | Depends on | Status |
 |---|---|---|---|---|---|
 | M3-0 | `research: static pass over the Dialpad features` (ADR-0008, inventory deeper-pass item 3: `0x4610` getCapabilities, getRollerCapabilities, getMode, setMode, getRollerSettings, setRollerSettings, RotationEvent) | S (research, sandbox) | report under `docs/research/` (done, #185: `docs/research/2026-10-28-dialpad-static-pass.md`) | | beta (#185, run by the owner) |
-| M3-1 | `feat(hid): Dialpad driver over Bolt` (0x1B04 buttons, 0x4610 dial and roller, device index) | S | `just test`; fixtures `own` and M3-0 (the driver and `keyvo dial` built on synthetic receiver fixtures, #186; the `own` capture comes with #187) | M0-3, M0-2, M3-0 | beta (#186 the driver, #188 the profile bindings) |
+| M3-1 | `feat(hid): Dialpad driver over Bolt` (0x1B04 buttons, 0x4610 dial and roller, device index) | S | `just test`; fixtures `own` and M3-0 (the driver and `keyvo dial` built on synthetic receiver fixtures, #186; `own` since #202, from the capture of #187) | M0-3, M0-2, M3-0 | beta (#186 the driver, #188 the profile bindings) |
 | M3-2 | `hardware: Dialpad over Bolt and Bluetooth verified` | H | owner | M3-1, M3-0 | beta (#187) |
 | M3-3 | `feat(hid): MX Master 4 and MX Mechanical as trigger sources` (`getCidInfo` walk, volatile diverts) | S | `just test`; fixtures from `docs/research/hidpp-features-dump.txt` | M3-1, M3-0 | |
 | M3-4 | `hardware: MX triggers and the Solaar divert warning verified` | H | owner | M3-3, M3-0 | |

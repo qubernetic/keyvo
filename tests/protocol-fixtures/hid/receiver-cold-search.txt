@@ -9,8 +9,10 @@
 # run's raw `keyvo probe --dump` log (ms 0 to 396); the first replies of
 # slots 1 and 2 are delayed to the slowest cold replies the owner measured
 # (734 ms and 541 ms) instead of that run's 170 ms and 15 ms. The
-# getDeviceInfo reply is receiver-slot-probe.txt's: the cold run sent its
-# getDeviceInfo to index 0x0d, so it has no real one. The software ids are
+# getDeviceInfo reply is part 2's (2026-10-30,
+# https://github.com/qubernetic/keyvo/issues/187#issuecomment-6517302440,
+# receiver-slot-probe.txt step 5): the cold run sent its getDeviceInfo to
+# index 0x0d, so it has no real one. The software ids are
 # the ones the search uses after the fix (spec §5.1): 0xf for every
 # getFeature(0x4610), 0x1 for getFeature(0x0003), 0x2 for getDeviceInfo;
 # the cold run had 0xe on all of them.
@@ -34,7 +36,7 @@
 > 11 03 00 01 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 < +8 11 03 00 0f 0d 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00
 < +23 11 03 00 01 02 00 07 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 5. getDeviceInfo -> 4 entities, unit id b978a829, transport 0x0004,
+# 5. getDeviceInfo -> 4 entities, unit id b978a829, transport 0x0002,
 #    model id bc00 0000 0000
 > 11 03 02 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-< +7 11 03 02 02 04 b9 78 a8 29 00 04 bc 00 00 00 00 00 00 00 00
+< +7 11 03 02 02 04 b9 78 a8 29 00 02 bc 00 00 00 00 00 00 01 00

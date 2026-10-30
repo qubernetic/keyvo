@@ -88,30 +88,35 @@ The image writer's golden tests also reproduce the LCD writes of
 `captures/external/hcooper/derived/binding-paint-frames.tsv`, which carries
 the whole 4095-byte reports.
 
-## Dialpad over the Bolt receiver (synthetic)
+## Dialpad over the Bolt receiver (own)
 
-No capture of the Dialpad exists yet; the owner's capture of slice 7
-(#187) replaces these files. Until then they are built from the measured
-feature and control walks (`docs/research/hidpp-features-dump.txt`,
-`hidpp-reprog-controls-dump.txt`), Solaar's device page
-(`solaar-show-dialpad.txt`), the static pass
-(`docs/research/2026-10-28-dialpad-static-pass.md`) and the third-party
-decode it quotes, and the HID++ 1.0 error layout of the public Unifying
-receiver specification; each file's `#` lines say which part comes from
-where and what is a guess. The Dialpad sits on slot 3 (device index `03`),
-as on the owner's receiver; keyvo uses software id `0xe`. The golden tests
-in `crates/keyvo-hid/tests/golden.rs` join them in keyvo's order, and the
+Frames of the owner's hardware check of slice 7 (#187): part 1, the probe
+over Bolt (2026-10-29, at 1530129), and part 2, the fixed build over Bolt
+(2026-10-30, at 8f56281, `keyvo --dump dial`), MX Creative Dialpad
+firmware `RBO 07.00.B0016` on slot 3 of the owner's receiver
+(`docs/hardware-notes.md`, "Dialpad over Bolt"). Each file's `#` lines name
+the comment, the dump block and its milliseconds, and every byte that is
+not a frame of the dump. keyvo uses software id `0xe`, the slot search
+`0xf`, `0x1` and `0x2` (spec §5.1). The golden tests in
+`crates/keyvo-hid/tests/golden.rs` join them in keyvo's order, and the
 Bluetooth test replays them with device index `ff`.
 
-| File | Content |
-|---|---|
-| `receiver-slot-probe.txt` | the slot search: slot 1 empty (`10 01 8f 00 0f 08`), slot 2 silent (no answer), slot 3 getFeature(0x4610) = 0x0d, getFeature(0x0003) = 0x02, getDeviceInfo with model id `bc 00 00 00 00 00`; the search's software ids 0xf, 0x1, 0x2 |
-| `receiver-cold-search.txt` | the search from cold, after the owner's raw log of #187: slots 1 and 2 answer "no 0x4610" after 734 ms and 541 ms, slot 3 after 180 ms, each reply comes twice, and the copy of slot 3's 0x4610 reply arrives after the getFeature(0x0003) request |
-| `receiver-asleep.txt` | the search while the Dialpad sleeps: slots 1, 2, 4 to 6 empty, slot 3 silent, then the arrival of slot 3 |
-| `receiver-controls.txt` | getFeature(0x1B04) = 0x0a, getCount = 4, getCidInfo for CIDs 0x0053, 0x0056, 0x0059, 0x005A (flags 0x31) |
-| `receiver-firmware.txt` | getDeviceInfo and getFwInfo for Solaar's four entities: `BL2 18.00.B0016`, `RBO 07.00.B0016` (active), type 3, hardware `72` (replayed by `crates/keyvo-cli/src/probe.rs`) |
-| `receiver-multiroller.txt` | 0x4610 getCapabilities = 2 rollers, getRollerCapabilities 40 and 180 increments |
-| `receiver-divert.txt` | setCidReporting(cid, 0x03) and getCidReporting per button, setMode(roller, DIVERTED) for both |
-| `receiver-restore.txt` | setCidReporting(cid, 0x02) per button, setMode(roller, NATIVE) for both |
-| `receiver-input.txt` | rotations of both rollers (+3, -2, +127, -128, -1, with and without timestamp), a button held across three reports, two buttons together, another slot's notification and a DJ report `0x20` |
-| `receiver-arrival.txt` | the arrival of slot 3 with the link lost (`10 03 41 10 40 00 bc`), then established |
+Two files are not own frames: `receiver-arrival.txt` (no `0x41` arrival
+appeared in either check) and the getFwInfo replies of
+`receiver-firmware.txt` (neither check carries the frames; the replies are
+built to decode to part 1's `firmware` lines). The input cases the
+capture has none of (the ends of the `i8` delta, another slot's
+notification, a DJ report) are written into their golden test.
+
+| File | Source | Content |
+|---|---|---|
+| `receiver-slot-probe.txt` | own, part 2 | the slot search: slots 1 and 2 "no 0x4610" after 910 ms and 624 ms, slot 3 getFeature(0x4610) = 0x0d, getFeature(0x0003) = 0x02, getDeviceInfo with model id `bc 00 00 00 00 00` |
+| `receiver-cold-search.txt` | own, part 1, edited (getDeviceInfo part 2) | the search from cold: slots 1 and 2 answer "no 0x4610" after 734 ms and 541 ms, slot 3 after 180 ms, each reply comes twice, and the copy of slot 3's 0x4610 reply arrives after the getFeature(0x0003) request |
+| `receiver-asleep.txt` | own, parts 1 and 2 | the search while the Dialpad is in deep sleep: slots 1 and 2 "no 0x4610", slot 3 connect fail (`10 03 8f 00 0f 04`), slots 4 to 6 resource error (`0x09`), then the Dialpad's `0x1D4B` reconnect and `0x1004` battery reports, no `0x41` |
+| `receiver-controls.txt` | own, part 2 | getFeature(0x1B04) = 0x0a, getCount = 4, getCidInfo for CIDs 0x0053, 0x0056, 0x0059, 0x005A (flags 0x31, additional flags 0x04) |
+| `receiver-firmware.txt` | synthetic frames, part 1 values | getDeviceInfo and getFwInfo for four entities: `BL2 18.00.B0016`, `RBO 07.00.B0016` (active), type 0x05 `00.00.B0126`, `HW 00.01.B0000` (replayed by `crates/keyvo-cli/src/probe.rs`) |
+| `receiver-multiroller.txt` | own, part 2 | 0x4610 getCapabilities = 2 rollers, getRollerCapabilities 40 and 180 increments |
+| `receiver-divert.txt` | own, part 2 | setCidReporting(cid, 0x03) and getCidReporting per button, setMode(roller, DIVERTED) for both, echoed |
+| `receiver-restore.txt` | own, part 2 | setCidReporting(cid, 0x02) per button, the first after 868 ms, setMode(roller, NATIVE) for both |
+| `receiver-input.txt` | own, part 2 | the Dialpad's `0x1D4B` and `0x1004` status reports, the four buttons, a hold and a chord, the slow and fast rotation blocks of both rollers |
+| `receiver-arrival.txt` | synthetic | the arrival of slot 3 with the link lost (`10 03 41 10 40 00 bc`), then established |

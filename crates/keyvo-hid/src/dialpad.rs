@@ -497,12 +497,15 @@ fn probe_slot<T: HidTransport>(
 }
 
 /// The slot a request error stands for; the transport errors end the
-/// search. The receiver errors the static pass names retryable (connect
-/// fail, busy, resource error) leave the slot silent, like a timeout.
+/// search. Connect fail (a paired device that sleeps) and busy leave the
+/// slot silent, like a timeout. The Bolt receiver answers resource error
+/// (`0x09`) for a device index with nothing paired (#187, part 1;
+/// `docs/hardware-notes.md`), so it marks the slot empty, as the other
+/// codes do, although the static pass names it retryable.
 fn unanswered(error: HidppError) -> Result<Slot, HidppError> {
     match error {
         HidppError::Receiver {
-            code: ReceiverError::ConnectFail | ReceiverError::Busy | ReceiverError::ResourceError,
+            code: ReceiverError::ConnectFail | ReceiverError::Busy,
             ..
         }
         | HidppError::Timeout { .. } => Ok(Slot::Silent),
@@ -549,15 +552,10 @@ mod tests {
             function: 0,
             code,
         };
-        assert_eq!(
-            unanswered(receiver(ReceiverError::UnknownDevice)),
-            Ok(Slot::Empty(ReceiverError::UnknownDevice))
-        );
-        for retryable in [
-            ReceiverError::ConnectFail,
-            ReceiverError::Busy,
-            ReceiverError::ResourceError,
-        ] {
+        for empty in [ReceiverError::UnknownDevice, ReceiverError::ResourceError] {
+            assert_eq!(unanswered(receiver(empty)), Ok(Slot::Empty(empty)));
+        }
+        for retryable in [ReceiverError::ConnectFail, ReceiverError::Busy] {
             assert_eq!(unanswered(receiver(retryable)), Ok(Slot::Silent));
         }
         assert_eq!(

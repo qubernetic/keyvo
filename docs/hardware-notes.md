@@ -33,6 +33,7 @@ measurement gets a new record, and the older one stays for comparison.
 |---|---|---|
 | MX Creative Keypad (author's unit) | `U1 66.00.B0017`, bootloader `BL2 20.00.B0017` | Solaar 1.1.20, 2026-09-09 (`docs/research/hidpp-features.md`) |
 | MX Creative Keypad (author's unit, USB serial `398533673333`) | `U1 66.00.B0017` (application, active), `BL2 20.00.B0017`, `IM 01.00.B0017`, `HW 00.00.B0000` | `keyvo probe`, first light 2026-10-25 (`01-probe-auto.log`) |
+| MX Creative Dialpad (owner's unit, WPID `BC00`, slot 3 of the owner's Bolt receiver) | `RBO 07.00.B0016` (application, active), `BL2 18.00.B0016`, ` 00.00.B0126` (type `0x05`), `HW 00.01.B0000` | `keyvo probe` over Bolt, 2026-10-29 (#187, part 1; "Dialpad over Bolt" below) |
 
 ## First-light checklist (pre-alpha slice 6)
 
@@ -442,3 +443,245 @@ Not a Keypad measurement: the desktop behaviour the launch rule of spec
   at Medium or above a launched window only demands attention and no app
   switch reaches the pad. The open question of section 9 of the research
   report is answered.
+
+### Dialpad over Bolt (2026-10-29 and 2026-10-30)
+
+The owner's hardware check of slice 7 (#187) in two parts: part 1, the
+probe over Bolt
+(<https://github.com/qubernetic/keyvo/issues/187#issuecomment-6504351636>),
+and part 2, the build with the fix of #200
+(<https://github.com/qubernetic/keyvo/issues/187#issuecomment-6517302440>).
+Every number below is in one of the two comments, or counted from the raw
+frames they carry. Every record of this section shares the setup:
+
+- Device: MX Creative Dialpad, WPID `BC00`, firmware `RBO 07.00.B0016`
+  (application, active), bootloader `BL2 18.00.B0016`, hardware `HW
+  00.01.B0000`, a fourth entity ` 00.00.B0126` of type `0x05` with an
+  empty prefix (`keyvo probe`, part 1). Fresh batteries: 95 %, level
+  `full`, through `0x1004` (part 1).
+- Receiver: Logi Bolt `046d:c548` (`Logitech USB Receiver`), the Dialpad
+  on slot 3 next to two paired devices without `0x4610`; keyvo finds the
+  slot at runtime, it is no constant.
+- Binary: `bin/keyvo` from `just build`, on `epic/180-beta` at 1530129
+  (part 1, 2026-10-29) and at 8f56281, PR #201 merged (part 2,
+  2026-10-30), run on the host. Solaar and the daemon stopped, the Keypad
+  connected.
+- Raw output: `--dump` lines (spec §5.10) in the two comments; the
+  fixtures `tests/protocol-fixtures/hid/receiver-*.txt` replay them (their
+  `#` lines name the block and the milliseconds), and the receiver's
+  report descriptors are the sysfs fixtures of `keyvo-hid`.
+- Not measured yet: the Dialpad over Bluetooth (pairing, `dial --device`,
+  the node after sleep, pairing back to Bolt). These steps of #187 stay
+  open.
+
+#### D1. Probe, feature indices and controls (2026-10-29)
+
+- Method: `bin/keyvo probe` over Bolt with the Dialpad awake; `bin/keyvo
+  --dump probe | grep ' 8f '`.
+- Result:
+
+  ```
+  receiver    /dev/hidraw3 (Logitech USB Receiver, 046d:c548, reports 10 11)
+  slots       1 no 0x4610, 2 no 0x4610, 3 dialpad
+  features    0x1b04 REPROG_CONTROLS_V4 index 0x0a, 0x4610 MULTI_ROLLER index 0x0d
+  firmware    BL2 18.00.B0016  bootloader
+              RBO 07.00.B0016  application, active
+               00.00.B0126  type 0x05
+              HW 00.01.B0000  hardware
+  buttons     1 0x0053, 2 0x0056, 3 0x0059, 4 0x005a
+  rollers     0 roller  40 increments per rotation, 0 ratchet increments
+              1 dial  180 increments per rotation, 0 ratchet increments
+  ```
+
+  The feature indices on this device: `0x1b04` at `0x0a`, `0x4610` at
+  `0x0d`, `0x1004 UNIFIED_BATTERY` at `0x09` (part 1), `0x1D4B
+  WIRELESS_DEVICE_STATUS` at `0x04` (its reconnect report, D6). They are
+  this device's values; keyvo resolves every index with
+  `ROOT.getFeature` and never holds one as a constant. The part 2 dump
+  adds: `getCidInfo` gives flags `0x31` and additional flags `0x04` for
+  all four controls; `getDeviceInfo` answers `04 b9 78 a8 29 00 02 bc 00
+  00 00 00 00 00 01 00` (4 entities, unit id `b978a829`, transport bits
+  `0x0002`, model id `bc 00 00 00 00 00`).
+- Settles: spec §5.8, the feature table, the four CIDs and the 40 and
+  180 increments; the cosmetic empty prefix of the `type 0x05` entity is
+  open.
+
+#### D2. Receiver error replies in the slot search (2026-10-29 and 2026-10-30)
+
+- Method: the `8f` lines of `--dump probe` (part 1) and of `--dump dial`
+  and `probe` with the Dialpad in deep sleep (part 2).
+- Result: the receiver answers the empty slots 4 to 6 at once with `10 04
+  8f 00 0e 09 00`, `10 05 ...` and `10 06 ...`: code `0x09`, resource
+  error. A paired Dialpad that sleeps gives `10 03 8f 00 0e 04 00`
+  (part 1) and `10 03 8f 00 0f 04 00` (part 2, after a night): code
+  `0x04`, connect fail, at once.
+- Settles: spec §5.1 and §5.8, `0x09` marks an empty slot on this
+  receiver, not a retryable one as the static pass had it; `0x04` marks a
+  silent slot. The `0x08` the synthetic fixtures used did not appear.
+
+#### D3. Slot search from cold, and the fix of #200 (2026-10-29 and 2026-10-30)
+
+- Method: part 1, `bin/keyvo --dump probe` repeated with the Dialpad
+  awake and from sleep, `[timing].slot_probe` 300 ms; one raw
+  `getFeature(0x1004)` to slot 3. Part 2, the same on the build of #201
+  (`slot_probe` 1000 ms, a software id per search request).
+- Result, part 1 (first reply to `getFeature`):
+
+  | slot | device | cold first reply | warm reply |
+  |---|---|---|---|
+  | 1 | paired device, no 0x4610 | 734 ms, >300 ms | 11-16 ms |
+  | 2 | paired device, no 0x4610 | 302-541 ms | 17 ms |
+  | 3 | Dialpad | none within 300 ms, 294 ms, 180 ms | 16-17 ms |
+
+  The raw `getFeature(0x1004)` to the sleeping Dialpad took 771 ms, the
+  next requests 21-22 ms. The receiver delivered a slow reply twice, and
+  with one software id the copy of the `0x4610` reply answered the
+  following `getFeature(0x0003)`: seen twice on slot 3 and once on slot 2.
+- Result, part 2: the slow slots answer inside the 1000 ms (slot 1 at
+  791 ms, slot 2 at 819 ms on the first run); the search requests go out
+  with software ids `0f`, `01` and `02`; no copy was matched to a request
+  in any run.
+- Settles: spec §5.1, the `slot_probe` default of 1000 ms and the
+  software ids of the search (#200). The firmware entity reads after the
+  search share one software id; a copy there was not seen on an awake
+  device and is an open follow-up.
+
+#### D4. Buttons (2026-10-30)
+
+- Method: `bin/keyvo dial` and `--dump dial`: each button pressed once,
+  one held, two held together.
+- Result: each of the four buttons gives exactly one press and one
+  release; keyvo's numbers 1 to 4 (CID order `0x53`, `0x56`, `0x59`,
+  `0x5a`) are the physical numbering (owner confirmed). A button held for
+  3.1 s and 2.6 s sends no repeats. Two held: `button 2 press`, `button 1
+  press`, `button 2 release`, `button 1 release`; `0x1B04` reports the
+  whole held set, `00 56 00 53`, then `00 53`.
+- Settles: spec §5.8, the button numbering. The statement that diverted
+  presses repeat while held is corrected: on this firmware they do not.
+
+#### D5. Rollers (2026-10-30)
+
+- Method: `bin/keyvo --dump dial`, the dial and the small roller turned
+  slowly in both directions and fast for one turn each.
+- Result: roller 0 is the small roller (40 increments per rotation),
+  roller 1 the dial (180). Sign: + is clockwise on the dial; on the small
+  roller + is the direction the owner turned first as clockwise
+  (forward). Reports arrive about every 22 ms (about 45 Hz) and carry a
+  rising timestamp: the frames hold it as the static pass's `u32`
+  big-endian in payload bytes 2 to 5 (`11 03 0d 00 01 01 00 05 5c a8`:
+  roller 1, delta +1, timestamp `0x00055ca8`). Over the 32 reports of the
+  slow clockwise dial block it rose by 902 while the dump's clock
+  advanced 907 ms; the unit is not settled.
+
+  | block | reports | sum of deltas | largest delta | duration |
+  |---|---|---|---|---|
+  | dial, slow, clockwise | 32 | +35 | 4 | 0.9 s |
+  | dial, slow, counter-clockwise | 31 | -44 | 6 | 0.9 s |
+  | roller, slow, forward | 13 | +20 | 3 | 0.5 s |
+  | roller, slow, back | 13 | -16 | 2 | 0.7 s |
+  | dial, fast, one turn | 36 | -169 (of 180) | 18 | 0.8 s |
+  | roller, fast, one turn | 30 | -51 (of 40) | 2 | 0.7 s |
+
+  The dial accelerates in firmware (deltas up to 18 fast, 4 to 6 slow);
+  the roller does not (1 to 2 at any speed). After the fast dial turn
+  three small opposite deltas (+3 in total) follow: the dial's
+  spring-back. `receiver-input.txt` carries every report of the table,
+  and its golden test sums them again.
+- Settles: spec §5.8, the physical mapping of the roller ids, the sign
+  per direction and the acceleration (dial only). Open: the timestamp
+  unit, and whether the small roller's sign is the opposite one the
+  third party reported (a wheel has no clockwise of its own).
+
+#### D6. Diverts, sleep and wake (2026-10-30)
+
+- Method: `bin/keyvo dial` and `--dump dial` with the Dialpad left alone
+  for ten minutes, and started with the Dialpad in deep sleep (overnight);
+  Ctrl-C to stop.
+- Result, diverts: while `dial` runs nothing scrolls and the buttons do
+  nothing in the focused window. After Ctrl-C (`diverts given back`:
+  `0a 3e … 02` per CID, `0d 3e 00 00` and `0d 3e 01 00`) the roller
+  scrolls again and the buttons act as before. The first restore request
+  took 868 ms, because the Dialpad had dozed after 38 s idle; the others
+  took 10 to 20 ms. `setMode` echoes the roller and the mode it set.
+- Result, ten minutes idle is not deep sleep: `dial` running, the Dialpad
+  untouched from 07:58:07 to 08:08:10, not a single frame in between, no
+  arrival, no reconnect. The first roller report came at 08:08:10.2,
+  under 1 s after the owner's turn at 08:08:10 (second resolution), and
+  the diverts held: nothing to re-divert, no turn lost (66 reports, +171,
+  one turn of the dial in 1.6 s).
+- Result, deep sleep: the receiver answers connect fail at once (D2); the
+  host cannot wake the Dialpad. `probe` reports `not found`; `dial` says
+  `no Dialpad answers (...); waiting for it` and finds it after a touch.
+  No `0x41` arrival appears. The Dialpad announces the wake on its own
+  device index:
+
+  ```
+  32611 < 11 03 04 00 01 01 01   0x1D4B WIRELESS_DEVICE_STATUS (index 0x04): reconnect
+  32626 < 11 03 09 00 5a 08      0x1004 UNIFIED_BATTERY (index 0x09): 90 %, full
+  33397 > 11 03 00 0f 46 10      the next periodic search round
+  33421 < 11 03 00 0f 0d 00 01   slot 3 answers in 24 ms
+  34178                          both rollers diverted
+  ```
+
+  `wait_for_arrival` waits for `0x41` only, so the next search round
+  finds the Dialpad, 0.8 s after the reconnect report here (1.6 s after
+  the replug reconnect of D7); the diverts are in place 1.6 s after the
+  first frame. The turn that wakes the Dialpad is lost.
+- Settles: spec §5.8, the restore and the diverts in place while `dial`
+  runs; deep sleep needs a much longer idle than ten minutes (overnight
+  here). The static pass's `0x41` on wake is corrected: the receiver sent
+  none, and the `0x1D4B` reconnect marks the wake. Accepting that report
+  on a silent slot as an arrival is an open follow-up.
+
+#### D7. Receiver unplug and replug (2026-10-30)
+
+- Method: the receiver unplugged with `dial` running, plugged back, `dial`
+  started again; and a replug with `dial` stopped.
+- Result: with `dial` running, `Error: device disconnected`, exit code 1.
+  Started again after the replug: `no Dialpad answers (... 3 silent ...);
+  waiting for it`; after one turn the `0x1D4B` reconnect, the slot found
+  1.6 s later, the diverts working (turns and presses arrived). The
+  diverts do not stick: after a replug with `dial` stopped, once the
+  Dialpad reconnected (a button press), the roller scrolled the terminal
+  again; before that reconnect nothing scrolled only because the link was
+  down.
+- Settles: spec §5.8, the diverts are volatile and the disconnect ends
+  `dial` as specified.
+
+#### D8. The receiver's interfaces and what each node carries (2026-10-29 and 2026-10-30)
+
+- Method: part 1, `udevadm` and `xxd` of every receiver node's report
+  descriptor. Part 2, `od` read-only on all four nodes at once, `dial`
+  stopped, then with only the Dialpad touched.
+- Result, part 1 (the node numbers move between boots and replugs; in
+  part 2 they were `hidraw0` to `hidraw3`, the HID++ node `hidraw2`):
+
+  | node | bInterfaceNumber | descriptor |
+  |---|---|---|
+  | hidraw1 | 00 | keyboard (Generic Desktop, Usage 0x06) |
+  | hidraw2 | 01 | mouse (Generic Desktop, Usage 0x02) |
+  | hidraw3 | 02 | vendor 0xFF00, reports 10/11: HID++ |
+  | hidraw4 | 03 | digitizer (Usage Page 0x0D) |
+
+- Result, part 2:
+
+  | node | bInterfaceNumber | carries |
+  |---|---|---|
+  | hidraw0 | 00 | keyboard: the MX Mechanical's 8-byte boot reports |
+  | hidraw1 | 01 | mouse report `02`: the MX Master 4 and the undiverted Dialpad |
+  | hidraw2 | 02 | HID++ `10`/`11`: nothing while undiverted; the Dialpad's `0x1B04` and `0x4610` reports while `dial` runs |
+  | hidraw3 | 03 | nothing in these tests |
+
+  The kernel does not run the Bolt receiver in DJ mode here: there are no
+  per-device hidraw nodes, and every paired device shares the receiver's
+  interfaces. Undiverted, the Dialpad's input is on the mouse node as
+  report `02` (`02 <buttons 16> <x 16> <y 16> <wheel 8> <pan 8>`): the
+  dial as AC Pan (byte 8; forward +2 to +12, back -1 to -6, accelerated),
+  the roller as the wheel (byte 7, ±1 to 2), buttons 1 to 4 as the button
+  bits `08`, `10`, `20`, `40`, mouse buttons 4 to 7.
+- Settles: spec §5.1, the receiver's HID++ node is the one with reports
+  `0x10` and `0x11` among four interface nodes; the statement that the
+  kernel gives every paired device a node of its own is corrected. Spec
+  §5.8, the Dialpad's undiverted input on the mouse node. The descriptors
+  are the sysfs fixtures `receiver-only` (all four) and
+  `keypad-and-receiver` (the HID++ node).

@@ -2,26 +2,30 @@
 # `keyvo probe` reads them: getDeviceInfo for the count, then getFwInfo per
 # entity on 0x0003 (index 0x02).
 #
-# Source: synthetic until the owner's capture of slice 7 (#187) replaces it.
-# The entities are the four Solaar lists for the Dialpad
-# (docs/research/solaar-show-dialpad.txt): `1: BL2 18.00.B0016` (bootloader),
-# `0: RBO 07.00.B0016` (application), `3:` (type 3, empty) and `2: 72`
-# (hardware), in Solaar's order; the active flag on the application and the
-# product id BC00 in every entity are guesses. The getDeviceInfo reply is
-# the one of receiver-slot-probe.txt. Requests use keyvo's swid 0xe.
+# Source: synthetic frames; the owner's hardware checks of slice 7 (#187)
+# carry no getFwInfo frame. The getDeviceInfo reply is own (part 2,
+# 2026-10-30, https://github.com/qubernetic/keyvo/issues/187#issuecomment-6517302440,
+# receiver-slot-probe.txt step 5) with keyvo's swid 0xe instead of the
+# search's 0x2. The getFwInfo replies are built to decode to the
+# `firmware` lines of `keyvo probe` in part 1 (2026-10-29,
+# https://github.com/qubernetic/keyvo/issues/187#issuecomment-6504351636):
+# `BL2 18.00.B0016` bootloader, `RBO 07.00.B0016` application, active,
+# ` 00.00.B0126` type 0x05 (no prefix) and `HW 00.01.B0000` hardware, in
+# that order. The product id BC00 in every entity is a guess; probe does
+# not print it. Requests use keyvo's swid 0xe.
 #
 # 1. getDeviceInfo -> 4 entities
 > 11 03 02 0e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-< 11 03 02 0e 04 b9 78 a8 29 00 04 bc 00 00 00 00 00 00 00 00
+< 11 03 02 0e 04 b9 78 a8 29 00 02 bc 00 00 00 00 00 00 01 00
 # 2. getFwInfo(0) -> bootloader BL2 18.00.B0016
 > 11 03 02 1e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 < 11 03 02 1e 01 42 4c 32 18 00 00 16 00 bc 00 00 00 00 00 00
 # 3. getFwInfo(1) -> application RBO 07.00.B0016, active
 > 11 03 02 1e 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 < 11 03 02 1e 00 52 42 4f 07 00 00 16 01 bc 00 00 00 00 00 00
-# 4. getFwInfo(2) -> type 3, no name, no version
+# 4. getFwInfo(2) -> type 0x05, no prefix, 00.00.B0126
 > 11 03 02 1e 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-< 11 03 02 1e 03 00 00 00 00 00 00 00 00 bc 00 00 00 00 00 00
-# 5. getFwInfo(3) -> hardware, version 0x72
+< 11 03 02 1e 05 00 00 00 00 00 01 26 00 bc 00 00 00 00 00 00
+# 5. getFwInfo(3) -> hardware HW 00.01.B0000
 > 11 03 02 1e 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-< 11 03 02 1e 02 00 00 00 72 00 00 00 00 bc 00 00 00 00 00 00
+< 11 03 02 1e 02 48 57 00 00 01 00 00 00 bc 00 00 00 00 00 00

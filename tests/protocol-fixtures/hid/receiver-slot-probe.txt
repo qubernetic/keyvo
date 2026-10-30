@@ -1,33 +1,31 @@
 # The Dialpad search over the Bolt receiver (spec §5.1, §5.8): keyvo asks
 # each device index from 1 up for getFeature(0x4610) and stops at the first
-# device whose getDeviceInfo model id carries the WPID BC00. Slot 1 is empty
-# (the receiver's HID++ 1.0 error report, `8f`, code 0x08 unknown device),
-# slot 2 holds a device that does not answer within [timing].slot_probe
-# (asleep), slot 3 holds the Dialpad.
+# device whose getDeviceInfo model id carries the WPID BC00. Slots 1 and 2
+# hold paired devices without 0x4610, slot 3 the Dialpad.
 #
-# Source: synthetic until the owner's capture of slice 7 (#187) replaces it.
-# The error report is the layout of the public Unifying receiver
-# specification (`10 <index> 8f <feature index> <fn|swid> <code> 00`). The
-# indices of 0x4610 (0x0d, v1) and 0x0003 (0x02, v7) are the measured
-# feature walk (docs/research/hidpp-features-dump.txt, MX Creative Dialpad);
-# the unit id b978a829 and the model id BC0000000000 are Solaar's
-# (docs/research/solaar-show-dialpad.txt); the entity count 4 is the four
-# entities Solaar lists; the transport bits 0x0004 are a guess. The search's
-# requests carry the three software ids after keyvo's 0xe (spec §5.1): 0xf
-# for getFeature(0x4610), 0x1 for getFeature(0x0003), 0x2 for getDeviceInfo.
+# Source: own, the owner's hardware check of slice 7 (#187, part 2,
+# 2026-10-30, https://github.com/qubernetic/keyvo/issues/187#issuecomment-6517302440),
+# block "reconnect after replugging the receiver", `keyvo --dump dial` at
+# 8f56281, Dialpad firmware RBO 07.00.B0016. The frames are the dump's,
+# and the `+<ms>` delays the gaps between a request and its reply in it
+# (ms 46863 to 48459). The search's requests carry the three software ids
+# after keyvo's 0xe (spec §5.1): 0xf for getFeature(0x4610), 0x1 for
+# getFeature(0x0003), 0x2 for getDeviceInfo.
 #
-# 1. slot 1: getFeature(0x4610) -> receiver error 0x08, no device paired
+# 1. slot 1: getFeature(0x4610) -> index 0, not present, after 910 ms
 > 11 01 00 0f 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-< 10 01 8f 00 0f 08 00
-# 2. slot 2: getFeature(0x4610), no answer (asleep)
+< +910 11 01 00 0f 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 2. slot 2: getFeature(0x4610) -> not present, after 624 ms
 > 11 02 00 0f 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 3. slot 3: getFeature(0x4610) -> index 0x0d, version 1
+< +624 11 02 00 0f 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 3. slot 3: getFeature(0x4610) -> index 0x0d, version 1, after 16 ms
 > 11 03 00 0f 46 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-< 11 03 00 0f 0d 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 4. getFeature(0x0003) -> index 0x02, version 7
+< +16 11 03 00 0f 0d 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 4. getFeature(0x0003) -> index 0x02, version 7, after 30 ms
 > 11 03 00 01 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-< 11 03 00 01 02 00 07 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 5. getDeviceInfo -> 4 entities, unit id b978a829, transport 0x0004,
-#    model id bc00 0000 0000
+< +30 11 03 00 01 02 00 07 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 5. getDeviceInfo -> 4 entities, unit id b978a829, transport 0x0002,
+#    model id bc00 0000 0000, extended model id 0x00, then 0x01, after
+#    16 ms
 > 11 03 02 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-< 11 03 02 02 04 b9 78 a8 29 00 04 bc 00 00 00 00 00 00 00 00
+< +16 11 03 02 02 04 b9 78 a8 29 00 02 bc 00 00 00 00 00 00 01 00
