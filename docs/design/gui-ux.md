@@ -329,6 +329,25 @@ stays the unit of truth.
 - Right column: the mirror with the key highlighted; the Dialpad panel when the
   behavior is a Dialpad binding.
 
+As built (beta, #188), before the Behaviors screen: the Dialpad panel lives
+on the Pad screen under the mirror (spec §10). It draws the Dialpad's
+drawing with its six controls (buttons 1 to 4, the roller, the dial) as
+selectable shapes with their GUI labels; a control the shown app profile
+leaves out shows the global profile's, dimmed, like a fall-through key. The
+heading collapses the panel; it starts collapsed while no Dialpad is
+connected and no `[dialpad]` table binds a control, and reads `No Dialpad
+connected` while none is. A turn or a button press pulses its control for
+400 ms. Selecting a control replaces the key editor in the Inspector with
+the control editor: the dial and the roller have Label, Step, Clockwise
+and Counter-clockwise (each the key editor's action fields), a button has
+Label and Action and shows its `on_fail` read-only. A control that comes
+from the global profile offers "Override here"; Clear removes the
+profile's own control so the global one shows again; undo and redo are the
+control's own. The catalogue assigns to the selected control: a button's
+action and label, the last-focused direction of the dial or the roller
+(clockwise until another field is focused), with the hint naming the
+target. Selecting a control pins the profile as selecting a key does.
+
 ### 3.4 Projects
 
 *Implements d5, d6, d7.*

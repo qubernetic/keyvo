@@ -2196,6 +2196,24 @@ the rest of the system must provide.
 - **Dialpad** appears as a second, collapsible panel in the mirror (schematic
   dial, roller, buttons with GUI labels); MX Master 4 and MX Mechanical
   controls (M3) appear as trigger sources in Behaviors and in Devices.
+  As built (beta, #188): `Dialpad.svelte` draws
+  `app/src/assets/device/dialpad.svg` under the mirror on the Pad screen
+  with the four buttons, the roller and the dial as selectable controls
+  showing their labels (a control the shown app profile leaves out shows
+  the global one, dimmed). It collapses on its heading, starts collapsed
+  while no Dialpad is connected and neither the shown nor the global
+  profile has a `[dialpad]` table, and says `No Dialpad connected` while
+  none is. A `dial` event or a button's `key` event pulses the control
+  for 400 ms. Selecting a control opens the Inspector's control editor
+  (`ControlEditor.svelte`): label, `step`, `cw` and `ccw` for the dial and
+  the roller, label and action for a button (its `on_fail` read-only), the
+  action fields shared with the key editor (`ActionFields.svelte`), "Override
+  here" for a control that comes from the global profile, Clear, and its
+  own undo. The catalogue assigns to the selected control as to a key: a
+  button's action (and label), the last-focused direction of the dial or
+  the roller (`cw` by default). The writes go through the Tauri commands
+  `control` and `edit_control` (`keyvo_client::Editor::control`,
+  `set_control`). The Preferences Devices tab stays `soon`.
 - Tray icon from the GUI in v1. `keyvo profile export|import` in the header
   menu.
 - Flatpak (M4b, as built in #182): exactly `--share=ipc`,
