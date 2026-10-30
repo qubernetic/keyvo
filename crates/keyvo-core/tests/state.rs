@@ -1555,3 +1555,21 @@ fn a_reload_that_drops_the_modifier_key_ends_it() {
     // Key 7's release is an ordinary one now.
     assert_eq!(state.key_up(key(7), t0), None);
 }
+
+#[test]
+fn a_client_press_between_the_armed_keys_down_and_up_does_not_arm_it_again() {
+    let profiles = modifier_profiles(&[MODIFIERS]);
+    let mut state = modifier_state(&Config::default(), &profiles);
+    let t0 = Instant::now();
+    arm(&mut state, 8, t0, &profiles);
+    state.key_down(key(8), t0, &profiles);
+    assert_eq!(
+        state.key_press(key(1), PressKind::Short, false, t0, &profiles),
+        KeyPress::Run
+    );
+    assert_eq!(
+        state.key_press(key(8), PressKind::Short, false, t0, &profiles),
+        KeyPress::Toggle(false)
+    );
+    assert_eq!(state.view(&profiles).modifier, None);
+}

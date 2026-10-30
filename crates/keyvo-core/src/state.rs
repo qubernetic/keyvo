@@ -437,7 +437,10 @@ impl State {
                 _ => KeyPress::Run,
             };
         }
-        let disarming = self.disarming.take() == Some(slot);
+        let disarming = self.disarming == Some(slot);
+        if disarming {
+            self.disarming = None;
+        }
         if let (Some(at), PressKind::Short) = (at, kind)
             && !disarming
             && !armed
