@@ -26,17 +26,18 @@ icon   = "lucide:save"
 label  = "Save"
 action = { type = "chord", keys = "ctrl+s" }
 
-[pages.keys.7]
+# Keys 7 and 8 are left to the global dial modifiers (#189).
+[pages.keys.4]
 icon   = "lucide:check"
 label  = "OK"
 action = { type = "exec", cmd = "true" }
 
-[pages.keys.8]
+[pages.keys.5]
 icon   = "lucide:x"
 label  = "Fail"
 action = { type = "exec", cmd = "exit 1" }
 
-[pages.keys.9]
+[pages.keys.6]
 icon   = "lucide:hammer"
 label  = "Slow"
 action = { type = "exec", cmd = "sleep 15" }

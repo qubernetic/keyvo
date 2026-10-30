@@ -47,6 +47,24 @@ icon   = "lucide:check"
 label  = "OK"
 action = { type = "exec", cmd = "true" }
 
+# Dial modifiers (#189): while key 7 is held the dial sets the screen
+# brightness instead of the volume, the roller steps it; a tap without a
+# turn sets 50 %. A tap on key 8 arms the zoom until the next press of any
+# key: the dial zooms the focused window, the roller keeps switching tabs.
+# Both show a ring and a dial badge while they have the dial.
+[pages.keys.7]
+icon     = "lucide:sun"
+label    = "Brightness"
+action   = { type = "exec", cmd = "brightnessctl set 50%" }
+dial     = { cw = { type = "exec", cmd = "brightnessctl set +5%" }, ccw = { type = "exec", cmd = "brightnessctl set 5%-" }, step = 6 }
+roller   = { cw = "KEY_BRIGHTNESSUP", ccw = "KEY_BRIGHTNESSDOWN", step = 4 }
+
+[pages.keys.8]
+icon     = "lucide:zoom-in"
+label    = "Zoom"
+modifier = "toggle"
+dial     = { cw = "ctrl+equal", ccw = "ctrl+minus", step = 12 }
+
 [[pages]]
 name = "general"
 
