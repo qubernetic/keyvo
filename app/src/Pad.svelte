@@ -20,10 +20,14 @@
   // daemon's recipe packs. An entry
   // dropped on a tile, or clicked in the catalogue with a tile selected,
   // selects that tile and hands it to the inspector: a tool sets the action
-  // type, a preset writes its default variant.
+  // type, a preset writes its default variant. Under the result line the
+  // Dialpad panel (Dialpad.svelte, #188): a control selected there pins the
+  // inspector like a key and opens its control editor, the catalogue then
+  // assigns to it, and a turn or a button press on the device pulses it.
   import { untrack } from "svelte";
 
   import Catalogue from "./Catalogue.svelte";
+  import Dialpad from "./Dialpad.svelte";
   import Inspector from "./Inspector.svelte";
   import Mirror from "./Mirror.svelte";
   import Notice from "./Notice.svelte";
@@ -31,6 +35,7 @@
   import TraceStrip from "./TraceStrip.svelte";
   import { catalogueOf } from "./lib/catalogue";
   import type { Daemon, Tile } from "./lib/daemon";
+  import { controlName, isRoller } from "./lib/dialpad";
   import { t } from "./lib/i18n";
   import {
     apply,
@@ -42,10 +47,17 @@
     summarize,
     type PadState,
   } from "./lib/pad";
-  import type { Editor, Target } from "./lib/editor";
+  import type { ControlTarget, Editor, Target } from "./lib/editor";
   import { difference, follow, pinOnSelect, pinPage, target, type Pinned } from "./lib/pin";
   import { contextPage, GLOBAL, leftOfContext, pageList, type ProfileSummary } from "./lib/profiles";
-  import type { DeviceStatus, PressKind, Recipes, TraceRecord, View } from "./lib/protocol";
+  import type {
+    Control,
+    DeviceStatus,
+    PressKind,
+    Recipes,
+    TraceRecord,
+    View,
+  } from "./lib/protocol";
   import { layout, RIGHT_FROM, type Columns } from "./lib/shell";
 
   let {
@@ -283,8 +295,56 @@
 
   function select(key: number) {
     selected = key;
+    selectedControl = undefined;
     const next = pinOnSelect(pinned, pad.view);
     if (next !== pinned) onpin?.(next);
+  }
+
+  /** The Dialpad control selected on the panel (#188); a key and a control
+   * are never selected together. */
+  let selectedControl: Control | undefined = $state();
+  /** The direction of a rotary the catalogue assigns to: the one the
+   * control editor last had the focus in. */
+  let direction: "cw" | "ccw" = $state("cw");
+
+  /** Selects `control`, pinned like a key: its profile is the one the
+   * inspector edits, and the pad moving on does not change it. */
+  function selectControl(control: Control) {
+    selectedControl = control;
+    selected = undefined;
+    direction = "cw";
+    const next = pinOnSelect(pinned, pad.view);
+    if (next !== pinned) onpin?.(next);
+  }
+
+  /** The control the inspector edits, in the profile it shows. */
+  const editingControl: ControlTarget | undefined = $derived(
+    selectedControl === undefined || shown === undefined
+      ? undefined
+      : { profile: shown.profile, control: selectedControl },
+  );
+  /** The control as the catalogue names it, with a rotary's direction. */
+  const catalogueControl = $derived(
+    selectedControl === undefined
+      ? undefined
+      : {
+          name: controlName(selectedControl),
+          ...(isRoller(selectedControl)
+            ? { direction: t(direction === "cw" ? "dialpad.cw" : "dialpad.ccw") }
+            : {}),
+        },
+  );
+  /** The catalogue entry the inspector applies to its control. */
+  let assignControl: { entry: string; target: ControlTarget; seq: number } | undefined = $state();
+
+  /** Hands the catalogue entry with key `entry` to the selected control,
+   * else to the selected key. */
+  function assignSelected(entry: string) {
+    if (editingControl !== undefined) {
+      assignControl = { entry, target: { ...editingControl }, seq: (assignControl?.seq ?? 0) + 1 };
+    } else if (editing !== undefined) {
+      hand(entry, editing);
+    }
   }
 
   /** The catalogue entry the inspector applies to its key. */
@@ -487,6 +547,17 @@
           </button>
         {/if}
       </p>
+      <!-- The Dialpad's panel under the mirror (#188); it moves to
+           Preferences > Devices later (§2). -->
+      <Dialpad
+        {editor}
+        status={reachable ? pad.dialpad : undefined}
+        profile={shown?.profile}
+        selected={selectedControl}
+        pulse={pad.pulse}
+        revision={pad.reloads + edits}
+        onselect={selectControl}
+      />
     </div>
     <div class="inspector scroll">
       <Inspector
@@ -505,6 +576,9 @@
         entries={columns.right ? undefined : catalogue}
         recipes={recipes.recipes}
         browse={columns.right ? undefined : browse}
+        control={editingControl}
+        {assignControl}
+        ondirection={(next) => (direction = next)}
       />
       <TraceStrip entries={pad.trace} {connecting} onopen={(entry, onFail) => ontrace?.(entry, onFail)} />
     </div>
@@ -515,11 +589,10 @@
           problems={recipes.problems}
           unread={recipesError}
           {selected}
+          control={catalogueControl}
           {active}
           {connected}
-          onassign={(entry) => {
-            if (editing !== undefined) hand(entry, editing);
-          }}
+          onassign={assignSelected}
         />
       </div>
     {:else if popover}
@@ -539,12 +612,13 @@
           problems={recipes.problems}
           unread={recipesError}
           {selected}
+          control={catalogueControl}
           {active}
           {connected}
           focus
           onassign={(entry) => {
-            if (editing === undefined) return;
-            hand(entry, editing);
+            if (editing === undefined && editingControl === undefined) return;
+            assignSelected(entry);
             closeBrowse();
           }}
         />

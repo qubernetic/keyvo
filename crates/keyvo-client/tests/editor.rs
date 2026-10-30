@@ -8,9 +8,13 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use keyvo_client::editor::{Editor, EditorError, Problem};
-use keyvo_core::edit::{BUILTIN_GLOBAL, EditError, KeyFields, ProfileFields};
-use keyvo_core::profile::KeySlot;
+use keyvo_client::editor::{ControlFields, Editor, EditorError, Problem};
+use keyvo_core::chord::Chord;
+use keyvo_core::dialpad::{ButtonSlot, Control};
+use keyvo_core::edit::{
+    BUILTIN_GLOBAL, ButtonFields, EditError, KeyFields, ProfileFields, RotaryFields,
+};
+use keyvo_core::profile::{Action, KeySlot};
 use keyvo_core::recipe::{self, Recipe};
 use serde::Deserialize;
 
@@ -505,4 +509,73 @@ fn the_path_of_a_profile_is_its_file_in_the_profiles_directory() {
         dirs.config().join("profiles/terminal.toml")
     );
     assert!(matches!(editor.path("../x"), Err(EditorError::BadId(_))));
+}
+
+#[test]
+fn a_dialpad_control_is_read_and_written_with_a_snapshot_and_undone() {
+    let global = format!("{BUILTIN_GLOBAL}\n[dialpad]\ndial = {{ cw = \"KEY_VOLUMEUP\" }}\n");
+    let dirs = Dirs::new(&[("global", &global)]);
+    let editor = dirs.editor();
+    let view = editor.control("global", Control::Dial).unwrap();
+    assert_eq!(
+        serde_json::to_value(&view).unwrap(),
+        serde_json::json!({
+            "path": dirs.config().join("profiles/global.toml"),
+            "fields": { "cw": { "type": "chord", "keys": "KEY_VOLUMEUP" } }
+        })
+    );
+    let fields = ControlFields::Rotary(RotaryFields {
+        cw: Some(Action::Chord {
+            keys: Chord::parse("KEY_BRIGHTNESSUP").unwrap(),
+        }),
+        ..RotaryFields::default()
+    });
+    let edited = editor
+        .set_control("global", Control::Dial, &fields, at(1))
+        .unwrap();
+    assert!(edited.snapshot.is_some());
+    assert!(
+        dirs.profile("global")
+            .contains("dial = { cw = \"KEY_BRIGHTNESSUP\" }")
+    );
+    editor
+        .set_control("global", Control::Dial, &edited.before, at(2))
+        .unwrap();
+    assert_eq!(dirs.profile("global"), global);
+    // A button keeps its on_fail, which the view shows.
+    let button = Control::Button(ButtonSlot::new(1).unwrap());
+    let fields = ControlFields::Button(ButtonFields {
+        label: Some("Mute".into()),
+        action: None,
+    });
+    editor
+        .set_control("global", button, &fields, at(3))
+        .unwrap();
+    assert_eq!(editor.control("global", button).unwrap().fields, fields);
+    // The fields of a button do not fit the dial.
+    let error = editor
+        .set_control("global", Control::Dial, &fields, at(4))
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "`dial` takes the fields of a dial or a roller"
+    );
+}
+
+#[test]
+fn control_fields_read_as_the_control_takes_them() {
+    let json = serde_json::json!({ "cw": "x" });
+    assert!(ControlFields::parse(Control::Dial, json).is_err());
+    let json = serde_json::json!({ "step": 3, "label": "Zoom" });
+    assert_eq!(
+        ControlFields::parse(Control::Roller, json).unwrap(),
+        ControlFields::Rotary(RotaryFields {
+            step: Some(3),
+            label: Some("Zoom".into()),
+            ..RotaryFields::default()
+        })
+    );
+    let json = serde_json::json!({ "step": 3 });
+    let button = Control::Button(ButtonSlot::new(2).unwrap());
+    assert!(ControlFields::parse(button, json).is_err());
 }

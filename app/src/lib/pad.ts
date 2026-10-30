@@ -2,12 +2,15 @@
 // of a subscription, the way keyvo_client::Mirror folds them on the Rust
 // side; and the one-line summary of a trace entry.
 import type { Update } from "./daemon";
+import { controlName } from "./dialpad";
 import { t } from "./i18n";
 import { GLOBAL } from "./profiles";
 import type {
   Action,
   Context,
+  Control,
   DeviceStatus,
+  DialpadStatus,
   Geometry,
   Status,
   TraceRecord,
@@ -47,6 +50,11 @@ export interface PadState {
   holding?: Context;
   /** The keys held down on the device, in key order. */
   held: number[];
+  /** The Dialpad; not connected until a report says otherwise. */
+  dialpad?: DialpadStatus;
+  /** The Dialpad control last turned or pressed on the device, for the
+   * panel's pulse; `seq` counts them, so the same control pulses again. */
+  pulse?: { control: Control; seq: number };
   /** The newest trace entries, newest first. */
   trace: TraceRecord[];
   /** Why the last reload failed, until one succeeds. */
@@ -74,6 +82,7 @@ export function fromStatus(status: Status, now = Date.now()): PadState {
   return {
     ...showing(initial(), status.view),
     device: status.device,
+    dialpad: status.dialpad ?? { connected: false },
     geometry: status.device.geometry,
     context: status.context,
     seen: status.device.connected ? now : undefined,
@@ -117,6 +126,11 @@ export function moved(rows: number[][], key: number, arrow: string): number {
   return target[Math.min(c, target.length - 1)] ?? key;
 }
 
+/** `state` with `control` as the newest pulse. */
+function pulsed(state: PadState, control: Control): PadState {
+  return { ...state, pulse: { control, seq: (state.pulse?.seq ?? 0) + 1 } };
+}
+
 /** `state` after `update`, received at `now`; `state` itself stays as it
  * was. */
 export function apply(state: PadState, update: Update, now = Date.now()): PadState {
@@ -131,6 +145,12 @@ export function apply(state: PadState, update: Update, now = Date.now()): PadSta
   const event = update.event;
   switch (event.event) {
     case "key": {
+      if (event.key === undefined) {
+        // A Dialpad button: it pulses on the panel, the mirror holds nothing.
+        return event.control === undefined || event.edge !== "press"
+          ? state
+          : pulsed(state, event.control);
+      }
       const held = state.held.filter((key) => key !== event.key);
       if (event.edge === "press") {
         held.push(event.key);
@@ -157,6 +177,12 @@ export function apply(state: PadState, update: Update, now = Date.now()): PadSta
         seen: device.connected ? now : state.seen,
       };
     }
+    case "dialpad": {
+      const { event: _, ...dialpad } = event;
+      return { ...state, dialpad };
+    }
+    case "dial":
+      return pulsed(state, event.roller);
     case "context": {
       const { event: _, ...context } = event;
       const before = state.context;
@@ -258,8 +284,11 @@ export function onFailLine(entry: TraceRecord): string {
  * action and what came of it, and the press's `onFail` run after it. An
  * `on_fail` entry alone says it is one. */
 export function summarize(entry: TraceRecord, onFail?: TraceRecord): string {
+  const long = entry.trigger.press === "long";
   const head = phrase([
-    t(entry.trigger.press === "long" ? "trace.keyLong" : "trace.key", { key: entry.key }),
+    entry.control === undefined
+      ? t(long ? "trace.keyLong" : "trace.key", { key: entry.key ?? "" })
+      : t(long ? "trace.controlLong" : "trace.control", { control: controlName(entry.control) }),
     entry.trigger.simulated ? t("trace.simulated") : undefined,
     entry.layer === undefined ? undefined : t("layer", { layer: entry.layer }),
   ]);
@@ -283,6 +312,7 @@ function samePress(a: TraceRecord, b: TraceRecord): boolean {
   return (
     a.timestamp_ms === b.timestamp_ms &&
     a.key === b.key &&
+    a.control === b.control &&
     a.profile === b.profile &&
     a.page === b.page &&
     a.trigger.press === b.trigger.press &&

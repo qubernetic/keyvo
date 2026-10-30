@@ -275,11 +275,7 @@ impl<S: Read + Write> Client<S> {
     /// As [`Client::request`], and when the daemon answers with another
     /// reply.
     pub fn dry_run(&mut self, key: KeySlot, kind: PressKind) -> Result<TraceRecord, ClientError> {
-        match self.request(Command::Press {
-            key,
-            kind,
-            dry_run: true,
-        })? {
+        match self.request(Command::press(key, kind, true))? {
             Reply::Pressed(pressed) => Ok(pressed.entry),
             _ => Err(ClientError::Unexpected("press")),
         }

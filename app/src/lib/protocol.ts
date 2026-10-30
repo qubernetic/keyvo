@@ -16,7 +16,8 @@ export type EventClass =
   | "context"
   | "trace"
   | "config"
-  | "session";
+  | "session"
+  | "dial";
 
 export const EVENT_CLASSES: readonly EventClass[] = [
   "key",
@@ -28,7 +29,12 @@ export const EVENT_CLASSES: readonly EventClass[] = [
   "trace",
   "config",
   "session",
+  "dial",
 ];
+
+/** Every event name: the classes, and `dialpad`, an event of class
+ * `device`. */
+const EVENT_NAMES: readonly string[] = [...EVENT_CLASSES, "dialpad"];
 
 export type Mode = "auto" | "manual";
 export type PressKind = "short" | "long";
@@ -49,10 +55,38 @@ export interface View {
   locked?: boolean;
 }
 
+/** A rotary control of the Dialpad: `dial` the large knob, `roller` the
+ * small wheel (spec §7.2). */
+export type Roller = "dial" | "roller";
+
+/** The Dialpad buttons, counted from 1. */
+export const DIAL_BUTTONS = 4;
+
+/** A Dialpad control as the socket names it: a rotary, or `button:N` with
+ * N from 1 to DIAL_BUTTONS. */
+export type Control = Roller | `button:${number}`;
+
+const BUTTON = /^button:(\d)$/;
+
+/** `text` as a Dialpad control; undefined when it names none. */
+export function controlOf(text: string): Control | undefined {
+  if (text === "dial" || text === "roller") return text;
+  const button = Number(BUTTON.exec(text)?.[1] ?? 0);
+  return button >= 1 && button <= DIAL_BUTTONS ? `button:${button}` : undefined;
+}
+
 export type Command =
   | { cmd: "status" }
   | { cmd: "subscribe"; events?: EventClass[]; replay?: number }
   | { cmd: "press"; key: number; kind?: PressKind; dry_run?: boolean }
+  | {
+      cmd: "press";
+      control: Control;
+      /** Detents of a turn, clockwise positive; a button has none. */
+      delta?: number;
+      kind?: PressKind;
+      dry_run?: boolean;
+    }
   | { cmd: "reload" }
   | { cmd: "notify_context"; class: string; title?: string }
   | { cmd: "recipes" };
@@ -89,6 +123,22 @@ export interface DeviceStatus {
   error?: string;
 }
 
+/** One rotary of a connected Dialpad and its detents per revolution. */
+export interface RollerStatus {
+  roller: Roller;
+  increments: number;
+}
+
+/** The Dialpad as the daemon sees it, behind the Bolt receiver. */
+export interface DialpadStatus {
+  connected: boolean;
+  /** The receiver slot; present while connected. */
+  slot?: number;
+  /** Present while connected. */
+  rollers?: RollerStatus[];
+  error?: string;
+}
+
 export interface Context {
   class: string;
   title: string;
@@ -104,6 +154,8 @@ export interface Status {
   /** The configuration directory the daemon loads; the app edits this tree. */
   config_dir: string;
   device: DeviceStatus;
+  /** Absent from a daemon before the Dialpad; read it as not connected. */
+  dialpad?: DialpadStatus;
   view: View;
   context?: Context;
   /** Entries in the daemon's trace ring buffer. */
@@ -138,7 +190,10 @@ export interface TraceRecord {
   trigger: { press: PressKind; simulated: boolean };
   profile: string;
   page: number;
-  key: number;
+  /** The Keypad key; absent for a Dialpad control. */
+  key?: number;
+  /** The Dialpad control; absent for a Keypad key. */
+  control?: Control;
   /** Absent when no layer defines the key. */
   layer?: Layer;
   action: Action | null;
@@ -151,6 +206,8 @@ export interface TraceRecord {
 
 export interface Pressed {
   entry: TraceRecord;
+  /** The runs of a turn's action; absent for a key or a button. */
+  runs?: number;
 }
 
 /** A catalogue group (spec §7.5). */
@@ -201,9 +258,25 @@ export type Response =
   | { id?: unknown; ok: false; error: ErrorBody };
 
 export type Event =
-  | { event: "key"; key: number; edge: "press" | "release" }
+  | {
+      event: "key";
+      /** The Keypad key; absent for a Dialpad button. */
+      key?: number;
+      /** The Dialpad button; absent for a Keypad key. */
+      control?: Control;
+      edge: "press" | "release";
+    }
   | ({ event: "profile" | "page" | "mode" } & View)
   | ({ event: "device" } & DeviceStatus)
+  | ({ event: "dialpad" } & DialpadStatus)
+  | {
+      event: "dial";
+      roller: Roller;
+      /** Detents, clockwise positive. */
+      delta: number;
+      /** The runs of the bound action the turn gave. */
+      actions: number;
+    }
   | ({ event: "context" } & Context)
   | { event: "trace"; entry: TraceRecord }
   | { event: "config"; reloaded: boolean; error?: string }
@@ -276,7 +349,7 @@ export function requestLine(request: Request): string {
 export function parseServerMessage(line: string): ServerMessage {
   const fields = envelope(line);
   if ("event" in fields) {
-    if (typeof fields.event !== "string" || !(EVENT_CLASSES as string[]).includes(fields.event)) {
+    if (typeof fields.event !== "string" || !EVENT_NAMES.includes(fields.event)) {
       throw new ProtocolError("invalid_message", `unknown event ${JSON.stringify(fields.event)}`);
     }
     return { kind: "event", event: fields as Event };

@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { KeyFields } from "./editor";
+import type { Editor, KeyFields } from "./editor";
 import type { ProfileFields } from "./profiles";
 import { parseServerMessage, type Event, type Recipes, type Reply } from "./protocol";
 
@@ -150,6 +150,14 @@ export function responses(): Reply[] {
     message.kind === "response" && message.response.ok ? [message.response.result] : [],
   );
 }
+
+/** The Dialpad half of an Editor for a test of keys: no profile binds a
+ * control, and a control write is refused. */
+export const UNBOUND_CONTROLS: Pick<Editor, "control" | "editControl"> = {
+  control: ({ profile }) =>
+    Promise.resolve({ path: `/home/u/.config/keyvo/profiles/${profile}.toml`, fields: {} }),
+  editControl: () => Promise.reject(new Error("no control is written in this test")),
+};
 
 /** One bad chord of tests/protocol-fixtures/chord/chords.json: the error
  * as keyvo_core::chord::ChordError names it, and the token it names. */

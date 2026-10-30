@@ -9,7 +9,8 @@ import { eventsOf, nth, responses } from "./lib/fixtures";
 import type { TraceRecord } from "./lib/protocol";
 
 /** The fixture entries: chord sent, exec exited 101, its on_fail run, exec
- * failed, dry run, unbound, launch started, blocked under the session lock. */
+ * failed, dry run, unbound, launch started, blocked under the session lock,
+ * then a dial turn sent and a roller turn blocked. */
 const ENTRIES = eventsOf("trace").map((event) => event.entry);
 
 function drawer(entry: TraceRecord, onclose = vi.fn()) {
@@ -55,6 +56,14 @@ describe("TraceDrawer", () => {
     const result = section(dialog, "Result");
     expect(value(result, "Status")).toBe("sent");
     expect(value(result, "Key events")).toBe("29 down, 25 down, 25 up, 29 up");
+  });
+
+  it("names the Dialpad control of a turn where a key shows its number", () => {
+    const { dialog } = drawer(nth(ENTRIES, 8));
+    const trigger = section(dialog, "Trigger");
+    expect(value(trigger, "Control")).toBe("Dial");
+    expect(within(trigger).queryByText("Key", { selector: "dt" })).toBeNull();
+    expect(value(section(dialog, "Resolved action"), "Keys")).toBe("KEY_VOLUMEUP");
   });
 
   it("shows an exec's exit code and duration", () => {

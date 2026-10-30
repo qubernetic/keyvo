@@ -5,9 +5,10 @@
 // reply (spec §7.5); the raw tools Chord, Exec and Launch close General. A key
 // never names its pack, so the recipe a key carries is found from its icon
 // and action.
-import { actionForm, type Form, type KeyFields } from "./editor";
+import { isRoller } from "./dialpad";
+import { actionForm, type ActionPart, type ControlForm, type Form, type KeyFields } from "./editor";
 import { t, type MessageKey } from "./i18n";
-import type { Action, Recipe, RecipeGroup } from "./protocol";
+import type { Action, Control, Recipe, RecipeGroup } from "./protocol";
 import { tileIconValue } from "./tileIcons";
 
 export type GroupId = RecipeGroup;
@@ -106,6 +107,35 @@ export function applied(entry: CatalogueEntry, form: Form): Form {
   const tool = TOOLS.find((candidate) => candidate.id === entry.id);
   if (tool === undefined) return form;
   return { ...form, ...actionForm(undefined), actionType: tool.id as ToolId };
+}
+
+/** `part` with `entry`'s action: a tool's type with an empty field, a
+ * preset's default variant; `part` itself for an unknown tool. */
+export function appliedAction(entry: CatalogueEntry, part: ActionPart): ActionPart {
+  if (entry.recipe !== undefined) {
+    const first = entry.recipe.variants[0];
+    return first === undefined ? part : actionForm(first.action);
+  }
+  const tool = TOOLS.find((candidate) => candidate.id === entry.id);
+  return tool === undefined ? part : { ...actionForm(undefined), actionType: tool.id as ToolId };
+}
+
+/** `form` with `entry` assigned to the Dialpad `control` (#188): a
+ * button's action, and a preset's label with it as a recipe writes a
+ * key's; the `direction` of a rotary, the field last edited, its label
+ * kept. */
+export function appliedToControl(
+  entry: CatalogueEntry,
+  control: Control,
+  direction: "cw" | "ccw",
+  form: ControlForm,
+): ControlForm {
+  if (isRoller(control)) return { ...form, [direction]: appliedAction(entry, form[direction]) };
+  return {
+    ...form,
+    ...(entry.recipe === undefined ? {} : { label: entry.recipe.label }),
+    action: appliedAction(entry, form.action),
+  };
 }
 
 /** The `DataTransfer` type a dragged entry is carried under. */

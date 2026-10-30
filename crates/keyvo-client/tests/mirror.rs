@@ -7,6 +7,7 @@ use keyvo_client::Mirror;
 use keyvo_core::profile::KeySlot;
 use keyvo_core::socket::{Event, Reply, Response, ServerMessage};
 use keyvo_core::state::{Mode, View};
+use keyvo_core::trace::TraceRecord;
 
 macro_rules! fixture {
     ($name:literal) => {
@@ -202,13 +203,13 @@ fn the_trace_keeps_the_newest_entries() {
     for event in &traces {
         mirror.apply(event);
     }
-    let keys: Vec<u8> = mirror.trace().iter().map(|e| e.key.get()).collect();
-    let expected: Vec<u8> = traces[traces.len() - 2..]
+    let kept: Vec<&TraceRecord> = mirror.trace().iter().collect();
+    let expected: Vec<&TraceRecord> = traces[traces.len() - 2..]
         .iter()
         .map(|e| match e {
-            Event::Trace { entry } => entry.key.get(),
+            Event::Trace { entry } => entry,
             _ => unreachable!(),
         })
         .collect();
-    assert_eq!(keys, expected);
+    assert_eq!(kept, expected);
 }

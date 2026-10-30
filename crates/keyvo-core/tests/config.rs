@@ -342,3 +342,15 @@ fn durations_serialize_as_milliseconds_and_read_back() {
         Ok(config)
     );
 }
+
+#[test]
+fn the_dialpad_caps_the_runs_of_one_turn_at_eight_by_default() {
+    let path = Path::new("config.toml");
+    assert_eq!(Config::default().dialpad.max_per_event.get(), 8);
+    let config = Config::from_toml("[dialpad]\nmax_per_event = 2\n", path).unwrap();
+    assert_eq!(config.dialpad.max_per_event.get(), 2);
+    let error = Config::from_toml("[dialpad]\nmax_per_event = 0\n", path).unwrap_err();
+    assert_eq!(error.position.map(|p| p.line), Some(2));
+    let error = Config::from_toml("[dialpad]\nstep = 2\n", path).unwrap_err();
+    assert!(error.message.contains("unknown field `step`"), "{error}");
+}

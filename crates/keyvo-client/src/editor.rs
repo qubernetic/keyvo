@@ -1,5 +1,6 @@
-//! The editors' file side (spec §10, `docs/design/gui-ux.md` §3.2, §4.1):
-//! a key or the profile header (name, accent) of a profile file read and
+//! The editors' file side (spec §10, `docs/design/gui-ux.md` §3.2, §3.3,
+//! §4.1): a key, a Dialpad control or the profile header (name, accent) of
+//! a profile file read and
 //! written through `keyvo-core`'s round-trip edit, a snapshot of the file
 //! before every write, the write atomic. The daemon's inotify watch then reloads and repaints.
 
@@ -8,7 +9,11 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use keyvo_core::diagnostic::Diagnostic;
-use keyvo_core::edit::{BUILTIN_GLOBAL, EditError, KeyFields, ProfileDocument, ProfileFields};
+use keyvo_core::dialpad::Control;
+use keyvo_core::edit::{
+    BUILTIN_GLOBAL, ButtonFields, EditError, KeyFields, ProfileDocument, ProfileFields,
+    RotaryFields,
+};
 use keyvo_core::layout::SNAPSHOTS;
 use keyvo_core::profile::{Action, GLOBAL_ID, KeySlot, is_valid_id};
 use keyvo_core::recipe::Recipe;
@@ -43,6 +48,9 @@ pub enum EditorError {
     /// The key cannot be edited.
     #[error(transparent)]
     Edit(#[from] EditError),
+    /// The fields do not fit the control.
+    #[error("{0}")]
+    Fields(String),
     /// The recipe has no variant of that id.
     #[error("recipe `{recipe}` has no variant `{variant}`")]
     NoVariant {
@@ -152,6 +160,66 @@ pub struct ProfileEdited {
     pub before: ProfileFields,
     /// The fields written.
     pub fields: ProfileFields,
+    /// The copy of the file taken before the write; none when nothing was
+    /// written or the file did not exist yet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<PathBuf>,
+}
+
+/// The editable fields of a Dialpad control: the dial's and the roller's,
+/// or a button's. Written as the inner fields alone; [`ControlFields::parse`]
+/// reads them as the control takes them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+pub enum ControlFields {
+    /// `cw`, `ccw`, `step`, `label` of the dial or the roller.
+    Rotary(RotaryFields),
+    /// `label` and `action` of a button.
+    Button(ButtonFields),
+}
+
+impl ControlFields {
+    /// `value` as the fields `control` takes.
+    ///
+    /// # Errors
+    ///
+    /// When `value` is not such fields, with the reason.
+    pub fn parse(control: Control, value: serde_json::Value) -> Result<Self, String> {
+        let invalid = |error: serde_json::Error| format!("invalid {control} fields: {error}");
+        if control.roller().is_some() {
+            serde_json::from_value(value)
+                .map(Self::Rotary)
+                .map_err(invalid)
+        } else {
+            serde_json::from_value(value)
+                .map(Self::Button)
+                .map_err(invalid)
+        }
+    }
+}
+
+/// A Dialpad control of a profile's `[dialpad]` table as the editor shows
+/// it: the profile's own binding, never the global one under it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ControlView {
+    /// The profile file.
+    pub path: PathBuf,
+    /// The control's fields; all absent when the table does not bind it.
+    pub fields: ControlFields,
+    /// A button's `on_fail`, shown read-only like a key's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_fail: Option<Action>,
+}
+
+/// What a write of a Dialpad control did.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ControlEdited {
+    /// The profile file.
+    pub path: PathBuf,
+    /// The fields before the write, for undo.
+    pub before: ControlFields,
+    /// The fields written.
+    pub fields: ControlFields,
     /// The copy of the file taken before the write; none when nothing was
     /// written or the file did not exist yet.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -288,6 +356,74 @@ impl Editor {
             self.write(&path, &doc, now)?
         };
         Ok(ProfileEdited {
+            path,
+            before,
+            fields: fields.clone(),
+            snapshot,
+        })
+    }
+
+    /// The fields of `control` in the `[dialpad]` table of profile `id`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Editor::set_control`], without the write errors.
+    pub fn control(&self, id: &str, control: Control) -> Result<ControlView, EditorError> {
+        let (path, doc) = self.open(id)?;
+        let (fields, on_fail) = match (control.roller(), control) {
+            (Some(roller), _) => (ControlFields::Rotary(doc.rotary(roller)), None),
+            (None, Control::Button(slot)) => (
+                ControlFields::Button(doc.button(slot)),
+                doc.button_on_fail(slot),
+            ),
+            (None, _) => (ControlFields::Button(ButtonFields::default()), None),
+        };
+        Ok(ControlView {
+            path,
+            fields,
+            on_fail,
+        })
+    }
+
+    /// Sets the fields of `control` in the `[dialpad]` table of profile
+    /// `id` like [`Editor::set_key`] sets a key's.
+    ///
+    /// # Errors
+    ///
+    /// [`EditorError::Fields`] when `fields` are not the control's kind,
+    /// else as [`Editor::set_key`].
+    pub fn set_control(
+        &self,
+        id: &str,
+        control: Control,
+        fields: &ControlFields,
+        now: SystemTime,
+    ) -> Result<ControlEdited, EditorError> {
+        let (path, mut doc) = self.open(id)?;
+        let before = match (control.roller(), control, fields) {
+            (Some(roller), _, ControlFields::Rotary(fields)) => {
+                ControlFields::Rotary(doc.set_rotary(roller, fields)?)
+            }
+            (None, Control::Button(slot), ControlFields::Button(fields)) => {
+                ControlFields::Button(doc.set_button(slot, fields)?)
+            }
+            (Some(_), ..) => {
+                return Err(EditorError::Fields(format!(
+                    "`{control}` takes the fields of a dial or a roller"
+                )));
+            }
+            (None, ..) => {
+                return Err(EditorError::Fields(format!(
+                    "`{control}` takes the fields of a button"
+                )));
+            }
+        };
+        let snapshot = if before == *fields {
+            None
+        } else {
+            self.write(&path, &doc, now)?
+        };
+        Ok(ControlEdited {
             path,
             before,
             fields: fields.clone(),

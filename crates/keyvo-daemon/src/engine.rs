@@ -7,11 +7,16 @@
 //! (`keyvo_core::state`): the focused window and the page buttons. Key
 //! states belong to a key of one profile page, so a running `exec` keeps
 //! its look on its own page and never shows on another profile.
+//!
+//! The Dialpad's turns and button presses resolve on the active profile's
+//! `[dialpad]` table over the global one (`keyvo_core::dialpad`); its
+//! controls have no display and no look.
 
 use std::collections::BTreeMap;
 use std::time::{Instant, SystemTime};
 
 use keyvo_core::config::Config;
+use keyvo_core::dialpad::{self, Bindings, ButtonSlot, Control, Roller, Turn, Turns};
 use keyvo_core::feedback::{Feedback, Look};
 use keyvo_core::focus::WindowContext;
 use keyvo_core::layout::Loaded;
@@ -37,6 +42,8 @@ pub struct Engine {
     state: State,
     keys: u8,
     feedback: BTreeMap<KeyId, Feedback>,
+    /// The detents below one `step` each roller carries.
+    turns: Turns,
 }
 
 impl Engine {
@@ -53,6 +60,7 @@ impl Engine {
             state,
             keys: 0,
             feedback: BTreeMap::new(),
+            turns: Turns::default(),
         }
     }
 
@@ -75,6 +83,8 @@ impl Engine {
         self.loaded = loaded;
         self.state
             .reload(&self.loaded.config, &self.loaded.profiles);
+        // The bindings may have changed their step.
+        self.turns.clear();
     }
 
     /// The profile, page and mode the pad shows.
@@ -228,11 +238,87 @@ impl Engine {
             .min()
     }
 
-    fn feedback(&mut self, record: &TraceRecord) -> &mut Feedback {
+    /// The look of the key `record` pressed; `None` for a Dialpad control,
+    /// which has no display.
+    fn feedback(&mut self, record: &TraceRecord) -> Option<&mut Feedback> {
         let render = self.loaded.config.render;
-        self.feedback
-            .entry((record.profile.clone(), record.page, record.key))
-            .or_insert_with(|| Feedback::new(&render))
+        let key = record.key?;
+        Some(
+            self.feedback
+                .entry((record.profile.clone(), record.page, key))
+                .or_insert_with(|| Feedback::new(&render)),
+        )
+    }
+
+    /// The Dialpad bindings of the active profile over the global ones.
+    fn bindings(&self) -> Bindings<'_> {
+        Bindings::new(&self.loaded.profiles, self.active())
+    }
+
+    /// Resolves a turn of `roller` by `delta` detents on the active
+    /// profile, a roller the profile leaves out on the global one: the
+    /// action of the direction and how often it runs (`step` detents a run,
+    /// the rest carried, at most `[dialpad].max_per_event`). A turn is no
+    /// pad activity: the page return keeps running. While the session is
+    /// locked nothing is resolved: [`BLOCKED_LOCKED`], no run.
+    pub fn turn(&mut self, roller: Roller, delta: i32, simulated: bool, at: SystemTime) -> Turn {
+        let trigger = dialpad::turn_trigger(simulated);
+        let page = self.page();
+        if self.state.locked() {
+            return Turn {
+                record: dialpad::blocked(
+                    &self.active().profile.id,
+                    page,
+                    roller.into(),
+                    trigger,
+                    at,
+                    BLOCKED_LOCKED,
+                ),
+                runs: 0,
+            };
+        }
+        let max = self.loaded.config.dialpad.max_per_event.get();
+        let view = self.state.view(&self.loaded.profiles);
+        let profiles = &self.loaded.profiles;
+        let active = profiles
+            .get(&view.profile)
+            .unwrap_or_else(|| profiles.global());
+        dialpad::turn(
+            &Bindings::new(profiles, active),
+            page,
+            roller,
+            delta,
+            (trigger, at),
+            &mut self.turns,
+            max,
+        )
+    }
+
+    /// Resolves a press of Dialpad button `slot` like a key's: the active
+    /// profile's button, else the global one; [`BLOCKED_LOCKED`] under the
+    /// lock.
+    pub fn button(&mut self, slot: ButtonSlot, trigger: Trigger, at: SystemTime) -> TraceRecord {
+        let page = self.page();
+        if self.state.locked() {
+            return dialpad::blocked(
+                &self.active().profile.id,
+                page,
+                Control::Button(slot),
+                trigger,
+                at,
+                BLOCKED_LOCKED,
+            );
+        }
+        dialpad::press(&self.bindings(), page, slot, trigger, at)
+    }
+
+    /// The `on_fail` of Dialpad button `slot`, from the layer that supplies
+    /// the button.
+    #[must_use]
+    pub fn button_on_fail(&self, slot: ButtonSlot) -> Option<Action> {
+        self.bindings()
+            .button(slot)
+            .and_then(|(button, _)| button.on_fail.clone())
     }
 
     /// Resolves a press of `slot` on the active profile and page, a key the
@@ -255,8 +341,10 @@ impl Engine {
             || press::unbound(&self.active().profile.id, self.page(), slot, trigger, at),
             |stack| press::resolve(&stack, slot, trigger, at),
         );
-        if !trigger.simulated {
-            self.feedback(&record).pressed();
+        if !trigger.simulated
+            && let Some(feedback) = self.feedback(&record)
+        {
+            feedback.pressed();
         }
         record
     }
@@ -271,12 +359,16 @@ impl Engine {
 
     /// The action of the press `record` started running at `now`.
     pub fn started(&mut self, record: &TraceRecord, now: Instant) {
-        self.feedback(record).started(now);
+        if let Some(feedback) = self.feedback(record) {
+            feedback.started(now);
+        }
     }
 
     /// The action of the press `record` ended at `now` with its result.
     pub fn finished(&mut self, record: &TraceRecord, now: Instant) {
-        self.feedback(record).finished(&record.result, now);
+        if let Some(feedback) = self.feedback(record) {
+            feedback.finished(&record.result, now);
+        }
     }
 }
 
@@ -630,6 +722,57 @@ action = { type = "exec", cmd = "true" }
         engine.session(Session::Unlocked);
         // The error look of before the lock is still there.
         assert_eq!(engine.specs(now)[0].look, Look::Error);
+    }
+
+    const DIALPAD: &str = "\n[dialpad]\ndial = { cw = \"KEY_VOLUMEUP\", ccw = \"KEY_VOLUMEDOWN\", step = 2 }\n\
+                           [dialpad.buttons.1]\naction = { type = \"exec\", cmd = \"false\" }\n\
+                           on_fail = { type = \"exec\", cmd = \"true\" }\n";
+
+    #[test]
+    fn a_turn_and_a_button_resolve_on_the_global_table_under_an_app_profile() {
+        let global = format!("{GLOBAL}{DIALPAD}");
+        let mut engine = Engine::new(loaded_with(&[&global, CODE]));
+        engine.set_key_count(9);
+        let now = Instant::now();
+        focus_code(&mut engine, now);
+        let at = SystemTime::UNIX_EPOCH;
+        let turn = engine.turn(Roller::Dial, 5, false, at);
+        assert_eq!((turn.runs, turn.record.layer), (2, Some(Layer::Global)));
+        assert_eq!(turn.record.profile, "code");
+        // The detent left over carries.
+        assert_eq!(engine.turn(Roller::Dial, 1, false, at).runs, 1);
+        assert_eq!(
+            engine.turn(Roller::Roller, 3, false, at).record.result,
+            Outcome::Unbound
+        );
+        let button = ButtonSlot::new(1).unwrap();
+        let press = engine.button(button, short(), at);
+        assert!(matches!(press.action, Some(Action::Exec { .. })));
+        assert!(engine.button_on_fail(button).is_some());
+        // A button has no look; its run leaves the keys alone.
+        engine.started(&press, now);
+        assert_eq!(engine.next_change(now), None);
+        assert!(engine.specs(now).iter().all(|spec| spec.look == Look::Idle));
+    }
+
+    #[test]
+    fn a_turn_or_a_button_under_the_lock_is_blocked() {
+        let mut engine = Engine::new(loaded(&format!("{GLOBAL}{DIALPAD}")));
+        engine.session(Session::Locked);
+        let at = SystemTime::UNIX_EPOCH;
+        let turn = engine.turn(Roller::Dial, 4, false, at);
+        assert_eq!(turn.runs, 0);
+        assert_eq!(
+            turn.record.result,
+            Outcome::Blocked {
+                reason: BLOCKED_LOCKED.into()
+            }
+        );
+        let button = engine.button(ButtonSlot::new(1).unwrap(), short(), at);
+        assert_eq!((button.action, button.layer), (None, None));
+        engine.session(Session::Unlocked);
+        // Nothing carried from the turn under the lock.
+        assert_eq!(engine.turn(Roller::Dial, 1, false, at).runs, 0);
     }
 
     #[test]

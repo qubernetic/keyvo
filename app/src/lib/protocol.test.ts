@@ -7,11 +7,13 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+  controlOf,
   EVENT_CLASSES,
   ProtocolError,
   parseRequest,
   parseServerMessage,
   requestLine,
+  type Pressed,
   type Recipes,
   type ServerMessage,
   type Status,
@@ -77,9 +79,19 @@ describe("server messages", () => {
       }
       expect(json(serverLine(message)), line).toEqual(json(line));
     }
-    expect([...classes].sort()).toEqual(
-      ["config", "context", "device", "key", "mode", "page", "profile", "session", "trace"],
-    );
+    expect([...classes].sort()).toEqual([
+      "config",
+      "context",
+      "device",
+      "dial",
+      "dialpad",
+      "key",
+      "mode",
+      "page",
+      "profile",
+      "session",
+      "trace",
+    ]);
   });
 
   it("views carry locked, a lock is a session event, a blocked press says why", () => {
@@ -132,12 +144,84 @@ describe("server messages", () => {
     expect(statuses.map((status) => status.config_dir)).toEqual([
       "/home/u/.config/keyvo",
       "/home/u/.config/keyvo",
+      "/home/u/.config/keyvo",
     ]);
     const [connected, missing] = statuses;
     expect(connected?.device.geometry?.tile).toEqual({ width: 118, height: 118 });
     expect(connected?.device.geometry?.rects).toHaveLength(connected?.device.keys ?? 0);
     expect(connected?.device.geometry?.rects[1]).toEqual({ x: 182, y: 7, width: 118, height: 118 });
     expect(missing?.device.geometry).toBeUndefined();
+  });
+
+  it("the status reply carries the Dialpad block, with its slot and rollers while connected", () => {
+    const statuses = fixture("responses.ndjson")
+      .map(parseServerMessage)
+      .flatMap((message) =>
+        message.kind === "response" && message.response.ok && "config_dir" in message.response.result
+          ? [message.response.result as Status]
+          : [],
+      );
+    expect(statuses.map((status) => status.dialpad?.connected)).toEqual([false, false, true]);
+    expect(statuses[2]?.dialpad).toEqual({
+      connected: true,
+      slot: 3,
+      rollers: [
+        { roller: "roller", increments: 40 },
+        { roller: "dial", increments: 180 },
+      ],
+    });
+  });
+
+  it("a Dialpad is its own event, a turn a dial event, a button a key event without a key", () => {
+    const events = fixture("events.ndjson").flatMap((line) => {
+      const message = parseServerMessage(line);
+      return message.kind === "event" ? [message.event] : [];
+    });
+    expect(events.filter((event) => event.event === "dialpad").map((event) => event.connected)).toEqual([
+      true,
+      false,
+    ]);
+    expect(events.filter((event) => event.event === "dial")).toEqual([
+      { event: "dial", roller: "dial", delta: 3, actions: 3 },
+      { event: "dial", roller: "roller", delta: -1, actions: 0 },
+    ]);
+    expect(events).toContainEqual({ event: "key", control: "button:1", edge: "press" });
+    const controls = events.flatMap((event) =>
+      event.event === "trace" && event.entry.control !== undefined ? [event.entry] : [],
+    );
+    expect(controls.map((entry) => [entry.control, entry.key])).toEqual([
+      ["dial", undefined],
+      ["roller", undefined],
+    ]);
+    expect(EVENT_CLASSES.at(-1)).toBe("dial");
+    expect(EVENT_CLASSES).toHaveLength(10);
+  });
+
+  it("a press of a Dialpad control names it, and a turn's reply counts its runs", () => {
+    const presses = fixture("requests.ndjson")
+      .map(parseRequest)
+      .filter((request) => request.cmd === "press" && "control" in request);
+    expect(presses).toEqual([
+      { id: 9, cmd: "press", control: "dial", delta: 3, kind: "short", dry_run: true },
+      { id: 10, cmd: "press", control: "button:2", kind: "long", dry_run: false },
+    ]);
+    const last = fixture("responses.ndjson").map(parseServerMessage).at(-1);
+    const pressed =
+      last?.kind === "response" && last.response.ok ? (last.response.result as Pressed) : undefined;
+    expect(pressed?.runs).toBe(3);
+    expect(pressed?.entry.control).toBe("dial");
+  });
+
+  it.each([
+    ["dial", "dial"],
+    ["roller", "roller"],
+    ["button:1", "button:1"],
+    ["button:4", "button:4"],
+    ["button:0", undefined],
+    ["button:5", undefined],
+    ["knob", undefined],
+  ])("the control %s reads as %s", (text, control) => {
+    expect(controlOf(text)).toBe(control);
   });
 
   it("the recipes request and its answers round-trip", () => {

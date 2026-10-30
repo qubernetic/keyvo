@@ -274,7 +274,8 @@ and hands the commands to the controller (§8). Its end-to-end tests drive
 the controller with `FakeHidTransport` pads, a `FakeInputInjector`, a
 `FakeWindowWatcher`, a `FakeSessionWatcher`, socket clients and a
 configuration directory on disk. Run it with `just build`, then `bin/keyvo-daemon [--config-dir DIR]
-[--device PATH] [--socket PATH]` on the host; logs go to stderr.
+[--device PATH] [--dialpad-device PATH] [--socket PATH]` on the host;
+logs go to stderr.
 
 Core rendering is, as the target, the pure function
 
@@ -286,8 +287,10 @@ so the whole context engine is testable without a device. As built
 (pre-alpha) it is `keyvo_core::render::page(stack, keys)`: the specs of
 keys 1 to `keys` of one page over the global layer
 (`keyvo_core::stack::Stack`, §6.1); the state machine picks the profile
-and page, overlays and dialpad bindings are not built yet, and the
-accent is read from the profile on top.
+and page, overlays are not built yet, and the accent is read from the
+profile on top. The dialpad bindings (beta, #188) are the profile's
+`[dialpad]` table over the global one, `keyvo_core::dialpad::Bindings`
+(§7.2); they belong to the profile, not to a page.
 
 ### 4.2 Device ownership (Windows coexistence)
 
@@ -893,8 +896,25 @@ on a timer.
   (`DialpadEvent::LinkLost`), the link established re-sends every divert
   after the settle (`DialpadEvent::Rediverted`). Reports of other slots
   and of other software are skipped; the DJ reports (`0x20`, `0x21`) do
-  not parse as frames and are dropped and counted. The daemon does not
-  drive the Dialpad yet (#188); `keyvo dial` does (§5.10).
+  not parse as frames and are dropped and counted. `keyvo dial` drives
+  the Dialpad by hand (§5.10), the daemon since #188 (below).
+- As built in the daemon (beta, #188; `keyvo_daemon::dialpad`): a second
+  device actor on its own thread and transport, next to the Keypad's, so
+  either device may be absent and neither waits for the other. Its
+  connector opens `--dialpad-device` (a node sysfs knows as a Bluetooth
+  Dialpad is reached on `0xff`, any other as a receiver) or the Bolt
+  receiver's HID++ node found under sysfs on every attempt. Without a
+  receiver, or after the transport fails, it reports why once (the
+  `dialpad` block's `error`, §8) and opens it again after
+  `[timing].reconnect_interval`; a receiver whose Dialpad does not answer
+  is reported once (`no Dialpad answers (<slots>); waiting for it`) and
+  searched again on the receiver's arrival for it or after the same
+  interval. Connected, it reports the slot and the rollers, every turn
+  (`roller id`, `delta`) and every button edge (1 to 4); the link lost and
+  the re-divert are logged. It reads at most `[timing].render_coalesce`
+  at a time and gives the diverts back on a clean stop. The controller
+  resolves turns and presses on the profiles (§7.2) and runs them through
+  the paths of a key press (§8).
 - Measured over Bolt from cold (#187, part 1, 2026-10-29): with the
   Dialpad awake the search finds slot 3 and every expected value; from
   sleep the first replies are slow and a late reply comes twice, which the
@@ -1356,7 +1376,10 @@ view; the socket reports them as `session` events (§8). An animated lock
   working page of a whole session, so each side has its own time:
   `[timing].page_return_global` (10 s) for index 0 and below,
   `[timing].page_return_own` (0, off) for index 2 and above; 0 turns a
-  side off. An app switch cancels a pending return.
+  side off. An app switch cancels a pending return. A press of a Dialpad
+  button is pad activity and restarts the clock too; a turn of the dial
+  or the roller is not, as the Dialpad's bindings belong to no page
+  (beta, #188).
 - Manual mode is a focus lock: a long press (`[timing].long_press`) on
   either page button toggles it and keeps the shown profile and index;
   focus changes are recorded and not shown; the buttons walk the same
@@ -1523,8 +1546,11 @@ on_fail = { type = "exec", cmd = "notify-send 'build failed'" }
 badge = "!"
 
 [dialpad]
-dial   = { type = "chord", cw = "ctrl+]", ccw = "ctrl+[" }
-roller = { type = "chord", cw = "ctrl+tab", ccw = "ctrl+shift+tab" }
+dial   = { cw = "ctrl+]", ccw = "ctrl+[", step = 15, label = "Indent" }
+roller = { cw = { type = "chord", keys = "ctrl+tab" }, ccw = { type = "chord", keys = "ctrl+shift+tab" }, step = 4 }
+[dialpad.buttons.1]
+label  = "Mute"
+action = { type = "chord", keys = "KEY_MUTE" }
 
 [desk_state]                # applied via Solaar on profile activation (optional, M3)
 mouse.thumb_button   = "goto_definition"
@@ -1547,8 +1573,32 @@ mouse.dpi            = 1200
   The editor writes `class` and `wait_focus` only where they differ from
   the defaults. The other
   keys of the example above (`general_hint`, the `recipe` action,
-  `[dialpad]`, `[desk_state]`) are rejected as unknown until their issues
-  add them.
+  `[desk_state]`) are rejected as unknown until their issues add them.
+- `[dialpad]` as built (beta, #188): `dial` (the large dial) and `roller`
+  (the small wheel), each with `cw` and `ccw` (a whole action, or a
+  string, which is a `chord`: `cw = "ctrl+]"`), `step` (detents per run of
+  the action, at least 1, default 1) and `label` (what the app's Dialpad
+  panel shows); `buttons.1` to `buttons.4` (in CID order, §5.8), each a
+  key without an icon or a colour: `label`, `action`, `on_fail`, both
+  press kinds running the action as for a key. Unknown fields are errors
+  with their position. `cw` is a positive delta: clockwise on the dial,
+  forward on the roller (record D5). A detent is one increment as the
+  device reports it (180 a rotation on the dial, 40 on the roller); a
+  turn's delta counts as that many detents, so the firmware's acceleration
+  of a fast dial turn runs the action more often. `step` detents run the
+  action once, the rest carries to the next turn in the same direction
+  (a turn the other way, a reload start from nothing), and one report
+  runs it at most `[dialpad].max_per_event` times (`config.toml`, at
+  least 1, default 8: a slow dial turn reports 1 to 6 detents, a fast one
+  up to 18), the rest is dropped. Each control of an app profile's table
+  hides the global profile's control of that name, even without an
+  action; a control the app profile leaves out comes from the global
+  table, as a key from the global context page (§6.1). The bindings do
+  not depend on the page; manual mode keeps its profile and the dial
+  still works. `keyvo preview` ignores the table. The editor (§10) writes
+  `step` only where it differs from 1, keeps a short-form chord short
+  while it stays a chord, and removes a control left without fields, so
+  the global one shows through again.
 - Chords as `keyvo_core::chord` parses them (checked when the profile
   loads; a bad chord is reported at its `keys` value): steps separated by
   `,`, each step modifiers joined with `+` and one key last
@@ -1750,7 +1800,9 @@ key: `global` for a key of the global profile, also one under an app
 profile, else `app`; `KEYVO_PROFILE` stays the active profile) and
 `KEYVO_SOCKET` (the daemon's control socket, so the command can run
 `keyvo ctl`); the window and project variables come with their slices,
-and `KEYVO_STATE` is not read yet. Its exit code is the
+and `KEYVO_STATE` is not read yet. A Dialpad control's action (beta,
+#188) gets `KEYVO_CONTROL` (`dial`, `roller`, `button:N`) instead of
+`KEYVO_KEY`; a turn's runs are one `exec` each. Its exit code is the
 trace result (`exited`, with the duration); past `[timing].exec_timeout`
 the whole process group is killed and the result is `failed` with "timed
 out after <n> ms". A chord's result is `sent` with its key events, or
@@ -1838,8 +1890,9 @@ the Rust, TypeScript and C# clients.
 As built (pre-alpha, `keyvo_core::socket` and `keyvo_daemon::socket`):
 
 - The commands are `status`, `subscribe` (classes `key`, `profile`, `page`,
-  `mode`, `device`, `context`, `trace`, `config`, `session`, with an optional replay
-  of the newest trace entries), `press` (`key`, `kind`, `dry_run`),
+  `mode`, `device`, `context`, `trace`, `config`, `session`, `dial`, with an optional replay
+  of the newest trace entries), `press` (`key` or `control` with `delta`,
+  `kind`, `dry_run`),
   `reload`, `notify_context` (`class`, `title`), and `recipes` (the bundled
   and the user's recipe packs with their variants, `problems` naming each
   pack left out, §7.5). Any other command and any unknown field is
@@ -1860,6 +1913,20 @@ As built (pre-alpha, `keyvo_core::socket` and `keyvo_daemon::socket`):
   unlock. A `press` under the lock, `dry_run` included, is answered with
   its trace entry, result `blocked` with `reason` `session locked`; the
   socket itself answers as before, to the same user (`SECURITY.md`).
+- The Dialpad (beta, #188): `status` carries a `dialpad` block next to the
+  Keypad's `device` (`connected`, `slot`, `rollers` with their
+  `increments`, `error`), and a change of it is a `dialpad` event in the
+  `device` class. A turn is a `dial` event (`roller`, `delta`, `actions`:
+  how often its action ran) in the new `dial` class; a button edge is a
+  `key` event with `control: "button:N"` and no `key`. Trace records of a
+  Dialpad control carry `control` (`dial`, `roller`, `button:N`) instead
+  of `key`; a turn traces one record per run, none below one `step` or
+  without a binding, one `blocked` record under the lock. `press` takes
+  `control` instead of `key`: `{"control":"dial","delta":1}` turns the
+  dial (nonzero `delta`, clockwise positive), `{"control":"button:2"}`
+  presses a button; `dry_run` as for a key, a turn's result carries
+  `runs`. A turn from a client sends no `dial` event, as a press from a
+  client sends no `key` event.
 - Clients ignore unknown fields in responses and events, so a later daemon
   may add fields within version 1.
 - Every response echoes the request's `id` and carries `ok` with `result`
@@ -1911,7 +1978,8 @@ type (`keyvo_core::trace::TraceRecord`) and the press resolution that fills
 it (`keyvo_core::press::resolve`) are defined in `keyvo-core`; the ring
 buffer, the file and `keyvo ctl trace|tail` live in the daemon. Pre-alpha
 subset of a record: timestamp, trigger (press kind, simulated), profile id,
-page, key, the resolved action, and the result: `unbound`, `dry_run`,
+page, key (or, for a Dialpad control since #188, `control`: `dial`,
+`roller`, `button:N`), the resolved action, and the result: `unbound`, `dry_run`,
 `pending`, `sent` with the chord's key events, `exited` with exit code and
 duration, `started` with the `pid` of a `launch` that was let go,
 `failed` with the reason, or `blocked` with the block `reason` (as built
@@ -2128,6 +2196,24 @@ the rest of the system must provide.
 - **Dialpad** appears as a second, collapsible panel in the mirror (schematic
   dial, roller, buttons with GUI labels); MX Master 4 and MX Mechanical
   controls (M3) appear as trigger sources in Behaviors and in Devices.
+  As built (beta, #188): `Dialpad.svelte` draws
+  `app/src/assets/device/dialpad.svg` under the mirror on the Pad screen
+  with the four buttons, the roller and the dial as selectable controls
+  showing their labels (a control the shown app profile leaves out shows
+  the global one, dimmed). It collapses on its heading, starts collapsed
+  while no Dialpad is connected and neither the shown nor the global
+  profile has a `[dialpad]` table, and says `No Dialpad connected` while
+  none is. A `dial` event or a button's `key` event pulses the control
+  for 400 ms. Selecting a control opens the Inspector's control editor
+  (`ControlEditor.svelte`): label, `step`, `cw` and `ccw` for the dial and
+  the roller, label and action for a button (its `on_fail` read-only), the
+  action fields shared with the key editor (`ActionFields.svelte`), "Override
+  here" for a control that comes from the global profile, Clear, and its
+  own undo. The catalogue assigns to the selected control as to a key: a
+  button's action (and label), the last-focused direction of the dial or
+  the roller (`cw` by default). The writes go through the Tauri commands
+  `control` and `edit_control` (`keyvo_client::Editor::control`,
+  `set_control`). The Preferences Devices tab stays `soon`.
 - Tray icon from the GUI in v1. `keyvo profile export|import` in the header
   menu.
 - Flatpak (M4b, as built in #182): exactly `--share=ipc`,
@@ -2820,6 +2906,16 @@ Status of the v0.1 questions after the grill and the research.
 ---
 
 ## Changelog
+
+- **v0.3, beta slice 8 (2026-10-30)**: the Dialpad's bindings and panel
+  (#188). §4.1 the dialpad bindings as built; §5.8 the daemon's Dialpad
+  actor and `--dialpad-device`; §6.1 a turn is no pad activity for the
+  page return, a button press is; §7.2 `[dialpad]` as built (`cw`, `ccw`,
+  `step`, `label`, the four buttons, the fallback to the global table)
+  and `[dialpad].max_per_event` in `config.toml`; §8 the `dialpad` block
+  and event, the `dial` event class, buttons as `key` events, `press` of a
+  control, trace records with `control`, `KEYVO_CONTROL`; §10 the Dialpad
+  panel and its control editor.
 
 - **v0.3, beta follow-up of slice 4 (2026-10-30)**: the Bolt receiver's
   rule narrowed to the HID++ node (#197, from the security re-review of

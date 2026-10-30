@@ -9,8 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Update } from "../daemon";
 import { parseServerMessage, VERSION, type Event, type Reply } from "../protocol";
-import { fixtureTrace, SNAPSHOTS, contribProfiles, fixtureStatus } from "./data";
-import { FOCUS_MS, mockDaemon, TRACE_MS } from "./daemon";
+import { fixtureDialpad, fixtureTrace, SNAPSHOTS, contribProfiles, fixtureStatus } from "./data";
+import { DIAL_MS, FOCUS_MS, mockDaemon, TRACE_MS } from "./daemon";
 import { mockProfiles } from "./profiles";
 import { Store } from "./store";
 
@@ -49,6 +49,34 @@ describe("the mock daemon", () => {
     expect(status.config_dir).toBe(fixture.config_dir);
     expect(status.view).toEqual({ profile: "global", page: 1, mode: "auto", index: 1, locked: false });
     expect(status.context?.class).toBe("org.kde.dolphin");
+  });
+
+  it("reports the fixture's connected Dialpad, or none when told so", async () => {
+    const status = await mockDaemon(new Store(contribProfiles())).status();
+    expect(status.dialpad).toEqual(fixtureDialpad());
+    expect(status.dialpad).toMatchObject({ connected: true, slot: 3 });
+    const without = await mockDaemon(new Store(contribProfiles()), { dialpad: false }).status();
+    expect(without.dialpad).toEqual({ connected: false });
+    expect(asResponse(without)).toEqual(without);
+  });
+
+  it("turns the dial and the roller in turn while connected", async () => {
+    const daemon = mockDaemon(new Store(contribProfiles()));
+    const updates: Update[] = [];
+    const stop = await daemon.subscribe(0, (update) => updates.push(update));
+    vi.advanceTimersByTime(2 * DIAL_MS);
+    const turns = updates.flatMap((update) =>
+      update.kind === "event" && update.event.event === "dial" ? [update.event] : [],
+    );
+    expect(turns.map((turn) => turn.roller)).toEqual(["dial", "roller"]);
+    for (const turn of turns) expect(asEvent(turn)).toEqual(turn);
+    stop();
+    const quiet = mockDaemon(new Store(contribProfiles()), { dialpad: false });
+    const none: Update[] = [];
+    const stopQuiet = await quiet.subscribe(0, (update) => none.push(update));
+    vi.advanceTimersByTime(2 * DIAL_MS);
+    expect(none.some((update) => update.kind === "event" && update.event.event === "dial")).toBe(false);
+    stopQuiet();
   });
 
   it("rejects status when told the daemon is unreachable", async () => {
@@ -229,7 +257,10 @@ describe("the mock daemon", () => {
     vi.advanceTimersByTime(FOCUS_MS);
     const step = updates
       .slice(before)
-      .filter((update) => update.kind === "event" && update.event.event !== "trace");
+      .filter(
+        (update) =>
+          update.kind === "event" && update.event.event !== "trace" && update.event.event !== "dial",
+      );
     // One held context event and no profile event: the view stays Konsole's.
     expect(step).toEqual([
       {

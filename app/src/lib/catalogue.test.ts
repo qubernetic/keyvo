@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   applied,
+  appliedToControl,
   catalogueOf,
   dragData,
   dropped,
@@ -16,7 +17,7 @@ import {
   withVariant,
   type CatalogueEntry,
 } from "./catalogue";
-import { toForm } from "./editor";
+import { toControlForm, toForm } from "./editor";
 import { nth, recipeReplies } from "./fixtures";
 import { t } from "./i18n";
 import type { Recipe } from "./protocol";
@@ -154,6 +155,38 @@ describe("applied", () => {
       action: "volumeup",
     });
     expect(withVariant(recipe("volume-up"), "nope", volume)).toBe(volume);
+  });
+});
+
+describe("appliedToControl", () => {
+  const dial = toControlForm({
+    cw: { type: "chord", keys: "KEY_VOLUMEUP" },
+    ccw: { type: "chord", keys: "KEY_VOLUMEDOWN" },
+    step: 5,
+    label: "Volume",
+  });
+
+  it("sets a button's action and the preset's label, as a recipe does for a key", () => {
+    const form = appliedToControl(entry("mute"), "button:1", "cw", toControlForm({ label: "Old" }));
+    expect(form.label).toBe("Mute");
+    expect(form.action).toEqual({
+      actionType: "exec",
+      action: expect.stringContaining("invokeShortcut mute"),
+      windowClass: "",
+      waitFocus: true,
+    });
+    expect(form.cw).toEqual(toControlForm({}).cw);
+    expect(appliedToControl(entry("chord"), "button:2", "cw", form)).toEqual({
+      ...form,
+      action: { actionType: "chord", action: "", windowClass: "", waitFocus: true },
+    });
+  });
+
+  it("sets the direction a rotary was last edited in, the rest kept", () => {
+    const up = appliedToControl(entry("volume-up"), "dial", "cw", dial);
+    expect(up).toEqual({ ...dial, cw: { ...dial.cw, actionType: "exec", action: expect.stringContaining("increase_volume") } });
+    const down = appliedToControl(entry("exec"), "roller", "ccw", dial);
+    expect(down).toEqual({ ...dial, ccw: { ...dial.ccw, actionType: "exec", action: "" } });
   });
 });
 

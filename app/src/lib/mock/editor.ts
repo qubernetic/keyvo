@@ -1,8 +1,9 @@
 // The key editor over the mock store, answering like the Tauri shell's
-// key and edit_key.
-import type { Editor, KeyFields, Problem, Target } from "../editor";
+// key and edit_key, and control and edit_control for the Dialpad.
+import type { ControlFields, ControlTarget, Editor, KeyFields, Problem, Target } from "../editor";
+import { controlOf, type Control } from "../protocol";
 import { attempt } from "./profiles";
-import { problem, type MockPage, type Store } from "./store";
+import { problem, type MockPage, type MockProfile, type Store } from "./store";
 
 /** The key slots of a profile (keyvo_core::profile::KeySlot). */
 const KEYS = 9;
@@ -38,6 +39,21 @@ function refused(store: Store, target: Target): Problem {
   };
 }
 
+/** The profile and the control of `target`; throws a Problem for an
+ * unknown one, as keyvo_core::dialpad::Control refuses to parse it. */
+function dialpad(store: Store, target: ControlTarget): [MockProfile, Control] {
+  const profile = store.get(target.profile);
+  const control = controlOf(target.control);
+  if (control === undefined) throw problem(`${target.control} is not a control of the Dialpad`);
+  return [profile, control];
+}
+
+/** `fields` as keyvo_core::edit writes them: a step of 1 is absent. */
+function normalized(fields: ControlFields): ControlFields {
+  const { step, ...rest } = structuredClone(fields);
+  return step === undefined || step === 1 ? rest : { ...rest, step };
+}
+
 export function mockEditor(store: Store, options: MockEditorOptions = {}): Editor {
   return {
     key: (target) =>
@@ -63,6 +79,29 @@ export function mockEditor(store: Store, options: MockEditorOptions = {}): Edito
           fields: structuredClone(fields),
           ...line(store, target),
         };
+      }),
+    control: (target) =>
+      attempt(() => {
+        const [profile, control] = dialpad(store, target);
+        const onFail = profile.dialpadOnFail.get(control);
+        return {
+          path: store.path(profile.id),
+          fields: structuredClone(profile.dialpad.get(control) ?? {}),
+          ...(onFail === undefined ? {} : { on_fail: structuredClone(onFail) }),
+        };
+      }),
+    editControl: (target, fields) =>
+      attempt(() => {
+        const [profile, control] = dialpad(store, target);
+        if (options.refuseWrites === true) {
+          throw { ...problem("the mock refuses every write (?mock-error=write)"), path: store.path(profile.id) };
+        }
+        const before = profile.dialpad.get(control) ?? {};
+        const after = normalized(fields);
+        // A control without any field leaves the table: the global one shows through.
+        if (Object.keys(after).length === 0) profile.dialpad.delete(control);
+        else profile.dialpad.set(control, after);
+        return { path: store.path(profile.id), before, fields: structuredClone(after) };
       }),
   };
 }

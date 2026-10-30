@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { cutoutGeometry, drawing, inline, panelPlacement, placement, styles } from "./device";
+import { controlPlaces, cutoutGeometry, drawing, inline, panelPlacement, placement, styles } from "./device";
 import { nth, responses } from "./fixtures";
 import type { Geometry, Status } from "./protocol";
 
@@ -137,5 +137,39 @@ describe("the rim and the corner of a cutout", () => {
     expect(fitted.get(1)).toMatch(/; --kv-tile-radius: 19\.13\d*%$/);
     const plain = styles(panelPlacement(fixtureGeometry()));
     expect(plain.get(1)).not.toContain("--kv-tile-radius");
+  });
+});
+
+const DIALPAD = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../assets/device/dialpad.svg"),
+  "utf8",
+);
+
+describe("controlPlaces", () => {
+  it("places the Dialpad's buttons, roller and dial at their shapes in percent", () => {
+    const places = controlPlaces(DIALPAD);
+    expect([...places.keys()].sort()).toEqual(
+      ["button:1", "button:2", "button:3", "button:4", "dial", "roller"],
+    );
+    // Button 1 is the circle at (82, 85), radius 38, of the 512 x 512 view box.
+    expect(places.get("button:1")).toEqual({
+      left: ((82 - 38) / 512) * 100,
+      top: ((85 - 38) / 512) * 100,
+      width: (76 / 512) * 100,
+      height: (76 / 512) * 100,
+      round: true,
+    });
+    expect(places.get("roller")).toEqual({
+      left: (316 / 512) * 100,
+      top: (47 / 512) * 100,
+      width: (139 / 512) * 100,
+      height: (74 / 512) * 100,
+      round: false,
+    });
+    expect(places.get("dial")?.round).toBe(true);
+  });
+
+  it("has nothing for a drawing without controls", () => {
+    expect(controlPlaces(KEYPAD).size).toBe(0);
   });
 });

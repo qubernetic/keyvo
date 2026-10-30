@@ -13,7 +13,8 @@ use serde::{Deserialize, Serialize};
 use toml_edit::{Document, DocumentMut, InlineTable, Item, Table, TableLike, Value};
 
 use crate::diagnostic::Diagnostic;
-use crate::profile::{Action, Color, Key, KeySlot, Profile};
+use crate::dialpad::{ButtonSlot, Roller};
+use crate::profile::{Action, Color, DialButton, Key, KeySlot, Profile, Rotary};
 
 /// The text of [`Profile::builtin_global`], the file the editor starts
 /// from when `profiles/global.toml` does not exist yet.
@@ -81,6 +82,74 @@ impl ProfileFields {
         Self {
             name: profile.profile.name.clone(),
             accent: profile.profile.accent,
+        }
+    }
+}
+
+/// The fields of the dial or the roller the editor changes (spec §7.2). An
+/// absent field is removed from the file; `step` 1 is the default and is
+/// written as absent. A control left without any field is removed, so the
+/// global profile's binding shows through again.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RotaryFields {
+    /// What a clockwise turn runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cw: Option<Action>,
+    /// What a counter-clockwise turn runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ccw: Option<Action>,
+    /// Detents per run; absent for the default 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<u32>,
+    /// What the Dialpad panel shows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+impl RotaryFields {
+    /// The editable fields of `rotary`.
+    #[must_use]
+    pub fn of(rotary: &Rotary) -> Self {
+        Self {
+            cw: rotary.cw.clone(),
+            ccw: rotary.ccw.clone(),
+            step: Some(rotary.step.get()),
+            label: rotary.label.clone(),
+        }
+        .normalized()
+    }
+
+    /// The fields with a `step` of 1 written as absent.
+    #[must_use]
+    fn normalized(&self) -> Self {
+        Self {
+            step: self.step.filter(|&step| step != 1),
+            ..self.clone()
+        }
+    }
+}
+
+/// The fields of a Dialpad button the editor changes; `on_fail` is kept as
+/// it is. A button left without any field is removed.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ButtonFields {
+    /// What the Dialpad panel shows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// What a press does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<Action>,
+}
+
+impl ButtonFields {
+    /// The editable fields of `button`.
+    #[must_use]
+    pub fn of(button: &DialButton) -> Self {
+        Self {
+            label: button.label.clone(),
+            action: button.action.clone(),
         }
     }
 }
@@ -244,12 +313,180 @@ impl ProfileDocument {
             set_value(key, "color", fields.color.map(|c| c.to_string().into()));
         }
         if before.action != fields.action {
-            set_action(key, before.action.as_ref(), fields.action.as_ref());
+            set_action(
+                key,
+                "action",
+                before.action.as_ref(),
+                fields.action.as_ref(),
+            );
         }
+        self.commit(doc)?;
+        Ok(before)
+    }
+
+    /// Validates the edited `doc` and takes it; the document is unchanged
+    /// when it does not validate.
+    fn commit(&mut self, doc: DocumentMut) -> Result<(), EditError> {
         let text = doc.to_string();
         self.profile = Profile::from_toml(&text, &self.path)?;
         self.doc = doc;
+        Ok(())
+    }
+
+    /// The fields of `roller` in the profile's own `[dialpad]` table; all
+    /// absent when the table does not bind it.
+    #[must_use]
+    pub fn rotary(&self, roller: Roller) -> RotaryFields {
+        let dialpad = self.profile.dialpad.as_ref();
+        let rotary = match roller {
+            Roller::Dial => dialpad.and_then(|d| d.dial.as_ref()),
+            Roller::Roller => dialpad.and_then(|d| d.roller.as_ref()),
+        };
+        rotary.map(RotaryFields::of).unwrap_or_default()
+    }
+
+    /// The fields of button `slot` in the profile's own `[dialpad]` table.
+    #[must_use]
+    pub fn button(&self, slot: ButtonSlot) -> ButtonFields {
+        self.dial_button(slot)
+            .map(ButtonFields::of)
+            .unwrap_or_default()
+    }
+
+    /// The `on_fail` of button `slot`, which the editor shows and never
+    /// writes.
+    #[must_use]
+    pub fn button_on_fail(&self, slot: ButtonSlot) -> Option<Action> {
+        self.dial_button(slot)?.on_fail.clone()
+    }
+
+    fn dial_button(&self, slot: ButtonSlot) -> Option<&DialButton> {
+        self.profile.dialpad.as_ref()?.buttons.get(&slot)
+    }
+
+    /// Sets the fields of `roller` to `fields` as [`Self::set_key`] does
+    /// for a key: only what differs is touched, a short-form chord stays
+    /// short while it stays a chord, a new binding is an inline table in
+    /// `[dialpad]`, and a binding left without fields is removed. Returns
+    /// the fields before the edit, for undo.
+    ///
+    /// # Errors
+    ///
+    /// [`EditError::Shape`] when `dialpad` is not a table, and
+    /// [`EditError::Invalid`] when the edited text does not validate; the
+    /// document is unchanged after an error.
+    pub fn set_rotary(
+        &mut self,
+        roller: Roller,
+        fields: &RotaryFields,
+    ) -> Result<RotaryFields, EditError> {
+        let before = self.rotary(roller);
+        let fields = fields.normalized();
+        if before == fields {
+            return Ok(before);
+        }
+        let mut doc = self.doc.clone();
+        let (dialpad, inline) = self.dialpad_table(&mut doc)?;
+        let name = roller.as_str();
+        if !dialpad.contains_key(name) {
+            dialpad.insert(name, Item::Value(Value::InlineTable(InlineTable::new())));
+        }
+        let shape = || EditError::Shape {
+            path: self.path.clone(),
+            what: format!("dialpad {name}"),
+        };
+        let is_inline = inline || dialpad.get(name).is_some_and(Item::is_inline_table);
+        let table = dialpad
+            .get_mut(name)
+            .and_then(Item::as_table_like_mut)
+            .ok_or_else(shape)?;
+        let end = is_inline.then(|| inline_end(table)).flatten();
+        if before.cw != fields.cw {
+            set_action(table, "cw", before.cw.as_ref(), fields.cw.as_ref());
+        }
+        if before.ccw != fields.ccw {
+            set_action(table, "ccw", before.ccw.as_ref(), fields.ccw.as_ref());
+        }
+        if before.label != fields.label {
+            set_value(table, "label", fields.label.as_deref().map(Value::from));
+        }
+        if before.step != fields.step {
+            set_value(
+                table,
+                "step",
+                fields.step.map(|step| i64::from(step).into()),
+            );
+        }
+        if let Some(end) = end {
+            end.restore(table);
+        }
+        if table.is_empty() {
+            dialpad.remove(name);
+        }
+        drop_empty_dialpad(&mut doc);
+        self.commit(doc)?;
         Ok(before)
+    }
+
+    /// Sets the fields of button `slot` to `fields`, keeping its `on_fail`;
+    /// a new button is a `[dialpad.buttons.N]` table, a button left without
+    /// fields is removed. Returns the fields before the edit, for undo.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::set_rotary`].
+    pub fn set_button(
+        &mut self,
+        slot: ButtonSlot,
+        fields: &ButtonFields,
+    ) -> Result<ButtonFields, EditError> {
+        let before = self.button(slot);
+        if before == *fields {
+            return Ok(before);
+        }
+        let mut doc = self.doc.clone();
+        let (dialpad, inline) = self.dialpad_table(&mut doc)?;
+        let shape = |what: &str| EditError::Shape {
+            path: self.path.clone(),
+            what: what.to_owned(),
+        };
+        let (buttons, inline) =
+            child(dialpad, inline, "buttons", true).ok_or_else(|| shape("dialpad buttons"))?;
+        let name = slot.get().to_string();
+        let (button, _) =
+            child(buttons, inline, &name, false).ok_or_else(|| shape("dialpad button"))?;
+        if before.label != fields.label {
+            set_value(button, "label", fields.label.as_deref().map(Value::from));
+        }
+        if before.action != fields.action {
+            set_action(
+                button,
+                "action",
+                before.action.as_ref(),
+                fields.action.as_ref(),
+            );
+        }
+        if button.is_empty() {
+            buttons.remove(&name);
+        }
+        if buttons.is_empty() {
+            dialpad.remove("buttons");
+        }
+        drop_empty_dialpad(&mut doc);
+        self.commit(doc)?;
+        Ok(before)
+    }
+
+    /// The `[dialpad]` table of `doc`, created at the end of the file when
+    /// it is missing, and whether it is inline.
+    fn dialpad_table<'d>(
+        &self,
+        doc: &'d mut DocumentMut,
+    ) -> Result<(&'d mut dyn TableLike, bool), EditError> {
+        child(doc.as_table_mut(), false, "dialpad", false).ok_or_else(|| EditError::Shape {
+            path: self.path.clone(),
+            what: "dialpad".into(),
+        })
     }
 
     /// The fields of the `[profile]` table.
@@ -287,9 +524,7 @@ impl ProfileDocument {
         if before.accent != fields.accent {
             set_value(table, "accent", fields.accent.map(|c| c.to_string().into()));
         }
-        let text = doc.to_string();
-        self.profile = Profile::from_toml(&text, &self.path)?;
-        self.doc = doc;
+        self.commit(doc)?;
         Ok(before)
     }
 
@@ -402,28 +637,60 @@ fn launch_values(action: &Action) -> [(&'static str, Option<Value>); 2] {
     [("class", class), ("wait_focus", wait_focus)]
 }
 
-/// Changes the key's `action` from `before` to `after`. An action of the
-/// same type keeps its table and only its value changes; another type
-/// replaces the table's entries in place; a new action is an inline table.
-/// A `launch` writes `class` and `wait_focus` only where they differ from
-/// the defaults.
-fn set_action(key: &mut dyn TableLike, before: Option<&Action>, after: Option<&Action>) {
+/// `[dialpad]` without anything in it is removed.
+fn drop_empty_dialpad(doc: &mut DocumentMut) {
+    if doc
+        .get("dialpad")
+        .and_then(Item::as_table_like)
+        .is_some_and(TableLike::is_empty)
+    {
+        doc.remove("dialpad");
+    }
+}
+
+/// `action` as a new inline table.
+fn action_table(action: &Action) -> InlineTable {
+    let (kind, field, value) = parts(action);
+    let mut table = InlineTable::new();
+    table.insert("type", kind.into());
+    table.insert(field, value.into());
+    for (name, value) in launch_values(action) {
+        if let Some(value) = value {
+            table.insert(name, value);
+        }
+    }
+    table
+}
+
+/// Changes the action `name` of `key` (a key's `action`, a roller's `cw`)
+/// from `before` to `after`. An action of the same type keeps its table and
+/// only its value changes; another type replaces the table's entries in
+/// place; a new action is an inline table. The short form of a roller (`cw
+/// = "ctrl+]"`) stays a string while the action stays a chord. A `launch`
+/// writes `class` and `wait_focus` only where they differ from the
+/// defaults.
+fn set_action(
+    key: &mut dyn TableLike,
+    name: &str,
+    before: Option<&Action>,
+    after: Option<&Action>,
+) {
     let Some(after) = after else {
-        key.remove("action");
+        key.remove(name);
         return;
     };
+    if key.get(name).and_then(Item::as_str).is_some() {
+        let value = match after {
+            Action::Chord { keys } => keys.to_string().into(),
+            _ => Value::InlineTable(action_table(after)),
+        };
+        set_value(key, name, Some(value));
+        return;
+    }
     let (kind, field, value) = parts(after);
-    let inline = key.get("action").is_some_and(Item::is_inline_table);
-    let Some(table) = key.get_mut("action").and_then(Item::as_table_like_mut) else {
-        let mut table = InlineTable::new();
-        table.insert("type", kind.into());
-        table.insert(field, value.into());
-        for (name, value) in launch_values(after) {
-            if let Some(value) = value {
-                table.insert(name, value);
-            }
-        }
-        set_value(key, "action", Some(Value::InlineTable(table)));
+    let inline = key.get(name).is_some_and(Item::is_inline_table);
+    let Some(table) = key.get_mut(name).and_then(Item::as_table_like_mut) else {
+        set_value(key, name, Some(Value::InlineTable(action_table(after))));
         return;
     };
     let end = inline.then(|| inline_end(table)).flatten();

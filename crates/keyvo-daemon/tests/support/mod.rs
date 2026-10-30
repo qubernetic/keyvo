@@ -1,5 +1,6 @@
 //! Test doubles for the daemon: [`Pad`], a Keypad built on
-//! `FakeHidTransport`, and [`Pads`], a connector that hands out pads.
+//! `FakeHidTransport`, and [`Pads`], a connector that hands out pads; [`Dial`],
+//! a Bolt receiver with the Dialpad, and [`Dials`], its connector.
 //!
 //! The scripted part (keep-alive lookup, claim, divert) is replayed byte
 //! for byte by `FakeHidTransport`. Image fragments are the one thing a
@@ -19,6 +20,8 @@ use std::time::Duration;
 
 use keyvo_core::hid::{FakeHidTransport, HidTransport, TransportError};
 use keyvo_daemon::device::Connector;
+use keyvo_daemon::dialpad::DialpadConnector;
+use keyvo_hid::dialpad::Link;
 
 /// The display's VLP index in the fixtures.
 pub const DISPLAY: u8 = 2;
@@ -281,5 +284,147 @@ impl Connector for Pads {
         self.0
             .pop_front()
             .ok_or_else(|| TransportError::Io("no keypad".into()))
+    }
+}
+
+/// The Dialpad's slot on the receiver in the fixtures.
+pub const DIAL_SLOT: u8 = 3;
+/// The Dialpad's `0x1B04` index in the fixtures.
+pub const DIAL_REPROG: u8 = 0x0a;
+/// The Dialpad's `0x4610` index in the fixtures.
+pub const DIAL_ROLLERS: u8 = 0x0d;
+/// The CIDs of the Dialpad's buttons 1 to 4 in the fixtures.
+pub const DIAL_BUTTONS: [u16; 4] = [0x53, 0x56, 0x59, 0x5a];
+
+/// What a connection to the Dialpad on the receiver starts with: the slot
+/// search, the `0x1B04` walk, the rollers and every divert.
+pub fn dial_startup() -> String {
+    [
+        fixture("receiver-slot-probe.txt"),
+        fixture("receiver-controls.txt"),
+        fixture("receiver-multiroller.txt"),
+        fixture("receiver-divert.txt"),
+    ]
+    .concat()
+}
+
+#[derive(Debug)]
+struct DialState {
+    script: FakeHidTransport,
+    input: VecDeque<Vec<u8>>,
+    unplugged: bool,
+}
+
+/// A Bolt receiver with the Dialpad on slot 3 for the daemon tests: the
+/// script (startup, restore) replayed byte for byte, the turns and presses
+/// a test makes sent as the Dialpad sends them. Clones share the device.
+#[derive(Debug, Clone)]
+pub struct Dial(Arc<Mutex<DialState>>);
+
+impl Dial {
+    /// A receiver that replays `script`.
+    pub fn new(script: &str) -> Self {
+        Self(Arc::new(Mutex::new(DialState {
+            script: FakeHidTransport::from_script(script).unwrap(),
+            input: VecDeque::new(),
+            unplugged: false,
+        })))
+    }
+
+    fn state(&self) -> MutexGuard<'_, DialState> {
+        self.0.lock().unwrap()
+    }
+
+    /// Roller `roller` (0 the roller, 1 the dial) turns by `delta`.
+    pub fn turn(&self, roller: u8, delta: i8) {
+        let mut report = vec![
+            0x11,
+            DIAL_SLOT,
+            DIAL_ROLLERS,
+            0x00,
+            roller,
+            delta.to_be_bytes()[0],
+        ];
+        report.resize(20, 0);
+        self.state().input.push_back(report);
+    }
+
+    /// Exactly the buttons `buttons` (1 to 4) are held now.
+    pub fn hold(&self, buttons: &[u8]) {
+        let mut report = vec![0x11, DIAL_SLOT, DIAL_REPROG, 0x00];
+        for button in buttons {
+            report.extend_from_slice(&DIAL_BUTTONS[usize::from(*button - 1)].to_be_bytes());
+        }
+        report.resize(20, 0);
+        self.state().input.push_back(report);
+    }
+
+    /// The receiver goes away: every later read and write fails.
+    pub fn unplug(&self) {
+        self.state().unplugged = true;
+    }
+
+    /// True when every scripted request was written and every scripted
+    /// report was read.
+    pub fn script_done(&self) -> bool {
+        self.state().script.is_done()
+    }
+}
+
+impl HidTransport for Dial {
+    fn write(&mut self, report: &[u8]) -> Result<(), TransportError> {
+        let mut state = self.state();
+        if state.unplugged {
+            return Err(TransportError::Disconnected);
+        }
+        state.script.write(report)
+    }
+
+    fn read(&mut self, timeout: Duration) -> Result<Option<Vec<u8>>, TransportError> {
+        let report = {
+            let mut state = self.state();
+            if state.unplugged {
+                return Err(TransportError::Disconnected);
+            }
+            match state.script.read(timeout)? {
+                Some(report) => Some(report),
+                None => state.input.pop_front(),
+            }
+        };
+        if report.is_none() {
+            std::thread::sleep(timeout.min(IDLE_READ));
+        }
+        Ok(report)
+    }
+}
+
+/// Hands out the given receivers in order, a `None` failing like a
+/// missing receiver, then fails for good.
+#[derive(Debug)]
+pub struct Dials(pub VecDeque<Option<Dial>>);
+
+impl Dials {
+    /// A connector for `dials`.
+    pub fn new(dials: impl IntoIterator<Item = Dial>) -> Self {
+        Self(dials.into_iter().map(Some).collect())
+    }
+
+    /// A connector that finds no receiver `misses` times, then `dial`.
+    pub fn after(misses: usize, dial: Dial) -> Self {
+        let mut dials: VecDeque<_> = std::iter::repeat_n(None, misses).collect();
+        dials.push_back(Some(dial));
+        Self(dials)
+    }
+}
+
+impl DialpadConnector for Dials {
+    type Transport = Dial;
+
+    fn connect(&mut self) -> Result<(Dial, Link), TransportError> {
+        self.0
+            .pop_front()
+            .flatten()
+            .map(|dial| (dial, Link::Receiver))
+            .ok_or_else(|| TransportError::Io("no receiver".into()))
     }
 }

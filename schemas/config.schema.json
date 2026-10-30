@@ -21,6 +21,20 @@
       },
       "type": "object"
     },
+    "DialpadConfig": {
+      "additionalProperties": false,
+      "description": "The `[dialpad]` table (spec §5.8, §7.2): how the Dialpad's turns run\nactions.",
+      "properties": {
+        "max_per_event": {
+          "default": 8,
+          "description": "The most action runs one turn report starts; a fast turn's larger\ndelta runs a binding up to this often, the rest is dropped. At\nleast 1. Default 8: a slow turn of the dial reports 1 to 6 detents,\na fast one up to 18 (#187).",
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "Focus": {
       "additionalProperties": false,
       "description": "The `[focus]` table (spec §6.1): the window classes that hold the\ncontext. While one of them has focus, the pad keeps the context and\nprofile of the last other window, so the keyvo app can configure the\nprofile it was opened from. Read when the daemon starts.",
@@ -245,6 +259,13 @@
         "socket_line_bytes": 65536
       },
       "description": "Limits of the daemon's control socket (spec §8)."
+    },
+    "dialpad": {
+      "$ref": "#/$defs/DialpadConfig",
+      "default": {
+        "max_per_event": 8
+      },
+      "description": "How the Dialpad's turns run actions (spec §7.2)."
     },
     "focus": {
       "$ref": "#/$defs/Focus",

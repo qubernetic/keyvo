@@ -1,7 +1,8 @@
 // The mock daemon's data (docs/plans/2026-10-26-gui-design-pass.md, slice
 // 2), read in place from the repository: the socket fixtures of
 // tests/protocol-fixtures/socket/, the example profiles of contrib/profiles/
-// and the renderer's PNG snapshots of crates/keyvo-core/tests/snapshots/.
+// (their Dialpad bindings too) and the renderer's PNG snapshots of
+// crates/keyvo-core/tests/snapshots/.
 // vite.config.ts lets the dev server read these directories in mock mode;
 // nothing is copied into app/.
 import globalToml from "../../../../contrib/profiles/global.toml?raw";
@@ -17,6 +18,7 @@ import recipesNdjson from "../../../../tests/protocol-fixtures/socket/recipes.nd
 import responsesNdjson from "../../../../tests/protocol-fixtures/socket/responses.ndjson?raw";
 import {
   parseServerMessage,
+  type DialpadStatus,
   type Event,
   type Recipes,
   type Status,
@@ -74,9 +76,21 @@ export function fixtureTrace(): TraceRecord[] {
   );
 }
 
-/** The text of each profile of contrib/profiles/. */
+/** The text of each profile of contrib/profiles/; the global one carries
+ * the example Dialpad bindings (#188): the dial turns the volume, the
+ * roller switches tabs, button 1 mutes. */
 export function contribProfiles(): string[] {
   return [globalToml, konsoleToml, vscodeToml];
+}
+
+/** The Dialpad of the fixture's connected `dialpad` event. */
+export function fixtureDialpad(): DialpadStatus {
+  for (const message of messages(eventsNdjson)) {
+    if (message.kind !== "event" || message.event.event !== "dialpad") continue;
+    const { event: _, ...dialpad } = message.event;
+    if (dialpad.connected) return structuredClone(dialpad);
+  }
+  throw new Error("events.ndjson has no connected dialpad event");
 }
 
 /** A mock-only profile with no pages (`?mock-profiles=empty`), for the

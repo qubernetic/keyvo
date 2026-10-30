@@ -178,7 +178,7 @@ Flathub follows after the beta.
 | Device | Connection | Support |
 |---|---|---|
 | MX Creative Keypad (`046d:c354`) | USB-C | primary target |
-| MX Creative Dialpad (`046d:bc00`) | Logi Bolt / Bluetooth | `keyvo dial` and `keyvo probe` (beta, #186); bindings planned (M3) |
+| MX Creative Dialpad (`046d:bc00`) | Logi Bolt / Bluetooth | `keyvo dial` and `keyvo probe` (beta, #186); profile bindings and the app panel (beta, #188) |
 | MX Master 4, MX Mechanical | Logi Bolt | desk-state settings via Solaar (optional) |
 | MX Keypad (2026) | USB-C | unverified; geometry and features are queried at runtime |
 

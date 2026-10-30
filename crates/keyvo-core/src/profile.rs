@@ -8,6 +8,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
+use std::num::NonZeroU32;
 use std::path::Path;
 
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
@@ -16,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::chord::Chord;
 use crate::diagnostic::Diagnostic;
+use crate::dialpad::ButtonSlot;
 use crate::focus::WindowContext;
 
 /// The id of the profile that always exists and that app profiles overlay.
@@ -36,6 +38,9 @@ pub struct Profile {
     /// The pages of the profile, in order.
     #[serde(default)]
     pub pages: Vec<Page>,
+    /// The Dialpad's bindings; the global profile's table fills in every
+    /// control an app profile leaves out.
+    pub dialpad: Option<Dialpad>,
 }
 
 impl Profile {
@@ -66,6 +71,7 @@ impl Profile {
                 name: Some("context".to_owned()),
                 keys: BTreeMap::new(),
             }],
+            dialpad: None,
         }
     }
 }
@@ -173,6 +179,113 @@ pub struct Key {
     /// Named looks that replace parts of the key while the state is active.
     #[serde(default)]
     pub states: BTreeMap<String, KeyState>,
+}
+
+/// The `[dialpad]` table (spec §7.2): the dial, the roller and the four
+/// buttons of the MX Creative Dialpad.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Dialpad {
+    /// The large dial.
+    pub dial: Option<Rotary>,
+    /// The small roller.
+    pub roller: Option<Rotary>,
+    /// The buttons by number, 1 to 4 in CID order.
+    #[serde(default)]
+    #[schemars(schema_with = "button_map_schema")]
+    pub buttons: BTreeMap<ButtonSlot, DialButton>,
+}
+
+/// The binding of the dial or the roller.
+#[derive(Debug, Clone, PartialEq, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Rotary {
+    /// What a clockwise turn runs (the roller: forward); a string is a
+    /// chord.
+    #[serde(default, deserialize_with = "short_action")]
+    #[schemars(schema_with = "short_action_schema")]
+    pub cw: Option<Action>,
+    /// What a counter-clockwise turn runs (the roller: back); a string is a
+    /// chord.
+    #[serde(default, deserialize_with = "short_action")]
+    #[schemars(schema_with = "short_action_schema")]
+    pub ccw: Option<Action>,
+    /// Detents per run of the action; a fast turn's larger delta counts as
+    /// that many detents. Default 1.
+    #[serde(default = "one")]
+    pub step: NonZeroU32,
+    /// What the app's Dialpad panel shows.
+    pub label: Option<String>,
+}
+
+impl Default for Rotary {
+    fn default() -> Self {
+        Self {
+            cw: None,
+            ccw: None,
+            step: one(),
+            label: None,
+        }
+    }
+}
+
+const fn one() -> NonZeroU32 {
+    NonZeroU32::MIN
+}
+
+/// A Dialpad button: a key without an icon or a colour.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DialButton {
+    /// What the app's Dialpad panel shows.
+    pub label: Option<String>,
+    /// What a press does.
+    pub action: Option<Action>,
+    /// An action run once when `action` fails.
+    pub on_fail: Option<Action>,
+}
+
+/// `cw = "ctrl+]"` as a chord, or a whole action table.
+fn short_action<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Action>, D::Error> {
+    struct ShortVisitor;
+
+    impl<'de> Visitor<'de> for ShortVisitor {
+        type Value = Action;
+
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("a chord string or an action table")
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<Action, E> {
+            Chord::deserialize(de::value::StrDeserializer::<E>::new(v))
+                .map(|keys| Action::Chord { keys })
+        }
+
+        fn visit_map<A: de::MapAccess<'de>>(self, map: A) -> Result<Action, A::Error> {
+            Action::deserialize(de::value::MapAccessDeserializer::new(map))
+        }
+    }
+
+    deserializer.deserialize_any(ShortVisitor).map(Some)
+}
+
+fn short_action_schema(generator: &mut SchemaGenerator) -> Schema {
+    let action = generator.subschema_for::<Action>();
+    json_schema!({
+        "anyOf": [
+            { "type": "string", "description": "A chord, for example `ctrl+]`." },
+            action
+        ]
+    })
+}
+
+fn button_map_schema(generator: &mut SchemaGenerator) -> Schema {
+    let button = generator.subschema_for::<DialButton>();
+    json_schema!({
+        "type": "object",
+        "patternProperties": { "^[1-4]$": button },
+        "additionalProperties": false
+    })
 }
 
 /// The overrides of one key state.
@@ -486,11 +599,16 @@ impl<'de> Deserialize<'de> for KeySlot {
     }
 }
 
-/// A [`KeySlot`] written as a JSON number, as the trace and the socket
-/// protocol carry it; the [`Deserialize`] impl reads the TOML table key.
-pub(crate) fn slot_number<'de, D: Deserializer<'de>>(deserializer: D) -> Result<KeySlot, D::Error> {
-    let n = u8::deserialize(deserializer)?;
-    KeySlot::new(n).ok_or_else(|| {
+/// An optional [`KeySlot`] written as a JSON number, as the trace and the
+/// socket protocol carry it (absent for a Dialpad control); the
+/// [`Deserialize`] impl reads the TOML table key.
+pub(crate) fn optional_slot_number<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<KeySlot>, D::Error> {
+    let Some(n) = Option::<u8>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    KeySlot::new(n).map(Some).ok_or_else(|| {
         de::Error::invalid_value(Unexpected::Unsigned(n.into()), &"a key number from 1 to 9")
     })
 }

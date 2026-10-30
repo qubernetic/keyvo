@@ -2,8 +2,9 @@
 
 use std::collections::VecDeque;
 
+use keyvo_core::dialpad::{ButtonSlot, Control};
 use keyvo_core::profile::KeySlot;
-use keyvo_core::socket::{Context, DeviceStatus, Edge, Event, Reply};
+use keyvo_core::socket::{Context, DeviceStatus, DialpadStatus, Edge, Event, Reply};
 use keyvo_core::state::View;
 use keyvo_core::trace::TraceRecord;
 
@@ -14,6 +15,8 @@ use keyvo_core::trace::TraceRecord;
 pub struct Mirror {
     view: Option<View>,
     device: Option<DeviceStatus>,
+    dialpad: Option<DialpadStatus>,
+    buttons: Vec<ButtonSlot>,
     context: Option<Context>,
     holding: Option<Context>,
     held: Vec<KeySlot>,
@@ -39,6 +42,7 @@ impl Mirror {
             Reply::Status(status) => {
                 self.view = Some(status.view.clone());
                 self.device = Some(status.device.clone());
+                self.dialpad = Some(status.dialpad.clone());
                 self.set_context(status.context.as_ref());
             }
             Reply::Subscribed(subscribed) => self.view = Some(subscribed.view.clone()),
@@ -52,21 +56,24 @@ impl Mirror {
     /// new and the profiles were read again.
     pub fn apply(&mut self, event: &Event) -> bool {
         match event {
-            Event::Key { key, edge } => {
-                let at = self.held.binary_search(key);
-                match (edge, at) {
-                    (Edge::Press, Err(at)) => self.held.insert(at, *key),
-                    (Edge::Release, Ok(at)) => {
-                        self.held.remove(at);
-                    }
-                    _ => return false,
-                }
-                true
-            }
+            Event::Key {
+                key: Some(key),
+                edge,
+                ..
+            } => hold(&mut self.held, *key, *edge),
+            Event::Key {
+                control: Some(Control::Button(button)),
+                edge,
+                ..
+            } => hold(&mut self.buttons, *button, *edge),
+            Event::Key { .. } => false,
+            // A turn changes nothing that stays; a client shows it.
+            Event::Dial { .. } => true,
             Event::Profile(view) | Event::Page(view) | Event::Mode(view) => {
                 replace(&mut self.view, view)
             }
             Event::Device(device) => replace(&mut self.device, device),
+            Event::Dialpad(dialpad) => replace(&mut self.dialpad, dialpad),
             Event::Context(context) => {
                 let changed = self.context.as_ref() != Some(context);
                 self.set_context(Some(context));
@@ -101,6 +108,18 @@ impl Mirror {
     #[must_use]
     pub const fn device(&self) -> Option<&DeviceStatus> {
         self.device.as_ref()
+    }
+
+    /// The Dialpad's connection, once known.
+    #[must_use]
+    pub const fn dialpad(&self) -> Option<&DialpadStatus> {
+        self.dialpad.as_ref()
+    }
+
+    /// The Dialpad buttons held now, lowest first.
+    #[must_use]
+    pub fn held_buttons(&self) -> &[ButtonSlot] {
+        &self.buttons
     }
 
     /// The focused window as last reported.
@@ -162,5 +181,18 @@ fn replace<T: Clone + PartialEq>(slot: &mut Option<T>, value: &T) -> bool {
         return false;
     }
     *slot = Some(value.clone());
+    true
+}
+
+/// Adds `item` to the sorted `held` on a press, removes it on a release;
+/// whether that changed `held`.
+fn hold<T: Ord + Copy>(held: &mut Vec<T>, item: T, edge: Edge) -> bool {
+    match (edge, held.binary_search(&item)) {
+        (Edge::Press, Err(at)) => held.insert(at, item),
+        (Edge::Release, Ok(at)) => {
+            held.remove(at);
+        }
+        _ => return false,
+    }
     true
 }

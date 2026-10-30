@@ -471,3 +471,51 @@ fn the_udev_rule_tags_the_three_devices_uaccess_and_nothing_else() {
         assert!(!rule.contains(forbidden), "{forbidden}");
     }
 }
+
+#[test]
+fn the_dialpad_turns_the_volume_switches_tabs_mutes_and_indents_in_vs_code() {
+    use keyvo_core::dialpad::{Bindings, ButtonSlot, Roller};
+    use keyvo_core::stack::Layer;
+
+    let chord = |keys: &str| {
+        Some(Action::Chord {
+            keys: keyvo_core::chord::Chord::parse(keys).unwrap(),
+        })
+    };
+    let loaded = loaded();
+    let profiles = &loaded.profiles;
+    let global = Bindings::new(profiles, profiles.global());
+    let (dial, _) = global.rotary(Roller::Dial).unwrap();
+    assert_eq!(
+        (&dial.cw, &dial.ccw),
+        (&chord("KEY_VOLUMEUP"), &chord("KEY_VOLUMEDOWN"))
+    );
+    let (roller, _) = global.rotary(Roller::Roller).unwrap();
+    assert_eq!(
+        (&roller.cw, &roller.ccw),
+        (&chord("ctrl+tab"), &chord("ctrl+shift+tab"))
+    );
+    let (mute, _) = global.button(ButtonSlot::new(1).unwrap()).unwrap();
+    assert_eq!(mute.action, chord("KEY_MUTE"));
+    // VS Code indents on the dial, the rest comes from the global table.
+    let vscode = Bindings::new(profiles, profiles.get("vscode").unwrap());
+    let (indent, layer) = vscode.rotary(Roller::Dial).unwrap();
+    assert_eq!(
+        (&indent.cw, &indent.ccw, layer),
+        (&chord("ctrl+]"), &chord("ctrl+["), Layer::App)
+    );
+    assert_eq!(vscode.rotary(Roller::Roller).unwrap().1, Layer::Global);
+    // Every binding has a label for the app's panel.
+    for profile in profiles.iter() {
+        let Some(dialpad) = &profile.dialpad else {
+            continue;
+        };
+        let labels = dialpad.dial.iter().chain(&dialpad.roller).map(|r| &r.label);
+        let buttons = dialpad.buttons.values().map(|b| &b.label);
+        assert!(
+            labels.chain(buttons).all(Option::is_some),
+            "{}",
+            profile.profile.id
+        );
+    }
+}

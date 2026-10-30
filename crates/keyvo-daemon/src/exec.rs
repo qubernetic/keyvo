@@ -7,7 +7,8 @@
 //! they outlive `[timing].launch_settle`: an application keeps running past
 //! `exec_timeout` and past the daemon.
 //!
-//! Pre-alpha environment: `KEYVO_KEY`, `KEYVO_PROFILE`, `KEYVO_PAGE`,
+//! Pre-alpha environment: `KEYVO_KEY` (`KEYVO_CONTROL` for a Dialpad
+//! control: `dial`, `roller`, `button:N`), `KEYVO_PROFILE`, `KEYVO_PAGE`,
 //! `KEYVO_PRESS`, `KEYVO_LAYER` and `KEYVO_SOCKET`; a key's `on_fail` run
 //! also gets `KEYVO_FAILED_CODE`. The window and project variables come
 //! with their slices.
@@ -34,14 +35,21 @@ pub fn env(record: &TraceRecord, socket: &Path) -> Vec<(&'static str, String)> {
     } else {
         Layer::App
     });
-    vec![
-        ("KEYVO_KEY", record.key.get().to_string()),
-        ("KEYVO_PROFILE", record.profile.clone()),
-        ("KEYVO_PAGE", record.page.to_string()),
-        ("KEYVO_PRESS", record.trigger.press.as_str().to_owned()),
-        ("KEYVO_LAYER", layer.as_str().to_owned()),
-        ("KEYVO_SOCKET", socket.to_string_lossy().into_owned()),
-    ]
+    let source = match (record.key, record.control) {
+        (Some(key), _) => Some(("KEYVO_KEY", key.get().to_string())),
+        (None, Some(control)) => Some(("KEYVO_CONTROL", control.to_string())),
+        (None, None) => None,
+    };
+    source
+        .into_iter()
+        .chain([
+            ("KEYVO_PROFILE", record.profile.clone()),
+            ("KEYVO_PAGE", record.page.to_string()),
+            ("KEYVO_PRESS", record.trigger.press.as_str().to_owned()),
+            ("KEYVO_LAYER", layer.as_str().to_owned()),
+            ("KEYVO_SOCKET", socket.to_string_lossy().into_owned()),
+        ])
+        .collect()
 }
 
 /// The variables of an `on_fail` run after the press `record` failed with
@@ -229,6 +237,7 @@ fn millis(duration: Duration) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use keyvo_core::dialpad::Control;
     use keyvo_core::press::PressKind;
     use keyvo_core::profile::{Action, KeySlot};
     use keyvo_core::trace::Trigger;
@@ -246,7 +255,8 @@ mod tests {
             },
             profile: profile.to_owned(),
             page: 2,
-            key: KeySlot::new(7).unwrap(),
+            key: KeySlot::new(7),
+            control: None,
             layer: Some(layer),
             action: Some(Action::Exec { cmd: "true".into() }),
             result: Outcome::Pending,
@@ -286,6 +296,22 @@ mod tests {
         );
         assert_eq!(fallen[1], ("KEYVO_PROFILE", "konsole".to_owned()));
         assert_eq!(fallen[4], ("KEYVO_LAYER", "global".to_owned()));
+    }
+
+    #[test]
+    fn a_dialpad_control_is_named_instead_of_a_key() {
+        let mut turned = record("code", Layer::App, PressKind::Short);
+        turned.key = None;
+        turned.control = Some(Control::Dial);
+        let env = env(&turned, Path::new(SOCKET));
+        assert_eq!(env[0], ("KEYVO_CONTROL", "dial".to_owned()));
+        assert_eq!(env.len(), 6);
+        turned.control = None;
+        assert_eq!(env_of(&turned)[0].0, "KEYVO_PROFILE");
+    }
+
+    fn env_of(record: &TraceRecord) -> Vec<(&'static str, String)> {
+        env(record, Path::new(SOCKET))
     }
 
     #[test]

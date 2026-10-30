@@ -53,3 +53,9 @@ action = { type = "chord", keys = "ctrl+p" }
 icon   = "lucide:panel-left"
 label  = "Sidebar"
 action = { type = "chord", keys = "ctrl+b" }
+
+# The Dialpad (#188): the dial indents and outdents the line, one step per
+# 15 detents (12 a rotation); the roller and button 1 come from the global
+# profile.
+[dialpad]
+dial = { cw = "ctrl+]", ccw = "ctrl+[", step = 15, label = "Indent" }

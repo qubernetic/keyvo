@@ -13,7 +13,11 @@ import {
   afterUndo,
   describe as describeProblem,
   emptyHistory,
+  fromControlForm,
   fromForm,
+  sameControl,
+  sameControlFields,
+  toControlForm,
   problemOf,
   recorded,
   sameFields,
@@ -162,6 +166,77 @@ describe("the form", () => {
     expect(sameTarget(target, { ...target, page: 2 })).toBe(false);
     expect(sameTarget(target, undefined)).toBe(false);
     expect(sameTarget(undefined, undefined)).toBe(true);
+  });
+});
+
+describe("the control form", () => {
+  const DIAL = {
+    cw: { type: "chord" as const, keys: "KEY_VOLUMEUP" },
+    ccw: { type: "exec" as const, cmd: "pactl set-sink-volume @DEFAULT_SINK@ -5%" },
+    step: 5,
+    label: "Volume",
+  };
+
+  it("round-trips a rotary's fields and a button's", () => {
+    expect(fromControlForm("dial", toControlForm(DIAL))).toEqual({ fields: DIAL });
+    expect(fromControlForm("roller", toControlForm({ cw: DIAL.cw }))).toEqual({ fields: { cw: DIAL.cw } });
+    const button = { label: "Mute", action: { type: "chord" as const, keys: "KEY_MUTE" } };
+    expect(fromControlForm("button:1", toControlForm(button))).toEqual({ fields: button });
+    expect(fromControlForm("button:4", toControlForm({}))).toEqual({ fields: {} });
+  });
+
+  it("shows each direction and the button's action as the key editor's action fields", () => {
+    const form = toControlForm(DIAL);
+    expect(form.cw).toEqual({ actionType: "chord", action: "KEY_VOLUMEUP", windowClass: "", waitFocus: true });
+    expect(form.ccw.actionType).toBe("exec");
+    expect(form.step).toBe("5");
+    expect(form.action.actionType).toBe("none");
+    expect(toControlForm({}).step).toBe("");
+  });
+
+  it("writes a step of 1 as absent, the default", () => {
+    expect(fromControlForm("dial", { ...toControlForm(DIAL), step: "1" })).toEqual({
+      fields: { cw: DIAL.cw, ccw: DIAL.ccw, label: "Volume" },
+    });
+    expect(fromControlForm("dial", { ...toControlForm(DIAL), step: " " })).toEqual({
+      fields: { cw: DIAL.cw, ccw: DIAL.ccw, label: "Volume" },
+    });
+  });
+
+  it.each(["0", "-2", "1.5", "four"])("refuses the step %s under the step field", (step) => {
+    expect(fromControlForm("dial", { ...toControlForm(DIAL), step })).toMatchObject({ field: "step" });
+  });
+
+  it("says why a direction or the button's action cannot be written, and which field", () => {
+    const empty = { actionType: "chord" as const, action: "", windowClass: "", waitFocus: true };
+    expect(fromControlForm("dial", { ...toControlForm(DIAL), ccw: empty })).toEqual({
+      field: "ccw",
+      invalid: "Enter the chord's keys to write it.",
+    });
+    expect(fromControlForm("roller", { ...toControlForm({}), cw: { ...empty, action: "ctrl+nokey" } })).toEqual({
+      field: "cw",
+      invalid: "nokey is not a key name.",
+    });
+    expect(fromControlForm("button:2", { ...toControlForm({}), action: empty })).toMatchObject({
+      field: "action",
+    });
+  });
+
+  it("writes only the fields of the control's kind", () => {
+    const form = toControlForm({ ...DIAL, action: DIAL.cw });
+    expect(fromControlForm("button:1", form)).toEqual({ fields: { label: "Volume", action: DIAL.cw } });
+    expect(fromControlForm("dial", form)).toEqual({ fields: DIAL });
+  });
+
+  it("compares control fields the way the file does, and targets by profile and control", () => {
+    expect(sameControlFields(DIAL, { ...DIAL })).toBe(true);
+    expect(sameControlFields(DIAL, { ...DIAL, step: undefined })).toBe(false);
+    expect(sameControlFields(DIAL, { ...DIAL, ccw: DIAL.cw })).toBe(false);
+    expect(sameControlFields({}, {})).toBe(true);
+    const at = { profile: "global", control: "dial" as const };
+    expect(sameControl(at, { ...at })).toBe(true);
+    expect(sameControl(at, { ...at, control: "roller" })).toBe(false);
+    expect(sameControl(at, undefined)).toBe(false);
   });
 });
 

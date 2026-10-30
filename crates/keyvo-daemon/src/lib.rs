@@ -8,6 +8,7 @@
 
 pub mod daemon;
 pub mod device;
+pub mod dialpad;
 pub mod engine;
 pub mod exec;
 #[cfg(target_os = "linux")]

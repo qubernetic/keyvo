@@ -34,6 +34,18 @@ describe("the mock clients", () => {
     expect((await mockClients("", root).daemon.status()).view.locked).toBe(false);
   });
 
+  it("reports no Dialpad under ?mock-dialpad=none, and only there", async () => {
+    const root = document.createElement("div");
+    expect((await mockClients("?mock-dialpad=none", root).daemon.status()).dialpad?.connected).toBe(false);
+    expect((await mockClients("", root).daemon.status()).dialpad?.connected).toBe(true);
+  });
+
+  it("shares the store with the control editor too", async () => {
+    const { editor } = mockClients("", document.createElement("div"));
+    await editor.editControl({ profile: "global", control: "button:2" }, { label: "Two" });
+    expect((await editor.control({ profile: "global", control: "button:2" })).fields).toEqual({ label: "Two" });
+  });
+
   it("adds a profile with no pages under ?mock-profiles=empty", async () => {
     const root = document.createElement("div");
     const ids = async (search: string) =>

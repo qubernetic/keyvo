@@ -69,7 +69,8 @@ keyvo/
 │   │                   #   socket protocol types, chord parser; sync, hardware-free, >=85 % covered;
 │   │                   #   assets/: bundled Inter font and lucide icons, origin and licence in its README
 │   ├── keyvo-daemon    # tokio runtime: socket server, KWin watcher and logind session watcher
-│   │                   #   (zbus), uinput injector (evdev), inotify hot-reload, /proc lineage; planned: X11 watcher (x11rb), plugin supervisor
+│   │                   #   (zbus), uinput injector (evdev), inotify hot-reload, /proc lineage,
+│   │                   #   Keypad and Dialpad actors; planned: X11 watcher (x11rb), plugin supervisor
 │   ├── keyvo-client    # socket client, mirror state, tile rendering through keyvo-core, key
 │   │                   #   editor file side (round-trip write, snapshot) for the GUI; sync, hardware-free
 │   └── keyvo-cli       # `keyvo probe|keys|dial|fill|preview|ctl|doctor`; planned: `paint-test|profile`
@@ -135,7 +136,7 @@ Follow the `git-workflow` skill strictly. In short:
 - HID++ feature indices differ per device (`0x1B04` is index `0x0b` on the Keypad and `0x0a` on the Dialpad). **Always resolve through `ROOT.getFeature` at runtime; never hard-code an index.**
 - Key geometry comes from the device (VLP display feature fn1); do not hard-code the layout.
 - Timing constants (focus hysteresis, render coalescing, long-press, keep-alive interval, `page_return_global`, `page_return_own`) live under `[timing]` in the configuration with a documented default. No bare timing literals in code.
-- Tests: unit tests in `keyvo-core`, golden-buffer tests in `keyvo-hid` against captured frames, `FakeHidTransport` integration tests, daemon end-to-end tests (`crates/keyvo-daemon/tests/`: a configuration directory on disk, `Pad`s built on `FakeHidTransport`, `FakeInputInjector`, `FakeWindowWatcher`, `FakeSessionWatcher`, `FakeLineage` or the `/proc` lineage), table tests for the context state machine (`crates/keyvo-core/tests/state.rs`), `insta` snapshots for the renderer (binary PNG snapshots in `crates/keyvo-core/tests/snapshots/`; after a deliberate change `INSTA_UPDATE=always just test` rewrites them, then look at every changed PNG before committing). Coverage goals `core >= 85 %`, `hid >= 80 %`; the Codecov org gates block a PR (`codecov/patch` >= 80 %, `codecov/project` at most 1 % below the base).
+- Tests: unit tests in `keyvo-core`, golden-buffer tests in `keyvo-hid` against captured frames, `FakeHidTransport` integration tests, daemon end-to-end tests (`crates/keyvo-daemon/tests/`: a configuration directory on disk, `Pad`s and `Dial`s (a Bolt receiver with the Dialpad) built on `FakeHidTransport`, `FakeInputInjector`, `FakeWindowWatcher`, `FakeSessionWatcher`, `FakeLineage` or the `/proc` lineage), table tests for the context state machine (`crates/keyvo-core/tests/state.rs`), `insta` snapshots for the renderer (binary PNG snapshots in `crates/keyvo-core/tests/snapshots/`; after a deliberate change `INSTA_UPDATE=always just test` rewrites them, then look at every changed PNG before committing). Coverage goals `core >= 85 %`, `hid >= 80 %`; the Codecov org gates block a PR (`codecov/patch` >= 80 %, `codecov/project` at most 1 % below the base).
 - Third-party code is never copied without the origin and licence in the file header; bundled assets (fonts, icons) carry it in `crates/keyvo-core/assets/README.md` and the licence text next to the files. Protocol knowledge is re-derived from research and our own captures.
 
 ## Hardware Facts (owner's machine)

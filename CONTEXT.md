@@ -47,6 +47,12 @@ then injected through `uinput` by the daemon.
 (`0x0008`), page and Dialpad buttons (`0x1B04`), brightness (`0x8040`), rollers
 (`0x4610`). Implemented in `keyvo-hid`; distinct from the VLP plane.
 
+**Control**: One of the Dialpad's six inputs as a binding names it: `dial`,
+`roller`, `button:1` to `button:4` (`keyvo_core::dialpad::Control`). A
+profile's `[dialpad]` table binds them; a control the app profile leaves
+out comes from the global profile's table. Trace records, `key` events and
+socket `press` requests name a control where a Keypad key has its number.
+
 **Context page**: The page of the active profile that auto mode shows while the
 matched application has focus, index 1 of its page list; overlays apply only
 here. Named `context` in the profile's `[[pages]]`; a profile without one uses
@@ -56,18 +62,27 @@ its first page.
 activation (DPI, backlight, button remaps), stored under `[devices]` and applied
 through Solaar when it is installed (M3, optional).
 
+**Detent**: One increment of a Dialpad roller as the device reports it: 180
+a rotation on the dial, 40 on the roller; neither has a ratchet, so a
+detent is not felt. A turn's delta counts as that many detents (a fast dial
+turn's accelerated delta too); a binding's `step` detents run its action
+once, the rest carries to the next turn in the same direction.
+
 **Device actor**: The thread in `keyvo-daemon` that alone owns the Keypad's
 transport: keep-alive, claim, divert, key image writes and input. It takes
 the wanted key specs from the controller, writes only the keys that changed,
-and reconnects when the device is gone.
+and reconnects when the device is gone. The Dialpad has an actor of its own
+(`keyvo_daemon::dialpad`, #188) on its own thread and transport, so either
+device may be absent.
 
 **Dialpad**: The MX Creative Dialpad: four divertable buttons, a dial (180
 detents per revolution) and a small roller (40 per revolution), connected over the
 Bolt receiver or Bluetooth. Driven by `keyvo_hid::dialpad` (beta, #186):
 found on its slot, its buttons and rollers diverted, its turns read as
-rotations; `keyvo dial` prints them. Buttons 1 to 4 are its four CIDs in
-order; roller 1 is called the dial and roller 0 the roller until M3-2
-measures which is which.
+rotations; `keyvo dial` prints them, the daemon runs a profile's
+`[dialpad]` bindings on them (#188). Buttons 1 to 4 are its four CIDs in
+order; roller 1 is the dial and roller 0 the roller, + is clockwise
+(measured, #187).
 
 **Divert**: Taking a control's presses from the device's default action to
 keyvo: `setCidReporting(cid, 0x03)` on `0x1B04` for the page buttons and the
@@ -185,7 +200,8 @@ itself after a time without a page-button or key press: after
 `[timing].page_return_global` (default 10 s) on a global page (index 0 and
 below), after `[timing].page_return_own` (default 0, off) on the shown
 profile's further pages (index 2 and above). Replaced the page grace, which
-kept the index across an app switch (#157).
+kept the index across an app switch (#157). A Dialpad button press restarts
+the clock like a key press; a turn does not (#188).
 
 **Pending launch**: A press of a `launch` key with `wait_focus` on, waiting up
 to `[timing].launch_focus` (default 15 s) for its window. An app switch whose
@@ -283,7 +299,8 @@ of a page on the panel and writes a PNG.
 **Trace**: One record per press, real or simulated: trigger, context snapshot,
 layer resolution, condition results, resolved action with substituted
 variables, execution result, `on_fail` branch and block reason; a key's
-`on_fail` run is a second record of the same press (`branch: "on_fail"`). Kept in a ring
+`on_fail` run is a second record of the same press (`branch: "on_fail"`); a
+Dialpad control's record names the `control` instead of the key. Kept in a ring
 buffer and in `~/.local/state/keyvo/trace.ndjson`; reachable from the GUI
 drawer, `keyvo ctl trace|tail` and `subscribe`. The record type
 (`TraceRecord`) and the press resolution are in `keyvo-core`, the buffer and
