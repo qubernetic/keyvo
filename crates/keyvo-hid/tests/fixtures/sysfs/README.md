@@ -12,7 +12,7 @@ sysfs has.
 | `keypad-and-receiver` | `hidraw2` Keypad (reports 04 05 11 13 14), `hidraw9` Bolt receiver (10 11) | Keypad `hidraw2`, receiver `hidraw9` |
 | `keypad-split` | `hidraw4` Keypad (04 05), `hidraw5` Keypad (11 13 14) | Keypad `hidraw5`, not the first match; no receiver |
 | `keypad-without-bulk` | `hidraw2` Keypad (11 13) | refused: no node carries `0x14` |
-| `receiver-only` | `hidraw9` Bolt receiver | Keypad not found, receiver `hidraw9` |
+| `receiver-only` | Bolt receiver: `hidraw1` keyboard (no report ids), `hidraw2` mouse (02 03 04 0b 3c 3d), `hidraw3` HID++ (10 11), `hidraw4` digitizer (28 29 2a) | Keypad not found, receiver `hidraw3` |
 
 `keyvo_hid::sysfs::find_receiver` takes the `046d:c548` node that carries
 both HID++ reports, `0x10` and `0x11`; the unit tests build the
@@ -32,5 +32,16 @@ otherwise in the kernel's format.
 
 `keypad-split` and `keypad-without-bulk` are hypothetical topologies the
 node search must still handle; their collections are cut from the captured
-descriptor. The Bolt receiver's descriptor (`hidraw9`) is synthetic: a
-short `0x10` and a long `0x11` vendor report; only its VID/PID matters.
+descriptor.
+
+The Bolt receiver's descriptors are the real ones: the owner's hardware
+check of slice 7 (#187, part 1, 2026-10-29), `xxd
+/sys/class/hidraw/<node>/device/report_descriptor` on the receiver's four
+interfaces, `bInterfaceNumber` 00 to 03 on `hidraw1` to `hidraw4`
+(`docs/hardware-notes.md`, "Dialpad over Bolt"). `receiver-only` carries
+all four under their measured node names; `keypad-and-receiver` carries the
+HID++ interface (02) alone, as `hidraw9`. Their `uevent` files are in the
+kernel's format with the `HID_ID` and `HID_NAME` the check printed and the
+interface number in `HID_PHYS`; the check recorded neither the USB path
+nor the driver, so `HID_PHYS` keeps the earlier path and `DRIVER` is left
+out.

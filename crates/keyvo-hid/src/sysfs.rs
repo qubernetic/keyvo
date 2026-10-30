@@ -469,10 +469,27 @@ mod tests {
     }
 
     #[test]
+    fn the_receivers_four_interfaces_declare_their_reports() {
+        // The owner's receiver (#187, part 1): keyboard, mouse, HID++ and
+        // digitizer, one node each.
+        let reports = |node| report_ids(&descriptor("receiver-only", node));
+        assert_eq!(reports("hidraw1"), Ok(vec![]));
+        assert_eq!(
+            reports("hidraw2"),
+            Ok(vec![0x02, 0x03, 0x04, 0x0b, 0x3c, 0x3d])
+        );
+        assert_eq!(reports("hidraw3"), Ok(vec![0x10, 0x11]));
+        assert_eq!(reports("hidraw4"), Ok(vec![0x28, 0x29, 0x2a]));
+    }
+
+    #[test]
     fn the_receiver_node_is_found_beside_the_keypad_and_alone() {
-        for scenario in ["keypad-and-receiver", "receiver-only"] {
+        for (scenario, name) in [
+            ("keypad-and-receiver", "hidraw9"),
+            ("receiver-only", "hidraw3"),
+        ] {
             let node = receiver(scenario).unwrap();
-            assert_eq!(node.name, "hidraw9", "{scenario}");
+            assert_eq!(node.name, name, "{scenario}");
             assert_eq!(node.id.to_string(), "046d:c548");
             assert_eq!(node.report_ids, [0x10, 0x11]);
             assert!(!node.is_bluetooth_dialpad());
