@@ -2558,8 +2558,14 @@ then subscribes with a replay of the newest 20 trace entries;
   carries its whole name in its title (#130). Arrows
   wrapping, `Home` and `End`; a tab pins its page of the profile that
   owns it, so clicking `general` edits the global profile's general page.
-  A profile with no pages adds no tab of its own. "+" (add a page), after
-  the shown profile's tabs, is disabled with its M4a-4 sentence. At the right, the profile's accent as a 12 px swatch with the
+  A profile with no pages adds no tab of its own. A page of the shown
+  profile that is switched off (`enabled = false`, §6.1; beta, #156) has
+  no index and is no tab: it sits among the shown profile's tabs in file
+  order, muted with a dotted rim and its name struck through, the arrow
+  keys skip it, and its switch turns it on again. "+" (add a page),
+  after the shown profile's tabs, adds an unnamed page at the end of the
+  shown profile through the editor and pins it (#156; disabled with its
+  M4a-4 sentence before); a refused edit shows in the result line. At the right, the profile's accent as a 12 px swatch with the
   label "Accent" and its `#rrggbb`; none when the profile has no accent.
   The hardware page buttons page the pad only.
 - **Held caption.** While the focused window is held (§6.1,
@@ -2802,8 +2808,8 @@ write of the screen.
   written; the field is marked invalid and the message under it says
   why. Priority shows as read with "higher wins the window"; Enabled
   likewise shows as read, "On", with its M4a-4 sentence beside it (the
-  schema has no `enabled` yet and the editor writes name and accent
-  only). The result
+  schema has no profile-level `enabled`; the editor writes name, accent
+  and, beta #156, `global_pages`). The result
   line under the form says what was written or opened. Header writes are
   not on the Pad's undo stack; the snapshot keeps the file before each
   one.
@@ -2824,6 +2830,27 @@ write of the screen.
   Pages heading row (#166), opens the Pad pinned to the
   profile and the selected page (`lib/pin.ts`). A newly selected profile
   starts on page 1; a profile with no pages says so.
+- **Page list** (beta, #156). Under the thumbnails each page has a row:
+  its name, edited inline (an empty name removes it), an On switch, Up
+  and Down, and Delete; "+ page" adds an unnamed page at the end. Each
+  change goes through the shell's `edit_page`
+  (`keyvo_core::edit::ProfileDocument::edit_page`, a `PageEdit` of `op`
+  `add`, `rename`, `move`, `enable` or `delete`): a snapshot, then the
+  atomic write, every byte outside the edited page kept; a moved page
+  takes its comments and keys along, a page switched on loses its
+  `enabled` line. Undo takes back the last page change: the answer's
+  inverse edit, or after a delete the shell's `restore_profile`, which
+  writes the snapshot back (`keyvo_client::editor::Editor::restore`,
+  only a snapshot of the editor's own directory and of the same
+  profile); a later header write clears it. The context page's switch
+  and Delete on the only enabled page are `aria-disabled`, the reason
+  beside them; the editor refuses both edits as well
+  (`EditError::Protected`). A file that writes `pages` as an inline
+  array can be renamed and switched, not added to, reordered or deleted
+  from (the editor's `Shape` error). An app profile's header form has a
+  "Show the global pages" checkbox, written as `global_pages = false`
+  in `[profile]` and removed when checked; the global profile does not
+  offer it.
 
 **As built (mock dev server).** `just app-dev` (a host recipe) serves the
 app on the Vite dev server at `http://localhost:1420` with
