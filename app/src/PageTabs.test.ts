@@ -1,7 +1,8 @@
-// The page tabs under the drawing (pad screen brief §5.2, decision Q5; #151):
-// the page list the pad walks, the global pages at index 0 and below muted
-// and marked as the global profile's, then the shown profile's pages by
-// name, the "+" not built yet after them, the accent at the right.
+// The page tabs under the drawing (pad screen brief §5.2, decision Q5; #151,
+// #156): the page list the pad walks, the global pages at index 0 and below
+// muted and marked as the global profile's, then the shown profile's pages
+// by name with the ones switched off muted among them, the "+" after them,
+// the accent at the right.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,6 +36,8 @@ const GLOBAL: ProfileSummary = {
 
 function tabs(profile: ProfileSummary = VSCODE, selected: number | null = 2, pinned?: number) {
   const onpage = vi.fn<(profile: string, page: number) => void>();
+  const onadd = vi.fn<() => void>();
+  const onenable = vi.fn<(page: number) => void>();
   render(PageTabs, {
     props: {
       profile,
@@ -43,12 +46,16 @@ function tabs(profile: ProfileSummary = VSCODE, selected: number | null = 2, pin
       selected: selected ?? undefined,
       pinned,
       onpage,
+      onadd,
+      onenable,
     },
   });
-  return { onpage, list: screen.getByRole("tablist", { name: "Pages" }) };
+  return { onpage, onadd, onenable, list: screen.getByRole("tablist", { name: "Pages" }) };
 }
 
 const texts = (list: HTMLElement) => within(list).getAllByRole("tab").map((tab) => tab.textContent?.trim());
+/** Every name of the strip, the tabs' and the switched-off pages', in order. */
+const strip = (list: HTMLElement) => [...list.querySelectorAll(".name")].map((name) => name.textContent);
 
 describe("the page tabs", () => {
   it("show the list in order: the global pages, then the shown profile's", () => {
@@ -154,16 +161,59 @@ describe("the page tabs", () => {
     expect(onpage).toHaveBeenLastCalledWith("global", 3);
   });
 
-  it("offers adding a page after the shown profile's tabs, as a control not built yet", async () => {
-    const { list } = tabs();
+  it("adds a page with the + after the shown profile's tabs", async () => {
+    const { list, onadd } = tabs();
     const add = screen.getByRole("button", { name: "Add a page" });
-    expect(add).toHaveAttribute("aria-disabled", "true");
+    expect(add).toBeEnabled();
     expect(add).toHaveTextContent("+");
     const last = within(list).getAllByRole("tab").at(-1);
     expect(last?.compareDocumentPosition(add)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    add.focus();
-    await Promise.resolve();
-    expect(add).toHaveAccessibleDescription(/M4a-4/);
+    await fireEvent.click(add);
+    expect(onadd).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the + disabled without a way to add a page", () => {
+    render(PageTabs, {
+      props: { profile: VSCODE, global: GLOBAL, tabs: pageList(VSCODE, GLOBAL), selected: 1, onpage: vi.fn() },
+    });
+    expect(screen.getByRole("button", { name: "Add a page" })).toBeDisabled();
+  });
+
+  it("shows a page switched off muted in file order among the shown profile's tabs, no tab", () => {
+    const off = { ...VSCODE, pages: ["context", "edit", null, "git"], disabled: [2, 3] };
+    const { list } = tabs(off, 1);
+    expect(texts(list)).toEqual(["apps", "general", "context", "git"]);
+    expect(strip(list)).toEqual(["apps", "general", "context", "edit", "Page 3", "git"]);
+    const muted = list.querySelectorAll(".off");
+    expect([...muted].map((item) => item.getAttribute("title"))).toEqual([
+      "edit, switched off",
+      "Page 3, switched off",
+    ]);
+    // The arrows pass it by: from context the next tab is git.
+    expect(within(list).getAllByRole("tab").map((tab) => tab.getAttribute("tabindex"))).toEqual([
+      "-1",
+      "-1",
+      "0",
+      "-1",
+    ]);
+  });
+
+  it("puts a page switched off after the shown profile's last tab, and the context page first", () => {
+    const off = { ...VSCODE, pages: ["edit", "context", "git"], disabled: [1, 3] };
+    const { list } = tabs(off, 1);
+    expect(strip(list)).toEqual(["apps", "general", "context", "edit", "git"]);
+  });
+
+  it("switches a page that is off on with its switch", async () => {
+    const off = { ...VSCODE, disabled: [3] };
+    const { list, onenable, onpage } = tabs(off, 1);
+    const toggle = within(list).getByRole("switch", { name: "Switch git on" });
+    expect(toggle).not.toBeChecked();
+    await fireEvent.click(toggle);
+    expect(onenable).toHaveBeenCalledWith(3);
+    expect(onpage).not.toHaveBeenCalled();
+    // It stays off until the list says otherwise.
+    expect(toggle).not.toBeChecked();
   });
 
   it("shows the accent as a labelled swatch with its hex", () => {

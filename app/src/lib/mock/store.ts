@@ -10,6 +10,8 @@ import { CONFIG_DIR } from "./data";
 
 export interface MockPage {
   name: string | null;
+  /** False for a page written `enabled = false`: it gets no index. */
+  enabled: boolean;
   /** The keys the page defines, by key number from 1. */
   keys: Map<number, KeyFields>;
   /** The `on_fail` actions of the keys, by key number; no edit writes them. */
@@ -121,6 +123,7 @@ export function parseProfile(toml: string): MockProfile {
   const fields: ProfileFields = { name: text(header.name) ?? id };
   const accent = text(header.accent);
   if (accent !== undefined) fields.accent = accent;
+  if (header.global_pages === false) fields.global_pages = false;
   const pages = Array.isArray(doc.pages) ? doc.pages : [];
   return {
     id,
@@ -132,10 +135,11 @@ export function parseProfile(toml: string): MockProfile {
     },
     ...dialpad(doc.dialpad),
     pages: pages.map((page: unknown) => {
-      const { name, keys } = table(page);
+      const { name, keys, enabled } = table(page);
       const entries = Object.entries(table(keys));
       return {
         name: text(name) ?? null,
+        enabled: enabled !== false,
         keys: new Map(entries.map(([n, fields]) => [Number(n), key(fields)])),
         onFail: new Map(
           entries.flatMap(([n, fields]) => {
@@ -146,6 +150,15 @@ export function parseProfile(toml: string): MockProfile {
       };
     }),
   };
+}
+
+/** The page named `context`, else the first enabled one, else page 1
+ * (keyvo_core::state::context_page). */
+export function contextPage(profile: MockProfile | undefined): number {
+  const pages = profile?.pages ?? [];
+  const named = pages.findIndex((page) => page.name === "context");
+  const at = named !== -1 ? named : pages.findIndex((page) => page.enabled);
+  return at === -1 ? 1 : at + 1;
 }
 
 /** A rejection as the editor's Problem. */
@@ -210,5 +223,37 @@ export class Store {
   /** The file of the profile `id`. */
   path(id: string): string {
     return `${this.configDir}/profiles/${id}.toml`;
+  }
+
+  /** The copies `snapshot` took, by path: the profile and its text. */
+  readonly #snapshots = new Map<string, { profile: MockProfile; text?: string }>();
+  #taken = 0;
+
+  /** A copy of the profile `id` as it is now, held in memory under the path
+   * this answers; throws a Problem when there is no such profile. */
+  snapshot(id: string): string {
+    const profile = structuredClone(this.get(id));
+    const text = this.#texts.get(id);
+    this.#taken += 1;
+    const path = `${this.configDir}/snapshots/${this.#taken}-${id}.toml`;
+    this.#snapshots.set(path, { profile, ...(text === undefined ? {} : { text }) });
+    return path;
+  }
+
+  /** The profile `id` as the copy at `path` holds it; throws a Problem
+   * when there is no such profile or copy. */
+  restore(id: string, path: string): void {
+    this.get(id);
+    const copy = this.#snapshots.get(path);
+    if (copy?.profile.id !== id) throw problem(`no snapshot ${path} of \`${id}\``);
+    this.#profiles.set(id, structuredClone(copy.profile));
+    if (copy.text === undefined) this.#texts.delete(id);
+    else this.#texts.set(id, copy.text);
+  }
+
+  /** The pages of the profile `id` changed: its text no longer tells the
+   * line of a key. */
+  repaged(id: string): void {
+    this.#texts.delete(id);
   }
 }

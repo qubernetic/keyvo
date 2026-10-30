@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { pageListCases, type PageListProfile } from "./fixtures";
 import {
   contextPage,
+  enabled,
+  enabledCount,
   fromHeaderForm,
   leftOfContext,
   ordered,
@@ -57,6 +60,21 @@ describe("contextPage", () => {
     expect(contextPage({ ...summary("global", 0), pages: ["general", null] })).toBe(1);
     expect(contextPage(undefined)).toBe(1);
   });
+
+  it("is the first enabled page without one named context, else page 1", () => {
+    expect(contextPage({ ...summary("code", 0), pages: ["a", "b"], disabled: [1] })).toBe(2);
+    expect(contextPage({ ...summary("code", 0), pages: ["a", "context"], disabled: [2] })).toBe(2);
+    expect(contextPage({ ...summary("code", 0), pages: ["a", "b"], disabled: [1, 2] })).toBe(1);
+  });
+});
+
+describe("enabled", () => {
+  it("is false for the pages a profile switched off", () => {
+    const code = { ...summary("code", 0), pages: ["a", "b", "c"], disabled: [2] };
+    expect([1, 2, 3].map((page) => enabled(code, page))).toEqual([true, false, true]);
+    expect(enabledCount(code)).toBe(2);
+    expect(enabledCount(summary("code", 0))).toBe(1);
+  });
 });
 
 describe("pageList", () => {
@@ -103,6 +121,34 @@ describe("pageList", () => {
     expect(tabs({ ...konsole, pages: [] }).map(([index]) => index)).toEqual([-1, 0]);
   });
 
+  it("leaves a disabled page out, the context page in all the same", () => {
+    const code = { ...summary("code", 0), pages: ["edit", "context", "debug"], disabled: [1, 2] };
+    expect(tabs(code, { ...global, disabled: [2] })).toEqual([
+      [0, "global", 3, "apps"],
+      [1, "code", 2, "context"],
+      [2, "code", 3, "debug"],
+    ]);
+  });
+
+  it("leaves the global pages out of a profile with global_pages false", () => {
+    const code = { ...summary("code", 0), global_pages: false };
+    expect(tabs(code)).toEqual([[1, "code", 1, "context"]]);
+  });
+
+  it.each(pageListCases())("is the shared case: $name", (fixture) => {
+    const profile = (id: string, of: PageListProfile): ProfileSummary => ({
+      ...summary(id, 0),
+      pages: of.pages ?? [],
+      ...(of.disabled === undefined ? {} : { disabled: of.disabled }),
+      ...(of.global_pages === undefined ? {} : { global_pages: of.global_pages }),
+    });
+    const global = profile("global", fixture.global);
+    const owner = fixture.owner.id === "global" ? global : profile(fixture.owner.id ?? "", fixture.owner);
+    expect(pageList(owner, global).map(({ index, profile, page }) => ({ index, profile, page }))).toEqual(
+      fixture.list,
+    );
+  });
+
   it("tells the global pages left of a context page", () => {
     expect([1, 2, 3, 4].map((page) => leftOfContext(global, page))).toEqual([false, true, true, false]);
     expect(leftOfContext(undefined, 2)).toBe(false);
@@ -112,23 +158,31 @@ describe("pageList", () => {
 describe("the header form", () => {
   it("round-trips the name and accent", () => {
     const form = toHeaderForm({ name: "Konsole", accent: "#2ecc71" });
-    expect(form).toEqual({ name: "Konsole", accent: "#2ecc71" });
+    expect(form).toEqual({ name: "Konsole", accent: "#2ecc71", globalPages: true });
     expect(fromHeaderForm(form)).toEqual({ fields: { name: "Konsole", accent: "#2ecc71" } });
   });
 
+  it("round-trips global_pages, absent for true", () => {
+    const form = toHeaderForm({ name: "Konsole", global_pages: false });
+    expect(form.globalPages).toBe(false);
+    expect(fromHeaderForm(form)).toEqual({ fields: { name: "Konsole", global_pages: false } });
+    expect(fromHeaderForm({ ...form, globalPages: true })).toEqual({ fields: { name: "Konsole" } });
+    expect(toHeaderForm({ name: "A", global_pages: true }).globalPages).toBe(true);
+  });
+
   it("an empty accent removes it and a written one is lower-cased", () => {
-    expect(fromHeaderForm({ name: "A", accent: " " })).toEqual({ fields: { name: "A" } });
-    expect(fromHeaderForm({ name: "A", accent: "#ABCDEF" })).toEqual({
+    expect(fromHeaderForm({ name: "A", accent: " ", globalPages: true })).toEqual({ fields: { name: "A" } });
+    expect(fromHeaderForm({ name: "A", accent: "#ABCDEF", globalPages: true })).toEqual({
       fields: { name: "A", accent: "#abcdef" },
     });
   });
 
   it("refuses an empty name and an accent that is not #rrggbb, naming the field", () => {
-    expect(fromHeaderForm({ name: "  ", accent: "" })).toEqual({
+    expect(fromHeaderForm({ name: "  ", accent: "", globalPages: true })).toEqual({
       field: "name",
       invalid: "Enter a name to write it.",
     });
-    expect(fromHeaderForm({ name: "A", accent: "green" })).toEqual({
+    expect(fromHeaderForm({ name: "A", accent: "green", globalPages: true })).toEqual({
       field: "accent",
       invalid: "The accent green is not written #rrggbb.",
     });
@@ -138,5 +192,10 @@ describe("the header form", () => {
     expect(sameHeader({ name: "A", accent: "#ABCDEF" }, { name: "A", accent: "#abcdef" })).toBe(true);
     expect(sameHeader({ name: "A" }, { name: "A", accent: "#abcdef" })).toBe(false);
     expect(sameHeader({ name: "A" }, { name: "B" })).toBe(false);
+  });
+
+  it("takes an absent global_pages for true", () => {
+    expect(sameHeader({ name: "A" }, { name: "A", global_pages: true })).toBe(true);
+    expect(sameHeader({ name: "A" }, { name: "A", global_pages: false })).toBe(false);
   });
 });

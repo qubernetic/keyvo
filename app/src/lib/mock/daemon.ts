@@ -13,7 +13,7 @@ import { modifierOf, type KeyFields } from "../editor";
 import type { Context, DialpadStatus, Event, Layer, Modifier, TraceRecord, View } from "../protocol";
 import { fixtureDialpad, fixtureRecipes, fixtureStatus, fixtureTrace, SNAPSHOTS } from "./data";
 import { attempt } from "./profiles";
-import type { MockProfile, Store } from "./store";
+import { contextPage, type Store } from "./store";
 
 /** How often the subscription sends the next fixture trace entry. */
 export const TRACE_MS = 2_000;
@@ -68,12 +68,6 @@ export interface MockDaemonOptions {
 
 /** The key the lock page shows the lock on: the middle one. */
 const LOCK_KEY = 5;
-
-/** The page named `context`, else page 1 (keyvo_core::state::context_page). */
-function contextPage(profile: MockProfile | undefined): number {
-  const index = profile?.pages.findIndex((page) => page.name === "context") ?? -1;
-  return index < 0 ? 1 : index + 1;
-}
 
 /** The snapshot that stands in for a key showing `fields`. */
 function snapshot(fields: KeyFields | undefined): string {

@@ -45,8 +45,13 @@
   /** Bumped by every read, so a late answer of an earlier one is dropped. */
   let reads = 0;
 
+  /** Bumped by every page or header write of the Pad and Profiles, so the
+   * list follows it without waiting for the daemon's reload. */
+  let written = $state(0);
+
   $effect(() => {
     void reloads;
+    void written;
     const mine = ++reads;
     void files.list().then(
       (list) => {
@@ -92,6 +97,8 @@
         {columns}
         ondevice={(next) => (device = next)}
         {profiles}
+        {files}
+        onprofiles={() => written++}
         {pinned}
         onpin={(next) => (pinned = next)}
         onview={(next, count) => {
@@ -115,6 +122,7 @@
           {reloads}
           {pinned}
           onpin={(next) => (pinned = next)}
+          onprofiles={() => written++}
           geometry={device?.geometry}
           onedit={(pin) => {
             pinned = pin;

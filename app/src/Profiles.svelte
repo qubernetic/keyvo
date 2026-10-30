@@ -3,11 +3,17 @@
   // brief §5.3, §6; d1, d2, d14, ADR-0004): the list column with the
   // profiles by priority, the global one pinned first and the pad's one
   // marked, "+" with the templates; the editor with the heading row (name,
-  // Open in editor, the file once), the header form (name and accent
-  // written the moment they change, after a snapshot), the match rules,
-  // the pages as thumbnails keyvo-core renders, and "Edit keys on the Pad".
-  // The key grid lives on the Pad only. What is not built yet is shown
-  // disabled (Soon.svelte). The selection is the shell's pin (#164).
+  // Open in editor, the file once), the header form (name, accent and, for
+  // an app profile, whether its page list shows the global pages, written
+  // the moment they change, after a snapshot), the match rules, the pages
+  // as thumbnails keyvo-core renders, and "Edit keys on the Pad". Under
+  // the thumbnails the page rows (#156): rename, switch on or off, up and
+  // down, delete, and "+ page", each written through the editor; the
+  // context page stays on and the only page that is on stays, their
+  // controls inactive with the reason beside them; Undo takes the last page
+  // change back, a delete by its snapshot. The key grid lives on the Pad
+  // only. What is not built yet is shown disabled (Soon.svelte). The
+  // selection is the shell's pin (#164).
   import { untrack } from "svelte";
 
   import Device from "./Device.svelte";
@@ -19,6 +25,9 @@
   import { clock } from "./lib/pad";
   import { pinPage, pinProfile, type Pin, type Pinned } from "./lib/pin";
   import {
+    contextPage,
+    enabled,
+    enabledCount,
     fromHeaderForm,
     GLOBAL,
     ordered,
@@ -27,6 +36,8 @@
     toHeaderForm,
     type HeaderForm,
     type Invalid,
+    type PageEdit,
+    type PageEdited,
     type ProfileFiles,
     type ProfileSummary,
     type ProfileView,
@@ -44,6 +55,7 @@
     pinned,
     onpin,
     onedit,
+    onprofiles,
   }: {
     daemon: Daemon;
     files: ProfileFiles;
@@ -60,6 +72,8 @@
     onpin?: (pinned: Pinned) => void;
     /** Opens the Pad pinned to a profile and page. */
     onedit?: (pin: Pin) => void;
+    /** A header or page write was done: the shell reads the profiles again. */
+    onprofiles?: () => void;
   } = $props();
 
   /** The rows of the skeleton list while the first read runs (§6). */
@@ -145,7 +159,7 @@
 
   // The header: the file and the fields as they are on disk.
   let header: ProfileView | undefined = $state.raw();
-  let form: HeaderForm = $state({ name: "", accent: "" });
+  let form: HeaderForm = $state({ name: "", accent: "", globalPages: true });
   let problem: Problem | undefined = $state();
   let invalid: Invalid | undefined = $state();
   let note: string | undefined = $state();
@@ -173,7 +187,16 @@
     void id;
     invalid = undefined;
     note = undefined;
+    pageNote = undefined;
+    undoable = undefined;
   });
+
+  /** The screen wrote a profile file: the list, the header and the
+   * thumbnails here, and the shell's list, follow it. */
+  function written() {
+    edits++;
+    onprofiles?.();
+  }
 
   /** Writes run one after the other, each against the last one's result. */
   let queue: Promise<void> = Promise.resolve();
@@ -194,11 +217,76 @@
         if (at === id) header = { path: edited.path, fields: edited.fields };
         problem = undefined;
         note = t("profiles.wrote", { id: at, path: edited.path, time: clock(Date.now()) });
-        edits++;
+        // A restore of the last page change's snapshot would take this
+        // write back too.
+        undoable = undefined;
+        written();
       } catch (error) {
         problem = problemOf(error);
       }
     });
+  }
+
+  /** The last page change of the selected profile, which Undo takes back
+   * with the edit its answer names, a delete with the snapshot it took. */
+  let undoable: { id: string; edited: PageEdited } | undefined = $state.raw();
+  let pageNote: string | undefined = $state();
+
+  function editPage(edit: PageEdit) {
+    queue = queue.then(async () => {
+      const at = id;
+      if (at === undefined) return;
+      try {
+        const edited = await files.editPage(at, edit);
+        problem = undefined;
+        undoable = edited.undo !== undefined || edited.snapshot !== undefined ? { id: at, edited } : undefined;
+        // The selection goes with an added page and with the moved one.
+        if (edited.page !== undefined && (edit.op === "add" || (edit.op === "move" && edit.page === page))) {
+          page = edited.page;
+        }
+        pageNote = t("profiles.wrotePage", { id: at, path: edited.path, time: clock(Date.now()) });
+        written();
+      } catch (error) {
+        problem = problemOf(error);
+      }
+    });
+  }
+
+  function undoPage() {
+    queue = queue.then(async () => {
+      const last = undoable;
+      if (last === undefined) return;
+      try {
+        const { undo, snapshot } = last.edited;
+        if (undo !== undefined) await files.editPage(last.id, undo);
+        else if (snapshot !== undefined) await files.restore(last.id, snapshot);
+        problem = undefined;
+        undoable = undefined;
+        pageNote = t("profiles.undidPage", { id: last.id, time: clock(Date.now()) });
+        written();
+      } catch (error) {
+        problem = problemOf(error);
+      }
+    });
+  }
+
+  /** The name inputs of the page rows. Each one shows the name in the file
+   * whenever the list is read again, unless the user is typing in it: an
+   * undo or a refused rename puts the file's name back. */
+  const nameInputs: (HTMLInputElement | null)[] = $state([]);
+  $effect(() => {
+    const names = selected?.pages ?? [];
+    for (const [at, input] of nameInputs.entries()) {
+      // A row that is gone leaves null behind.
+      if (input && input !== document.activeElement) input.value = names[at] ?? "";
+    }
+  });
+
+  /** A name typed into a page row: an empty one removes the name. */
+  function rename(number: number, value: string) {
+    const name = value.trim();
+    if (selected === undefined || name === (selected.pages[number - 1] ?? "")) return;
+    editPage(name === "" ? { op: "rename", page: number } : { op: "rename", page: number, name });
   }
 
   async function open() {
@@ -216,7 +304,7 @@
   /** The swatch beside the accent text: the typed colour once it is one,
    * else the one on disk. */
   const swatch = $derived.by(() => {
-    const result = fromHeaderForm({ name: "-", accent: form.accent });
+    const result = fromHeaderForm({ name: "-", accent: form.accent, globalPages: true });
     return "fields" in result ? result.fields.accent : header?.fields.accent;
   });
 
@@ -236,6 +324,22 @@
   const pages: number[] = $derived(
     Array.from({ length: selected?.pages.length ?? 0 }, (_, index) => index + 1),
   );
+  // A deleted last page leaves the selection on the one before it.
+  $effect(() => {
+    if (pages.length > 0 && page > pages.length) page = pages.length;
+  });
+
+  /** Why a page's controls are inactive: the context page stays on, the
+   * only page that is on stays. */
+  const keeps = $derived.by(() => {
+    const profile = selected;
+    if (profile === undefined) return { context: 0, only: false };
+    const context = contextPage(profile);
+    return {
+      context: enabled(profile, context) ? context : 0,
+      only: enabledCount(profile) === 1,
+    };
+  });
 
   // The thumbnails: every page's tiles, again after every reload and edit.
   let thumbs: Tile[][] = $state([]);
@@ -399,6 +503,24 @@
             {/if}
           </div>
 
+          <!-- The global profile's own list always holds its pages. -->
+          {#if selected.id !== GLOBAL}
+            <div class="field">
+              <label for={`kv-global-pages-${uid}`}>{t("profiles.globalPages")}</label>
+              <span class="value">
+                <input
+                  id={`kv-global-pages-${uid}`}
+                  type="checkbox"
+                  aria-label={t("profiles.showGlobalPages")}
+                  aria-describedby={`kv-global-pages-hint-${uid}`}
+                  bind:checked={form.globalPages}
+                  onchange={commit}
+                />
+                <span id={`kv-global-pages-hint-${uid}`} class="hint">{t("profiles.globalPagesHint")}</span>
+              </span>
+            </div>
+          {/if}
+
           <!-- Read values until M4a-4 writes them: the value, then what it
                means or when it can change. -->
           <div class="field">
@@ -479,11 +601,14 @@
           {/if}
           <ul class="thumbnails" aria-labelledby={`kv-pages-${uid}`}>
             {#each pages as number (number)}
+              {@const on = enabled(selected, number)}
               <li>
                 <button
                   type="button"
-                  class="thumbnail"
-                  aria-label={pageName(selected, number)}
+                  class={["thumbnail", { off: !on }]}
+                  aria-label={on
+                    ? pageName(selected, number)
+                    : t("profiles.offPage", { page: pageName(selected, number) })}
                   aria-pressed={number === page}
                   onclick={() => (page = number)}
                 >
@@ -507,7 +632,89 @@
           {#if thumbsError !== undefined}
             <p class="note">{t("home.tilesError", { error: thumbsError })}</p>
           {/if}
+
+          <ul class="page-rows" aria-label={t("profiles.pageRows")}>
+            {#each pages as number (number)}
+              {@const name = pageName(selected, number)}
+              {@const on = enabled(selected, number)}
+              {@const stays = number === keeps.context}
+              {@const kept = on && keeps.only}
+              <li class={["page-row", { off: !on }]}>
+                <input
+                  bind:this={nameInputs[number - 1]}
+                  type="text"
+                  aria-label={t("profiles.pageName", { page: number })}
+                  placeholder={t("profiles.pageNumber", { page: number })}
+                  value={selected.pages[number - 1] ?? ""}
+                  onchange={(event) => rename(number, event.currentTarget.value)}
+                />
+                <label class="switch">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    aria-label={t("profiles.pageEnabled", { page: name })}
+                    aria-disabled={stays ? "true" : undefined}
+                    aria-describedby={stays ? `kv-stays-${uid}-${number}` : undefined}
+                    checked={on}
+                    onclick={(event) => {
+                      if (stays) event.preventDefault();
+                    }}
+                    onchange={(event) => {
+                      // The switch shows the file: the list read after the write moves it.
+                      event.currentTarget.checked = on;
+                      editPage({ op: "enable", page: number, enabled: !on });
+                    }}
+                  />
+                  {t("profiles.on")}
+                </label>
+                <button
+                  type="button"
+                  aria-label={t("profiles.moveUp", { page: name })}
+                  disabled={number === 1}
+                  onclick={() => editPage({ op: "move", page: number, to: number - 1 })}
+                >
+                  {t("profiles.up")}
+                </button>
+                <button
+                  type="button"
+                  aria-label={t("profiles.moveDown", { page: name })}
+                  disabled={number === pages.length}
+                  onclick={() => editPage({ op: "move", page: number, to: number + 1 })}
+                >
+                  {t("profiles.down")}
+                </button>
+                <button
+                  type="button"
+                  aria-label={t("profiles.deletePage", { page: name })}
+                  aria-disabled={kept ? "true" : undefined}
+                  aria-describedby={kept ? `kv-kept-${uid}-${number}` : undefined}
+                  onclick={() => {
+                    if (!kept) editPage({ op: "delete", page: number });
+                  }}
+                >
+                  {t("profiles.delete")}
+                </button>
+                {#if stays}
+                  <span id={`kv-stays-${uid}-${number}`} class="hint">{t("profiles.contextStays")}</span>
+                {/if}
+                {#if kept}
+                  <span id={`kv-kept-${uid}-${number}`} class="hint">{t("profiles.onlyStays")}</span>
+                {/if}
+              </li>
+            {/each}
+          </ul>
         {/if}
+        <div class="page-actions">
+          <button type="button" aria-label={t("profiles.addPage")} onclick={() => editPage({ op: "add" })}>
+            {t("profiles.addPageText")}
+          </button>
+          {#if undoable !== undefined}
+            <button type="button" aria-label={t("profiles.undoPage")} onclick={undoPage}>
+              {t("profiles.undo")}
+            </button>
+          {/if}
+          <p role="status" aria-label={t("profiles.pagesResult")} class="note">{pageNote ?? ""}</p>
+        </div>
       </section>
     {/if}
   </section>
@@ -748,6 +955,63 @@
     border-color: var(--kv-accent);
     background: var(--kv-bg);
     color: var(--kv-fg);
+  }
+
+  /* A page switched off: muted, with a dotted rim, as on the Pad's strip. */
+  .thumbnail.off {
+    border-style: dotted;
+    background: var(--kv-bg-alt);
+    color: var(--kv-fg-muted);
+  }
+
+  .thumbnail.off .thumb {
+    opacity: 0.5;
+  }
+
+  /* The page rows: name, switch, up, down, delete in one row at 48ch,
+     the reason a control is inactive under them. */
+  .page-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 48ch;
+  }
+
+  .page-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .page-row input[type="text"] {
+    flex: 1;
+    min-width: 12ch;
+  }
+
+  .page-row.off input[type="text"] {
+    background: var(--kv-bg-alt);
+    color: var(--kv-fg-muted);
+  }
+
+  .page-row .hint {
+    flex-basis: 100%;
+    margin-inline-start: 0;
+    font-size: 0.85em;
+  }
+
+  .switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .page-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    max-width: 48ch;
   }
 
   .thumb {

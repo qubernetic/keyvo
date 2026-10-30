@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App.svelte";
 import type { Daemon, Update } from "./lib/daemon";
 import type { Editor } from "./lib/editor";
-import type { ProfileFiles, ProfileSummary } from "./lib/profiles";
+import type { PageEdit, ProfileFiles, ProfileSummary } from "./lib/profiles";
 import { eventsOf, nth, responses, UNBOUND_CONTROLS } from "./lib/fixtures";
 import type { Event, Status } from "./lib/protocol";
 
@@ -55,6 +55,10 @@ function props(
     profile: () =>
       Promise.resolve({ path: "/c/profiles/terminal.toml", fields: { name: "Terminal" } }),
     editProfile: () => Promise.reject(new Error("not in this test")),
+    editPage: vi.fn((_id: string, edit: PageEdit) =>
+      Promise.resolve({ path: "/c/profiles/terminal.toml", edit, page: 2 }),
+    ),
+    restore: () => Promise.reject(new Error("not in this test")),
     open: () => Promise.reject(new Error("not in this test")),
   };
   const daemon: Daemon = {
@@ -261,6 +265,17 @@ describe("the pin", () => {
     await waitFor(() => expect(files.list).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(dropdown().value).toBe("terminal"));
     expect(await listed()).toEqual(["Global", "Terminal, on the pad"]);
+  });
+
+  it("adds a page with the tabs' +, pins it and reads the list again", async () => {
+    const { files } = app();
+    await listed();
+    const add = await screen.findByRole("button", { name: "Add a page" });
+    await fireEvent.click(add);
+    await waitFor(() => expect(files.editPage).toHaveBeenCalledWith("terminal", { op: "add" }));
+    await waitFor(() => expect(files.list).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Pin" })).toHaveAttribute("aria-pressed", "true"));
+    expect(screen.getByText("Editing Terminal, page 2; the pad shows Terminal, page 1.")).toBeInTheDocument();
   });
 });
 

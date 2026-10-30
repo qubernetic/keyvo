@@ -1,13 +1,13 @@
 // Test helper: the shared socket fixtures in tests/protocol-fixtures/socket/
 // as parsed messages, and the key editor steps in
-// tests/protocol-fixtures/editor/ (keys and the profile header). Only the
-// tests import it.
+// tests/protocol-fixtures/editor/ (keys, the profile header, the page edits
+// and the page list). Only the tests import it.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { Editor, KeyFields } from "./editor";
-import type { ProfileFields } from "./profiles";
+import type { PageEdit, ProfileFields } from "./profiles";
 import { parseServerMessage, type Event, type Recipes, type Reply } from "./protocol";
 
 const FIXTURES = join(
@@ -79,7 +79,7 @@ export function editorSteps(): EditorSteps {
 /** One step of tests/protocol-fixtures/editor/profile.json. */
 export interface ProfileStep {
   /** The header field the step changes. */
-  field: "name" | "accent";
+  field: "name" | "accent" | "global_pages";
   fields: ProfileFields;
   /** The file the step gives. */
   file: string;
@@ -99,6 +99,58 @@ export interface ProfileSteps {
 
 export function profileSteps(): ProfileSteps {
   return JSON.parse(readFileSync(join(EDITOR, "profile.json"), "utf8")) as ProfileSteps;
+}
+
+/** A profile of a case of tests/protocol-fixtures/editor/page-list.json. */
+export interface PageListProfile {
+  /** `global` for the global profile itself; absent in a case's `global`. */
+  id?: string;
+  pages?: (string | null)[];
+  /** The disabled pages, from 1. */
+  disabled?: number[];
+  /** Absent for true. */
+  global_pages?: boolean;
+}
+
+/** One case of tests/protocol-fixtures/editor/page-list.json, which
+ * keyvo-core's PageList runs too. */
+export interface PageListCase {
+  name: string;
+  global: PageListProfile;
+  owner: PageListProfile;
+  list: { index: number; profile: string; page: number }[];
+}
+
+export function pageListCases(): PageListCase[] {
+  const path = join(EDITOR, "page-list.json");
+  return (JSON.parse(readFileSync(path, "utf8")) as { cases: PageListCase[] }).cases;
+}
+
+/** One step of tests/protocol-fixtures/editor/pages.json. */
+export interface PageStep {
+  edit: PageEdit;
+  /** The file the step gives. */
+  file: string;
+  /** The edited page's number after the step; absent for a delete. */
+  page?: number;
+  /** The edit that undoes the step; absent for a delete. */
+  undo?: PageEdit;
+}
+
+/** tests/protocol-fixtures/editor/pages.json: page edits applied one after
+ * the other, and the edits the editor refuses. */
+export interface PageSteps {
+  profile: string;
+  /** The file before the steps. */
+  file: string;
+  /** The file's path inside the configuration directory. */
+  path: string;
+  steps: PageStep[];
+  refused: { edit: PageEdit; reason: "context" | "only" }[];
+}
+
+export function pageSteps(): PageSteps {
+  return JSON.parse(readFileSync(join(EDITOR, "pages.json"), "utf8")) as PageSteps;
 }
 
 /** tests/protocol-fixtures/editor/recipe.json: variant `variant` of recipe
