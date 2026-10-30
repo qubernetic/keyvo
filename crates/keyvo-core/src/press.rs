@@ -175,6 +175,7 @@ pub(crate) fn nothing(profile: &str, page: usize, trigger: Trigger, at: SystemTi
         key: None,
         control: None,
         layer: None,
+        modifier: None,
         action: None,
         result: Outcome::Unbound,
         branch: None,

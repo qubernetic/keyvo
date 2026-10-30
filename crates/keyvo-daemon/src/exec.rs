@@ -258,6 +258,7 @@ mod tests {
             key: KeySlot::new(7),
             control: None,
             layer: Some(layer),
+            modifier: None,
             action: Some(Action::Exec { cmd: "true".into() }),
             result: Outcome::Pending,
             branch: None,

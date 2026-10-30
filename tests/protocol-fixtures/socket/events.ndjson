@@ -19,6 +19,7 @@
 {"v":1,"event":"trace","entry":{"timestamp_ms":1792929600250,"trigger":{"press":"short","simulated":false},"profile":"demo","page":1,"key":5,"action":null,"result":{"status":"blocked","reason":"session locked"}}}
 {"v":1,"event":"trace","entry":{"timestamp_ms":1792929600250,"trigger":{"press":"short","simulated":false},"profile":"global","page":1,"control":"dial","layer":"global","action":{"type":"chord","keys":"KEY_VOLUMEUP"},"result":{"status":"sent","events":[{"code":115,"down":true},{"code":115,"down":false}]}}}
 {"v":1,"event":"trace","entry":{"timestamp_ms":1792929600250,"trigger":{"press":"short","simulated":false},"profile":"demo","page":1,"control":"roller","action":null,"result":{"status":"blocked","reason":"session locked"}}}
+{"v":1,"event":"trace","entry":{"timestamp_ms":1792929600250,"trigger":{"press":"short","simulated":false},"profile":"global","page":1,"key":7,"control":"dial","layer":"global","modifier":"held","action":{"type":"chord","keys":"KEY_BRIGHTNESSUP"},"result":{"status":"sent","events":[{"code":225,"down":true},{"code":225,"down":false}]}}}
 {"v":1,"event":"key","control":"button:1","edge":"press"}
 {"v":1,"event":"dialpad","connected":true,"slot":3,"rollers":[{"roller":"roller","increments":40},{"roller":"dial","increments":180}]}
 {"v":1,"event":"dialpad","connected":false,"error":"no MX Creative Dialpad found (slots: 1 no 0x4610, 2 no 0x4610, 3 silent, 4 empty, 5 empty, 6 empty)"}

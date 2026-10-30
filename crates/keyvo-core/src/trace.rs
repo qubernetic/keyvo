@@ -15,7 +15,7 @@ use serde_json::{Map, Value};
 use crate::chord::KeyEvent;
 use crate::dialpad::Control;
 use crate::press::PressKind;
-use crate::profile::{Action, KeySlot};
+use crate::profile::{Action, KeySlot, ModifierMode};
 use crate::stack::Layer;
 
 /// What caused the press.
@@ -54,6 +54,10 @@ pub struct TraceRecord {
     /// own, or the global one under it; `None` when no layer defines it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layer: Option<Layer>,
+    /// A turn taken by a modifier key (`key` and `control` both set), or a
+    /// press that changed one: how the key holds the dial and the roller.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modifier: Option<ModifierMode>,
     /// The action the press resolved to; `None` for an unbound key.
     #[serde(deserialize_with = "known_action_fields")]
     pub action: Option<Action>,
