@@ -821,8 +821,8 @@ fn receiver_open_finds_the_dialpad_on_its_slot_and_diverts_it() {
     assert_eq!(
         dialpad.slots(),
         &Slots(vec![
-            (1, Slot::Empty(ReceiverError::UnknownDevice)),
-            (2, Slot::Silent),
+            (1, Slot::Absent),
+            (2, Slot::Absent),
             (3, Slot::Dialpad),
         ])
     );
@@ -895,9 +895,10 @@ fn a_cold_search_waits_out_slow_slots_and_drops_a_repeated_reply() {
 fn a_dialpad_waking_from_sleep_is_found_not_skipped_as_silent() {
     // The slowest measured first reply of the sleeping Dialpad: 771 ms.
     let script = fixture!("receiver-slot-probe.txt")
-        .replace("< 11 03 00 0f 0d 00 01", "< +771 11 03 00 0f 0d 00 01")
+        .replace("< +16 11 03 00 0f 0d 00 01", "< +771 11 03 00 0f 0d 00 01")
         + fixture!("receiver-controls.txt")
         + fixture!("receiver-multiroller.txt");
+    assert!(script.contains("< +771 "));
     let mut hidpp = replay(&script);
     let dialpad = Dialpad::find(
         &mut hidpp,
@@ -911,26 +912,93 @@ fn a_dialpad_waking_from_sleep_is_found_not_skipped_as_silent() {
 }
 
 #[test]
-fn receiver_input_gives_turns_and_button_edges_of_the_dialpad_only() {
+fn receiver_input_gives_the_owners_button_edges_and_turns() {
     let script = receiver_open() + fixture!("receiver-input.txt");
     let (mut hidpp, mut dialpad, _) = open_dialpad(&script, Link::Receiver);
+    let events = dialpad_events(&mut hidpp, &mut dialpad);
+    let (buttons, turns): (Vec<_>, Vec<_>) = events
+        .iter()
+        .partition(|event| matches!(event, DialpadEvent::Input(InputEvent::Button { .. })));
+    let press = |cid| DialpadEvent::Input(InputEvent::press(Control::Page(cid)));
+    let release = |cid| DialpadEvent::Input(InputEvent::release(Control::Page(cid)));
+    // Three, four, one and two once each, one held, then two and one held
+    // together, two let go first: one press and one release per button.
+    let [b1, b2, b3, b4] = DIALPAD_BUTTONS;
+    assert_eq!(
+        buttons.into_iter().copied().collect::<Vec<_>>(),
+        [
+            press(b3),
+            release(b3),
+            press(b4),
+            release(b4),
+            press(b1),
+            release(b1),
+            press(b2),
+            release(b2),
+            press(b1),
+            release(b1),
+            press(b2),
+            press(b1),
+            release(b2),
+            release(b1),
+        ]
+    );
+    // The turns in runs of one roller and one direction: (roller, reports,
+    // sum, largest delta), the owner's table of #187 part 2 plus the
+    // dial's spring-back and its one report after the fast roller.
+    let mut runs: Vec<(u8, usize, i32, i32)> = Vec::new();
+    for event in turns {
+        let DialpadEvent::Input(InputEvent::Rotate { roller, delta }) = *event else {
+            panic!("not a turn: {event:?}");
+        };
+        let delta = i32::from(delta);
+        match runs.last_mut() {
+            Some((r, count, sum, largest)) if *r == roller && (*sum > 0) == (delta > 0) => {
+                *count += 1;
+                *sum += delta;
+                *largest = (*largest).max(delta.abs());
+            }
+            _ => runs.push((roller, 1, delta, delta.abs())),
+        }
+    }
+    assert_eq!(
+        runs,
+        [
+            (1, 32, 35, 4),
+            (1, 31, -44, 6),
+            (0, 13, 20, 3),
+            (0, 13, -16, 2),
+            (1, 36, -169, 18),
+            (1, 3, 3, 1),
+            (0, 30, -51, 2),
+            (1, 1, 1, 1),
+        ]
+    );
+    // The status reports of 0x1D4B and 0x1004 are frames, but no input.
+    assert_eq!(hidpp.dropped_reports(), 0);
+    assert!(hidpp.transport_mut().is_done());
+}
+
+/// Input the owner's capture has none of (synthetic): the ends of the
+/// `i8` delta, a rotation without a timestamp, another paired device's
+/// notification and a DJ report of the kernel's driver (report `0x20`).
+const RECEIVER_EDGE_INPUT: &str = "\
+< 11 03 0d 00 00 7f 00 00 12 50 00 00 00 00 00 00 00 00 00 00
+< 11 03 0d 00 00 80 00 00 12 60 00 00 00 00 00 00 00 00 00 00
+< 11 03 0d 00 00 ff 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 02 0a 00 00 53 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 20 03 02 00 00 00 01 00 00 00 00 00 00 00 00
+< 11 03 0d 00 01 03 00 00 12 70 00 00 00 00 00 00 00 00 00 00
+";
+
+#[test]
+fn receiver_input_skips_other_devices_and_keeps_the_delta_range() {
+    let script = receiver_open() + RECEIVER_EDGE_INPUT;
+    let (mut hidpp, mut dialpad, _) = open_dialpad(&script, Link::Receiver);
     let turn = |roller, delta| DialpadEvent::Input(InputEvent::Rotate { roller, delta });
-    let button = |cid| Control::Page(cid);
     assert_eq!(
         dialpad_events(&mut hidpp, &mut dialpad),
-        [
-            turn(1, 3),
-            turn(1, -2),
-            turn(0, 127),
-            turn(0, -128),
-            turn(0, -1),
-            DialpadEvent::Input(InputEvent::press(button(0x0053))),
-            DialpadEvent::Input(InputEvent::release(button(0x0053))),
-            DialpadEvent::Input(InputEvent::press(button(0x0059))),
-            DialpadEvent::Input(InputEvent::press(button(0x005a))),
-            DialpadEvent::Input(InputEvent::release(button(0x0059))),
-            DialpadEvent::Input(InputEvent::release(button(0x005a))),
-        ]
+        [turn(0, 127), turn(0, -128), turn(0, -1), turn(1, 3)]
     );
     // The kernel's DJ report is not a frame.
     assert_eq!(hidpp.dropped_reports(), 1);
@@ -987,20 +1055,20 @@ fn receiver_arrival_after_a_lost_link_rediverts_the_dialpad() {
 }
 
 #[test]
-fn receiver_search_without_an_awake_dialpad_waits_for_its_arrival() {
-    let mut hidpp = replay(fixture!("receiver-asleep.txt"));
+fn receiver_search_without_an_awake_dialpad_finds_it_in_the_next_round() {
+    let mut hidpp = replay(&(fixture!("receiver-asleep.txt").to_owned() + &receiver_open()));
     let timing = DialpadTiming::default();
     let Err(DialpadError::NotFound(slots)) =
         Dialpad::open(&mut hidpp, Link::Receiver, &timing, |_| {})
     else {
         panic!("found a Dialpad in the asleep fixture");
     };
-    let empty = Slot::Empty(ReceiverError::UnknownDevice);
+    let empty = Slot::Empty(ReceiverError::ResourceError);
     assert_eq!(
         slots,
         Slots(vec![
-            (1, empty),
-            (2, empty),
+            (1, Slot::Absent),
+            (2, Slot::Absent),
             (3, Slot::Silent),
             (4, empty),
             (5, empty),
@@ -1008,11 +1076,25 @@ fn receiver_search_without_an_awake_dialpad_waits_for_its_arrival() {
         ])
     );
     assert_eq!(slots.silent(), [3]);
+    // The waking Dialpad's reconnect report is no arrival (#187, part 2):
+    // the wait runs out, and the next search round finds the Dialpad.
     let slot = dialpad::wait_for_arrival(&mut hidpp, &slots.silent(), REPLY_TIMEOUT).unwrap();
+    assert_eq!(slot, None);
+    let dialpad = Dialpad::open(&mut hidpp, Link::Receiver, &timing, |_| {}).unwrap();
+    assert_eq!(dialpad.device_index(), DIALPAD_SLOT);
+    assert!(hidpp.transport_mut().is_done());
+}
+
+#[test]
+fn an_arrival_on_a_silent_slot_asks_that_slot_alone() {
+    // Link lost first, which is no answer to the wait; then the link
+    // established (synthetic, receiver-arrival.txt).
+    let mut hidpp = replay(fixture!("receiver-arrival.txt"));
+    let slot = dialpad::wait_for_arrival(&mut hidpp, &[DIALPAD_SLOT], REPLY_TIMEOUT).unwrap();
     assert_eq!(slot, Some(DIALPAD_SLOT));
     assert!(hidpp.transport_mut().is_done());
 
-    // The slot alone is asked again.
+    let timing = DialpadTiming::default();
     let open = receiver_open();
     let from_slot_3 = format!("#{}", open.split("# 3. slot 3").nth(1).unwrap());
     let mut hidpp = replay(&from_slot_3);
@@ -1025,27 +1107,30 @@ fn receiver_search_without_an_awake_dialpad_waits_for_its_arrival() {
 fn a_bluetooth_dialpad_is_the_same_driver_on_device_index_0xff() {
     let open = receiver_open();
     let from_slot_3 = format!("#{}", open.split("# 3. slot 3").nth(1).unwrap());
-    let script = from_slot_3.replace("11 03 ", "11 ff ")
-        + &fixture!("receiver-input.txt")
-            .lines()
-            .filter(|line| line.starts_with("< 11 03 0d"))
-            .map(|line| line.replace("11 03 ", "11 ff ") + "\n")
-            .collect::<String>();
+    let turns = fixture!("receiver-input.txt")
+        .lines()
+        .filter(|line| line.starts_with("< 11 03 0d"))
+        .map(|line| line.replace("11 03 ", "11 ff ") + "\n")
+        .collect::<String>();
+    let script = from_slot_3.replace("11 03 ", "11 ff ") + &turns;
     let (mut hidpp, mut dialpad, _) = open_dialpad(&script, Link::Direct);
     assert_eq!(dialpad.device_index(), DEVICE_DIRECT);
     assert_eq!(dialpad.slots().to_string(), "direct dialpad");
-    assert_eq!(dialpad_events(&mut hidpp, &mut dialpad).len(), 5);
+    assert_eq!(
+        dialpad_events(&mut hidpp, &mut dialpad).len(),
+        turns.lines().count()
+    );
     assert!(hidpp.transport_mut().is_done());
 }
 
 #[test]
 fn a_device_index_whose_model_is_not_the_dialpad_is_skipped() {
     // Slot 3 answers with the MX Master 4's WPID B042 in its model id.
-    let script = fixture!("receiver-slot-probe.txt").replace("29 00 04 bc 00", "29 00 04 b0 42")
+    let script = fixture!("receiver-slot-probe.txt").replace("29 00 02 bc 00", "29 00 02 b0 42")
         + &[4, 5, 6]
             .map(|slot| {
                 format!(
-                    "> 11 0{slot} 00 0f 46 10{}\n< 10 0{slot} 8f 00 0f 08 00\n",
+                    "> 11 0{slot} 00 0f 46 10{}\n< 10 0{slot} 8f 00 0f 09 00\n",
                     " 00".repeat(14)
                 )
             })
@@ -1060,8 +1145,8 @@ fn a_device_index_whose_model_is_not_the_dialpad_is_skipped() {
     .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "no MX Creative Dialpad found (slots: 1 empty, 2 silent, 3 model b0 42 00 00 00 00, \
-         4 empty, 5 empty, 6 empty)"
+        "no MX Creative Dialpad found (slots: 1 no 0x4610, 2 no 0x4610, \
+         3 model b0 42 00 00 00 00, 4 empty, 5 empty, 6 empty)"
     );
     assert!(hidpp.transport_mut().is_done());
 }

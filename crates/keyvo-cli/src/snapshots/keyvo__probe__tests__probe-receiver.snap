@@ -3,12 +3,12 @@ source: crates/keyvo-cli/src/probe.rs
 expression: "run_receiver(&receiver_script(), Link::Receiver).unwrap()"
 ---
 receiver    /dev/hidraw9
-slots       1 empty, 2 silent, 3 dialpad
+slots       1 no 0x4610, 2 no 0x4610, 3 dialpad
 features    0x1b04 REPROG_CONTROLS_V4 index 0x0a, 0x4610 MULTI_ROLLER index 0x0d
 firmware    BL2 18.00.B0016  bootloader
             RBO 07.00.B0016  application, active
-             00.00.B0000  type 0x03
-             72.00.B0000  hardware
+             00.00.B0126  type 0x05
+            HW 00.01.B0000  hardware
 buttons     1 0x0053, 2 0x0056, 3 0x0059, 4 0x005a
 rollers     0 roller  40 increments per rotation, 0 ratchet increments
             1 dial  180 increments per rotation, 0 ratchet increments

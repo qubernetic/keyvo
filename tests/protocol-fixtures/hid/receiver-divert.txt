@@ -3,11 +3,11 @@
 # order, then setMode(roller, DIVERTED) for both rollers. keyvo sends the
 # same lines after every arrival of the Dialpad.
 #
-# Source: synthetic until the owner's capture of slice 7 (#187) replaces it.
-# The 0x1B04 layout is the Keypad's divert (reprog-divert.txt, measured),
-# the CIDs the measured control walk, the setMode request the static pass
-# (docs/research/2026-10-28-dialpad-static-pass.md §3: `roller & 0x0F`,
-# `mode & 0x01`, an empty reply accepted). Requests use keyvo's swid 0xe.
+# Source: own, the owner's hardware check of slice 7 (#187, part 2,
+# 2026-10-30, https://github.com/qubernetic/keyvo/issues/187#issuecomment-6517302440),
+# block "wake, search, diverts", `keyvo --dump dial` at 8f56281, Dialpad
+# firmware RBO 07.00.B0016 (ms 33816 to 34178). setMode echoes the roller
+# and the mode it set. Requests use keyvo's swid 0xe.
 #
 # 1. setCidReporting(0x0053, 0x03) echoed, getCidReporting -> divert bit
 > 11 03 0a 3e 00 53 03 00 00 00 00 00 00 00 00 00 00 00 00 00
@@ -29,9 +29,9 @@
 < 11 03 0a 3e 00 5a 03 00 00 00 00 00 00 00 00 00 00 00 00 00
 > 11 03 0a 2e 00 5a 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 < 11 03 0a 2e 00 5a 01 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 5. setMode(0, DIVERTED)
+# 5. setMode(0, DIVERTED) echoed
 > 11 03 0d 3e 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-< 11 03 0d 3e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 6. setMode(1, DIVERTED)
+< 11 03 0d 3e 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+# 6. setMode(1, DIVERTED) echoed
 > 11 03 0d 3e 01 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-< 11 03 0d 3e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 0d 3e 01 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00

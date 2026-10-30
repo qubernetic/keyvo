@@ -2,14 +2,176 @@
 source: crates/keyvo-cli/src/dial.rs
 expression: out
 ---
-dial +3
-dial -2
-roller +127
-roller -128
-roller -1
+button 3 press
+button 3 release
+button 4 press
+button 4 release
 button 1 press
 button 1 release
-button 3 press
-button 4 press
-button 3 release
-button 4 release
+button 2 press
+button 2 release
+button 1 press
+button 1 release
+button 2 press
+button 1 press
+button 2 release
+button 1 release
+dial +1
+dial +4
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial +1
+dial -2
+dial -6
+dial -2
+dial -1
+dial -1
+dial -1
+dial -2
+dial -1
+dial -2
+dial -1
+dial -2
+dial -1
+dial -1
+dial -2
+dial -1
+dial -2
+dial -1
+dial -1
+dial -1
+dial -1
+dial -1
+dial -1
+dial -1
+dial -1
+dial -2
+dial -1
+dial -1
+dial -1
+dial -1
+dial -1
+dial -1
+roller +3
+roller +3
+roller +1
+roller +2
+roller +1
+roller +2
+roller +1
+roller +2
+roller +1
+roller +1
+roller +1
+roller +1
+roller +1
+roller -1
+roller -2
+roller -1
+roller -1
+roller -2
+roller -1
+roller -1
+roller -1
+roller -2
+roller -1
+roller -1
+roller -1
+roller -1
+dial -8
+dial -18
+dial -4
+dial -4
+dial -4
+dial -3
+dial -3
+dial -4
+dial -3
+dial -4
+dial -4
+dial -4
+dial -6
+dial -5
+dial -3
+dial -3
+dial -3
+dial -3
+dial -5
+dial -5
+dial -5
+dial -6
+dial -5
+dial -6
+dial -6
+dial -5
+dial -6
+dial -6
+dial -7
+dial -5
+dial -5
+dial -4
+dial -2
+dial -2
+dial -2
+dial -1
+dial +1
+dial +1
+dial +1
+roller -2
+roller -1
+roller -1
+roller -2
+roller -2
+roller -2
+roller -1
+roller -2
+roller -2
+roller -2
+roller -2
+roller -2
+roller -2
+roller -2
+roller -2
+roller -2
+roller -2
+roller -2
+roller -2
+roller -1
+roller -2
+roller -2
+roller -1
+roller -1
+roller -2
+roller -1
+roller -2
+roller -1
+roller -2
+roller -1
+dial +1

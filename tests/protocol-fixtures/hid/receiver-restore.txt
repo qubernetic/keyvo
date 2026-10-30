@@ -2,13 +2,17 @@
 # button setCidReporting(cid, 0x02), the divert bit valid and clear, in CID
 # order, then setMode(roller, NATIVE) for both rollers.
 #
-# Source: synthetic until the owner's capture of slice 7 (#187) replaces it;
-# the flags are the static pass (docs/research/2026-10-28-dialpad-static-pass.md
-# facts 3 and 7: `0x02` and NATIVE on stop). Requests use keyvo's swid 0xe.
+# Source: own, the owner's hardware check of slice 7 (#187, part 2,
+# 2026-10-30, https://github.com/qubernetic/keyvo/issues/187#issuecomment-6517302440),
+# block "Ctrl-C restore", `keyvo --dump dial` at 8f56281, Dialpad firmware
+# RBO 07.00.B0016 (ms 443423 to 444471). The first reply came after
+# 868 ms (the `+868`): the Dialpad had dozed after 38 s idle; the others
+# after 10 to 20 ms. setMode echoes the roller and the mode it set.
+# Requests use keyvo's swid 0xe.
 #
-# 1. setCidReporting(0x0053, 0x02) echoed
+# 1. setCidReporting(0x0053, 0x02) echoed, after 868 ms
 > 11 03 0a 3e 00 53 02 00 00 00 00 00 00 00 00 00 00 00 00 00
-< 11 03 0a 3e 00 53 02 00 00 00 00 00 00 00 00 00 00 00 00 00
+< +868 11 03 0a 3e 00 53 02 00 00 00 00 00 00 00 00 00 00 00 00 00
 # 2. setCidReporting(0x0056, 0x02) echoed
 > 11 03 0a 3e 00 56 02 00 00 00 00 00 00 00 00 00 00 00 00 00
 < 11 03 0a 3e 00 56 02 00 00 00 00 00 00 00 00 00 00 00 00 00
@@ -18,9 +22,9 @@
 # 4. setCidReporting(0x005A, 0x02) echoed
 > 11 03 0a 3e 00 5a 02 00 00 00 00 00 00 00 00 00 00 00 00 00
 < 11 03 0a 3e 00 5a 02 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 5. setMode(0, NATIVE)
+# 5. setMode(0, NATIVE) echoed
 > 11 03 0d 3e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 < 11 03 0d 3e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-# 6. setMode(1, NATIVE)
+# 6. setMode(1, NATIVE) echoed
 > 11 03 0d 3e 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-< 11 03 0d 3e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+< 11 03 0d 3e 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00

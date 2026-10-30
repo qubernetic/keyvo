@@ -155,7 +155,7 @@ fn format_event(dialpad: &Dialpad, event: InputEvent, json: bool) -> String {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::tests::{exchanges, fixture, replay};
+    use crate::tests::{asleep_search, exchanges, fixture, replay};
 
     /// Open, the input fixture, a lost link and the arrival with the
     /// re-divert, then the restore on stop.
@@ -212,27 +212,35 @@ pub(crate) mod tests {
         insta::assert_snapshot!("dial-text", out);
     }
 
+    /// What `dial` says while it waits for the sleeping Dialpad.
+    const WAITING: &str = "no Dialpad answers (1 no 0x4610, 2 no 0x4610, 3 silent, 4 empty, \
+                           5 empty, 6 empty); waiting for it\nDialpad on slot 3:";
+
     #[test]
     fn dial_waits_for_a_sleeping_dialpad_and_says_so_once() {
+        // The waking Dialpad's reconnect report is no arrival (#187, part
+        // 2): the wait runs out and the next search round finds it.
+        let script = fixture("receiver-asleep.txt") + &script();
+        let (out, log) = run(&script, Link::Receiver, false, 2);
+        assert!(out.starts_with("button 3 press\n"), "{out}");
+        assert!(log.starts_with(WAITING), "{log}");
+    }
+
+    #[test]
+    fn dial_asks_the_slot_an_arrival_names_alone() {
+        // The receiver's arrival for slot 3 (synthetic, receiver-arrival.txt).
         let open = script();
         let from_slot_3 = exchanges(&fixture("receiver-slot-probe.txt"), 2..5)
             + &open[open.find("# The Dialpad's 0x1B04").unwrap()..];
-        let script = fixture("receiver-asleep.txt") + &from_slot_3;
+        let script = asleep_search() + "< 10 03 41 10 00 00 bc\n" + &from_slot_3;
         let (out, log) = run(&script, Link::Receiver, false, 2);
-        assert!(out.starts_with("dial +3\n"), "{out}");
-        assert!(
-            log.starts_with(
-                "no Dialpad answers (1 empty, 2 empty, 3 silent, 4 empty, 5 empty, 6 empty); \
-                 waiting for it\nDialpad on slot 3:"
-            ),
-            "{log}"
-        );
+        assert!(out.starts_with("button 3 press\n"), "{out}");
+        assert!(log.starts_with(WAITING), "{log}");
     }
 
     #[test]
     fn dial_stops_while_waiting_when_asked() {
-        let asleep = fixture("receiver-asleep.txt").replace("< 10 03 41 10 00 00 bc\n", "");
-        let (out, log) = run(&asleep, Link::Receiver, false, 0);
+        let (out, log) = run(&asleep_search(), Link::Receiver, false, 0);
         assert_eq!(out, "");
         assert_eq!(log.lines().count(), 1, "{log}");
     }

@@ -3,8 +3,12 @@
 # the link established again (it woke), after which keyvo re-sends every
 # divert (receiver-divert.txt).
 #
-# Source: synthetic until the owner's capture of slice 7 (#187) replaces it.
-# The layout is the static pass (docs/research/2026-10-28-dialpad-static-pass.md
+# Source: synthetic. The owner's hardware check of slice 7 (#187, part 2,
+# 2026-10-30, https://github.com/qubernetic/keyvo/issues/187#issuecomment-6517302440)
+# saw no 0x41 at all: a waking Dialpad sends a 0x1D4B reconnect report on
+# its own device index instead (receiver-asleep.txt step 4), and a sleep
+# of ten minutes sent nothing. The file stays for the arrival path keyvo
+# still reads. The layout is the static pass (docs/research/2026-10-28-dialpad-static-pass.md
 # §8): `10 <slot> 41 <protocol> <flags> <wpid lo> <wpid hi>`, flags bit 6
 # set = no link, WPID BC00 little-endian. The protocol byte 0x10 and the
 # device type nibble 0 are guesses; keyvo reads neither.
