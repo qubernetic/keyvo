@@ -15,15 +15,18 @@
   // once with its default variant, label and icon. While the catalogue
   // column is collapsed, the Action select carries its entries. A key that
   // carries a preset (lib/catalogue.ts recipeOf) shows its "What it does"
-  // select above the Action; another variant rewrites the action.
+  // select above the Action; another variant rewrites the action. With a
+  // Dialpad control selected on the Pad's panel (#188) it is the control
+  // editor (ControlEditor.svelte) instead; the key's history stays.
   import { untrack, type Snippet } from "svelte";
 
+  import ActionFields from "./ActionFields.svelte";
+  import ControlEditor from "./ControlEditor.svelte";
   import IconPicker from "./IconPicker.svelte";
   import Notice from "./Notice.svelte";
   import {
     applied,
     catalogueOf,
-    GROUPS,
     recipeOf,
     withVariant,
     type CatalogueEntry,
@@ -55,6 +58,7 @@
     type KeyView,
     type Problem,
     type Target,
+    type ControlTarget,
   } from "./lib/editor";
   import { t, type MessageKey } from "./lib/i18n";
   import { clock } from "./lib/pad";
@@ -74,6 +78,9 @@
     entries,
     recipes = [],
     browse,
+    control,
+    assignControl,
+    ondirection,
   }: {
     editor: Editor;
     /** The key to edit: the selected key of the pinned page; none until
@@ -107,6 +114,13 @@
     /** Beside the Action select: the Pad's Browse actions button, while
      * the catalogue column is collapsed (#167). */
     browse?: Snippet;
+    /** The Dialpad control selected on the Pad's panel (#188): the
+     * inspector shows the control editor instead of the key's. */
+    control?: ControlTarget;
+    /** A catalogue entry, by its key, assigned to `control`. */
+    assignControl?: { entry: string; target: ControlTarget; seq: number };
+    /** The direction of a rotary the catalogue assigns to now. */
+    ondirection?: (direction: "cw" | "ccw") => void;
   } = $props();
 
   const uid = $props.id();
@@ -140,27 +154,13 @@
         ? t("inspector.notOnPage", { file: shown.path })
         : t("inspector.subtitle", { file: shown.path, line: shown.line }),
   );
-  const actionLabel = $derived(
-    form.actionType === "chord" ? t("inspector.chord") : t("inspector.command"),
-  );
   const swatch = $derived(colorOf(form.color) ?? "");
   /** The preset the key carries as written, and the variant it runs. */
   const carried = $derived(view === undefined ? undefined : recipeOf(recipes, view.fields));
   const ids = {
     heading: `kv-inspector-${uid}`,
     color: `kv-inspector-${uid}-color`,
-    action: `kv-inspector-${uid}-action`,
-    hint: `kv-inspector-${uid}-hint`,
-    classHint: `kv-inspector-${uid}-class-hint`,
-    select: `kv-inspector-${uid}-select`,
   };
-  /** The action field's message, then the chord syntax under a chord. */
-  const actionDescribedBy = $derived(
-    [
-      ...(invalid?.field === "action" ? [ids.action] : []),
-      ...(form.actionType === "chord" ? [ids.hint] : []),
-    ].join(" ") || undefined,
-  );
 
   /** The time of a result, 24 h. */
   function now(): string {
@@ -393,7 +393,8 @@
   /** Ctrl+Z and Ctrl+Shift+Z for the session, unless a form field has the
    * focus: there they undo the typing. */
   function keydown(event: KeyboardEvent) {
-    if (!active) return;
+    // The control editor keeps its own history.
+    if (!active || control !== undefined) return;
     if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "z") return;
     const focus = event.target;
     if (
@@ -411,6 +412,20 @@
 
 <svelte:window onkeydown={keydown} />
 
+{#if control !== undefined}
+  <ControlEditor
+    {editor}
+    target={control}
+    {revision}
+    {active}
+    assign={assignControl}
+    {entries}
+    {recipes}
+    {browse}
+    {onedited}
+    {ondirection}
+  />
+{:else}
 <section class="inspector" aria-labelledby={ids.heading}>
   {#if target === undefined}
     <h2 id={ids.heading}>{t("inspector.title")}</h2>
@@ -522,82 +537,15 @@
             </select>
           </label>
         {/if}
-        <div class="field">
-          <label for={ids.select}>{t("inspector.action")}</label>
-          <span class="choice">
-            <select
-              id={ids.select}
-              aria-label={t("inspector.action")}
-              value={form.actionType}
-              onchange={(event) => switched(event.currentTarget.value)}
-            >
-              <option value="none">{t("inspector.kind.none")}</option>
-              {#if entries === undefined}
-                <option value="chord">{t("inspector.kind.chord")}</option>
-                <option value="exec">{t("inspector.kind.exec")}</option>
-                <option value="launch">{t("inspector.kind.launch")}</option>
-              {:else}
-                {#each GROUPS as group (group.id)}
-                  <optgroup label={t(group.label)}>
-                    {#each entries.filter((entry) => entry.group === group.id) as entry (entry.key)}
-                      <option value={entry.kind === "tool" ? entry.id : entry.key}>{entry.name}</option>
-                    {/each}
-                  </optgroup>
-                {/each}
-              {/if}
-            </select>
-            {@render browse?.()}
-          </span>
-        </div>
-        {#if form.actionType !== "none"}
-          <div class="field">
-            <label>
-              {actionLabel}
-              <input
-                type="text"
-                aria-label={actionLabel}
-                placeholder={form.actionType === "chord"
-                  ? t("editor.chordExample")
-                  : t("editor.commandExample")}
-                aria-invalid={invalid?.field === "action" ? true : undefined}
-                aria-describedby={actionDescribedBy}
-                bind:value={form.action}
-                onchange={commit}
-              />
-            </label>
-            {#if invalid?.field === "action"}
-              <p id={ids.action} role="alert" class="invalid">{invalid.message}</p>
-            {/if}
-            {#if form.actionType === "chord"}
-              <p id={ids.hint} class="hint">{t("editor.chordHint")}</p>
-            {/if}
-          </div>
-        {/if}
-        {#if form.actionType === "launch"}
-          <div class="field">
-            <label>
-              {t("inspector.windowClass")}
-              <input
-                type="text"
-                aria-label={t("inspector.windowClass")}
-                aria-describedby={ids.classHint}
-                bind:value={form.windowClass}
-                onchange={commit}
-              />
-            </label>
-            <p id={ids.classHint} class="hint">{t("inspector.windowClassHint")}</p>
-          </div>
-          <label class="switch">
-            <input
-              type="checkbox"
-              role="switch"
-              aria-label={t("inspector.waitFocus")}
-              bind:checked={form.waitFocus}
-              onchange={commit}
-            />
-            {t("inspector.waitFocus")}
-          </label>
-        {/if}
+        <ActionFields
+          part={form}
+          invalid={invalid?.field === "action" ? invalid.message : undefined}
+          {entries}
+          {browse}
+          onedit={(part) => (form = { ...form, ...part })}
+          onswitch={switched}
+          oncommit={commit}
+        />
         {#if shown?.on_fail !== undefined}
           <!-- Read-only in the beta (#183): the editor never writes on_fail. -->
           <p class="hint">
@@ -630,6 +578,7 @@
   </div>
   <p role="status" aria-label={t("inspector.result")} class="result">{note ?? ""}</p>
 </section>
+{/if}
 
 <style>
   .inspector {
@@ -694,12 +643,6 @@
     font-size: 0.85em;
   }
 
-  /* A label inside a field is sized once: the field already carries the
-     label size, and nesting the two shrank the Command label to 9.6 px. */
-  .field label {
-    font-size: 1em;
-  }
-
   /* The syntax under a field, in the label size of its field. */
   .hint {
     margin: 0;
@@ -708,26 +651,9 @@
     font-size: 1em;
   }
 
-  .colour,
-  .choice {
+  .colour {
     display: flex;
     gap: 8px;
-  }
-
-  /* The switch sits before its label on one line. */
-  label.switch {
-    flex-direction: row;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .choice select {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .choice :global(button) {
-    flex: none;
   }
 
   .colour input[type="color"] {

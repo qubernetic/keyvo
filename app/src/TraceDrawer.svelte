@@ -10,6 +10,7 @@
   // HID-level events.
   import Drawer from "./Drawer.svelte";
   import Soon from "./Soon.svelte";
+  import { controlName } from "./lib/dialpad";
   import { t, type MessageKey } from "./lib/i18n";
   import { describeAction, traceResult } from "./lib/pad";
   import type { TraceRecord } from "./lib/protocol";
@@ -45,7 +46,9 @@
           term: "drawer.time",
           value: new Date(entry.timestamp_ms).toLocaleString(undefined, { hourCycle: "h23" }),
         },
-        { term: "drawer.key", value: String(entry.key) },
+        entry.control === undefined
+          ? { term: "drawer.key", value: String(entry.key) }
+          : { term: "drawer.control", value: controlName(entry.control) },
         { term: "drawer.press", value: entry.trigger.press },
         {
           term: "drawer.source",

@@ -17,15 +17,15 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 import Pad from "./Pad.svelte";
 import { DRAG_TYPE } from "./lib/catalogue";
 import type { Daemon, Tile, Update } from "./lib/daemon";
-import type { Editor, KeyFields, Target } from "./lib/editor";
-import { eventsOf, nth, recipeReplies, responses } from "./lib/fixtures";
+import type { ControlFields, ControlTarget, Editor, KeyFields, Target } from "./lib/editor";
+import { eventsOf, nth, recipeReplies, responses, UNBOUND_CONTROLS } from "./lib/fixtures";
 import { t } from "./lib/i18n";
 import { SNAPSHOTS } from "./lib/mock/data";
 import { mockClients } from "./lib/mock";
 import { PAD_TRACE, STRIP_LINE } from "./lib/pad";
 import type { Pinned } from "./lib/pin";
 import type { ProfileSummary } from "./lib/profiles";
-import type { PressKind, Size, Status, TraceRecord } from "./lib/protocol";
+import type { Control, PressKind, Size, Status, TraceRecord } from "./lib/protocol";
 import { layout, type Columns } from "./lib/shell";
 
 const STATUS = responses()[0] as Status;
@@ -118,6 +118,7 @@ function editor(overrides: Partial<Editor> = {}) {
     editKey: vi.fn((_target: Target, fields: KeyFields) =>
       Promise.resolve({ path: PROFILE, before: {}, fields }),
     ),
+    ...UNBOUND_CONTROLS,
     ...overrides,
   } satisfies Editor;
 }
@@ -672,6 +673,8 @@ describe("the trace strip", () => {
     await fireEvent.click(within(strip).getByRole("button", { name: t("trace.expand") }));
     const items = within(screen.getByRole("list", { name: "Recent events" })).getAllByRole("listitem");
     expect(items.map((item) => item.textContent?.trim())).toEqual([
+      expect.stringContaining("Roller: blocked, session locked"),
+      expect.stringContaining("Dial, global layer: chord KEY_VOLUMEUP, sent"),
       expect.stringContaining("Key 5: blocked, session locked"),
       expect.stringContaining("Key 2, global layer: launch flatpak run org.kde.kcalc, started, pid 4711"),
       expect.stringContaining("Key 1: unbound"),
@@ -1058,5 +1061,92 @@ describe("the columns", () => {
     expect(rule(".workspace")).toMatch(/min-height: 0;/);
     expect(rule(".workspace")).toMatch(/align-items: stretch;/);
     expect(rule(".workspace")).not.toMatch(/flex-wrap: wrap/);
+  });
+});
+
+describe("the Dialpad panel", () => {
+  const MUTE: ControlFields = { label: "Mute", action: { type: "chord", keys: "KEY_MUTE" } };
+
+  /** An editor whose global profile binds button 1, writes answering
+   * what was there. */
+  function dialpadEditor() {
+    const files: Record<string, Partial<Record<Control, ControlFields>>> = { global: { "button:1": MUTE } };
+    return editor({
+      control: vi.fn(({ profile, control }: ControlTarget) =>
+        Promise.resolve({ path: `/home/u/.config/keyvo/profiles/${profile}.toml`, fields: files[profile]?.[control] ?? {} }),
+      ),
+      editControl: vi.fn(({ profile, control }: ControlTarget, fields: ControlFields) => {
+        const before = files[profile]?.[control] ?? {};
+        files[profile] = { ...files[profile], [control]: fields };
+        return Promise.resolve({ path: `/home/u/.config/keyvo/profiles/${profile}.toml`, before, fields });
+      }),
+    });
+  }
+
+  function dialpadToggle(): HTMLElement {
+    return screen.getByRole("button", { name: t("dialpad.title") });
+  }
+
+  it("sits under the mirror, collapsed while nothing is connected or bound", async () => {
+    await mounted();
+    expect(dialpadToggle()).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText(t("dialpad.none"))).toBeInTheDocument();
+    expect(dialpadToggle().closest(".drawing")).toBe(screen.getByRole("grid").closest(".drawing"));
+  });
+
+  it("opens on a connected Dialpad and pulses the dial a turn names", async () => {
+    const { daemon } = await mounted();
+    await daemon.send({ kind: "event", event: nth(eventsOf("dialpad"), 0) });
+    expect(dialpadToggle()).toHaveAttribute("aria-expanded", "true");
+    expect(screen.queryByText(t("dialpad.none"))).toBeNull();
+    await daemon.send({ kind: "event", event: nth(eventsOf("dial"), 0) });
+    expect(screen.getByRole("button", { name: /^Dial:/ })).toHaveClass("pulse");
+  });
+
+  it("opens the control editor for a selected control, pinned, and the key's on a key", async () => {
+    const keys = dialpadEditor();
+    const { onpin } = await mounted({ keys });
+    const button = await screen.findByRole("button", { name: /^Button 1: Mute/ });
+    await fireEvent.click(button);
+    expect(await screen.findByRole("heading", { name: "Button 1: Chord" })).toBeInTheDocument();
+    expect(screen.getByText("from global")).toBeInTheDocument();
+    // Pinned as a selected key pins: a click on a tile of the mirror follows again.
+    expect(onpin).toHaveBeenLastCalledWith({ profile: "terminal", page: 1, fromKey: true });
+    expect(keys.control).toHaveBeenCalledWith({ profile: "terminal", control: "button:1" });
+    expect(screen.getByRole("button", { name: /^Button 1: Mute/ })).toHaveAttribute("aria-pressed", "true");
+    await fireEvent.click(key(4));
+    expect(await screen.findByRole("heading", { name: /^Key 4/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Button 1: Mute/ })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("assigns a catalogue preset to the selected button, label and action", async () => {
+    const keys = dialpadEditor();
+    await mounted({ keys });
+    await fireEvent.click(await screen.findByRole("button", { name: /^Button 2:/ }));
+    await screen.findByRole("heading", { name: "Button 2: No action" });
+    const catalogue = screen.getByRole("region", { name: "Actions" });
+    expect(within(catalogue).getByText("Assign to Button 2.")).toBeInTheDocument();
+    await fireEvent.click(within(catalogue).getByRole("button", { name: "Apps" }));
+    await fireEvent.click(within(catalogue).getByRole("button", { name: "Spectacle" }));
+    await waitFor(() =>
+      expect(keys.editControl).toHaveBeenCalledWith(
+        { profile: "terminal", control: "button:2" },
+        { label: "Capture", action: { type: "exec", cmd: "spectacle --fullscreen" } },
+      ),
+    );
+    expect(keys.editKey).not.toHaveBeenCalled();
+    // The panel reads the written label back.
+    await waitFor(() =>
+      expect(within(screen.getByRole("button", { name: /^Button 2:/ })).getByText("Capture")).toBeInTheDocument(),
+    );
+  });
+
+  it("names a rotary's direction in the catalogue's hint", async () => {
+    await mounted({ keys: dialpadEditor() });
+    await fireEvent.click(await screen.findByRole("button", { name: /^Dial:/ }));
+    const catalogue = screen.getByRole("region", { name: "Actions" });
+    expect(await within(catalogue).findByText("Assign to Dial, clockwise.")).toBeInTheDocument();
+    await fireEvent.focusIn(await screen.findByRole("combobox", { name: "Counter-clockwise" }));
+    expect(within(catalogue).getByText("Assign to Dial, counter-clockwise.")).toBeInTheDocument();
   });
 });

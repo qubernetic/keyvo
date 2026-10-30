@@ -194,6 +194,51 @@ describe("apply", () => {
     expect(apply(held, { kind: "event", event: release }).held).toEqual([]);
   });
 
+  it("takes the Dialpad from the status reply, absent read as not connected", () => {
+    expect(fromStatus(STATUS).dialpad).toEqual({ connected: false });
+    expect(fromStatus(responses()[1] as Status).dialpad).toEqual({ connected: false });
+    const { dialpad: _, ...older } = STATUS;
+    expect(fromStatus(older).dialpad).toEqual({ connected: false });
+    const connected = responses().find(
+      (reply) => "config_dir" in reply && (reply as Status).dialpad?.connected === true,
+    ) as Status;
+    expect(fromStatus(connected).dialpad).toMatchObject({ connected: true, slot: 3 });
+  });
+
+  it("dialpad events replace the Dialpad report", () => {
+    const [connected, lost] = [nth(eventsOf("dialpad"), 0), nth(eventsOf("dialpad"), 1)];
+    const plugged = apply(fromStatus(STATUS), { kind: "event", event: connected });
+    expect(plugged.dialpad).toEqual({
+      connected: true,
+      slot: 3,
+      rollers: [
+        { roller: "roller", increments: 40 },
+        { roller: "dial", increments: 180 },
+      ],
+    });
+    const unplugged = apply(plugged, { kind: "event", event: lost });
+    expect(unplugged.dialpad?.connected).toBe(false);
+    expect(unplugged.dialpad?.error).toContain("no MX Creative Dialpad found");
+  });
+
+  it("a turn and a button press pulse their control, each one again", () => {
+    const [dial, roller] = [nth(eventsOf("dial"), 0), nth(eventsOf("dial"), 1)];
+    const turned = apply(initial(), { kind: "event", event: dial });
+    expect(turned.pulse).toEqual({ control: "dial", seq: 1 });
+    const again = apply(turned, { kind: "event", event: dial });
+    expect(again.pulse).toEqual({ control: "dial", seq: 2 });
+    expect(apply(again, { kind: "event", event: roller }).pulse).toEqual({ control: "roller", seq: 3 });
+    const button = eventsOf("key").find((event) => event.control !== undefined);
+    expect(button).toBeDefined();
+    if (button === undefined) return;
+    const pressed = apply(again, { kind: "event", event: button });
+    expect(pressed.pulse).toEqual({ control: "button:1", seq: 3 });
+    // A button is no Keypad key: nothing is held on the mirror.
+    expect(pressed.held).toEqual([]);
+    const released = apply(pressed, { kind: "event", event: { ...button, edge: "release" } });
+    expect(released.pulse).toEqual(pressed.pulse);
+  });
+
   it("trace entries come newest first, at most PAD_TRACE", () => {
     let state = initial();
     for (let round = 0; round < PAD_TRACE; round++) {
@@ -286,7 +331,18 @@ describe("summarize", () => {
       "Key 1: unbound",
       "Key 2, global layer: launch flatpak run org.kde.kcalc, started, pid 4711",
       "Key 5: blocked, session locked",
+      "Dial, global layer: chord KEY_VOLUMEUP, sent",
+      "Roller: blocked, session locked",
     ]);
+  });
+
+  it("names a Dialpad button and its long press", () => {
+    const entry = nth(traces(), 0);
+    const { key: _, ...button } = { ...entry, control: "button:2" as const };
+    expect(summarize(button)).toBe("Button 2, app layer: chord ctrl+p, sent");
+    expect(summarize({ ...button, trigger: { press: "long", simulated: false } })).toBe(
+      "Button 2 long, app layer: chord ctrl+p, sent",
+    );
   });
 
   it("puts a press's on_fail run in its line", () => {

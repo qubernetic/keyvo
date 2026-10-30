@@ -5,7 +5,8 @@
   // General expanded when the column opens. An
   // entry, a preset of the daemon's recipe packs or a raw tool (Chord,
   // Exec), is dragged onto a tile of the mirror or clicked to assign it to
-  // the selected tile. The search covers group, name and variant names.
+  // the selected tile, or to the selected Dialpad control (#188). The search
+  // covers group, name and variant names.
   // Under the entries: why the presets could not be read, and each user
   // pack the daemon left out.
   import { onMount } from "svelte";
@@ -17,6 +18,7 @@
   let {
     entries,
     selected,
+    control,
     active = true,
     connected = true,
     problems = [],
@@ -27,6 +29,9 @@
     entries: readonly CatalogueEntry[];
     /** The selected tile a click assigns to; none until the user selects one. */
     selected?: number;
+    /** The selected Dialpad control a click assigns to instead (#188), by
+     * name, with a rotary's direction. */
+    control?: { name: string; direction?: string };
     /** False while another screen shows: `/` is not ours. */
     active?: boolean;
     /** False while the daemon is unreachable or not yet reached: nothing
@@ -55,9 +60,13 @@
   const hint = $derived(
     !connected
       ? t("catalogue.noPad")
-      : selected === undefined
-        ? t("catalogue.selectFirst")
-        : t("catalogue.assign", { key: selected }),
+      : control !== undefined
+        ? control.direction === undefined
+          ? t("catalogue.assignControl", { control: control.name })
+          : t("catalogue.assignTurn", { control: control.name, direction: control.direction })
+        : selected === undefined
+          ? t("catalogue.selectFirst")
+          : t("catalogue.assign", { key: selected }),
   );
   const ids = { heading: `kv-catalogue-${uid}`, hint: `kv-catalogue-${uid}-hint` };
 
@@ -78,7 +87,7 @@
   }
 
   function assign(entry: CatalogueEntry) {
-    if (connected && selected !== undefined) onassign(entry.key);
+    if (connected && (selected !== undefined || control !== undefined)) onassign(entry.key);
   }
 
   /** `/` to the search, unless a field has the focus: there it is typed. */

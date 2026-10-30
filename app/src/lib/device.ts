@@ -1,10 +1,11 @@
 // The device drawings of src/assets/device/ (docs/design/gui-ux.md §3.1):
 // where their key cutouts are, where the mirror tiles go (in the cutouts
 // when the drawing has one per key of the daemon's geometry, else on the
-// plain proportional panel), and the drawing ready to inline once per
-// instance, its ids prefixed so several instances share a page.
+// plain proportional panel), where the Dialpad drawing's controls are, and
+// the drawing ready to inline once per instance, its ids prefixed so
+// several instances share a page.
 
-import type { Geometry, Rect } from "./protocol";
+import { controlOf, type Control, type Geometry, type Rect } from "./protocol";
 
 /** The drawings' colours, derived from the one `--kv-device` token (gui-ux
  * §7): light and shade around it, the well darker, the rim and the edge
@@ -157,6 +158,41 @@ export function styles(places: readonly Placement[]): Map<number, string> {
         (place.corner === undefined ? "" : `; --kv-tile-radius: ${place.corner}%`),
     ]),
   );
+}
+
+/** Where a Dialpad control sits on its drawing, in percent of the drawing;
+ * `round` for a circle. */
+export interface ControlPlace {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  round: boolean;
+}
+
+/** The controls of the Dialpad drawing `svg`: the bounds of the first
+ * circle or rect of each `button-N`, `roller` and `dial` group. */
+export function controlPlaces(svg: string): Map<Control, ControlPlace> {
+  const { width, height } = drawing(svg);
+  const places = new Map<Control, ControlPlace>();
+  for (const group of svg.matchAll(/<g\b[^>]*\sid="(button-\d+|roller|dial)"[^>]*>([\s\S]*?)<\/g>/g)) {
+    const control = controlOf((group[1] ?? "").replace("-", ":"));
+    const shape = /<(circle|rect)\b[^>]*>/.exec(group[2] ?? "");
+    if (control === undefined || shape === null) continue;
+    const round = shape[1] === "circle";
+    const r = attribute(shape[0], "r");
+    const box = round
+      ? { x: attribute(shape[0], "cx") - r, y: attribute(shape[0], "cy") - r, width: 2 * r, height: 2 * r }
+      : {
+          x: attribute(shape[0], "x"),
+          y: attribute(shape[0], "y"),
+          width: attribute(shape[0], "width"),
+          height: attribute(shape[0], "height"),
+        };
+    const { key: _, ...place } = percent(0, box, width, height);
+    places.set(control, { ...place, round });
+  }
+  return places;
 }
 
 function escape(text: string): string {

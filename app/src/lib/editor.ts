@@ -1,12 +1,14 @@
 // The key editor's file side as the frontend sees it: the Tauri shell's
-// `key` and `edit_key` commands over keyvo_client::Editor; tests pass a
-// fake. And the editor's pure parts: the form, the undo history of the
-// session, and the line a problem is shown as.
+// `key` and `edit_key` commands, and `control` and `edit_control` for the
+// Dialpad controls, over keyvo_client::Editor; tests pass a fake. And the
+// editor's pure parts: the key's and the control's form, the undo history
+// of the session, and the line a problem is shown as.
 import { invoke } from "@tauri-apps/api/core";
 
 import { checkChord, type ChordError } from "./chord";
+import { isRoller } from "./dialpad";
 import { t } from "./i18n";
-import type { Action } from "./protocol";
+import type { Action, Control } from "./protocol";
 
 /** The fields of a key the editor writes, as keyvo_core::edit::KeyFields;
  * an absent field is removed from the file. */
@@ -78,12 +80,65 @@ export interface Target {
   key: number;
 }
 
+/** The fields of a Dialpad control the editor writes, as
+ * keyvo_client::editor::ControlFields: `cw`, `ccw`, `step` and `label`
+ * for the dial and the roller (keyvo_core::edit::RotaryFields), `label`
+ * and `action` for a button (ButtonFields). An absent field is removed
+ * from the file, a step of 1 is written as absent, and a control without
+ * any field is removed, so the global profile's binding shows through. */
+export interface ControlFields {
+  /** What a clockwise turn runs. */
+  cw?: Action;
+  /** What a counter-clockwise turn runs. */
+  ccw?: Action;
+  /** Detents per run; absent for the default 1. */
+  step?: number;
+  /** What the Dialpad panel shows; no LCD shows it. */
+  label?: string;
+  /** What a button's press runs. */
+  action?: Action;
+}
+
+/** A Dialpad control as the editor shows it
+ * (keyvo_client::editor::ControlView): the profile's own binding, never
+ * the global one under it. */
+export interface ControlView {
+  /** The profile file. */
+  path: string;
+  /** All absent when the profile's `[dialpad]` table does not bind it. */
+  fields: ControlFields;
+  /** A button's `on_fail`, shown read-only like a key's. */
+  on_fail?: Action;
+}
+
+/** What a write of a Dialpad control did
+ * (keyvo_client::editor::ControlEdited). */
+export interface ControlEdited {
+  path: string;
+  /** The fields before the write, for undo. */
+  before: ControlFields;
+  fields: ControlFields;
+  /** The copy of the file taken before the write. */
+  snapshot?: string;
+}
+
+/** Which Dialpad control the editor edits: one per profile, not per page. */
+export interface ControlTarget {
+  profile: string;
+  control: Control;
+}
+
 export interface Editor {
   /** The key's file and fields; rejects with a Problem. */
   key(target: Target): Promise<KeyView>;
   /** Writes `fields` into the key after a snapshot of the file; rejects
    * with a Problem and leaves the file as it was. */
   editKey(target: Target, fields: KeyFields): Promise<Edited>;
+  /** The Dialpad control's file and fields; rejects with a Problem. */
+  control(target: ControlTarget): Promise<ControlView>;
+  /** Writes `fields` into the Dialpad control after a snapshot of the
+   * file; rejects with a Problem and leaves the file as it was. */
+  editControl(target: ControlTarget, fields: ControlFields): Promise<ControlEdited>;
 }
 
 /** The editor through the Tauri shell's commands. */
@@ -91,6 +146,9 @@ export const tauriEditor: Editor = {
   key: ({ profile, page, key }) => invoke<KeyView>("key", { profile, page, key }),
   editKey: ({ profile, page, key }, fields) =>
     invoke<Edited>("edit_key", { profile, page, key, fields }),
+  control: ({ profile, control }) => invoke<ControlView>("control", { profile, control }),
+  editControl: ({ profile, control }, fields) =>
+    invoke<ControlEdited>("edit_control", { profile, control, fields }),
 };
 
 /** A rejection of the editor as a Problem. */
@@ -133,10 +191,12 @@ export interface Form {
   waitFocus: boolean;
 }
 
+/** The action part of a form: the key's action, a direction of a rotary
+ * or a Dialpad button's action, edited by ActionFields.svelte. */
+export type ActionPart = Pick<Form, "actionType" | "action" | "windowClass" | "waitFocus">;
+
 /** The action fields of the form for `action`. */
-export function actionForm(
-  action: Action | undefined,
-): Pick<Form, "actionType" | "action" | "windowClass" | "waitFocus"> {
+export function actionForm(action: Action | undefined): ActionPart {
   return {
     actionType: action?.type ?? "none",
     action: action === undefined ? "" : action.type === "chord" ? action.keys : action.cmd,
@@ -195,53 +255,125 @@ export function fromForm(
     if (valid === undefined) return { invalid: t("editor.badColor", { color }), field: "color" };
     fields.color = valid;
   }
-  const action = form.action.trim();
-  switch (form.actionType) {
-    case "none":
-      break;
-    case "chord":
-      if (action === "") return { invalid: t("editor.noKeys"), field: "action" };
-      {
-        const wrong = checkChord(action);
-        if (wrong !== undefined) return { invalid: chordMessage(wrong), field: "action" };
-      }
-      fields.action = { type: "chord", keys: action };
-      break;
-    case "exec":
-      if (action === "") return { invalid: t("editor.noCommand"), field: "action" };
-      fields.action = { type: "exec", cmd: action };
-      break;
-    case "launch": {
-      if (action === "") return { invalid: t("editor.noCommand"), field: "action" };
-      const launch: Action = { type: "launch", cmd: action };
-      const windowClass = form.windowClass.trim();
-      if (windowClass !== "") launch.class = windowClass;
-      if (!form.waitFocus) launch.wait_focus = false;
-      fields.action = launch;
-      break;
-    }
-  }
+  const action = actionOf(form);
+  if ("invalid" in action) return { invalid: action.invalid, field: "action" };
+  if (action.action !== undefined) fields.action = action.action;
   return { fields };
 }
 
+/** The action `part` says, none for no action, or why it cannot be
+ * written yet: an empty field is never written. */
+export function actionOf(part: ActionPart): { action?: Action } | { invalid: string } {
+  const action = part.action.trim();
+  switch (part.actionType) {
+    case "none":
+      return {};
+    case "chord": {
+      if (action === "") return { invalid: t("editor.noKeys") };
+      const wrong = checkChord(action);
+      if (wrong !== undefined) return { invalid: chordMessage(wrong) };
+      return { action: { type: "chord", keys: action } };
+    }
+    case "exec":
+      if (action === "") return { invalid: t("editor.noCommand") };
+      return { action: { type: "exec", cmd: action } };
+    case "launch": {
+      if (action === "") return { invalid: t("editor.noCommand") };
+      const launch: Action = { type: "launch", cmd: action };
+      const windowClass = part.windowClass.trim();
+      if (windowClass !== "") launch.class = windowClass;
+      if (!part.waitFocus) launch.wait_focus = false;
+      return { action: launch };
+    }
+  }
+}
+
+/** `action` as one comparable string, the launch's defaults filled in. */
+function actionKey(action: Action | undefined): string {
+  if (action === undefined) return "";
+  if (action.type === "chord") return `chord:${action.keys}`;
+  if (action.type === "exec") return `exec:${action.cmd}`;
+  return `launch:${action.cmd}:${action.class ?? ""}:${action.wait_focus ?? true}`;
+}
+
 export function sameFields(a: KeyFields, b: KeyFields): boolean {
-  const action = (fields: KeyFields) => {
-    const action = fields.action;
-    if (action === undefined) return "";
-    if (action.type === "chord") return `chord:${action.keys}`;
-    if (action.type === "exec") return `exec:${action.cmd}`;
-    return `launch:${action.cmd}:${action.class ?? ""}:${action.wait_focus ?? true}`;
-  };
   return (
     a.icon === b.icon &&
     a.label === b.label &&
     a.color?.toLowerCase() === b.color?.toLowerCase() &&
-    action(a) === action(b)
+    actionKey(a.action) === actionKey(b.action)
   );
 }
 
 export function sameTarget(a: Target | undefined, b: Target | undefined): boolean {
   return a?.profile === b?.profile && a?.page === b?.page && a?.key === b?.key;
+}
+
+/** The control editor's form: the label and the step as typed, both
+ * directions of a rotary and a button's action as the key editor's action
+ * fields. A control uses the parts of its kind. */
+export interface ControlForm {
+  label: string;
+  step: string;
+  cw: ActionPart;
+  ccw: ActionPart;
+  action: ActionPart;
+}
+
+export function toControlForm(fields: ControlFields): ControlForm {
+  return {
+    label: fields.label ?? "",
+    step: fields.step === undefined ? "" : String(fields.step),
+    cw: actionForm(fields.cw),
+    ccw: actionForm(fields.ccw),
+    action: actionForm(fields.action),
+  };
+}
+
+/** The control form field a message of `fromControlForm` belongs under. */
+export type ControlField = "cw" | "ccw" | "step" | "action";
+
+const STEP = /^\d+$/;
+
+/** The fields of `control`'s kind `form` says, or why it cannot be
+ * written yet and in which field. An empty step or a step of 1 is the
+ * default, written as absent. */
+export function fromControlForm(
+  control: Control,
+  form: ControlForm,
+): { fields: ControlFields } | { invalid: string; field: ControlField } {
+  const fields: ControlFields = {};
+  const parts: ("cw" | "ccw" | "action")[] = isRoller(control) ? ["cw", "ccw"] : ["action"];
+  for (const part of parts) {
+    const action = actionOf(form[part]);
+    if ("invalid" in action) return { invalid: action.invalid, field: part };
+    if (action.action !== undefined) fields[part] = action.action;
+  }
+  if (isRoller(control)) {
+    const step = form.step.trim();
+    if (step !== "") {
+      if (!STEP.test(step) || Number(step) < 1) {
+        return { invalid: t("editor.badStep", { step }), field: "step" };
+      }
+      if (Number(step) !== 1) fields.step = Number(step);
+    }
+  }
+  if (form.label !== "") fields.label = form.label;
+  return { fields };
+}
+
+export function sameControlFields(a: ControlFields, b: ControlFields): boolean {
+  return (
+    a.label === b.label &&
+    a.step === b.step &&
+    actionKey(a.cw) === actionKey(b.cw) &&
+    actionKey(a.ccw) === actionKey(b.ccw) &&
+    actionKey(a.action) === actionKey(b.action)
+  );
+}
+
+export function sameControl(a: ControlTarget | undefined, b: ControlTarget | undefined): boolean {
+  return a !== undefined && b !== undefined && a.profile === b.profile && a.control === b.control;
 }
 
 /** One write of the session, undone by writing `before` again. */
@@ -251,31 +383,38 @@ export interface Change {
   after: KeyFields;
 }
 
-/** The session's writes: `done` oldest first, `undone` the ones undo took
- * back, the next to redo last. */
-export interface History {
-  done: Change[];
-  undone: Change[];
+/** One write of a Dialpad control, undone the same way. */
+export interface ControlChange {
+  target: ControlTarget;
+  before: ControlFields;
+  after: ControlFields;
 }
 
-export function emptyHistory(): History {
+/** The session's writes: `done` oldest first, `undone` the ones undo took
+ * back, the next to redo last. */
+export interface History<C = Change> {
+  done: C[];
+  undone: C[];
+}
+
+export function emptyHistory<C = Change>(): History<C> {
   return { done: [], undone: [] };
 }
 
 /** `history` after a new write: nothing is left to redo. */
-export function recorded(history: History, change: Change): History {
+export function recorded<C>(history: History<C>, change: C): History<C> {
   return { done: [...history.done, change], undone: [] };
 }
 
 /** `history` after the last write was undone. */
-export function afterUndo(history: History): History {
+export function afterUndo<C>(history: History<C>): History<C> {
   const change = history.done.at(-1);
   if (change === undefined) return history;
   return { done: history.done.slice(0, -1), undone: [...history.undone, change] };
 }
 
 /** `history` after the last undone write was written again. */
-export function afterRedo(history: History): History {
+export function afterRedo<C>(history: History<C>): History<C> {
   const change = history.undone.at(-1);
   if (change === undefined) return history;
   return { done: [...history.done, change], undone: history.undone.slice(0, -1) };

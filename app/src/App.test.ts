@@ -14,7 +14,7 @@ import App from "./App.svelte";
 import type { Daemon, Update } from "./lib/daemon";
 import type { Editor } from "./lib/editor";
 import type { ProfileFiles, ProfileSummary } from "./lib/profiles";
-import { eventsOf, nth, responses } from "./lib/fixtures";
+import { eventsOf, nth, responses, UNBOUND_CONTROLS } from "./lib/fixtures";
 import type { Event, Status } from "./lib/protocol";
 
 const STATUS = responses()[0] as Status;
@@ -22,6 +22,7 @@ const STATUS = responses()[0] as Status;
 const EDITOR: Editor = {
   key: () => Promise.resolve({ path: "/c/profiles/terminal.toml", fields: {} }),
   editKey: () => Promise.reject(new Error("not in this test")),
+  ...UNBOUND_CONTROLS,
 };
 
 function summary(id: string, name: string, priority: number): ProfileSummary {

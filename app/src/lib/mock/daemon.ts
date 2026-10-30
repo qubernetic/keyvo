@@ -3,11 +3,12 @@
 // fixture's answer, the packs of contrib/recipes/. The device is the fixture's
 // connected Keypad; the focus moves on a timer through Konsole, the keyvo
 // app (held, as `[focus].hold_classes` holds it), VS Code and a window no
-// profile matches, and the trace replays the fixture's entries.
+// profile matches, and the trace replays the fixture's entries. The Dialpad
+// is the fixture's connected one, its dial and roller turning on a timer.
 import type { Daemon, Outline, Tile, Update } from "../daemon";
 import type { KeyFields } from "../editor";
-import type { Context, Event, Layer, TraceRecord, View } from "../protocol";
-import { fixtureRecipes, fixtureStatus, fixtureTrace, SNAPSHOTS } from "./data";
+import type { Context, DialpadStatus, Event, Layer, TraceRecord, View } from "../protocol";
+import { fixtureDialpad, fixtureRecipes, fixtureStatus, fixtureTrace, SNAPSHOTS } from "./data";
 import { attempt } from "./profiles";
 import type { MockProfile, Store } from "./store";
 
@@ -15,8 +16,18 @@ import type { MockProfile, Store } from "./store";
 export const TRACE_MS = 2_000;
 /** How often the mock's focus moves to the next window of FOCUS. */
 export const FOCUS_MS = 10_000;
+/** How often the mock's connected Dialpad turns a rotary, the dial and
+ * the roller in turn, so the panel's pulse shows. */
+export const DIAL_MS = 3_000;
 /** The trace ring buffer's size (the daemon's `[trace].ring` default). */
 const RING = 200;
+
+/** The turns the Dialpad makes in turn: two detents of the dial
+ * clockwise, one of the roller back. */
+const TURNS: readonly Omit<Event & { event: "dial" }, "event">[] = [
+  { roller: "dial", delta: 2, actions: 0 },
+  { roller: "roller", delta: -1, actions: 0 },
+];
 
 /** The windows the focus cycles through; the keyvo app is held, so the
  * view stays the one of the window before it; the last matches no
@@ -35,6 +46,9 @@ export interface MockDaemonOptions {
   unreachable?: boolean;
   /** The session is locked: the view says so, presses are blocked. */
   locked?: boolean;
+  /** A Dialpad is connected (the default); false reports none
+   * (`?mock-dialpad=none`). */
+  dialpad?: boolean;
 }
 
 /** The key the lock page shows the lock on: the middle one. */
@@ -56,7 +70,10 @@ function snapshot(fields: KeyFields | undefined): string {
 
 export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemon {
   const status = fixtureStatus();
+  const dialpad: DialpadStatus =
+    options.dialpad === false ? { connected: false } : fixtureDialpad();
   const trace = fixtureTrace();
+  let turned = 0;
   const recipes = fixtureRecipes();
   const ring: TraceRecord[] = [];
   let focus = FOCUS.length - 1;
@@ -120,6 +137,7 @@ export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemo
           )
         : attempt(() => ({
             ...structuredClone(status),
+            dialpad: structuredClone(dialpad),
             view: view(),
             context: context(),
             trace: ring.length,
@@ -213,9 +231,16 @@ export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemo
         selecting = focus;
         send({ event: "profile", ...view() });
       }, FOCUS_MS);
+      const dialTimer = dialpad.connected
+        ? setInterval(() => {
+            const turn = TURNS[turned++ % TURNS.length];
+            if (turn !== undefined) send({ event: "dial", ...turn });
+          }, DIAL_MS)
+        : undefined;
       return Promise.resolve(() => {
         clearInterval(traceTimer);
         clearInterval(focusTimer);
+        clearInterval(dialTimer);
       });
     },
   };

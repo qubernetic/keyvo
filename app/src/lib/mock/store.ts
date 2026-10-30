@@ -3,9 +3,9 @@
 // starts from the files again.
 import { parse } from "smol-toml";
 
-import type { KeyFields, Problem } from "../editor";
+import type { ControlFields, KeyFields, Problem } from "../editor";
 import type { MatchSummary, ProfileFields } from "../profiles";
-import type { Action } from "../protocol";
+import { controlOf, type Action, type Control } from "../protocol";
 import { CONFIG_DIR } from "./data";
 
 export interface MockPage {
@@ -22,6 +22,10 @@ export interface MockProfile {
   priority: number;
   match: MatchSummary;
   pages: MockPage[];
+  /** The controls the `[dialpad]` table binds, by control. */
+  dialpad: Map<Control, ControlFields>;
+  /** The `on_fail` actions of the Dialpad buttons; no edit writes them. */
+  dialpadOnFail: Map<Control, Action>;
 }
 
 type Table = Record<string, unknown>;
@@ -63,6 +67,47 @@ function key(value: unknown): KeyFields {
   return out;
 }
 
+/** A Dialpad action: a full action, or a chord string (spec §7.2). */
+function dialAction(value: unknown): Action | undefined {
+  return typeof value === "string" ? { type: "chord", keys: value } : action(value);
+}
+
+/** The fields of one control of a `[dialpad]` table. */
+function control(value: unknown, rotary: boolean): ControlFields {
+  const fields = table(value);
+  const out: ControlFields = {};
+  const label = text(fields.label);
+  if (rotary) {
+    const [cw, ccw] = [dialAction(fields.cw), dialAction(fields.ccw)];
+    if (cw !== undefined) out.cw = cw;
+    if (ccw !== undefined) out.ccw = ccw;
+    // A step of 1 is the default; the editor answers it as absent.
+    if (typeof fields.step === "number" && fields.step !== 1) out.step = fields.step;
+  } else {
+    const act = dialAction(fields.action);
+    if (act !== undefined) out.action = act;
+  }
+  if (label !== undefined) out.label = label;
+  return out;
+}
+
+/** The controls and the button `on_fail` actions of a `[dialpad]` table. */
+function dialpad(value: unknown): Pick<MockProfile, "dialpad" | "dialpadOnFail"> {
+  const { dial, roller, buttons } = table(value);
+  const controls = new Map<Control, ControlFields>();
+  const onFail = new Map<Control, Action>();
+  if (dial !== undefined) controls.set("dial", control(dial, true));
+  if (roller !== undefined) controls.set("roller", control(roller, true));
+  for (const [n, fields] of Object.entries(table(buttons))) {
+    const button = controlOf(`button:${n}`);
+    if (button === undefined) continue;
+    controls.set(button, control(fields, false));
+    const failed = dialAction(table(fields).on_fail);
+    if (failed !== undefined) onFail.set(button, failed);
+  }
+  return { dialpad: controls, dialpadOnFail: onFail };
+}
+
 /** The profile a profile file describes. */
 export function parseProfile(toml: string): MockProfile {
   const doc = parse(toml) as Table;
@@ -81,6 +126,7 @@ export function parseProfile(toml: string): MockProfile {
       class: Array.isArray(match.class) ? match.class.filter((c) => typeof c === "string") : [],
       ...(typeof match.title === "string" ? { title: match.title } : {}),
     },
+    ...dialpad(doc.dialpad),
     pages: pages.map((page: unknown) => {
       const { name, keys } = table(page);
       const entries = Object.entries(table(keys));

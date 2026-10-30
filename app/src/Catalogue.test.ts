@@ -19,6 +19,7 @@ const ENTRIES = catalogueOf(nth(recipeReplies(), 0).recipes);
 function catalogue(
   props: {
     selected?: number;
+    control?: { name: string; direction?: string };
     active?: boolean;
     connected?: boolean;
     problems?: string[];
@@ -126,6 +127,18 @@ describe("the entries", () => {
     await fireEvent.click(group("Apps"));
     await fireEvent.click(screen.getByRole("button", { name: "Spectacle" }));
     expect(onassign).toHaveBeenLastCalledWith("recipe:spectacle");
+  });
+
+  it("a click assigns to the selected Dialpad control, a rotary's direction named", async () => {
+    const { onassign, rerender } = catalogue({ control: { name: "Button 1" } });
+    const chord = screen.getByRole("button", { name: "Chord" });
+    expect(chord).toHaveAccessibleDescription("Assign to Button 1.");
+    await fireEvent.click(chord);
+    expect(onassign).toHaveBeenLastCalledWith("tool:chord");
+    await rerender({ control: { name: "Dial", direction: "counter-clockwise" } });
+    expect(chord).toHaveAccessibleDescription("Assign to Dial, counter-clockwise.");
+    await fireEvent.click(screen.getByRole("button", { name: "Exec" }));
+    expect(onassign).toHaveBeenLastCalledWith("tool:exec");
   });
 
   it("a click assigns nothing while no tile is selected and says why", async () => {
