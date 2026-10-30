@@ -15,13 +15,19 @@
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c354", TAG+="uaccess"
 
 # Logi Bolt receiver, USB 046d:c548: the MX Creative Dialpad's path
-# (beta slice 6). Only the receiver's own nodes: the match is on the
-# immediate HID parent, so the child nodes hid-logitech-dj creates for each
-# paired device (keyboard, mouse; their own wireless product id) stay
-# closed, and with them what is typed on a Bolt keyboard. What the
-# receiver's own node still carries in DJ mode is to be measured on
-# hardware.
-KERNEL=="hidraw*", SUBSYSTEM=="hidraw", IMPORT{parent}="HID_ID", ENV{HID_ID}=="0003:0000046D:0000C548", TAG+="uaccess"
+# (beta slice 6). Only the receiver's HID++ node, USB interface 02
+# (docs/hardware-notes.md, record D8). It carries the HID++ reports 10 and
+# 11 of every paired device: measured, nothing while no control is
+# diverted, the Dialpad's button and roller reports while keyvo diverts
+# them; no keyboard or mouse input. Whoever opens it can talk HID++ to
+# every paired device, as Solaar does. The receiver's other interfaces
+# stay closed: 00 carries what is typed on a paired keyboard, 01 the
+# reports of a paired mouse (and of the undiverted Dialpad), 03 is a
+# digitizer. The kernel runs the receiver without per-device nodes here;
+# where it gives a paired device a node of its own, that node carries the
+# device's product id in its immediate HID parent and does not match.
+# One ATTRS key only: udev matches all ATTRS keys of a rule on one parent.
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", IMPORT{parent}="HID_ID", ENV{HID_ID}=="0003:0000046D:0000C548", ATTRS{bInterfaceNumber}=="02", TAG+="uaccess"
 
 # /dev/uinput: the daemon's virtual keyboard for chord keys.
 # static_node lets the tag apply before the uinput module is loaded.

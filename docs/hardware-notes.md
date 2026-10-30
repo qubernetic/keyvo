@@ -682,6 +682,7 @@ frames they carry. Every record of this section shares the setup:
 - Settles: spec §5.1, the receiver's HID++ node is the one with reports
   `0x10` and `0x11` among four interface nodes; the statement that the
   kernel gives every paired device a node of its own is corrected. Spec
-  §5.8, the Dialpad's undiverted input on the mouse node. The descriptors
+  §5.8, the Dialpad's undiverted input on the mouse node. Spec §3 and
+  `SECURITY.md`, the udev rule tags interface `02` only (#197). The descriptors
   are the sysfs fixtures `receiver-only` (all four) and
   `keypad-and-receiver` (the HID++ node).

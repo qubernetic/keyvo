@@ -132,7 +132,7 @@ sections 1 and 2, has every step):
 
 - **Device access** comes from the udev rule
   [contrib/udev/70-keyvo.rules](contrib/udev/70-keyvo.rules): it gives the
-  user at the seat access to the Keypad, the Bolt receiver and
+  user at the seat access to the Keypad, the Bolt receiver's HID++ node and
   `/dev/uinput` (`uaccess`, no group). Install it once, then replug the
   Keypad:
 

@@ -98,13 +98,22 @@ host; the CI `flatpak` job builds the bundle `keyvo.flatpak`. The Flathub
 manifest (M4b-2) is a copy with a `git` source.
 
 **As built (beta, #184).** The udev rule `contrib/udev/70-keyvo.rules`
-tags the Keypad's hidraw nodes (`046d:c354`), the Bolt receiver's own
-(`046d:c548`, the Dialpad's path; matched on the immediate HID parent's
-`HID_ID`, so the child nodes of the paired keyboard and mouse stay
-closed) and `/dev/uinput` (a `static_node`, so
-the tag applies before the module loads) with `uaccess`; named `70-` so it
-sorts before `73-seat-late.rules`, where logind turns the tag into an ACL
-for the user at the active seat. No mode, no group. Install it with
+tags the Keypad's hidraw nodes (`046d:c354`), the Bolt receiver's HID++
+node (`046d:c548`, the Dialpad's path; matched on the immediate HID
+parent's `HID_ID` and USB interface `02`, #197) and `/dev/uinput` (a
+`static_node`, so the tag applies before the module loads) with
+`uaccess`; named `70-` so it sorts before `73-seat-late.rules`, where
+logind turns the tag into an ACL for the user at the active seat. No
+mode, no group. The receiver's HID++ node carries only the HID++ reports
+`0x10` and `0x11` of the paired devices: nothing while no control is
+diverted, the Dialpad's `0x1B04` and `0x4610` reports while keyvo
+diverts them, no keyboard or mouse input; its other three nodes, which
+the paired devices share (keyboard input on interface `00`, mouse input
+and the undiverted Dialpad on `01`, a digitizer on `03`), stay closed
+(measured 2026-10-29 and 2026-10-30, `docs/hardware-notes.md` record
+D8; §5.1). The HID++ node still reaches every paired device, so the
+user at the seat can configure the keyboard and the mouse over it as
+Solaar does (`SECURITY.md`). Install it with
 `sudo install -m 644 contrib/udev/70-keyvo.rules /etc/udev/rules.d/ &&
 sudo udevadm control --reload && sudo udevadm trigger`, then replug the
 Keypad. The daemon runs under the systemd user unit
@@ -2812,6 +2821,11 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, beta follow-up of slice 4 (2026-10-30)**: the Bolt receiver's
+  rule narrowed to the HID++ node (#197, from the security re-review of
+  #196 and record D8). §3 the rule matches USB interface `02` as well,
+  what that node carries and that the keyboard and mouse nodes stay
+  closed.
 - **v0.3, beta docs of slice 7 (2026-10-30)**: the Dialpad over Bolt
   measured (#202, from the hardware check of #187, parts 1 and 2). §5.1
   the receiver's four interface nodes without DJ mode, `0x09` as an empty

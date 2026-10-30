@@ -448,8 +448,9 @@ fn the_user_unit_carries_exactly_the_documented_keys() {
     assert_eq!(unit, expected);
 }
 
-/// The udev rule: `uaccess` on the Keypad's and the Bolt receiver's hidraw
-/// nodes and on `/dev/uinput`, no mode, no group.
+/// The udev rule: `uaccess` on the Keypad's hidraw nodes, the Bolt
+/// receiver's HID++ node (interface `02`, `docs/hardware-notes.md` record
+/// D8) and `/dev/uinput`, no mode, no group.
 #[test]
 fn the_udev_rule_tags_the_three_devices_uaccess_and_nothing_else() {
     let rule = repo_file("contrib/udev/70-keyvo.rules");
@@ -462,7 +463,7 @@ fn the_udev_rule_tags_the_three_devices_uaccess_and_nothing_else() {
         lines,
         [
             r#"KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c354", TAG+="uaccess""#,
-            r#"KERNEL=="hidraw*", SUBSYSTEM=="hidraw", IMPORT{parent}="HID_ID", ENV{HID_ID}=="0003:0000046D:0000C548", TAG+="uaccess""#,
+            r#"KERNEL=="hidraw*", SUBSYSTEM=="hidraw", IMPORT{parent}="HID_ID", ENV{HID_ID}=="0003:0000046D:0000C548", ATTRS{bInterfaceNumber}=="02", TAG+="uaccess""#,
             r#"KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess""#,
         ]
     );

@@ -343,6 +343,23 @@ starting point, and its results over Bolt are in `docs/hardware-notes.md`,
 - [ ] #199 `bin/keyvo --dump dial` with a few turns and presses: post the `--dump` lines of the start (slot search and diverts), one turn per roller, one button press and the Ctrl-C; they replace the synthetic fixtures.
 - [ ] #199 Over Bluetooth with `--device`: `probe` and `dial` (section 4, step 6).
 
+### #205: the receiver's rule on the HID++ node only (#197)
+
+The rule now tags only the receiver's HID++ node, USB interface `02`
+(`docs/hardware-notes.md`, record D8). Install the rule of this PR as in
+section 1, step 2 (until then `keyvo doctor` reads `rule` `warn`), then
+replug the receiver. List the receiver's nodes with their interface:
+
+```bash
+for n in $(grep -l 'HID_ID=0003:0000046D:0000C548' /sys/class/hidraw/*/device/uevent); do
+  d=/dev/$(basename "$(dirname "$(dirname "$n")")")
+  echo "$d $(udevadm info -a -n "$d" | grep -m1 'bInterfaceNumber')"
+done
+```
+
+- [ ] #205 `getfacl` on each `046d:c548` node of that list: only the node with `bInterfaceNumber` `02` lists `user:<you>`; the nodes of `00`, `01` and `03` do not. Post the four `getfacl` outputs.
+- [ ] #205 `bin/keyvo dial` runs as the user (no root) and prints events on a turn and a press (section 4, step 2).
+
 ## 6. What to post back
 
 Every slice block of section 5: on the slice's issue, the commit under

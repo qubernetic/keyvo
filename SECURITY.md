@@ -128,14 +128,24 @@ user is trusted, and nothing else is.
   the user can assert a window (see below).
 - The daemon never runs as root. Device access comes from the udev rule
   `contrib/udev/70-keyvo.rules` (#184): it tags the Keypad's `hidraw` nodes
-  (`046d:c354`), the Bolt receiver's own nodes (`046d:c548`, matched on
-  the immediate HID parent's `HID_ID`) and `/dev/uinput` with `uaccess`,
-  so logind gives the user at the active seat an ACL on them; no mode
-  change, no group. The child nodes hid-logitech-dj creates for the
-  devices paired with the receiver (keyboard, mouse) carry their own
-  product id and are not tagged, so a Bolt keyboard's input reports stay
-  closed. What the receiver's own node still carries in DJ mode is to be
-  measured on hardware (beta slice 6). The ACL follows the seat for new
+  (`046d:c354`), the Bolt receiver's HID++ node (`046d:c548`, matched on
+  the immediate HID parent's `HID_ID` and USB interface `02`) and
+  `/dev/uinput` with `uaccess`, so logind gives the user at the active
+  seat an ACL on them; no mode change, no group. The receiver has one
+  node per USB interface, and the devices paired with it share them
+  (measured 2026-10-29 and 2026-10-30, `docs/hardware-notes.md` record
+  D8): interface `00` carries what is typed on a paired keyboard, `01`
+  the reports of a paired mouse, `03` is a digitizer; none of them is
+  tagged. The HID++ node carries only the HID++ reports `10` and `11`:
+  nothing while no control is diverted, the Dialpad's button and roller
+  reports while keyvo diverts them, no keyboard or mouse input. It does
+  reach every paired device, though: a process of the seat user can
+  send any HID++ request to the keyboard and the mouse as well (read
+  their configuration, change their settings, divert their divertable
+  controls and read those), which is what Solaar does with the same
+  node. Where the kernel gives a paired device a node of its own, that
+  node's HID parent carries the device's product id and is not tagged
+  either. The ACL follows the seat for new
   opens: a user who is not at the active seat (another session, an SSH
   login) cannot open the nodes. A descriptor opened before a seat switch
   stays valid, because logind revokes evdev but not hidraw or uinput, and
