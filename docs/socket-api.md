@@ -105,7 +105,7 @@ No fields. The result:
 | `config_dir` | string | The configuration directory the daemon loads (`--config-dir` or the default, spec §7.1). A client that edits profiles (the app) edits this tree. |
 | `device` | object | `connected` (bool); `keys` (the key count) and `geometry` when connected; `error` (why not) when the daemon knows. |
 | `dialpad` | object | The Dialpad (beta, #188): `connected` (bool); `slot` (its Bolt receiver slot) and `rollers` (`[{"roller": "roller" or "dial", "increments": n}]`, increments per rotation: 40 the roller, 180 the dial) when connected; `error` (why not: no receiver, the Dialpad does not answer) when the daemon knows. A client reads it as `{"connected": false}` when absent, as from an older daemon. |
-| `view` | object | What the pad shows: `profile` (id of the profile that owns the page, the global one at index 0 and below), `page` (from 1, inside `profile`), `mode` (`auto` or `manual`), `index` (integer: the position in the shown profile's page list, spec §6.1: 1 its context page, 2 and up its other pages, 0 the global `general` page, -1 and below the global pages after it), `locked` (bool: the session is locked, spec §6.1; the pad shows the lock page over this view and blocks every press; read as `false` when absent). |
+| `view` | object | What the pad shows: `profile` (id of the profile that owns the page, the global one at index 0 and below), `page` (from 1, inside `profile`), `mode` (`auto` or `manual`), `index` (integer: the position in the shown profile's page list, spec §6.1: 1 its context page, 2 and up its other pages, 0 the global `general` page, -1 and below the global pages after it), `locked` (bool: the session is locked, spec §6.1; the pad shows the lock page over this view and blocks every press; read as `false` when absent), `modifier` (beta, #189: `{"key": n, "mode": "held" or "toggle"}`, the key that has the dial and the roller, spec §6.1; left out when none has, read as `null`). |
 | `context` | object, optional | The last focus report: `class`, `title`, `pid` when known, `source` (`watcher` or `notify_context`), and `held: true` when the class is in `[focus].hold_classes` (spec §6.1: the view stays that of the window before; absent otherwise). Left out before the first report. |
 | `trace` | integer | The entries in the trace ring buffer. |
 
@@ -150,13 +150,18 @@ should send `status` when it notices a gap.
 | `delta` | nonzero integer | with `dial` and `roller` only, then required | The detents of the turn, clockwise (the roller: forward) positive. |
 | `kind` | `short` or `long` | `short` | The press kind. |
 | `dry_run` | bool | `false` | Resolve and trace, execute nothing. |
+| `hold` | bool | `false` | With `key` (beta, #189): hold a held modifier key down until a `press` with `release`. |
+| `release` | bool | `false` | With `key`: let a key held with `hold` go. |
 
 Exactly one of `key` and `control` is given; `delta` goes with a turn of
-`dial` or `roller` and nothing else. Anything else is `invalid_request`.
+`dial` or `roller` and nothing else; `hold` or `release`, not both, goes
+with `key` and no `"kind": "long"`. Anything else is `invalid_request`.
 
 ```json
 {"v":1,"id":9,"cmd":"press","control":"dial","delta":3,"dry_run":true}
 {"v":1,"id":10,"cmd":"press","control":"button:2"}
+{"v":1,"id":11,"cmd":"press","key":7,"hold":true}
+{"v":1,"id":12,"cmd":"press","key":7,"release":true}
 ```
 
 The press resolves on the active profile and page, as a device press does:
@@ -180,6 +185,17 @@ and a real turn traces one entry per run. A turn from a client sends no
 - While the session is locked (the view's `locked`), nothing resolves,
   `dry_run` or not: the entry has no `layer`, `action` `null`, and the
   result `{"status": "blocked", "reason": "session locked"}`.
+- The dial modifier (beta, #189, spec §6.1 and §7.2): `hold` holds a held
+  modifier key of the active page as the device does, and the dial and
+  the roller run its bindings until `release`; a key that is not one, or
+  is not held, is `invalid_request`. The entry of a hold, and of a release
+  after a turn, has `modifier` `"held"`, `action` `null` and the result
+  `{"status": "modifier", "active": true}` (`false` for the release); a
+  release without a turn runs the key's action and answers with its
+  entry. A plain press of a toggle key arms or ends it the same way
+  (`modifier` `"toggle"`); a press of any other key or of a Dialpad button
+  ends an armed toggle and acts as usual. With `dry_run` the entry has
+  `modifier` set and the result `dry_run`, and nothing changes.
 
 ### `reload`
 
@@ -240,6 +256,7 @@ The schema of a pack file is `schemas/recipe.schema.json`.
 ```json
 {"v":1,"event":"profile","profile":"terminal","page":1,"mode":"auto","index":1,"locked":false}
 {"v":1,"event":"session","locked":true}
+{"v":1,"event":"modifier","modifier":{"key":7,"mode":"held"}}
 ```
 
 | `event` | Fields | When |
@@ -255,10 +272,11 @@ The schema of a pack file is `schemas/recipe.schema.json`.
 | `trace` | `entry` | A press was resolved (dry run, unbound, chord) or an `exec` ended. |
 | `config` | `reloaded`, `error` (when it failed) | The configuration directory was reloaded, or did not load. |
 | `session` | `locked` | The session was locked or unlocked (spec §6.1, §6.2). While locked the pad shows the lock page and every press is `blocked`. |
+| `modifier` | `modifier` (`{"key": n, "mode": "held" or "toggle"}` or `null`) | Beta, #189: another key has the dial and the roller, or none (`null`: the profile's `[dialpad]` bindings again). |
 
 `profile`, `page` and `mode` each carry the whole new view. One switch that
 changes several of them sends one event per changed class, in the order
-`profile`, `page`, `mode`, `session`. A lock or an unlock alone changes
+`profile`, `page`, `mode`, `session`, `modifier`. A lock or an unlock alone changes
 only the view's `locked`, so it sends `session` alone; a subscriber of
 `session` sees every lock and unlock without the view classes.
 
@@ -268,7 +286,10 @@ The pre-alpha subset of spec §8: `timestamp_ms` (milliseconds since the
 Unix epoch), `trigger` (`press`, `simulated`), `profile` (the active
 profile), `page`, `key` (left out for a Dialpad control), `control`
 (beta, #188: `dial`, `roller` or `button:1`..`button:4`; left out for a
-key), `layer` (`app` or `global`: the layer that
+key; a turn a modifier key took carries both `key` and `control`),
+`modifier` (beta, #189: `held` or `toggle` for a turn a modifier key took
+and for a press that held, armed or let one go; left out otherwise),
+`layer` (`app` or `global`: the layer that
 supplied the key or control, spec §6.1; `global` for a key the active app profile does
 not define; left out when no layer defines it), `action` (the key's action
 as in the profile, or `null`; a `launch` carries `class` and `wait_focus`
@@ -286,6 +307,8 @@ with `status` set to one of the following:
 - `failed`, with `error`
 - `blocked`, with `reason`: the press was not resolved and nothing ran;
   as built only `session locked`, a press under the session lock
+- `modifier`, with `active`: the press of a modifier key held or armed it
+  (`true`) or let it go (`false`); no action ran
 
 An entry may carry `branch`. It is absent (a reader takes `null` the same
 way) for the key's own action and `"on_fail"` for the key's `on_fail`
@@ -306,6 +329,8 @@ keyvo ctl status
 keyvo ctl press '{"key":5,"dry_run":true}'
 keyvo ctl press '{"control":"dial","delta":1,"dry_run":true}'
 keyvo ctl press '{"control":"button:2"}'
+keyvo ctl press '{"key":7,"hold":true}'
+keyvo ctl press '{"key":7,"release":true}'
 keyvo ctl notify_context '{"class":"org.kde.konsole","title":"~"}'
 keyvo ctl recipes
 keyvo ctl subscribe '{"events":["trace","profile"],"replay":10}'

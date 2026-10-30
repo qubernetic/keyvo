@@ -1150,6 +1150,7 @@ Defaults, all configurable under `[timing]` in `config.toml`:
 | `claim_splash_timeout` | 10000 ms | how long the claim waits for the plug-in splash to end before it fails, §5.4 |
 | `doctor_reply` | 1000 ms | how long `keyvo doctor` waits for the daemon's answer to `status`, §12 |
 | `slot_probe` | 1000 ms | how long the Dialpad search waits for one receiver slot's answer to `getFeature(0x4610)` before it counts the slot as silent (asleep); covers a first reply from idle or sleep (up to 771 ms measured over Bolt), §5.1 and §5.8 |
+| `modifier_timeout` | 0 (off) | an armed toggle modifier key ends after this long without a turn of the dial or the roller; 0 keeps it until the next press, §6.1 and §7.2 |
 
 `keep_alive_period` must be shorter than `keep_alive_timeout`: a period at
 or above the timeout lets the claim run out between two pings (§5.3). The
@@ -1220,6 +1221,43 @@ reports the session locked:
 The lock and the unlock are `Switched` events like any other change of the
 view; the socket reports them as `session` events (§8). An animated lock
 (a pulse) is a later slice.
+
+The dial modifier (#189, Q4 of the beta plan and the owner's comment of
+2026-10-27 22:38Z): a key with a `dial` or `roller` table (§7.2) takes the
+Dialpad's dial and roller over while it is the *active modifier*. As built
+(`keyvo_core::state`):
+
+- A **held** modifier key (`modifier = "held"`, the default) is active
+  from its press to its release. It has no long press; its release runs
+  its `action` as a `short` press only when no turn took a binding during
+  the hold. Of two held modifier keys the one pressed last is active; the
+  other is active again when the last one is released.
+- A **toggle** key (`modifier = "toggle"`) is armed by a short press,
+  which runs no action; its long press runs its `action`. The toggle ends
+  at the next press of the same key (at the press; its release does not
+  arm it again), of any other key or of a Dialpad button, which otherwise
+  act as usual (a held modifier key takes over, an ordinary key runs its
+  action); when a page button changes the page (§6.3) or the shown
+  profile switches; when a reload drops the key or makes it another kind
+  of key; at the lock; and after `[timing].modifier_timeout` without a
+  turn, when that is above 0 (a turn starts the time over). One toggle is
+  armed at a time; arming another ends the first.
+- A held modifier key is active before an armed toggle. A turn of the dial
+  or the roller runs the active key's binding of that roller, once per
+  `step` detents (§7.2); a roller the active key leaves out falls to the
+  held key before it that binds it, else to the profile's `[dialpad]`
+  table. The carry below one step starts over when another binding takes
+  the turns.
+- The key resolves through the stack like any key: a global modifier key
+  works under every app profile that does not define that key, and not
+  under one that does. A modifier stays with the page it was pressed on;
+  the key shows the `modifier` look (§9) there for its whole active time.
+- A held or armed modifier is pad activity: no page return while one is
+  active, and its end starts the return over.
+- The view carries `modifier: { key, mode }` while one is active; a change
+  is a `Switched` event, on the socket a `modifier` event (§8). The lock
+  ends every modifier, and a key held through the lock or the unlock is
+  forgotten, so its release runs nothing.
 
 ### 6.2 Window/context detection
 
@@ -1379,7 +1417,11 @@ view; the socket reports them as `session` events (§8). An animated lock
   side off. An app switch cancels a pending return. A press of a Dialpad
   button is pad activity and restarts the clock too; a turn of the dial
   or the roller is not, as the Dialpad's bindings belong to no page
-  (beta, #188).
+  (beta, #188). A held or armed dial modifier key (§6.1) holds the clock
+  for its whole active time, and its end starts it over (#189).
+- A page button that changes the page ends an armed toggle modifier key
+  (§6.1, #189); one that changes nothing (the end of the list, the mode
+  toggle) keeps it.
 - Manual mode is a focus lock: a long press (`[timing].long_press`) on
   either page button toggles it and keeps the shown profile and index;
   focus changes are recorded and not shown; the buttons walk the same
@@ -1545,6 +1587,14 @@ on_fail = { type = "exec", cmd = "notify-send 'build failed'" }
 [pages.keys.1.states.error]  # overrides the theme's built-in error look
 badge = "!"
 
+[pages.keys.7]              # a dial modifier: the dial and the roller follow this key
+icon     = "lucide:sun"
+label    = "Brightness"
+modifier = "held"           # the default with a dial or roller table; or "toggle"
+action   = { type = "exec", cmd = "brightnessctl set 50%" }
+dial     = { cw = { type = "exec", cmd = "brightnessctl set +5%" }, ccw = { type = "exec", cmd = "brightnessctl set 5%-" }, step = 6 }
+roller   = { cw = "KEY_BRIGHTNESSUP", ccw = "KEY_BRIGHTNESSDOWN" }
+
 [dialpad]
 dial   = { cw = "ctrl+]", ccw = "ctrl+[", step = 15, label = "Indent" }
 roller = { cw = { type = "chord", keys = "ctrl+tab" }, ccw = { type = "chord", keys = "ctrl+shift+tab" }, step = 4 }
@@ -1599,6 +1649,26 @@ mouse.dpi            = 1200
   `step` only where it differs from 1, keeps a short-form chord short
   while it stays a chord, and removes a control left without fields, so
   the global one shows through again.
+- A key's `modifier`, `dial` and `roller` as built (beta, #189): a key may
+  carry a `dial` and a `roller` table next to `action`, each with the
+  fields of the `[dialpad]` entries (`cw`, `ccw`, `step`, `label`), and a
+  `modifier` mode, `held` (the default when a table is there) or
+  `toggle`. A key with either table is a *modifier key*: while it is the
+  active modifier (§6.1) a turn of a roller it binds runs its binding
+  instead of the profile's `[dialpad]` one, once per `step` detents, with
+  the same carry and `max_per_event` cap. `modifier` without a `dial` or
+  `roller` table is a load error at the key's table; a key with neither
+  table behaves as before. A held modifier key never fires `long`; its
+  `action` runs as `short` at a release without a turn. A toggle key's
+  short press arms it and runs nothing, its long press runs its `action`
+  (the common toggle key has none). Both resolve through the stack
+  (§6.1). The table's `label` is what the app's Dialpad panel shows while
+  the key is active, else the key's `label`. The editor (§10) writes the
+  three fields like a key's other fields: `modifier` only as written, a
+  new table as an inline table, `step` only where it differs from 1, an
+  empty table (`dial = {}`) kept, so a key can be a modifier with nothing
+  bound yet; the mode Off removes all three. A recipe applied to the key
+  keeps them. `keyvo preview` renders the key as any other.
 - Chords as `keyvo_core::chord` parses them (checked when the profile
   loads; a bad chord is reported at its `keys` value): steps separated by
   `,`, each step modifiers joined with `+` and one key last
@@ -1617,7 +1687,9 @@ mouse.dpi            = 1200
 - Press kinds as built (`keyvo_core::press`): `short` and `long`; the long
   press fires once `[timing].long_press` is reached, without waiting for
   the release. A profile has one action per key, and both kinds run it;
-  per-kind bindings and `repeat` come with M1-9.
+  per-kind bindings and `repeat` come with M1-9. A modifier key is the
+  exception (#189): a held one has no `long`, a toggle key's `short` arms
+  it and only its `long` runs the action.
 - Action types (v1): `chord` (key combo, sequences with `,`, per-step
   delays, hold/release), `exec` (non-blocking subprocess with `KEYVO_*`
   env whose exit is the result, §8), `launch` (open an application: the
@@ -1890,9 +1962,10 @@ the Rust, TypeScript and C# clients.
 As built (pre-alpha, `keyvo_core::socket` and `keyvo_daemon::socket`):
 
 - The commands are `status`, `subscribe` (classes `key`, `profile`, `page`,
-  `mode`, `device`, `context`, `trace`, `config`, `session`, `dial`, with an optional replay
+  `mode`, `device`, `context`, `trace`, `config`, `session`, `dial`,
+  `modifier`, with an optional replay
   of the newest trace entries), `press` (`key` or `control` with `delta`,
-  `kind`, `dry_run`),
+  `kind`, `dry_run`; `hold` or `release` with a `key`),
   `reload`, `notify_context` (`class`, `title`), and `recipes` (the bundled
   and the user's recipe packs with their variants, `problems` naming each
   pack left out, §7.5). Any other command and any unknown field is
@@ -1927,6 +2000,28 @@ As built (pre-alpha, `keyvo_core::socket` and `keyvo_daemon::socket`):
   presses a button; `dry_run` as for a key, a turn's result carries
   `runs`. A turn from a client sends no `dial` event, as a press from a
   client sends no `key` event.
+- The dial modifier (beta, #189, §6.1): the view carries `modifier`
+  (`{"key":7,"mode":"held"}`, `mode` `held` or `toggle`) while a modifier
+  key is active and leaves it out otherwise (a client reads it as
+  `null`); a change is a `modifier` event in the new `modifier` class
+  (`{"v":1,"event":"modifier","modifier":null}` at the end), sent after
+  the other events of the same change. `status` and `keyvo ctl status`
+  print it with the view. A turn taken by a modifier key is traced with
+  `key` (the modifier key), `control` (`dial` or `roller`), `modifier`
+  (`held` or `toggle`) and the `layer` that supplied the key; the action
+  is the key's binding, `KEYVO_KEY` and `KEYVO_CONTROL` both set for an
+  `exec`. A press that arms or ends a toggle, and a client's hold or
+  release, is traced with `modifier` and the result `modifier` (`active`
+  `true` or `false`), no action. `press` with `"hold": true` holds a held
+  modifier key of the active page down as the device does,
+  `"release": true` lets it go (its action runs, and its entry answers,
+  when no turn took its binding); either with a key that is not a held
+  modifier key, or not held, is an `invalid_request`, and `hold` and
+  `release` go with `key` alone, one of them, without `kind: long`. A
+  plain `press` of a toggle key toggles it, of any other key ends the
+  armed toggle; a `press` of a Dialpad button ends it too. With `dry_run`
+  a hold, a release or a toggle press resolves and answers with `modifier`
+  set and the result `dry_run`, and changes nothing.
 - Clients ignore unknown fields in responses and events, so a later daemon
   may add fields within version 1.
 - Every response echoes the request's `id` and carries `ok` with `result`
@@ -2112,6 +2207,20 @@ justfile page, `gh`, `kubectl`, other agent CLIs, Kitty/WezTerm.
   look's color. A custom state's badge text draws in neutral gray. The
   success flash and the desktop notification come with the daemon's frame
   push.
+- The `modifier` look (beta, #189), a feedback primitive next to
+  `running`, `success` and `error`: the key that has the dial and the
+  roller (§6.1) shows a ring along its edge (a stroke of 4.5 % of the
+  tile height, the theme's `modifier_ring`) in the profile accent (white
+  without one) and a dial badge (`lucide:circle-gauge`) of the badge size
+  in the top left corner in the same colour, so a key's own corner badge
+  (top right) stays. Icon and label are untouched. It shows for the whole
+  active time, the hold of a held key and the armed time of a toggle, on
+  the page the key was pressed on, over any other look of the key; a
+  key's `states.modifier` replaces icon, label, background and badge text
+  as for the other looks. The snapshots are
+  `crates/keyvo-core/tests/snapshots/render__looks__modifier.snap.png`
+  and `render__looks__modifier-badge.snap.png`. `keyvo preview` draws no
+  modifier state.
 - The daemon (pre-alpha) paints the looks: `running` when an `exec`
   starts, then `success` or `error` from its result; it repaints the key
   at the feedback's next change (long run, end of the success hold). The
@@ -2214,6 +2323,18 @@ the rest of the system must provide.
   the roller (`cw` by default). The writes go through the Tauri commands
   `control` and `edit_control` (`keyvo_client::Editor::control`,
   `set_control`). The Preferences Devices tab stays `soon`.
+- The dial modifier in the app (beta, #189): the Inspector's key editor
+  has a Modifier section with a Mode select (Off, Held, Toggle) and the
+  dial and the roller editors of the control editor (`cw`, `ccw`,
+  `step`), collapsed while the mode is Off; Off writes none of
+  `modifier`, `dial` and `roller`, Held and Toggle write the mode and at
+  least an empty `dial` table. The catalogue assigns to the focused
+  direction there as in the control editor. While the view carries a
+  `modifier`, the mirror draws the ring on that key, and the Dialpad
+  panel shows the key's labels on the dial and the roller it binds (the
+  table's `label`, else the key's) with `(held)` or `(toggled)` in place
+  of the profile's. The mock daemon serves the contrib profiles' held key
+  7 and toggle key 8.
 - Tray icon from the GUI in v1. `keyvo profile export|import` in the header
   menu.
 - Flatpak (M4b, as built in #182): exactly `--share=ipc`,
@@ -2907,6 +3028,16 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, beta slice 9 (2026-10-30)**: a key as the dial modifier, held
+  or toggled (#189). §6.1 the modifier rules (held, toggle, the end
+  rules, the resolution order, the page return) and the
+  `modifier_timeout` row; §6.3 a page button that changes the page ends a
+  toggle, a modifier holds the page return; §7.2 a key's `modifier`,
+  `dial` and `roller` as built and the press kinds of a modifier key; §8
+  the view's `modifier`, the `modifier` event class, the trace fields, the
+  `modifier` result, `press` with `hold` and `release`, `KEYVO_KEY` with
+  `KEYVO_CONTROL`; §9 the `modifier` look; §10 the Inspector's Modifier
+  section, the mirror's ring and the panel's labels.
 - **v0.3, beta slice 8 (2026-10-30)**: the Dialpad's bindings and panel
   (#188). §4.1 the dialpad bindings as built; §5.8 the daemon's Dialpad
   actor and `--dialpad-device`; §6.1 a turn is no pad activity for the

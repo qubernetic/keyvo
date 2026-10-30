@@ -383,6 +383,32 @@ rotation on the dial, 40 on the roller.
 - [ ] #206 In the app select the dial on the Pad screen's Dialpad panel and assign `Brightness up` from the catalogue to `cw`: `global.toml` carries it in the dial's `cw` and the dial raises the brightness clockwise. Undo in the file (or set `cw` back): the dial is on the volume again.
 - [ ] #206 `bin/keyvo ctl press '{"control":"dial","delta":6,"dry_run":true}'` answers with `"runs":1` and a `dry_run` entry; the volume does not change.
 
+### #207: a key as the dial modifier, held or toggled (#189)
+
+This slice changes the example profiles: copy `contrib/profiles/global.toml`
+and `vscode.toml` again (section 3). The global context page gains key 7
+Brightness, a held modifier (its dial runs `brightnessctl set +5%` and
+`5%-`, one per 6 detents; its roller `KEY_BRIGHTNESSUP` and
+`KEY_BRIGHTNESSDOWN`, one per 4; a tap runs `brightnessctl set 50%`), and
+key 8 Zoom, a toggle (its dial runs `ctrl+equal` and `ctrl+minus`, one per
+12 detents; no action); VS Code's OK, Fail and Slow moved to keys 4 to 6,
+so it leaves keys 7 and 8 to the global layer. `brightnessctl --version`
+answers on the host (the unit's `PATH` caveat of section 2 applies);
+without it, change key 7's commands or skip its brightness steps. Both devices connected, the daemon of this
+branch under the user unit, `bin/keyvo ctl subscribe '{"events":["modifier","trace","dial"]}'`
+in T2.
+
+- [ ] #207 Hold key 7 (Brightness) and turn the dial: the screen brightness follows; the key shows the ring and the badge; the panel shows `Brightness (held)` on the dial; release: nothing else happens, the ring goes, the dial is back on volume.
+- [ ] #207 Tap key 7 without turning: the key's own action runs (brightness to 50 %).
+- [ ] #207 Hold key 7 for three seconds without turning and release: no `long` action, the short action runs once at the release.
+- [ ] #207 Tap key 8 (Zoom): the ring and the badge stay on; turn the dial: Brave zooms in and out; the panel shows `Zoom (toggled)`; tap key 8 again: the ring goes, the dial is back on volume.
+- [ ] #207 Tap key 8, then tap key 1 (Notify): the notification appears and the ring on key 8 goes; the dial is back on volume. Tap key 8, then the left page button: the page changes and the toggle is off when you come back.
+- [ ] #207 Tap key 8, then hold key 7 and turn: brightness (held wins, the toggle ended); release: the dial is back on volume, not on zoom.
+- [ ] #207 `config.toml` with `[timing] modifier_timeout = 5000`: tap key 8, wait six seconds: the ring goes by itself; remove the file.
+- [ ] #207 VS Code focused (its profile has no key 7 or 8): both modifiers still work; set a key 8 in `vscode.toml` without a `dial` table: under VS Code key 8 is an ordinary key again.
+- [ ] #207 `bin/keyvo ctl press '{"key":7,"hold":true}'`, turn, `'{"key":7,"release":true}'`; then `'{"key":8}'`, turn, `'{"key":8}'`: the same routing, the `modifier` events visible in `ctl subscribe`.
+- [ ] #207 In the app, open key 8 in the Inspector: the Modifier section shows Toggle and both bindings; change the mode to Held and save: key 8 now needs to be held; change `step` to 4: the dial zooms every fourth detent.
+
 ## 6. What to post back
 
 Every slice block of section 5: on the slice's issue, the commit under

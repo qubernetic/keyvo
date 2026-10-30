@@ -164,6 +164,15 @@ the view, device, focus context, held keys, recent trace entries and the last
 reload error, filled from the `status`, `subscribe` and `press` replies and kept
 current by the events. The GUI's Home screen draws the pad from it.
 
+**Modifier key**: A key with a `dial` or `roller` table (#189): while it is
+the *active modifier* the Dialpad's dial and roller run its bindings instead
+of the profile's `[dialpad]` ones, and the key shows the `modifier` look (a
+ring in the accent and a dial badge). A *held* one (`modifier = "held"`, the
+default) is active while it is held and runs its action at a release without
+a turn; a *toggle* key (`modifier = "toggle"`) is active from a short press
+until the toggle ends. The last pressed held key wins over an armed toggle.
+The view and the socket name it as `modifier: { key, mode }`.
+
 **Mode**: `auto` or `manual`. In auto mode the focus source selects the profile;
 manual mode is a focus lock that keeps the shown profile and page list index
 while focus changes are recorded, not shown. The page buttons walk the page
@@ -296,11 +305,18 @@ through the trust gate; never referenced after copying.
 it, sent to the Keypad as a baseline JPEG; `keyvo preview` places the tiles
 of a page on the panel and writes a PNG.
 
+**Toggle**: A toggle modifier key armed by a short press (#189). It ends
+at the next press of the same key, of any other key or Dialpad button (which
+otherwise acts as usual), at a page change, a profile switch, a reload that
+drops the key, the lock, or after `[timing].modifier_timeout` without a turn
+(default 0, off). One toggle is armed at a time.
+
 **Trace**: One record per press, real or simulated: trigger, context snapshot,
 layer resolution, condition results, resolved action with substituted
 variables, execution result, `on_fail` branch and block reason; a key's
 `on_fail` run is a second record of the same press (`branch: "on_fail"`); a
-Dialpad control's record names the `control` instead of the key. Kept in a ring
+Dialpad control's record names the `control` instead of the key, a turn a
+modifier key took both and its `modifier` mode. Kept in a ring
 buffer and in `~/.local/state/keyvo/trace.ndjson`; reachable from the GUI
 drawer, `keyvo ctl trace|tail` and `subscribe`. The record type
 (`TraceRecord`) and the press resolution are in `keyvo-core`, the buffer and
@@ -326,9 +342,10 @@ profile schema; the first is the default.
 
 **View**: What the pad shows: the profile id, the page (counted from 1) and the
 mode (`keyvo_core::state::View`), with its page-list `index` and whether the
-session is `locked`. The state machine computes it, the daemon
-paints it, and the socket reports it in `status`, `subscribe` and the
-`profile`, `page` and `mode` events, a lock or unlock as a `session` event.
+session is `locked`, and the active `modifier` key. The state machine
+computes it, the daemon paints it, and the socket reports it in `status`,
+`subscribe` and the `profile`, `page` and `mode` events, a lock or unlock as a
+`session` event, a modifier change as a `modifier` event.
 
 **VLP plane**: The Keypad's second protocol, on report IDs `0x13` (control,
 per-fragment acknowledgements) and `0x14` (bulk), with its own root and the
