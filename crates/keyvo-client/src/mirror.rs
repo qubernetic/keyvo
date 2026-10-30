@@ -95,6 +95,10 @@ impl Mirror {
                 .view
                 .as_mut()
                 .is_some_and(|view| std::mem::replace(&mut view.locked, *locked) != *locked),
+            Event::Modifier { modifier } => self
+                .view
+                .as_mut()
+                .is_some_and(|view| std::mem::replace(&mut view.modifier, *modifier) != *modifier),
         }
     }
 

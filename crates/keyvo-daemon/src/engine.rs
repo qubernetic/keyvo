@@ -527,7 +527,8 @@ action = { type = "exec", cmd = "true" }
                 page: 2,
                 mode: Mode::Auto,
                 index: 0,
-                locked: false
+                locked: false,
+                modifier: None
             }
         );
         assert_eq!(engine.specs(now)[0].label.as_deref(), Some("Play"));

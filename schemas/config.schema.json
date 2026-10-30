@@ -181,6 +181,13 @@
           "minimum": 0,
           "type": "integer"
         },
+        "modifier_timeout": {
+          "default": 0,
+          "description": "An armed toggle modifier key ends after this long without a turn\nof the dial or the roller (spec §6.1); 0 keeps it until the next\npress. Default 0 (off).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "page_return_global": {
           "default": 10000,
           "description": "On a global page (list index 0 or below), the pad returns to the\nshown profile's context page after this long without a page-button\nor key press (spec §6.3); 0 keeps the page. Default 10000 ms.",
@@ -303,6 +310,7 @@
         "launch_focus": 15000,
         "launch_settle": 1000,
         "long_press": 1000,
+        "modifier_timeout": 0,
         "page_return_global": 10000,
         "page_return_own": 0,
         "reconnect_interval": 1000,

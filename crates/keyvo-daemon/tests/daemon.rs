@@ -1027,6 +1027,7 @@ fn view(profile: &str, page: usize, index: isize, mode: Mode) -> View {
         mode,
         index,
         locked: false,
+        modifier: None,
     }
 }
 

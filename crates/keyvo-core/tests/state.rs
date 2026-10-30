@@ -9,12 +9,14 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use keyvo_core::config::{self, Config, Timing};
+use keyvo_core::dialpad::Roller;
 use keyvo_core::focus::WindowContext;
 use keyvo_core::layout::{self, Profiles};
 use keyvo_core::lineage::{FakeLineage, Lineage, NoLineage};
-use keyvo_core::profile::Profile;
+use keyvo_core::press::PressKind;
+use keyvo_core::profile::{KeySlot, ModifierMode, Profile};
 use keyvo_core::session::Session;
-use keyvo_core::state::{Mode, PageButton, State, View};
+use keyvo_core::state::{ActiveModifier, KeyDown, KeyPress, Mode, PageButton, State, View};
 
 fn profiles() -> Profiles {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/dirs/focus");
@@ -218,6 +220,7 @@ fn view(profile: &str, page: usize, index: isize, mode: Mode) -> View {
         mode,
         index,
         locked: false,
+        modifier: None,
     }
 }
 
@@ -1071,4 +1074,484 @@ fn a_title_change_in_the_same_app_consumes_no_launch() {
     state.focus(window("code", "b"), at(300), &profiles, &NoLineage);
     state.poll(at(450), &profiles);
     assert_eq!(state.launches(), [launch]);
+}
+
+// The dial modifier (spec §6.1, §7.2): key 7 is held, key 6 held with a
+// dial alone, key 8 a toggle without an action, key 9 one with an action;
+// key 1 an ordinary key. The `code` profile has its own key 8, an
+// ordinary one, and no key 7.
+
+const MODIFIERS: &str = r#"
+schema_version = 1
+[profile]
+id = "global"
+name = "Global"
+
+[[pages]]
+name = "context"
+[pages.keys.1]
+action = { type = "exec", cmd = "notify-send hi" }
+[pages.keys.6]
+dial = { cw = "KEY_VOLUMEUP" }
+[pages.keys.7]
+action = { type = "exec", cmd = "brightnessctl set 50%" }
+dial = { cw = { type = "exec", cmd = "brightnessctl set +5%" }, ccw = { type = "exec", cmd = "brightnessctl set 5%-" }, step = 2 }
+roller = { cw = "KEY_BRIGHTNESSUP", ccw = "KEY_BRIGHTNESSDOWN" }
+[pages.keys.8]
+modifier = "toggle"
+dial = { cw = "ctrl+equal", ccw = "ctrl+minus" }
+[pages.keys.9]
+modifier = "toggle"
+action = { type = "exec", cmd = "true" }
+roller = { cw = "ctrl+equal" }
+
+[[pages]]
+name = "general"
+"#;
+
+const MODIFIER_CODE: &str = r#"
+schema_version = 1
+[profile]
+id = "code"
+name = "Code"
+match = { class = ["code"] }
+
+[[pages]]
+[pages.keys.8]
+action = { type = "chord", keys = "ctrl+s" }
+"#;
+
+fn modifier_profiles(texts: &[&str]) -> Profiles {
+    Profiles::new(
+        texts
+            .iter()
+            .map(|text| {
+                let profile = Profile::from_toml(text, Path::new("x.toml")).unwrap();
+                (profile.profile.id.clone(), profile)
+            })
+            .collect(),
+    )
+}
+
+fn key(n: u8) -> KeySlot {
+    KeySlot::new(n).unwrap()
+}
+
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "compared with `View::modifier` as it is"
+)]
+fn active(key: u8, mode: ModifierMode) -> Option<ActiveModifier> {
+    Some(ActiveModifier {
+        key: KeySlot::new(key).unwrap(),
+        mode,
+    })
+}
+
+fn modifier_state(config: &Config, profiles: &Profiles) -> State {
+    State::new(config, profiles)
+}
+
+/// Arms the toggle key `n` with a short press from the socket.
+fn arm(state: &mut State, n: u8, now: Instant, profiles: &Profiles) {
+    assert_eq!(
+        state.key_press(key(n), PressKind::Short, false, now, profiles),
+        KeyPress::Toggle(true)
+    );
+    assert_eq!(
+        state.view(profiles).modifier,
+        active(n, ModifierMode::Toggle)
+    );
+}
+
+#[test]
+fn a_held_modifier_key_takes_the_turns_and_fires_only_without_one() {
+    let profiles = modifier_profiles(&[MODIFIERS]);
+    let mut state = modifier_state(&Config::default(), &profiles);
+    let t0 = Instant::now();
+    assert_eq!(state.view(&profiles).modifier, None);
+    assert_eq!(state.key_down(key(7), t0, &profiles), KeyDown::Held);
+    assert_eq!(
+        state.view(&profiles).modifier,
+        active(7, ModifierMode::Held)
+    );
+    // Hold, turn, release: the binding takes the turn, the action does not
+    // run.
+    let taker = state
+        .modifier_turn(Roller::Dial, false, t0, &profiles)
+        .unwrap();
+    assert_eq!((taker.key, taker.mode), (key(7), ModifierMode::Held));
+    assert_eq!((taker.profile.as_str(), taker.page), ("global", 1));
+    assert_eq!(state.key_up(key(7), t0), Some(false));
+    assert_eq!(state.view(&profiles).modifier, None);
+    assert_eq!(
+        state.modifier_turn(Roller::Dial, false, t0, &profiles),
+        None
+    );
+    // Hold, release: the action runs as a short press.
+    assert_eq!(state.key_down(key(7), t0, &profiles), KeyDown::Held);
+    assert_eq!(state.key_up(key(7), t0), Some(true));
+    // A simulated turn does not count as one.
+    state.key_down(key(7), t0, &profiles);
+    assert!(
+        state
+            .modifier_turn(Roller::Roller, true, t0, &profiles)
+            .is_some()
+    );
+    assert_eq!(state.key_up(key(7), t0), Some(true));
+    // An ordinary key is no modifier; its release is the detector's.
+    assert_eq!(state.key_down(key(1), t0, &profiles), KeyDown::Press);
+    assert_eq!(state.key_up(key(1), t0), None);
+}
+
+#[test]
+fn a_held_modifier_key_has_no_long_press_and_holds_the_page_return() {
+    let profiles = modifier_profiles(&[MODIFIERS]);
+    let mut state = modifier_state(&timing(0, 0), &profiles);
+    let t0 = Instant::now();
+    // Key 7 of the `general` page is no modifier.
+    state.press(PageButton::Left, t0, &profiles);
+    state.release(PageButton::Left, t0, &profiles);
+    assert_eq!(state.view(&profiles).index, 0);
+    assert_eq!(state.key_down(key(7), t0, &profiles), KeyDown::Press);
+    state.press(PageButton::Right, t0, &profiles);
+    state.release(PageButton::Right, t0, &profiles);
+    // Held for three seconds and more: no long press is due.
+    assert_eq!(state.key_down(key(7), t0, &profiles), KeyDown::Held);
+    assert_eq!(state.next_deadline(), None);
+    let late = t0 + Duration::from_secs(3);
+    state.poll(late, &profiles);
+    assert_eq!(state.key_up(key(7), late), Some(true));
+}
+
+#[test]
+fn of_two_held_modifier_keys_the_last_pressed_wins() {
+    let profiles = modifier_profiles(&[MODIFIERS]);
+    let mut state = modifier_state(&Config::default(), &profiles);
+    let t0 = Instant::now();
+    state.key_down(key(7), t0, &profiles);
+    state.key_down(key(6), t0, &profiles);
+    assert_eq!(
+        state.view(&profiles).modifier,
+        active(6, ModifierMode::Held)
+    );
+    assert_eq!(
+        state
+            .modifier_turn(Roller::Dial, false, t0, &profiles)
+            .map(|taker| taker.key),
+        Some(key(6))
+    );
+    // Key 6 has no roller table: the roller takes key 7's.
+    assert_eq!(
+        state
+            .modifier_turn(Roller::Roller, false, t0, &profiles)
+            .map(|taker| taker.key),
+        Some(key(7))
+    );
+    assert_eq!(state.key_up(key(6), t0), Some(false));
+    assert_eq!(
+        state.view(&profiles).modifier,
+        active(7, ModifierMode::Held)
+    );
+    // Both were held through the turn.
+    assert_eq!(state.key_up(key(7), t0), Some(false));
+    assert_eq!(state.view(&profiles).modifier, None);
+}
+
+#[test]
+fn a_toggle_key_arms_on_a_short_press_and_its_next_press_ends_it() {
+    let profiles = modifier_profiles(&[MODIFIERS]);
+    let mut state = modifier_state(&Config::default(), &profiles);
+    let t0 = Instant::now();
+    // From the device: down and a short release.
+    assert_eq!(state.key_down(key(8), t0, &profiles), KeyDown::Press);
+    assert_eq!(state.view(&profiles).modifier, None);
+    assert_eq!(
+        state.key_press(key(8), PressKind::Short, false, t0, &profiles),
+        KeyPress::Toggle(true)
+    );
+    for _ in 0..2 {
+        let taker = state
+            .modifier_turn(Roller::Dial, false, t0, &profiles)
+            .unwrap();
+        assert_eq!((taker.key, taker.mode), (key(8), ModifierMode::Toggle));
+    }
+    // Key 8 has no roller table: the profile's roller.
+    assert_eq!(
+        state.modifier_turn(Roller::Roller, false, t0, &profiles),
+        None
+    );
+    // Pressed again: off at the press, its short release does not arm it.
+    assert_eq!(state.key_down(key(8), t0, &profiles), KeyDown::Press);
+    assert_eq!(state.view(&profiles).modifier, None);
+    assert_eq!(
+        state.key_press(key(8), PressKind::Short, false, t0, &profiles),
+        KeyPress::Toggle(false)
+    );
+    assert_eq!(state.view(&profiles).modifier, None);
+    // From the socket: a plain press toggles.
+    arm(&mut state, 8, t0, &profiles);
+    assert_eq!(
+        state.key_press(key(8), PressKind::Short, false, t0, &profiles),
+        KeyPress::Toggle(false)
+    );
+    assert_eq!(state.view(&profiles).modifier, None);
+}
+
+#[test]
+fn a_simulated_toggle_press_changes_nothing() {
+    let profiles = modifier_profiles(&[MODIFIERS]);
+    let mut state = modifier_state(&Config::default(), &profiles);
+    let t0 = Instant::now();
+    assert_eq!(
+        state.key_press(key(8), PressKind::Short, true, t0, &profiles),
+        KeyPress::Toggle(true)
+    );
+    assert_eq!(state.view(&profiles).modifier, None);
+    arm(&mut state, 8, t0, &profiles);
+    assert_eq!(
+        state.key_press(key(8), PressKind::Short, true, t0, &profiles),
+        KeyPress::Toggle(false)
+    );
+    assert_eq!(
+        state.key_press(key(1), PressKind::Short, true, t0, &profiles),
+        KeyPress::Run
+    );
+    assert_eq!(
+        state.view(&profiles).modifier,
+        active(8, ModifierMode::Toggle)
+    );
+}
+
+#[test]
+fn another_key_or_a_dialpad_button_ends_the_toggle_and_acts_as_usual() {
+    let profiles = modifier_profiles(&[MODIFIERS]);
+    let mut state = modifier_state(&Config::default(), &profiles);
+    let t0 = Instant::now();
+    arm(&mut state, 8, t0, &profiles);
+    // The device: off at the press of key 1, which runs as usual.
+    assert_eq!(state.key_down(key(1), t0, &profiles), KeyDown::Press);
+    assert_eq!(state.view(&profiles).modifier, None);
+    assert_eq!(
+        state.key_press(key(1), PressKind::Short, false, t0, &profiles),
+        KeyPress::Run
+    );
+    // The socket.
+    arm(&mut state, 8, t0, &profiles);
+    assert_eq!(
+        state.key_press(key(1), PressKind::Short, false, t0, &profiles),
+        KeyPress::Run
+    );
+    assert_eq!(state.view(&profiles).modifier, None);
+    // A held modifier key takes over and stays alone when released.
+    arm(&mut state, 8, t0, &profiles);
+    assert_eq!(state.key_down(key(7), t0, &profiles), KeyDown::Held);
+    assert_eq!(
+        state.view(&profiles).modifier,
+        active(7, ModifierMode::Held)
+    );
+    state.key_up(key(7), t0);
+    assert_eq!(state.view(&profiles).modifier, None);
+    // Arming another toggle ends the first.
+    arm(&mut state, 8, t0, &profiles);
+    state.key_down(key(9), t0, &profiles);
+    assert_eq!(
+        state.key_press(key(9), PressKind::Short, false, t0, &profiles),
+        KeyPress::Toggle(true)
+    );
+    assert_eq!(
+        state.view(&profiles).modifier,
+        active(9, ModifierMode::Toggle)
+    );
+    // A Dialpad button.
+    state.button(t0);
+    assert_eq!(state.view(&profiles).modifier, None);
+}
+
+#[test]
+fn a_long_press_of_a_toggle_key_runs_its_action() {
+    let profiles = modifier_profiles(&[MODIFIERS]);
+    let mut state = modifier_state(&Config::default(), &profiles);
+    let t0 = Instant::now();
+    assert_eq!(
+        state.key_press(key(9), PressKind::Long, false, t0, &profiles),
+        KeyPress::Run
+    );
+    assert_eq!(state.view(&profiles).modifier, None);
+    // One without an action runs nothing; the caller traces it unbound.
+    assert_eq!(
+        state.key_press(key(8), PressKind::Long, false, t0, &profiles),
+        KeyPress::Run
+    );
+    // A long press of the armed key ends the toggle too.
+    arm(&mut state, 9, t0, &profiles);
+    state.key_down(key(9), t0, &profiles);
+    assert_eq!(state.view(&profiles).modifier, None);
+    assert_eq!(
+        state.key_press(key(9), PressKind::Long, false, t0, &profiles),
+        KeyPress::Run
+    );
+    assert_eq!(state.view(&profiles).modifier, None);
+    // The next short press arms it again.
+    state.key_down(key(9), t0, &profiles);
+    assert_eq!(
+        state.key_press(key(9), PressKind::Short, false, t0, &profiles),
+        KeyPress::Toggle(true)
+    );
+}
+
+#[test]
+fn a_page_change_a_profile_switch_and_the_lock_end_the_toggle() {
+    let profiles = modifier_profiles(&[MODIFIERS, MODIFIER_CODE]);
+    let config = Config::default();
+    let t0 = Instant::now();
+    let hysteresis = config.timing.focus_hysteresis;
+
+    // A page button that changes the page.
+    let mut state = modifier_state(&config, &profiles);
+    arm(&mut state, 8, t0, &profiles);
+    state.press(PageButton::Left, t0, &profiles);
+    state.release(PageButton::Left, t0, &profiles);
+    assert_eq!(state.view(&profiles).modifier, None);
+    state.press(PageButton::Right, t0, &profiles);
+    state.release(PageButton::Right, t0, &profiles);
+    assert_eq!(state.view(&profiles).index, 1);
+    assert_eq!(state.view(&profiles).modifier, None);
+    // A page button at the end of the list changes nothing.
+    arm(&mut state, 8, t0, &profiles);
+    state.press(PageButton::Right, t0, &profiles);
+    state.release(PageButton::Right, t0, &profiles);
+    assert_eq!(
+        state.view(&profiles).modifier,
+        active(8, ModifierMode::Toggle)
+    );
+
+    // A profile switch.
+    state.focus(window("code", "main.rs"), t0, &profiles, &NoLineage);
+    assert!(state.view(&profiles).modifier.is_some());
+    state.poll(t0 + hysteresis, &profiles);
+    assert_eq!(state.view(&profiles).profile, "code");
+    assert_eq!(state.view(&profiles).modifier, None);
+
+    // The lock.
+    let mut state = modifier_state(&config, &profiles);
+    arm(&mut state, 8, t0, &profiles);
+    state.key_down(key(7), t0, &profiles);
+    assert!(state.session(Session::Locked));
+    assert_eq!(state.view(&profiles).modifier, None);
+    // Key 7's release under the lock or after it fires nothing.
+    assert!(state.session(Session::Unlocked));
+    assert_eq!(state.key_up(key(7), t0), None);
+    assert_eq!(state.view(&profiles).modifier, None);
+}
+
+#[test]
+fn the_toggle_ends_after_the_modifier_timeout_without_a_turn() {
+    let profiles = modifier_profiles(&[MODIFIERS]);
+    let config = Config {
+        timing: Timing {
+            modifier_timeout: Duration::from_millis(5000),
+            ..Timing::default()
+        },
+        ..Config::default()
+    };
+    let mut state = modifier_state(&config, &profiles);
+    let t0 = Instant::now();
+    let s = Duration::from_secs;
+    arm(&mut state, 8, t0, &profiles);
+    assert_eq!(state.next_deadline(), Some(t0 + s(5)));
+    // A turn at 4 s starts the clock over; a simulated one does not.
+    state.modifier_turn(Roller::Dial, true, t0 + s(4), &profiles);
+    assert_eq!(state.next_deadline(), Some(t0 + s(5)));
+    state.modifier_turn(Roller::Dial, false, t0 + s(4), &profiles);
+    assert_eq!(state.next_deadline(), Some(t0 + s(9)));
+    state.poll(t0 + s(5), &profiles);
+    assert!(state.view(&profiles).modifier.is_some());
+    state.poll(t0 + s(9), &profiles);
+    assert_eq!(state.view(&profiles).modifier, None);
+    assert_eq!(state.next_deadline(), None);
+    // Default 0: no timeout.
+    let mut state = modifier_state(&Config::default(), &profiles);
+    arm(&mut state, 8, t0, &profiles);
+    assert_eq!(state.next_deadline(), None);
+}
+
+#[test]
+fn a_modifier_holds_the_page_return_and_its_end_starts_it_over() {
+    // The global profile's second page, `third`, is a further page of its
+    // own (index 2) with a toggle key 8 and a held key 7.
+    let profiles = modifier_profiles(&[&MODIFIERS.replace(
+        "[[pages]]\nname = \"general\"\n",
+        "[[pages]]\nname = \"third\"\n[pages.keys.8]\nmodifier = \"toggle\"\ndial = { cw = \"x\" }\n\
+         [pages.keys.7]\ndial = { cw = \"x\" }\n",
+    )]);
+    let mut state = modifier_state(&timing(0, 5000), &profiles);
+    let t0 = Instant::now();
+    let s = Duration::from_secs;
+    state.press(PageButton::Right, t0, &profiles);
+    state.release(PageButton::Right, t0, &profiles);
+    assert_eq!(state.view(&profiles).index, 2);
+    assert_eq!(state.next_deadline(), Some(t0 + s(5)));
+    arm(&mut state, 8, t0 + s(1), &profiles);
+    assert_eq!(state.next_deadline(), None);
+    state.poll(t0 + s(30), &profiles);
+    assert_eq!(state.view(&profiles).index, 2);
+    // Its end at 30 s starts the return over.
+    state.button(t0 + s(30));
+    assert_eq!(state.next_deadline(), Some(t0 + s(35)));
+    // A held key holds it too; its release starts it over.
+    state.key_down(key(7), t0 + s(31), &profiles);
+    state.poll(t0 + s(40), &profiles);
+    assert_eq!(state.view(&profiles).index, 2);
+    state.key_up(key(7), t0 + s(40));
+    assert_eq!(state.next_deadline(), Some(t0 + s(45)));
+}
+
+#[test]
+fn a_global_modifier_key_works_under_an_app_profile_without_that_key() {
+    let profiles = modifier_profiles(&[MODIFIERS, MODIFIER_CODE]);
+    let config = Config::default();
+    let mut state = modifier_state(&config, &profiles);
+    let t0 = Instant::now();
+    state.focus(window("code", "main.rs"), t0, &profiles, &NoLineage);
+    state.poll(t0 + config.timing.focus_hysteresis, &profiles);
+    assert_eq!(state.view(&profiles).profile, "code");
+    // `code` has no key 7: the global held key.
+    assert_eq!(state.key_down(key(7), t0, &profiles), KeyDown::Held);
+    let taker = state
+        .modifier_turn(Roller::Dial, false, t0, &profiles)
+        .unwrap();
+    assert_eq!((taker.profile.as_str(), taker.page), ("code", 1));
+    state.key_up(key(7), t0);
+    // `code`'s own key 8 is an ordinary key.
+    assert_eq!(state.key_down(key(8), t0, &profiles), KeyDown::Press);
+    assert_eq!(
+        state.key_press(key(8), PressKind::Short, false, t0, &profiles),
+        KeyPress::Run
+    );
+    assert_eq!(state.view(&profiles).modifier, None);
+}
+
+#[test]
+fn a_reload_that_drops_the_modifier_key_ends_it() {
+    let profiles = modifier_profiles(&[MODIFIERS]);
+    let config = Config::default();
+    let mut state = modifier_state(&config, &profiles);
+    let t0 = Instant::now();
+    arm(&mut state, 8, t0, &profiles);
+    state.key_down(key(7), t0, &profiles);
+    // The same keys again: both stay.
+    state.reload(&config, &profiles);
+    assert_eq!(
+        state.view(&profiles).modifier,
+        active(7, ModifierMode::Held)
+    );
+    let dropped = modifier_profiles(&[&MODIFIERS
+        .replace("modifier = \"toggle\"\ndial = { cw = \"ctrl+equal\", ccw = \"ctrl+minus\" }\n", "")
+        .replace("roller = { cw = \"KEY_BRIGHTNESSUP\", ccw = \"KEY_BRIGHTNESSDOWN\" }\n", "")
+        .replace("dial = { cw = { type = \"exec\", cmd = \"brightnessctl set +5%\" }, ccw = { type = \"exec\", cmd = \"brightnessctl set 5%-\" }, step = 2 }\n", "")]);
+    state.reload(&config, &dropped);
+    assert_eq!(state.view(&dropped).modifier, None);
+    // Key 7's release is an ordinary one now.
+    assert_eq!(state.key_up(key(7), t0), None);
 }

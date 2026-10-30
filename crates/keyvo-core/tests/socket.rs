@@ -6,12 +6,12 @@
 
 use keyvo_core::dialpad::Control;
 use keyvo_core::press::PressKind;
-use keyvo_core::profile::KeySlot;
+use keyvo_core::profile::{KeySlot, ModifierMode};
 use keyvo_core::render::{KeyPlace, Panel, TileSize};
 use keyvo_core::socket::{
     Command, ErrorCode, Event, EventClass, Geometry, Rect, Reply, Request, Response, ServerMessage,
 };
-use keyvo_core::state::{Mode, View};
+use keyvo_core::state::{ActiveModifier, Mode, View};
 use serde_json::Value;
 
 macro_rules! fixture {
@@ -182,6 +182,7 @@ fn a_switch_is_one_event_per_changed_class() {
         mode,
         index: 1,
         locked: false,
+        modifier: None,
     };
     let before = view("global", 1, Mode::Auto);
     assert!(Event::switched(&before, &before).is_empty());
@@ -219,6 +220,7 @@ fn a_lock_or_unlock_is_a_session_event() {
         mode: Mode::Auto,
         index: 1,
         locked: false,
+        modifier: None,
     };
     let locked = View {
         locked: true,
@@ -495,4 +497,49 @@ fn an_error_response_carries_the_rejected_id() {
     assert_eq!(value["id"], "a");
     assert_eq!(value["ok"], false);
     assert_eq!(value["error"]["code"], "invalid_request");
+}
+
+#[test]
+fn a_modifier_change_is_a_modifier_event() {
+    let before = View {
+        profile: "global".into(),
+        page: 1,
+        mode: Mode::Auto,
+        index: 1,
+        locked: false,
+        modifier: None,
+    };
+    let held = View {
+        modifier: Some(ActiveModifier {
+            key: KeySlot::new(7).unwrap(),
+            mode: ModifierMode::Held,
+        }),
+        ..before.clone()
+    };
+    assert_eq!(
+        Event::switched(&before, &held),
+        [Event::Modifier {
+            modifier: held.modifier
+        }]
+    );
+    assert_eq!(
+        Event::switched(&held, &before),
+        [Event::Modifier { modifier: None }]
+    );
+    assert_eq!(
+        Event::Modifier { modifier: None }.class(),
+        EventClass::Modifier
+    );
+    assert_eq!(
+        json(&Event::Modifier { modifier: None }.to_line()),
+        json(r#"{"v":1,"event":"modifier","modifier":null}"#)
+    );
+    // The view carries it while one is active, and leaves it out else.
+    assert_eq!(
+        json(&Event::Page(held).to_line()),
+        json(
+            r#"{"v":1,"event":"page","profile":"global","page":1,"mode":"auto","index":1,"locked":false,"modifier":{"key":7,"mode":"held"}}"#
+        )
+    );
+    assert!(!Event::Page(before).to_line().contains("modifier"));
 }
