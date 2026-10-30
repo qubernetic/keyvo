@@ -869,6 +869,32 @@ impl State {
     }
 }
 
+/// One entry of a page list ([`page_list`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PageEntry {
+    /// The position: 1 the context page, 0 and below the global pages.
+    pub index: isize,
+    /// The id of the profile that owns the page.
+    pub profile: String,
+    /// The page, counted from 1 inside `profile`.
+    pub page: usize,
+}
+
+/// The page list the pad walks under `shown` (spec §6.3), lowest index
+/// first: the list the app's tab strip draws.
+#[must_use]
+pub fn page_list(profiles: &Profiles, shown: &Profile) -> Vec<PageEntry> {
+    let list = PageList::of(profiles, shown);
+    (list.lowest..)
+        .zip(&list.pages)
+        .map(|(index, (profile, page))| PageEntry {
+            index,
+            profile: profile.profile.id.clone(),
+            page: *page,
+        })
+        .collect()
+}
+
 /// The page list of one shown profile (spec §6.3), lowest index first.
 struct PageList<'a> {
     /// The index of the first entry: 1 minus the global pages from

@@ -16,7 +16,9 @@ use keyvo_core::lineage::{FakeLineage, Lineage, NoLineage};
 use keyvo_core::press::PressKind;
 use keyvo_core::profile::{KeySlot, ModifierMode, Profile};
 use keyvo_core::session::Session;
-use keyvo_core::state::{ActiveModifier, KeyDown, KeyPress, Mode, PageButton, State, View};
+use keyvo_core::state::{
+    ActiveModifier, KeyDown, KeyPress, Mode, PageButton, PageEntry, State, View, page_list,
+};
 
 fn profiles() -> Profiles {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/dirs/focus");
@@ -510,6 +512,73 @@ fn the_context_page_stays_in_the_list_when_disabled() {
             (Short(Right, 800), "unnamed", 3, 2, AUTO),
         ],
     );
+}
+
+/// One profile of `tests/protocol-fixtures/editor/page-list.json`.
+#[derive(serde::Deserialize)]
+struct ListedProfile {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    pages: Vec<Option<String>>,
+    #[serde(default)]
+    disabled: Vec<usize>,
+    #[serde(default)]
+    global_pages: Option<bool>,
+}
+
+impl ListedProfile {
+    fn profile(&self, id: &str) -> (String, Profile) {
+        let header = self
+            .global_pages
+            .map(|on| format!("global_pages = {on}\n"))
+            .unwrap_or_default();
+        let pages = self
+            .pages
+            .iter()
+            .enumerate()
+            .map(|(at, name)| {
+                let name = name
+                    .as_ref()
+                    .map(|name| format!("name = \"{name}\"\n"))
+                    .unwrap_or_default();
+                let off = if self.disabled.contains(&(at + 1)) {
+                    "enabled = false\n"
+                } else {
+                    ""
+                };
+                format!("[[pages]]\n{name}{off}")
+            })
+            .collect::<Vec<_>>()
+            .concat();
+        written(id, &format!("{header}{pages}"))
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct ListCase {
+    name: String,
+    global: ListedProfile,
+    owner: ListedProfile,
+    list: Vec<PageEntry>,
+}
+
+#[test]
+fn the_page_list_follows_the_shared_fixture() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/protocol-fixtures/editor/page-list.json");
+    let text = std::fs::read_to_string(path).unwrap();
+    let cases: BTreeMap<String, Vec<ListCase>> = serde_json::from_str(&text).unwrap();
+    for case in &cases["cases"] {
+        let id = case.owner.id.as_deref().unwrap_or("app");
+        let mut by_id = BTreeMap::from([case.global.profile("global")]);
+        if id != "global" {
+            by_id.extend([case.owner.profile(id)]);
+        }
+        let profiles = Profiles::new(by_id);
+        let owner = profiles.get(id).unwrap();
+        assert_eq!(page_list(&profiles, owner), case.list, "{}", case.name);
+    }
 }
 
 #[test]
