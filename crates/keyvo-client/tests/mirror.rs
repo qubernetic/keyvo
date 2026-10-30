@@ -90,7 +90,7 @@ fn subscribed_sets_the_view_and_a_press_adds_its_entry() {
 
 #[test]
 fn every_fixture_event_lands_in_the_mirror() {
-    let mut mirror = Mirror::new(10);
+    let mut mirror = Mirror::new(20);
     let events = events();
     let mut changed = Vec::new();
     for event in &events {
