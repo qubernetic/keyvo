@@ -480,6 +480,18 @@ mod tests {
         );
         assert_eq!(reports("hidraw3"), Ok(vec![0x10, 0x11]));
         assert_eq!(reports("hidraw4"), Ok(vec![0x28, 0x29, 0x2a]));
+        // The xxd lengths of part 1, each ending on End Collection; the
+        // parser tolerates a missing last byte, so the lengths are pinned.
+        for (node, len) in [
+            ("hidraw1", 59),
+            ("hidraw2", 297),
+            ("hidraw3", 54),
+            ("hidraw4", 429),
+        ] {
+            let bytes = descriptor("receiver-only", node);
+            assert_eq!(bytes.len(), len, "{node}");
+            assert_eq!(bytes.last(), Some(&0xc0), "{node}");
+        }
     }
 
     #[test]

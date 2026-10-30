@@ -111,7 +111,7 @@ notification, a DJ report) are written into their golden test.
 | File | Source | Content |
 |---|---|---|
 | `receiver-slot-probe.txt` | own, part 2 | the slot search: slots 1 and 2 "no 0x4610" after 910 ms and 624 ms, slot 3 getFeature(0x4610) = 0x0d, getFeature(0x0003) = 0x02, getDeviceInfo with model id `bc 00 00 00 00 00` |
-| `receiver-cold-search.txt` | own, part 1 (getDeviceInfo part 2) | the search from cold: slots 1 and 2 answer "no 0x4610" after 734 ms and 541 ms, slot 3 after 180 ms, each reply comes twice, and the copy of slot 3's 0x4610 reply arrives after the getFeature(0x0003) request |
+| `receiver-cold-search.txt` | own, part 1, edited (getDeviceInfo part 2) | the search from cold: slots 1 and 2 answer "no 0x4610" after 734 ms and 541 ms, slot 3 after 180 ms, each reply comes twice, and the copy of slot 3's 0x4610 reply arrives after the getFeature(0x0003) request |
 | `receiver-asleep.txt` | own, parts 1 and 2 | the search while the Dialpad is in deep sleep: slots 1 and 2 "no 0x4610", slot 3 connect fail (`10 03 8f 00 0f 04`), slots 4 to 6 resource error (`0x09`), then the Dialpad's `0x1D4B` reconnect and `0x1004` battery reports, no `0x41` |
 | `receiver-controls.txt` | own, part 2 | getFeature(0x1B04) = 0x0a, getCount = 4, getCidInfo for CIDs 0x0053, 0x0056, 0x0059, 0x005A (flags 0x31, additional flags 0x04) |
 | `receiver-firmware.txt` | synthetic frames, part 1 values | getDeviceInfo and getFwInfo for four entities: `BL2 18.00.B0016`, `RBO 07.00.B0016` (active), type 0x05 `00.00.B0126`, `HW 00.01.B0000` (replayed by `crates/keyvo-cli/src/probe.rs`) |

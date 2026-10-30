@@ -1,7 +1,7 @@
 # Logi Bolt receiver (046d:c548), interface 01: mouse (Generic Desktop, Usage 0x02), reports 02 03 04 0b 3c 3d.
 # Own: the owner's hardware check of slice 7 (#187, part 1, 2026-10-29,
 # https://github.com/qubernetic/keyvo/issues/187#issuecomment-6504351636),
-# `xxd /sys/class/hidraw/hidraw2/device/report_descriptor`, 296 bytes.
+# `xxd /sys/class/hidraw/hidraw2/device/report_descriptor`, 297 bytes.
 05 01 09 02 a1 01 85 02 09 01 a1 00 95 10 75 01
 15 00 25 01 05 09 19 01 29 10 81 02 95 02 75 10
 16 01 80 26 ff 7f 05 01 09 30 09 31 81 06 95 01
@@ -20,4 +20,4 @@
 02 09 23 15 00 25 04 75 03 91 02 09 24 25 05 91
 02 09 25 46 e8 03 66 01 10 55 0d 26 e8 03 75 0a
 91 02 09 28 36 60 09 46 18 15 16 60 09 26 18 15
-75 0d 91 02 75 07 91 03
+75 0d 91 02 75 07 91 03 c0
