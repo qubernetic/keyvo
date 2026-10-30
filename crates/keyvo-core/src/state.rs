@@ -882,21 +882,24 @@ impl<'a> PageList<'a> {
     fn of(profiles: &'a Profiles, shown: &'a Profile) -> Self {
         let global = profiles.global();
         let general = named_page(global, "general");
-        // The global pages from the last one down to `general`: indices
-        // ..., -1, 0.
+        let global_context = context_page(global);
+        let is_global = shown.profile.id == GLOBAL_ID;
+        // The enabled global pages from the last one down to `general`:
+        // indices ..., -1, 0; none for a profile that leaves them out.
         let mut pages: Vec<_> = general
+            .filter(|_| is_global || shown.profile.global_pages)
             .map(|general| (general..=global.pages.len()).rev())
             .into_iter()
             .flatten()
+            .filter(|&page| page == global_context || enabled(global, page))
             .map(|page| (global, page))
             .collect();
         let lowest = 1 - isize::try_from(pages.len()).unwrap_or(0);
         let context = context_page(shown);
-        let is_global = shown.profile.id == GLOBAL_ID;
         pages.push((shown, context));
         pages.extend(
             (1..=shown.pages.len())
-                .filter(|&page| page != context)
+                .filter(|&page| page != context && enabled(shown, page))
                 // The global profile's pages from `general` on are left of
                 // its context page already.
                 .filter(|&page| !is_global || general.is_none_or(|general| page < general))
@@ -922,9 +925,25 @@ impl<'a> PageList<'a> {
     }
 }
 
-/// The page named `context`, else the first; counted from 1.
+/// The page named `context`, else the first enabled one, else the first;
+/// counted from 1. It is in the page list whether it is enabled or not.
 pub(crate) fn context_page(profile: &Profile) -> usize {
-    named_page(profile, "context").unwrap_or(1)
+    named_page(profile, "context")
+        .or_else(|| {
+            profile
+                .pages
+                .iter()
+                .position(|page| page.enabled)
+                .map(|index| index + 1)
+        })
+        .unwrap_or(1)
+}
+
+/// Whether page `page` (from 1) of `profile` is enabled.
+fn enabled(profile: &Profile, page: usize) -> bool {
+    page.checked_sub(1)
+        .and_then(|index| profile.pages.get(index))
+        .is_some_and(|page| page.enabled)
 }
 
 fn named_page(profile: &Profile, name: &str) -> Option<usize> {
