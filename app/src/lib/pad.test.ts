@@ -112,6 +112,7 @@ describe("apply", () => {
         mode: event.mode,
         index: event.index,
         locked: event.locked,
+        modifier: event.modifier,
       });
       expect(typeof state.view?.index).toBe("number");
     }
@@ -125,6 +126,16 @@ describe("apply", () => {
     const unlocked = apply(locked, { kind: "event", event: { event: "session", locked: false } });
     expect(unlocked.view?.locked).toBe(false);
     expect(unlocked.owner).toBe(locked.owner);
+  });
+
+  it("a modifier event sets and clears the modifier of the view it knows", () => {
+    const [held, none] = [nth(eventsOf("modifier"), 0), nth(eventsOf("modifier"), 1)];
+    expect(apply(initial(), { kind: "event", event: held }).view).toBeUndefined();
+    const state = apply(fromStatus(STATUS), { kind: "event", event: held });
+    expect(state.view).toEqual({ ...fromStatus(STATUS).view, modifier: { key: 7, mode: "held" } });
+    const cleared = apply(state, { kind: "event", event: none });
+    expect(cleared.view?.modifier).toBeNull();
+    expect(cleared.owner).toBe(state.owner);
   });
 
   it("a connected device event brings its geometry, a lost one keeps the last", () => {
@@ -333,7 +344,24 @@ describe("summarize", () => {
       "Key 5: blocked, session locked",
       "Dial, global layer: chord KEY_VOLUMEUP, sent",
       "Roller: blocked, session locked",
+      "Dial, key 7 held, global layer: chord KEY_BRIGHTNESSUP, sent",
     ]);
+  });
+
+  it("says when a modifier key's press arms or ends it", () => {
+    const outcomes = responses().flatMap((reply) =>
+      "entry" in reply && (reply.entry as TraceRecord).result.status === "modifier"
+        ? [reply.entry as TraceRecord]
+        : [],
+    );
+    expect(outcomes.map((entry) => summarize(entry))).toEqual([
+      "Key 7, global layer: modifier on",
+      "Key 8, global layer: modifier off",
+    ]);
+    const turn = nth(traces(), traces().length - 1);
+    expect(summarize({ ...turn, modifier: "toggle" })).toBe(
+      "Dial, key 7 toggled, global layer: chord KEY_BRIGHTNESSUP, sent",
+    );
   });
 
   it("names a Dialpad button and its long press", () => {

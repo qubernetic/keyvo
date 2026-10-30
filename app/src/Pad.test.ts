@@ -169,7 +169,7 @@ describe("the drawing", () => {
 
   it("follows the view events and fetches the new page", async () => {
     const { daemon } = await mounted();
-    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
+    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 1) });
     await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenLastCalledWith("global", 2, 9, TILE));
     expect(
       screen.getByRole("grid", { name: "Keypad mirror: profile global, page 2" }),
@@ -275,7 +275,7 @@ describe("the pin", () => {
     expect(onpin).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(keys.key).toHaveBeenLastCalledWith({ profile: "terminal", page: 1, key: 6 }));
     // The drawing follows the pad; the inspector does not.
-    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
+    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 1) });
     await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenCalledWith("global", 2, 9, TILE));
     // The pinned page's tiles for the inspector, now that the pad shows another.
     await waitFor(() => expect(daemon.daemon.tiles).toHaveBeenLastCalledWith("terminal", 1, 9, TILE));
@@ -286,7 +286,7 @@ describe("the pin", () => {
     const { daemon, keys, onpin } = await mounted();
     expect(screen.queryByText(/the pad shows/)).toBeNull();
     await fireEvent.click(key(7));
-    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
+    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 1) });
     const line = await screen.findByText("Editing terminal, key 7; the pad shows global, page 2.");
     // Follow leads the line, the sentence comes after it.
     const follow = within(line.closest("p") as HTMLElement).getByRole("button", { name: "Follow" });
@@ -305,7 +305,7 @@ describe("the pin", () => {
     await fireEvent.click(key(7));
     // Pinned and shown equal: the outline is on the key.
     expect(selection()).toEqual([key(7).closest('[role="gridcell"]')]);
-    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
+    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 1) });
     // Moved: no outline, the line names the pinned key, the inspector stays.
     await screen.findByText("Editing terminal, key 7; the pad shows global, page 2.");
     expect(selection()).toEqual([]);
@@ -338,7 +338,7 @@ describe("the pin", () => {
     expect(
       screen.getByText("Editing global, page 2; the pad shows terminal, page 1."),
     ).toBeInTheDocument();
-    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
+    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 1) });
     await waitFor(() => expect(screen.queryByText(/the pad shows/)).toBeNull());
   });
 });
@@ -368,7 +368,7 @@ describe("the page tabs", () => {
   it("select the tab at the index the daemon reports, the list staying the pad's", async () => {
     const { daemon } = await mounted();
     // The fixture's page event: the global general page at index 0.
-    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
+    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 1) });
     await waitFor(() => expect(screen.getByRole("tab", { selected: true })).toHaveTextContent("general"));
     expect(names()).toEqual(["apps", "general", "context", "git", "Page 3"]);
     await daemon.send({
@@ -416,7 +416,7 @@ describe("the page tabs", () => {
     expect(marked()).toEqual([]);
     await fireEvent.click(key(4));
     expect(marked()).toEqual([]);
-    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
+    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 1) });
     await screen.findByText("Editing terminal, key 4; the pad shows global, page 2.");
     const pinned = screen.getByRole("tab", { name: "context, pinned" });
     expect(marked()).toEqual([pinned]);
@@ -673,6 +673,7 @@ describe("the trace strip", () => {
     await fireEvent.click(within(strip).getByRole("button", { name: t("trace.expand") }));
     const items = within(screen.getByRole("list", { name: "Recent events" })).getAllByRole("listitem");
     expect(items.map((item) => item.textContent?.trim())).toEqual([
+      expect.stringContaining("Dial, key 7 held, global layer: chord KEY_BRIGHTNESSUP, sent"),
       expect.stringContaining("Roller: blocked, session locked"),
       expect.stringContaining("Dial, global layer: chord KEY_VOLUMEUP, sent"),
       expect.stringContaining("Key 5: blocked, session locked"),
@@ -965,7 +966,7 @@ describe("the actions catalogue", () => {
   it("an entry dropped on a tile while the pad is away pins the shown page and goes to its key", async () => {
     const { daemon, keys, onpin } = await mounted({ columns: layout(1200) });
     await fireEvent.click(key(8));
-    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
+    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 1) });
     await screen.findByText(/the pad shows global, page 2/);
     await fireEvent.drop(cell(7), { dataTransfer: transfer("tool:exec") });
     expect(onpin).toHaveBeenLastCalledWith({ profile: "global", page: 2, fromKey: true });
@@ -978,7 +979,7 @@ describe("the actions catalogue", () => {
     const { daemon, keys, onpin } = await mounted({ columns: layout(1200) });
     await fireEvent.click(key(8));
     await waitFor(() => expect(action()).toHaveValue("none"));
-    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
+    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 1) });
     await screen.findByText(/the pad shows global, page 2/);
     await fireEvent.click(await screen.findByRole("button", { name: "System" }));
     await fireEvent.click(screen.getByRole("button", { name: "Volume up" }));
@@ -1138,6 +1139,55 @@ describe("the Dialpad panel", () => {
     // The panel reads the written label back.
     await waitFor(() =>
       expect(within(screen.getByRole("button", { name: /^Button 2:/ })).getByText("Capture")).toBeInTheDocument(),
+    );
+  });
+
+  it("rings the modifier key on the mirror and shows its binding on the panel (#189)", async () => {
+    const ZOOM: KeyFields = { label: "Zoom", modifier: "toggle", dial: { cw: { type: "chord", keys: "ctrl+equal" } } };
+    const keys = {
+      ...dialpadEditor(),
+      key: vi.fn(({ key: n }: Target) => Promise.resolve({ path: PROFILE, fields: n === 8 ? ZOOM : {} })),
+    };
+    const { daemon } = await mounted({ keys });
+    // The fixture's page event: global page 1, key 8 toggled.
+    await daemon.send({ kind: "event", event: nth(eventsOf("page"), 0) });
+    await waitFor(() => expect(key(8)).toHaveClass("modifier"));
+    expect(key(8)).toHaveAccessibleName(/has the dial, toggled$/);
+    expect(keys.key).toHaveBeenCalledWith({ profile: "global", page: 1, key: 8 });
+    await waitFor(() =>
+      expect(within(screen.getByRole("button", { name: /^Dial:/ })).getByText("Zoom (toggled)")).toBeInTheDocument(),
+    );
+    await daemon.send({ kind: "event", event: nth(eventsOf("modifier"), 1) });
+    expect(key(8)).not.toHaveClass("modifier");
+    await waitFor(() => expect(screen.queryByText("Zoom (toggled)")).toBeNull());
+  });
+
+  it("reads a modifier key an app page lacks from the global context page", async () => {
+    const keys = dialpadEditor();
+    const { daemon } = await mounted({ keys });
+    // Key 3 of terminal is a global key under it.
+    await daemon.send({ kind: "event", event: { event: "modifier", modifier: { key: 3, mode: "held" } } });
+    await waitFor(() => expect(keys.key).toHaveBeenCalledWith({ profile: "global", page: 1, key: 3 }));
+    expect(key(3)).toHaveClass("modifier");
+  });
+
+  it("assigns a catalogue entry to the direction of the selected key's modifier rotary", async () => {
+    const keys = editor({
+      key: vi.fn((_target: Target) => Promise.resolve({ path: PROFILE, fields: { label: "Zoom", dial: {} } })),
+    });
+    await mounted({ keys });
+    await fireEvent.click(key(4));
+    const catalogue = screen.getByRole("region", { name: "Actions" });
+    expect(await within(catalogue).findByText("Assign to key 4, or drag it onto a key.")).toBeInTheDocument();
+    await fireEvent.focusIn(await screen.findByRole("combobox", { name: "Dial: Counter-clockwise" }));
+    expect(within(catalogue).getByText("Assign to the Dial of key 4, counter-clockwise.")).toBeInTheDocument();
+    await fireEvent.click(within(catalogue).getByRole("button", { name: "Apps" }));
+    await fireEvent.click(within(catalogue).getByRole("button", { name: "Spectacle" }));
+    await waitFor(() =>
+      expect(keys.editKey).toHaveBeenLastCalledWith(
+        { profile: "terminal", page: 1, key: 4 },
+        { label: "Zoom", dial: { ccw: { type: "exec", cmd: "spectacle --fullscreen" } } },
+      ),
     );
   });
 

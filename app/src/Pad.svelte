@@ -24,6 +24,9 @@
   // Dialpad panel (Dialpad.svelte, #188): a control selected there pins the
   // inspector like a key and opens its control editor, the catalogue then
   // assigns to it, and a turn or a button press on the device pulses it.
+  // While a modifier key has the dial (#189) the mirror rings it and the
+  // panel shows its binding; with the focus in a direction of the selected
+  // key's modifier rotary, a catalogue click assigns to that direction.
   import { untrack } from "svelte";
 
   import Catalogue from "./Catalogue.svelte";
@@ -55,6 +58,7 @@
     DeviceStatus,
     PressKind,
     Recipes,
+    Roller,
     TraceRecord,
     View,
   } from "./lib/protocol";
@@ -323,16 +327,27 @@
       ? undefined
       : { profile: shown.profile, control: selectedControl },
   );
-  /** The control as the catalogue names it, with a rotary's direction. */
+  /** The direction of the selected key's modifier rotary the catalogue
+   * assigns to (#189): the one the inspector last had the focus in; none
+   * for the key's action. */
+  let keyAim: { rotary: Roller; direction: "cw" | "ccw" } | undefined = $state();
+
+  /** The control as the catalogue names it, with a rotary's direction; or
+   * the selected key's modifier rotary it aims at. */
   const catalogueControl = $derived(
-    selectedControl === undefined
-      ? undefined
-      : {
+    selectedControl !== undefined
+      ? {
           name: controlName(selectedControl),
           ...(isRoller(selectedControl)
             ? { direction: t(direction === "cw" ? "dialpad.cw" : "dialpad.ccw") }
             : {}),
-        },
+        }
+      : selected !== undefined && keyAim !== undefined
+        ? {
+            name: t("pad.keyRotary", { control: controlName(keyAim.rotary), key: selected }),
+            direction: t(keyAim.direction === "cw" ? "dialpad.cw" : "dialpad.ccw"),
+          }
+        : undefined,
   );
   /** The catalogue entry the inspector applies to its control. */
   let assignControl: { entry: string; target: ControlTarget; seq: number } | undefined = $state();
@@ -343,12 +358,15 @@
     if (editingControl !== undefined) {
       assignControl = { entry, target: { ...editingControl }, seq: (assignControl?.seq ?? 0) + 1 };
     } else if (editing !== undefined) {
-      hand(entry, editing);
+      hand(entry, editing, keyAim);
     }
   }
 
-  /** The catalogue entry the inspector applies to its key. */
-  let assign: { entry: string; target: Target; seq: number } | undefined = $state();
+  /** The catalogue entry the inspector applies to its key, or to the
+   * direction of its modifier rotary `aim`. */
+  let assign:
+    | { entry: string; target: Target; seq: number; aim?: { rotary: Roller; direction: "cw" | "ccw" } }
+    | undefined = $state();
 
   /** Selects `key` and hands the inspector the catalogue entry with key
    * `entry` for it. */
@@ -359,8 +377,9 @@
     hand(entry, at);
   }
 
-  function hand(entry: string, at: Target) {
-    assign = { entry, target: at, seq: (assign?.seq ?? 0) + 1 };
+  /** A drop on a tile hands the entry to the key's action, never `aim`. */
+  function hand(entry: string, at: Target, aim?: { rotary: Roller; direction: "cw" | "ccw" }) {
+    assign = { entry, target: at, seq: (assign?.seq ?? 0) + 1, ...(aim === undefined ? {} : { aim }) };
   }
 
   /** Below 1200 px: the catalogue as a popover, open (#167). */
@@ -441,6 +460,21 @@
         }
       : undefined,
   );
+  /** The modifier key that has the dial (#189), as the pad resolves it: the
+   * view's page, or the global context page under a key the page lacks, as
+   * its tile's layer says. */
+  const dialModifier = $derived.by(() => {
+    const view = pad.view;
+    const modifier = view?.modifier;
+    if (view === undefined || modifier === undefined || modifier === null) return undefined;
+    const lacks = view.profile !== GLOBAL && tiles[modifier.key - 1]?.layer === "global";
+    return {
+      mode: modifier.mode,
+      key: lacks
+        ? { profile: GLOBAL, page: contextPage(globalProfile), key: modifier.key }
+        : { profile: view.profile, page: view.page, key: modifier.key },
+    };
+  });
   const gridName = $derived(
     pad.view === undefined
       ? t("home.mirror")
@@ -502,6 +536,7 @@
           {tiles}
           profile={pad.view?.profile}
           held={pad.held}
+          modifier={pad.view?.modifier}
           selected={moved === undefined ? selected : undefined}
           name={gridName}
           onselect={select}
@@ -555,6 +590,7 @@
         profile={shown?.profile}
         selected={selectedControl}
         pulse={pad.pulse}
+        modifier={dialModifier}
         revision={pad.reloads + edits}
         onselect={selectControl}
       />
@@ -579,6 +615,7 @@
         control={editingControl}
         {assignControl}
         ondirection={(next) => (direction = next)}
+        onaim={(next) => (keyAim = next)}
       />
       <TraceStrip entries={pad.trace} {connecting} onopen={(entry, onFail) => ontrace?.(entry, onFail)} />
     </div>

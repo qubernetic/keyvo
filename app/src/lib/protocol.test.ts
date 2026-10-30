@@ -87,6 +87,7 @@ describe("server messages", () => {
       "dialpad",
       "key",
       "mode",
+      "modifier",
       "page",
       "profile",
       "session",
@@ -99,7 +100,7 @@ describe("server messages", () => {
     const views = events.flatMap((message) =>
       message.kind === "event" && "index" in message.event ? [message.event] : [],
     );
-    expect(views.map((view) => view.locked)).toEqual([false, false, false]);
+    expect(views.map((view) => view.locked)).toEqual([false, false, false, false]);
     expect(events).toContainEqual({ kind: "event", event: { event: "session", locked: true } });
     expect(events).toContainEqual({
       kind: "event",
@@ -192,9 +193,9 @@ describe("server messages", () => {
     expect(controls.map((entry) => [entry.control, entry.key])).toEqual([
       ["dial", undefined],
       ["roller", undefined],
+      ["dial", 7],
     ]);
-    expect(EVENT_CLASSES.at(-1)).toBe("dial");
-    expect(EVENT_CLASSES).toHaveLength(10);
+    expect(EVENT_CLASSES).toHaveLength(11);
   });
 
   it("a press of a Dialpad control names it, and a turn's reply counts its runs", () => {
@@ -205,11 +206,56 @@ describe("server messages", () => {
       { id: 9, cmd: "press", control: "dial", delta: 3, kind: "short", dry_run: true },
       { id: 10, cmd: "press", control: "button:2", kind: "long", dry_run: false },
     ]);
-    const last = fixture("responses.ndjson").map(parseServerMessage).at(-1);
+    const turn = fixture("responses.ndjson")
+      .map(parseServerMessage)
+      .find((message) => message.kind === "response" && message.response.id === 9);
     const pressed =
-      last?.kind === "response" && last.response.ok ? (last.response.result as Pressed) : undefined;
+      turn?.kind === "response" && turn.response.ok ? (turn.response.result as Pressed) : undefined;
     expect(pressed?.runs).toBe(3);
     expect(pressed?.entry.control).toBe("dial");
+  });
+
+  it("a modifier key holds the dial: the view names it, an event says when, a press holds or releases it", () => {
+    const events = fixture("events.ndjson").flatMap((line) => {
+      const message = parseServerMessage(line);
+      return message.kind === "event" ? [message.event] : [];
+    });
+    const views = events.flatMap((event) => ("index" in event ? [event] : []));
+    expect(views.map((view) => view.modifier ?? null)).toEqual([
+      null,
+      { key: 8, mode: "toggle" },
+      null,
+      null,
+    ]);
+    expect(events.filter((event) => event.event === "modifier")).toEqual([
+      { event: "modifier", modifier: { key: 7, mode: "held" } },
+      { event: "modifier", modifier: null },
+    ]);
+    const turn = events.flatMap((event) =>
+      event.event === "trace" && event.entry.modifier !== undefined ? [event.entry] : [],
+    );
+    expect(turn.map((entry) => [entry.key, entry.control, entry.modifier])).toEqual([[7, "dial", "held"]]);
+    expect(EVENT_CLASSES.at(-1)).toBe("modifier");
+
+    const presses = fixture("requests.ndjson")
+      .map(parseRequest)
+      .filter((request) => request.cmd === "press" && ("hold" in request || "release" in request));
+    expect(presses).toEqual([
+      { id: 11, cmd: "press", key: 7, kind: "short", dry_run: false, hold: true },
+      { id: 12, cmd: "press", key: 7, kind: "short", dry_run: false, release: true },
+    ]);
+    const outcomes = fixture("responses.ndjson")
+      .map(parseServerMessage)
+      .flatMap((message) =>
+        message.kind === "response" && message.response.ok && "entry" in message.response.result
+          ? [(message.response.result as Pressed).entry]
+          : [],
+      )
+      .filter((entry) => entry.result.status === "modifier");
+    expect(outcomes.map((entry) => [entry.key, entry.modifier, entry.result.active])).toEqual([
+      [7, "held", true],
+      [8, "toggle", false],
+    ]);
   });
 
   it.each([

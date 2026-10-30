@@ -39,6 +39,10 @@ const BLANK: Form = {
   action: "",
   windowClass: "",
   waitFocus: true,
+  modifier: "off",
+  dial: toControlForm({}),
+  roller: toControlForm({}),
+  bare: "dial",
 };
 
 describe("the form", () => {
@@ -166,6 +170,84 @@ describe("the form", () => {
     expect(sameTarget(target, { ...target, page: 2 })).toBe(false);
     expect(sameTarget(target, undefined)).toBe(false);
     expect(sameTarget(undefined, undefined)).toBe(true);
+  });
+});
+
+describe("the modifier part of the form", () => {
+  const BRIGHTNESS: KeyFields = {
+    label: "Brightness",
+    action: { type: "exec", cmd: "brightnessctl set 50%" },
+    dial: {
+      cw: { type: "exec", cmd: "brightnessctl set +5%" },
+      ccw: { type: "exec", cmd: "brightnessctl set 5%-" },
+      step: 6,
+    },
+    roller: {
+      cw: { type: "chord", keys: "KEY_BRIGHTNESSUP" },
+      ccw: { type: "chord", keys: "KEY_BRIGHTNESSDOWN" },
+      step: 4,
+    },
+  };
+  const ZOOM: KeyFields = {
+    label: "Zoom",
+    modifier: "toggle",
+    dial: {
+      cw: { type: "chord", keys: "ctrl+equal" },
+      ccw: { type: "chord", keys: "ctrl+minus" },
+      step: 12,
+      label: "Zoom",
+    },
+  };
+
+  it("round-trips the mode, the dial and the roller", () => {
+    const bare: KeyFields[] = [{ dial: {} }, { roller: {} }, { modifier: "toggle", roller: {} }];
+    for (const fields of [BRIGHTNESS, ZOOM, ...bare]) {
+      expect(fromForm(toForm(fields))).toEqual({ fields });
+    }
+  });
+
+  it("reads the mode off without a table, held by default with one", () => {
+    expect(toForm({}).modifier).toBe("off");
+    expect(toForm(BRIGHTNESS).modifier).toBe("held");
+    expect(toForm({ ...BRIGHTNESS, modifier: "held" }).modifier).toBe("held");
+    expect(toForm(ZOOM).modifier).toBe("toggle");
+    expect(toForm(ZOOM).dial.step).toBe("12");
+    expect(toForm(ZOOM).roller).toEqual(toControlForm({}));
+  });
+
+  it("writes no modifier, dial or roller with the mode off", () => {
+    expect(fromForm({ ...toForm(BRIGHTNESS), modifier: "off" })).toEqual({
+      fields: { label: "Brightness", action: BRIGHTNESS.action },
+    });
+  });
+
+  it("writes an empty dial when the mode is on and nothing is bound, and toggle only when chosen", () => {
+    expect(fromForm({ ...BLANK, modifier: "held" })).toEqual({ fields: { dial: {} } });
+    expect(fromForm({ ...BLANK, modifier: "toggle" })).toEqual({ fields: { modifier: "toggle", dial: {} } });
+    expect(fromForm({ ...toForm(ZOOM), modifier: "held" })).toEqual({ fields: { ...ZOOM, modifier: undefined } });
+    // A rotary that binds nothing is left out when the other binds something.
+    expect(fromForm({ ...toForm(ZOOM), roller: { ...toControlForm({}), step: "1" } })).toEqual({ fields: ZOOM });
+  });
+
+  it("names the rotary field a message belongs under", () => {
+    const form = toForm(BRIGHTNESS);
+    expect(fromForm({ ...form, roller: { ...form.roller, step: "0" } })).toMatchObject({ field: "roller.step" });
+    expect(
+      fromForm({ ...form, dial: { ...form.dial, ccw: { ...form.dial.ccw, actionType: "chord", action: "" } } }),
+    ).toEqual({ field: "dial.ccw", invalid: "Enter the chord's keys to write it." });
+    // With the mode off the rotaries are not checked.
+    expect(fromForm({ ...form, modifier: "off", roller: { ...form.roller, step: "0" } })).toMatchObject({
+      fields: { label: "Brightness" },
+    });
+  });
+
+  it("compares the mode as the daemon reads it, and each rotary", () => {
+    expect(sameFields(BRIGHTNESS, { ...BRIGHTNESS, modifier: "held" })).toBe(true);
+    expect(sameFields(ZOOM, { ...ZOOM, modifier: undefined })).toBe(false);
+    expect(sameFields({ dial: {} }, { roller: {} })).toBe(false);
+    expect(sameFields({ dial: {} }, {})).toBe(false);
+    expect(sameFields(BRIGHTNESS, { ...BRIGHTNESS, roller: { ...BRIGHTNESS.roller, step: 5 } })).toBe(false);
+    expect(sameFields({}, { modifier: "toggle" })).toBe(true);
   });
 });
 

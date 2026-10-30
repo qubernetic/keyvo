@@ -2,10 +2,10 @@
 // panel reads them, their names, and the binding the panel shows for each:
 // the shown profile's own `[dialpad]` control, else the global profile's
 // control of the same name, as the daemon resolves a turn or a press.
-import type { ControlFields } from "./editor";
+import type { ControlFields, KeyFields } from "./editor";
 import { t } from "./i18n";
 import { GLOBAL } from "./profiles";
-import type { Control, Layer, Roller } from "./protocol";
+import type { Control, Layer, ModifierMode, Roller } from "./protocol";
 
 /** The controls in the drawing's reading order: the top buttons, the
  * roller, the dial, the bottom buttons. */
@@ -38,10 +38,30 @@ export function bound(fields: ControlFields): boolean {
 }
 
 /** A control as the panel shows it: its fields and the layer that
- * supplies them, none when no profile binds it. */
+ * supplies them, none when no profile binds it; or the modifier key whose
+ * binding it shows (#189). */
 export interface Binding {
   fields: ControlFields;
   layer?: Layer;
+  /** The modifier key that has the dial, when its binding is shown. */
+  modifier?: number;
+}
+
+/** The rotary `roller` while key `key`, with the key fields `fields`, has
+ * the dial in `mode` (#189): the key's binding, labelled with the rotary's
+ * label, else the key's, else the key's number, and the mode; none for a
+ * rotary the key leaves to the profile. */
+export function modifierBinding(
+  fields: KeyFields,
+  roller: Roller,
+  key: number,
+  mode: ModifierMode,
+): Binding | undefined {
+  const rotary = fields[roller];
+  if (rotary === undefined) return undefined;
+  const name = rotary.label ?? fields.label ?? t("dialpad.key", { key });
+  const label = t(mode === "held" ? "dialpad.held" : "dialpad.toggled", { label: name });
+  return { fields: { ...rotary, label }, modifier: key };
 }
 
 /** The control of `profile` from its own fields `own`, else the global

@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Update } from "../daemon";
 import { parseServerMessage, VERSION, type Event, type Reply } from "../protocol";
 import { fixtureDialpad, fixtureTrace, SNAPSHOTS, contribProfiles, fixtureStatus } from "./data";
-import { DIAL_MS, FOCUS_MS, mockDaemon, TRACE_MS } from "./daemon";
+import { DIAL_MS, FOCUS_MS, MODIFIER_MS, mockDaemon, TRACE_MS } from "./daemon";
 import { mockProfiles } from "./profiles";
 import { Store } from "./store";
 
@@ -126,8 +126,8 @@ describe("the mock daemon", () => {
       action: { type: "chord", keys: "shift+k, e, y" },
       layer: "global",
     });
-    // No layer defines key 7.
-    expect(tiles[6]).toEqual({ image: SNAPSHOTS.background });
+    // No layer defines key 9.
+    expect(tiles[8]).toEqual({ image: SNAPSHOTS.background });
   });
 
   it("picks the snapshot by what the key shows", async () => {
@@ -191,6 +191,53 @@ describe("the mock daemon", () => {
       result: { status: "unbound" },
     });
     expect((await daemon.press(9, "short")).layer).toBeUndefined();
+  });
+
+  it("answers a short press of a toggle key as a dry run of the toggle, and changes no modifier", async () => {
+    const daemon = mockDaemon(new Store(contribProfiles()));
+    const toggle = await daemon.press(8, "short");
+    expect(asResponse({ entry: toggle })).toEqual({ entry: toggle });
+    expect(toggle).toMatchObject({ key: 8, layer: "global", modifier: "toggle", action: null, result: { status: "dry_run" } });
+    expect((await daemon.status()).view.modifier ?? null).toBeNull();
+    // A held key's press resolves its action, as at a release without a turn.
+    const held = await daemon.press(7, "short");
+    expect(held.modifier).toBeUndefined();
+    expect(held.action).toEqual({ type: "exec", cmd: "brightnessctl set 50%" });
+  });
+
+  it("gives the dial to key 7 held, then key 8 toggled, each for one step, in the view too", async () => {
+    const daemon = mockDaemon(new Store(contribProfiles()));
+    expect((await daemon.status()).view.modifier ?? null).toBeNull();
+    const updates: Update[] = [];
+    const stop = await daemon.subscribe(0, (update) => updates.push(update));
+    const modifiers = () =>
+      updates.flatMap((update) =>
+        update.kind === "event" && update.event.event === "modifier" ? [update.event.modifier] : [],
+      );
+    vi.advanceTimersByTime(MODIFIER_MS);
+    expect(modifiers()).toEqual([{ key: 7, mode: "held" }]);
+    expect((await daemon.status()).view.modifier).toEqual({ key: 7, mode: "held" });
+    // The focus moves to Konsole with the next step: its profile event ends
+    // the modifier, so the step's none says nothing more.
+    vi.advanceTimersByTime(MODIFIER_MS);
+    expect((await daemon.status()).view).toMatchObject({ profile: "konsole" });
+    expect((await daemon.status()).view.modifier ?? null).toBeNull();
+    // Konsole lacks key 8: the global one under it is the toggle key.
+    vi.advanceTimersByTime(MODIFIER_MS);
+    expect(modifiers()).toEqual([{ key: 7, mode: "held" }, { key: 8, mode: "toggle" }]);
+    vi.advanceTimersByTime(MODIFIER_MS);
+    expect(modifiers()).toEqual([{ key: 7, mode: "held" }, { key: 8, mode: "toggle" }, null]);
+    for (const update of updates) {
+      if (update.kind === "event") expect(asEvent(update.event)).toEqual(update.event);
+    }
+    stop();
+    // Under the lock no key takes the dial.
+    const locked = mockDaemon(new Store(contribProfiles()), { locked: true });
+    const none: Update[] = [];
+    const stopLocked = await locked.subscribe(0, (update) => none.push(update));
+    vi.advanceTimersByTime(4 * MODIFIER_MS);
+    expect(none.some((update) => update.kind === "event" && update.event.event === "modifier")).toBe(false);
+    stopLocked();
   });
 
   it("replays the fixture trace every two seconds and cycles the focus every ten", async () => {
@@ -259,7 +306,10 @@ describe("the mock daemon", () => {
       .slice(before)
       .filter(
         (update) =>
-          update.kind === "event" && update.event.event !== "trace" && update.event.event !== "dial",
+          update.kind === "event" &&
+          update.event.event !== "trace" &&
+          update.event.event !== "dial" &&
+          update.event.event !== "modifier",
       );
     // One held context event and no profile event: the view stays Konsole's.
     expect(step).toEqual([

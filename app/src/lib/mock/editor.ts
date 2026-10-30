@@ -54,6 +54,19 @@ function normalized(fields: ControlFields): ControlFields {
   return step === undefined || step === 1 ? rest : { ...rest, step };
 }
 
+/** A key's `fields` as keyvo_core::edit writes them: each rotary's step of
+ * 1 absent; a `modifier` without a `dial` or a `roller` refused, as the
+ * profile would not load after. */
+function keyFields(fields: KeyFields): KeyFields {
+  const out = structuredClone(fields);
+  if (out.modifier !== undefined && out.dial === undefined && out.roller === undefined) {
+    throw problem("`modifier` needs a `dial` or `roller` table next to it");
+  }
+  if (out.dial !== undefined) out.dial = normalized(out.dial);
+  if (out.roller !== undefined) out.roller = normalized(out.roller);
+  return out;
+}
+
 export function mockEditor(store: Store, options: MockEditorOptions = {}): Editor {
   return {
     key: (target) =>
@@ -72,11 +85,12 @@ export function mockEditor(store: Store, options: MockEditorOptions = {}): Edito
         const keys = page(store, target).keys;
         if (options.refuseWrites === true) throw refused(store, target);
         const before: KeyFields = keys.get(target.key) ?? {};
-        keys.set(target.key, structuredClone(fields));
+        const after = keyFields(fields);
+        keys.set(target.key, after);
         return {
           path: store.path(target.profile),
           before,
-          fields: structuredClone(fields),
+          fields: structuredClone(after),
           ...line(store, target),
         };
       }),

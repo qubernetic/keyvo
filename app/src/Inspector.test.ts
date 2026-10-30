@@ -644,9 +644,9 @@ describe("the actions catalogue", () => {
 
   it("carries the catalogue's entries in the Action select while the column is collapsed", async () => {
     const editor = await mounted();
-    expect(screen.queryAllByRole("group")).toEqual([]);
+    expect(within(action()).queryAllByRole("group")).toEqual([]);
     await editor.view.rerender({ entries: CATALOGUE, recipes: RECIPES });
-    const groups = screen.getAllByRole("group");
+    const groups = within(action()).getAllByRole("group");
     expect(groups.map((group) => group.getAttribute("label"))).toEqual(["General", "System", "Apps"]);
     const exec = screen.getByRole("option", { name: "Exec" }) as HTMLOptionElement;
     expect(exec).toHaveValue("exec");
@@ -751,6 +751,123 @@ describe("a preset", () => {
   });
 });
 
+describe("the modifier section", () => {
+  /** The fixture's key as a held modifier key: its dial binds a chord. */
+  const MODIFIER: KeyFields = {
+    ...STEPS.fields,
+    dial: { cw: { type: "chord", keys: "ctrl+equal" }, step: 6, label: "Zoom" },
+  };
+
+  /** An editor on a key with `fields` whose writes all succeed. */
+  function modifierKey(fields: KeyFields) {
+    return fake({
+      key: vi.fn(() => Promise.resolve({ path: PATH, fields, line: STEPS.line })),
+      editKey: vi.fn((_target: Target, written: KeyFields) =>
+        Promise.resolve({ path: PATH, before: fields, fields: written, line: STEPS.line }),
+      ),
+    });
+  }
+
+  function mode(): HTMLSelectElement {
+    return screen.getByRole("combobox", { name: "Modifier mode" }) as HTMLSelectElement;
+  }
+
+  it("is off for an ordinary key, with no dial or roller", async () => {
+    await mounted(accepting());
+    expect(mode()).toHaveValue("off");
+    expect(within(mode()).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Off",
+      "Held",
+      "Toggle",
+    ]);
+    expect(screen.queryByRole("group", { name: "Dial" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Roller" })).toBeNull();
+  });
+
+  it("writes an empty dial for Held, modifier toggle for Toggle, and neither for Off", async () => {
+    const editor = await mounted(accepting());
+    await fireEvent.change(mode(), { target: { value: "held" } });
+    await waitFor(() => expect(editor.editor.editKey).toHaveBeenLastCalledWith(TARGET, { ...STEPS.fields, dial: {} }));
+    expect(screen.getByRole("group", { name: "Dial" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Roller" })).toBeInTheDocument();
+    expect(mode()).toHaveAccessibleDescription(/While the key is held/);
+    await fireEvent.change(mode(), { target: { value: "toggle" } });
+    await waitFor(() =>
+      expect(editor.editor.editKey).toHaveBeenLastCalledWith(TARGET, {
+        ...STEPS.fields,
+        modifier: "toggle",
+        dial: {},
+      }),
+    );
+    expect(mode()).toHaveAccessibleDescription(/A tap gives the dial/);
+    await fireEvent.change(mode(), { target: { value: "off" } });
+    await waitFor(() => expect(editor.editor.editKey).toHaveBeenLastCalledWith(TARGET, STEPS.fields));
+    expect(screen.queryByRole("group", { name: "Dial" })).toBeNull();
+    expect(editor.editor.editKey).toHaveBeenCalledTimes(3);
+  });
+
+  it("shows a modifier key's mode, dial and roller, and writes an edited step", async () => {
+    const editor = await mounted(modifierKey(MODIFIER));
+    expect(mode()).toHaveValue("held");
+    expect(field("Dial: Step")).toHaveValue("6");
+    expect(field("Dial: Label")).toHaveValue("Zoom");
+    expect(screen.getByRole("combobox", { name: "Dial: Clockwise" })).toHaveValue("chord");
+    expect(field("Dial: Clockwise: Chord")).toHaveValue("ctrl+equal");
+    expect(field("Roller: Step")).toHaveValue("");
+    await type(field("Dial: Step"), "12");
+    await waitFor(() =>
+      expect(editor.editor.editKey).toHaveBeenLastCalledWith(TARGET, {
+        ...MODIFIER,
+        dial: { ...MODIFIER.dial, step: 12 },
+      }),
+    );
+  });
+
+  it("says why a step cannot be written, under its field, and writes nothing", async () => {
+    const editor = await mounted(modifierKey(MODIFIER));
+    await type(field("Roller: Step"), "0");
+    expect(screen.getByRole("alert")).toHaveTextContent("The step 0 is not a whole number from 1 up.");
+    expect(field("Roller: Step")).toHaveAttribute("aria-invalid", "true");
+    expect(field("Dial: Step")).not.toHaveAttribute("aria-invalid");
+    expect(editor.editor.editKey).not.toHaveBeenCalled();
+  });
+
+  it("binds a roller direction with the action fields, the dial kept", async () => {
+    const editor = await mounted(modifierKey(MODIFIER));
+    await fireEvent.change(screen.getByRole("combobox", { name: "Roller: Counter-clockwise" }), {
+      target: { value: "exec" },
+    });
+    expect(editor.editor.editKey).not.toHaveBeenCalled();
+    await type(field("Roller: Counter-clockwise: Command"), "brightnessctl set 5%-");
+    await waitFor(() =>
+      expect(editor.editor.editKey).toHaveBeenLastCalledWith(TARGET, {
+        ...MODIFIER,
+        roller: { ccw: { type: "exec", cmd: "brightnessctl set 5%-" } },
+      }),
+    );
+  });
+
+  it("assigns a catalogue entry to the rotary direction it aims at, else to the key's action", async () => {
+    const editor = await mounted(modifierKey(MODIFIER));
+    const onaim = vi.fn();
+    await editor.view.rerender({ onaim, recipes: RECIPES });
+    await fireEvent.focusIn(screen.getByRole("combobox", { name: "Roller: Counter-clockwise" }));
+    expect(onaim).toHaveBeenLastCalledWith({ rotary: "roller", direction: "ccw" });
+    await editor.view.rerender({
+      assign: { entry: "tool:exec", target: TARGET, seq: 1, aim: { rotary: "roller", direction: "ccw" } },
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Roller: Counter-clockwise" })).toHaveValue("exec"),
+    );
+    expect(action()).toHaveValue("chord");
+    // The focus back in the key's fields aims at its action again.
+    await fireEvent.focusIn(field("Label"));
+    expect(onaim).toHaveBeenLastCalledWith(undefined);
+    await editor.view.rerender({ assign: { entry: "tool:launch", target: TARGET, seq: 2 } });
+    await waitFor(() => expect(action()).toHaveValue("launch"));
+  });
+});
+
 describe("the inspector's rules", () => {
   const here = dirname(fileURLToPath(import.meta.url));
   const css = readFileSync(join(here, "Inspector.svelte"), "utf8");
@@ -765,7 +882,8 @@ describe("the inspector's rules", () => {
   });
 
   it("sets a hint in the label size and muted, like the label above the field", () => {
-    for (const source of [css, actionCss]) {
+    const rotaryCss = readFileSync(join(here, "RotaryFields.svelte"), "utf8");
+    for (const source of [css, actionCss, rotaryCss]) {
       const hint = /\.hint \{([^}]*)\}/.exec(source)?.[1] ?? "";
       expect(hint).toMatch(/font-size: 1em/);
       expect(hint).toMatch(/color: var\(--kv-fg-muted\)/);

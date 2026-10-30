@@ -104,6 +104,8 @@ describe("applied", () => {
     label: "Build",
     color: "#ff0000",
     action: { type: "chord", keys: "ctrl+b" },
+    modifier: "toggle",
+    dial: { cw: { type: "chord", keys: "ctrl+equal" }, step: 12 },
   });
 
   it("sets the action type of Chord, Exec and Launch with an empty field and keeps the rest", () => {
@@ -112,11 +114,11 @@ describe("applied", () => {
     expect(applied(entry("chord"), toForm({}))).toEqual({ ...toForm({}), actionType: "chord", action: "" });
   });
 
-  it("writes a preset's default variant with its label and icon, the colour kept", () => {
+  it("writes a preset's default variant with its label and icon, the colour and the modifier kept", () => {
     expect(applied(entry("spectacle"), form)).toEqual({
+      ...form,
       label: "Capture",
       icon: "lucide:camera",
-      color: "#ff0000",
       actionType: "exec",
       action: "spectacle --fullscreen",
       windowClass: "",
@@ -126,9 +128,9 @@ describe("applied", () => {
 
   it("writes the Calculator recipe as a launch", () => {
     expect(applied(entry("calculator"), form)).toEqual({
+      ...form,
       label: "Calc",
       icon: "lucide:calculator",
-      color: "#ff0000",
       actionType: "launch",
       action: "kcalc",
       windowClass: "",

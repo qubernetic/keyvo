@@ -1,24 +1,42 @@
 // The key editor's file side as the frontend sees it: the Tauri shell's
 // `key` and `edit_key` commands, and `control` and `edit_control` for the
 // Dialpad controls, over keyvo_client::Editor; tests pass a fake. And the
-// editor's pure parts: the key's and the control's form, the undo history
-// of the session, and the line a problem is shown as.
+// editor's pure parts: the key's and the control's form, the key's
+// modifier part among them (#189), the undo history of the session, and the
+// line a problem is shown as.
 import { invoke } from "@tauri-apps/api/core";
 
 import { checkChord, type ChordError } from "./chord";
-import { isRoller } from "./dialpad";
+import { bound, isRoller } from "./dialpad";
 import { t } from "./i18n";
-import type { Action, Control } from "./protocol";
+import type { Action, Control, ModifierMode, Roller } from "./protocol";
 
 /** The fields of a key the editor writes, as keyvo_core::edit::KeyFields;
- * an absent field is removed from the file. */
+ * an absent field is removed from the file. A key with a `dial` or a
+ * `roller` table is a modifier key (#189): while it has the dial, its
+ * tables take the place of the profile's `[dialpad]` ones. */
 export interface KeyFields {
   icon?: string;
   label?: string;
   /** `#rrggbb`. */
   color?: string;
   action?: Action;
+  /** The modifier mode as written; absent for the default, `held` with a
+   * `dial` or a `roller` table. */
+  modifier?: ModifierMode;
+  /** The dial's binding while the key has the dial; `{}` binds nothing
+   * and still makes the key a modifier. */
+  dial?: RotaryFields;
+  /** The roller's binding while the key has the dial. */
+  roller?: RotaryFields;
 }
+
+/** A modifier key's dial or roller, as keyvo_core::edit::RotaryFields: the
+ * fields of a Dialpad rotary, a step of 1 written as absent. */
+export type RotaryFields = Pick<ControlFields, "cw" | "ccw" | "step" | "label">;
+
+/** The rotaries a modifier key binds, in the order the Inspector shows them. */
+export const ROTARIES: readonly Roller[] = ["dial", "roller"];
 
 /** A key as the editor shows it (keyvo_client::editor::KeyView). */
 export interface KeyView {
@@ -189,7 +207,18 @@ export interface Form {
   windowClass: string;
   /** Whether a launch waits for its window. */
   waitFocus: boolean;
+  modifier: ModifierChoice;
+  /** The modifier's dial and roller, as the control editor's rotary form;
+   * kept while the mode is off, so switching back brings them again. */
+  dial: ControlForm;
+  roller: ControlForm;
+  /** The rotary written as an empty table when the mode is on and neither
+   * binds anything: the dial, unless the file has only an empty roller. */
+  bare: Roller;
 }
+
+/** The Modifier section's Mode: off for an ordinary key. */
+export type ModifierChoice = "off" | ModifierMode;
 
 /** The action part of a form: the key's action, a direction of a rotary
  * or a Dialpad button's action, edited by ActionFields.svelte. */
@@ -205,12 +234,21 @@ export function actionForm(action: Action | undefined): ActionPart {
   };
 }
 
+/** The mode `fields` give the key: off without a `dial` or a `roller`. */
+export function modifierOf(fields: KeyFields): ModifierChoice {
+  return fields.dial === undefined && fields.roller === undefined ? "off" : (fields.modifier ?? "held");
+}
+
 export function toForm(fields: KeyFields): Form {
   return {
     label: fields.label ?? "",
     color: fields.color ?? "",
     icon: fields.icon ?? "",
     ...actionForm(fields.action),
+    modifier: modifierOf(fields),
+    dial: toControlForm(fields.dial ?? {}),
+    roller: toControlForm(fields.roller ?? {}),
+    bare: fields.dial === undefined && fields.roller !== undefined ? "roller" : "dial",
   };
 }
 
@@ -238,11 +276,17 @@ function chordMessage(wrong: ChordError): string {
   }
 }
 
-/** The form field a message of `fromForm` belongs under. */
-export type FormField = "color" | "action";
+/** The form field a message of `fromForm` belongs under: a field of the
+ * key, or one of a modifier rotary. */
+export type FormField = "color" | "action" | `${Roller}.${RotaryField}`;
+
+/** A field of a rotary's form. */
+type RotaryField = "cw" | "ccw" | "step";
 
 /** The fields `form` says, or why it cannot be written yet and in which
- * field: an empty input is an absent field. */
+ * field: an empty input is an absent field. With the mode on, a rotary is
+ * written when it binds anything, and the `bare` one as an empty table when
+ * neither does; `toggle` is written, `held` is the default and is not. */
 export function fromForm(
   form: Form,
 ): { fields: KeyFields } | { invalid: string; field: FormField } {
@@ -258,6 +302,16 @@ export function fromForm(
   const action = actionOf(form);
   if ("invalid" in action) return { invalid: action.invalid, field: "action" };
   if (action.action !== undefined) fields.action = action.action;
+  if (form.modifier === "off") return { fields };
+  for (const rotary of ROTARIES) {
+    const result = fromControlForm(rotary, form[rotary]);
+    if ("invalid" in result) {
+      return { invalid: result.invalid, field: `${rotary}.${result.field as RotaryField}` };
+    }
+    if (bound(result.fields)) fields[rotary] = result.fields;
+  }
+  if (fields.dial === undefined && fields.roller === undefined) fields[form.bare] = {};
+  if (form.modifier === "toggle") fields.modifier = "toggle";
   return { fields };
 }
 
@@ -296,12 +350,21 @@ function actionKey(action: Action | undefined): string {
   return `launch:${action.cmd}:${action.class ?? ""}:${action.wait_focus ?? true}`;
 }
 
+/** Whether a modifier rotary is the same in both: absent from both, or the
+ * same fields. */
+function sameRotary(a: RotaryFields | undefined, b: RotaryFields | undefined): boolean {
+  return a === undefined || b === undefined ? a === b : sameControlFields(a, b);
+}
+
 export function sameFields(a: KeyFields, b: KeyFields): boolean {
   return (
     a.icon === b.icon &&
     a.label === b.label &&
     a.color?.toLowerCase() === b.color?.toLowerCase() &&
-    actionKey(a.action) === actionKey(b.action)
+    actionKey(a.action) === actionKey(b.action) &&
+    modifierOf(a) === modifierOf(b) &&
+    sameRotary(a.dial, b.dial) &&
+    sameRotary(a.roller, b.roller)
   );
 }
 
