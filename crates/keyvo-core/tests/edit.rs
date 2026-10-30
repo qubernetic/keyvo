@@ -6,8 +6,8 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use keyvo_core::edit::{EditError, KeyFields, ProfileDocument};
-use keyvo_core::profile::{KeySlot, Profile};
+use keyvo_core::edit::{EditError, KeyFields, ProfileDocument, RotaryFields};
+use keyvo_core::profile::{Action, KeySlot, ModifierMode, Profile};
 use serde::Deserialize;
 
 /// Every case in the directory; a test fails when a file is missing here.
@@ -333,4 +333,109 @@ fn an_invalid_file_is_a_diagnostic_with_its_line() {
         panic!("an invalid profile parsed");
     };
     assert_eq!(diagnostic.position.map(|p| p.line), Some(4));
+}
+
+const MODIFIER_KEYS: &str = r#"schema_version = 1
+[profile]
+id = "edits"
+name = "Modifiers"
+
+[[pages]]
+[pages.keys.7]
+label = "Brightness" # the sun
+dial = { cw = "KEY_BRIGHTNESSUP", ccw = "KEY_BRIGHTNESSDOWN", step = 2 }
+
+[pages.keys.8]
+label = "Zoom"
+"#;
+
+fn chord(keys: &str) -> Action {
+    Action::Chord {
+        keys: keyvo_core::chord::Chord::parse(keys).unwrap(),
+    }
+}
+
+#[test]
+fn a_keys_modifier_and_its_tables_round_trip() {
+    let mut doc = document(MODIFIER_KEYS);
+    let seven = doc.key(1, KeySlot::new(7).unwrap()).unwrap();
+    assert_eq!(seven.modifier, None);
+    let dial = seven.dial.clone().unwrap();
+    assert_eq!(
+        (dial.cw, dial.step),
+        (Some(chord("KEY_BRIGHTNESSUP")), Some(2))
+    );
+    assert_eq!(seven.roller, None);
+    // The fields as read write nothing.
+    doc.set_key(1, KeySlot::new(7).unwrap(), &seven).unwrap();
+    assert_eq!(doc.to_string(), MODIFIER_KEYS);
+
+    // A step of 4: only the number changes; a step of 1 is the default.
+    let mut faster = seven.clone();
+    faster.dial.as_mut().unwrap().step = Some(4);
+    let before = doc.set_key(1, KeySlot::new(7).unwrap(), &faster).unwrap();
+    assert_eq!(before, seven);
+    assert_eq!(
+        doc.to_string(),
+        MODIFIER_KEYS.replace("step = 2", "step = 4")
+    );
+    faster.dial.as_mut().unwrap().step = Some(1);
+    doc.set_key(1, KeySlot::new(7).unwrap(), &faster).unwrap();
+    assert_eq!(doc.to_string(), MODIFIER_KEYS.replace(", step = 2 }", " }"));
+
+    // Key 8 becomes a toggle with a dial and an empty roller table.
+    let zoom = KeyFields {
+        label: Some("Zoom".into()),
+        modifier: Some(ModifierMode::Toggle),
+        dial: Some(RotaryFields {
+            cw: Some(chord("ctrl+equal")),
+            ccw: Some(chord("ctrl+minus")),
+            ..RotaryFields::default()
+        }),
+        roller: Some(RotaryFields::default()),
+        ..KeyFields::default()
+    };
+    doc.set_key(1, KeySlot::new(8).unwrap(), &zoom).unwrap();
+    assert_eq!(doc.key(1, KeySlot::new(8).unwrap()).unwrap(), zoom);
+    let text = doc.to_string();
+    assert!(
+        text.ends_with(
+            "[pages.keys.8]\nlabel = \"Zoom\"\nmodifier = \"toggle\"\n\
+             dial = { cw = { type = \"chord\", keys = \"ctrl+equal\" }, ccw = { type = \"chord\", keys = \"ctrl+minus\" } }\n\
+             roller = {}\n"
+        ),
+        "{text}"
+    );
+    let key = &doc.profile().pages[0].keys[&KeySlot::new(8).unwrap()];
+    assert_eq!(key.modifier_mode(), Some(ModifierMode::Toggle));
+
+    // Mode Off: the field and both tables go.
+    doc.set_key(
+        1,
+        KeySlot::new(8).unwrap(),
+        &KeyFields {
+            label: Some("Zoom".into()),
+            ..KeyFields::default()
+        },
+    )
+    .unwrap();
+    assert!(
+        doc.to_string()
+            .ends_with("[pages.keys.8]\nlabel = \"Zoom\"\n")
+    );
+
+    // A mode without a table does not validate; nothing changes.
+    let lone = KeyFields {
+        modifier: Some(ModifierMode::Held),
+        ..KeyFields::default()
+    };
+    let error = doc.set_key(1, KeySlot::new(8).unwrap(), &lone).unwrap_err();
+    assert!(
+        matches!(&error, EditError::Invalid(d) if d.message.contains("`modifier` needs a `dial` or `roller` table")),
+        "{error}"
+    );
+    assert!(
+        doc.to_string()
+            .ends_with("[pages.keys.8]\nlabel = \"Zoom\"\n")
+    );
 }
