@@ -231,6 +231,11 @@
       "additionalProperties": false,
       "description": "One `[[pages]]` entry.",
       "properties": {
+        "enabled": {
+          "default": true,
+          "description": "Whether the page is in the page list (spec §6.3); a disabled page\nkeeps its keys in the file. The context page is in the list either\nway. Default `true`.",
+          "type": "boolean"
+        },
         "keys": {
           "additionalProperties": false,
           "description": "The keys of the page by number; absent keys are blank.",
@@ -255,6 +260,11 @@
         "accent": {
           "$ref": "#/$defs/Color",
           "description": "Accent color, the primary context indicator on the pad."
+        },
+        "global_pages": {
+          "default": true,
+          "description": "Whether the global profile's pages from `general` on sit left of\nthis profile's context page (spec §6.3); the global profile ignores\nit. Default `true`.",
+          "type": "boolean"
         },
         "id": {
           "description": "The profile id; equals the file name without `.toml`.",

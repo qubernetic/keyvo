@@ -13,6 +13,11 @@
       "field": "accent",
       "fields": { "name": "Shell work", "accent": "#e67e22" },
       "file": "terminal.accent.toml"
+    },
+    {
+      "field": "global_pages",
+      "fields": { "name": "Shell work", "accent": "#e67e22", "global_pages": false },
+      "file": "terminal.global.toml"
     }
   ]
 }

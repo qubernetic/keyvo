@@ -24,7 +24,7 @@ import { SNAPSHOTS } from "./lib/mock/data";
 import { mockClients } from "./lib/mock";
 import { PAD_TRACE, STRIP_LINE } from "./lib/pad";
 import type { Pinned } from "./lib/pin";
-import type { ProfileSummary } from "./lib/profiles";
+import type { PageEdit, ProfileFiles, ProfileSummary } from "./lib/profiles";
 import type { Control, PressKind, Size, Status, TraceRecord } from "./lib/protocol";
 import { layout, type Columns } from "./lib/shell";
 
@@ -128,9 +128,24 @@ interface Options {
   keys?: ReturnType<typeof editor>;
   pinned?: Pinned;
   profiles?: ProfileSummary[];
+  /** The profile files the tabs write pages through; none disables "+". */
+  files?: ProfileFiles;
   ontrace?: (entry: TraceRecord) => void;
   /** The window's columns; the default window shows them all. */
   columns?: Columns;
+}
+
+/** Profile files whose page edits answer page 4, the rest refused. */
+function pageFiles(overrides: Partial<ProfileFiles> = {}) {
+  return {
+    list: () => Promise.resolve(PROFILES),
+    profile: () => Promise.reject(new Error("not in this test")),
+    editProfile: () => Promise.reject(new Error("not in this test")),
+    editPage: vi.fn((_id: string, edit: PageEdit) => Promise.resolve({ path: PROFILE, edit, page: 4 })),
+    restore: () => Promise.reject(new Error("not in this test")),
+    open: () => Promise.reject(new Error("not in this test")),
+    ...overrides,
+  } satisfies ProfileFiles;
 }
 
 /** The Pad with the pin held the way App holds it: `onpin` sets the prop. */
@@ -139,15 +154,17 @@ function pad({
   keys = editor(),
   pinned,
   profiles = PROFILES,
+  files,
   ontrace,
   columns = layout(1200),
 }: Options = {}) {
   const onpin = vi.fn<(next: Pinned) => void>();
+  const onprofiles = vi.fn<() => void>();
   const result = render(Pad, {
-    props: { daemon: daemon.daemon, editor: keys, profiles, pinned, onpin, ontrace, columns },
+    props: { daemon: daemon.daemon, editor: keys, profiles, files, onprofiles, pinned, onpin, ontrace, columns },
   });
   onpin.mockImplementation((next) => void result.rerender({ pinned: next }));
-  return { daemon, keys, onpin };
+  return { daemon, keys, onpin, onprofiles };
 }
 
 async function mounted(options: Options = {}) {
@@ -442,12 +459,49 @@ describe("the page tabs", () => {
     expect(names()).toEqual(["apps", "general"]);
     expect(within(list).queryByRole("tab", { selected: true })).toBeNull();
     const add = screen.getByRole("button", { name: "Add a page" });
-    expect(add).toHaveAttribute("aria-disabled", "true");
+    // Without the profile files nothing can add a page.
+    expect(add).toBeDisabled();
     expect(within(list).getAllByRole("tab").at(-1)?.compareDocumentPosition(add)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
     // The drawing keeps the pad.
     expect(screen.getByRole("grid", { name: "Keypad mirror: profile terminal, page 1" })).toBeInTheDocument();
+  });
+
+  it("+ adds a page to the tabs' profile, pins it and has the list read again", async () => {
+    const files = pageFiles();
+    const { onpin, onprofiles } = await mounted({ files });
+    await fireEvent.click(screen.getByRole("button", { name: "Add a page" }));
+    await waitFor(() => expect(files.editPage).toHaveBeenCalledWith("terminal", { op: "add" }));
+    await waitFor(() => expect(onpin).toHaveBeenLastCalledWith({ profile: "terminal", page: 4 }));
+    expect(onprofiles).toHaveBeenCalledTimes(1);
+  });
+
+  it("+ adds to the pinned profile, not the pad's", async () => {
+    const files = pageFiles();
+    await mounted({ files, pinned: { profile: "empty", page: 1 } });
+    await fireEvent.click(screen.getByRole("button", { name: "Add a page" }));
+    await waitFor(() => expect(files.editPage).toHaveBeenCalledWith("empty", { op: "add" }));
+  });
+
+  it("a page switched off shows muted among the tabs; its switch turns it on", async () => {
+    const files = pageFiles();
+    const profiles = PROFILES.map((profile) => (profile.id === "terminal" ? { ...profile, disabled: [2] } : profile));
+    const { onprofiles } = await mounted({ files, profiles });
+    expect(names()).toEqual(["apps", "general", "context", "Page 3"]);
+    await fireEvent.click(screen.getByRole("switch", { name: "Switch git on" }));
+    await waitFor(() =>
+      expect(files.editPage).toHaveBeenCalledWith("terminal", { op: "enable", page: 2, enabled: true }),
+    );
+    await waitFor(() => expect(onprofiles).toHaveBeenCalledTimes(1));
+  });
+
+  it("says why a page edit of the tabs was refused", async () => {
+    const files = pageFiles({ editPage: () => Promise.reject({ message: "bad", path: "/c/p.toml", line: 3 }) });
+    const { onpin } = await mounted({ files });
+    await fireEvent.click(screen.getByRole("button", { name: "Add a page" }));
+    expect(await screen.findByText("Page not written: /c/p.toml:3: bad")).toBeInTheDocument();
+    expect(onpin).not.toHaveBeenCalled();
   });
 });
 

@@ -36,6 +36,13 @@ pub struct ProfileSummary {
     pub r#match: MatchSummary,
     /// The name of each page, in order; page numbers count from 1.
     pub pages: Vec<Option<String>>,
+    /// The disabled pages, counted from 1; left out when none is.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub disabled: Vec<usize>,
+    /// Whether the global pages sit left of the context page; left out
+    /// when they do.
+    #[serde(skip_serializing_if = "is_yes")]
+    pub global_pages: bool,
     /// The profile file.
     pub path: PathBuf,
     /// Whether the file exists; false for the built-in global profile until
@@ -61,10 +68,24 @@ impl ProfileSummary {
                 title: info.r#match.title.as_ref().map(|t| t.as_str().to_owned()),
             },
             pages: profile.pages.iter().map(|page| page.name.clone()).collect(),
+            disabled: (1..)
+                .zip(&profile.pages)
+                .filter(|(_, page)| !page.enabled)
+                .map(|(number, _)| number)
+                .collect(),
+            global_pages: info.global_pages,
             file: path.is_file(),
             path,
         }
     }
+}
+
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if passes a reference"
+)]
+const fn is_yes(value: &bool) -> bool {
+    *value
 }
 
 /// The command that opens `path` in the desktop's application for it,

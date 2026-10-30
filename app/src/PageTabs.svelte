@@ -1,19 +1,21 @@
 <script lang="ts">
   // The page tabs under the drawing (pad screen brief §5.2, decision Q5;
-  // #151): the page list the pad walks (spec §6.3) as a tablist, the
+  // #151, #156): the page list the pad walks (spec §6.3) as a tablist, the
   // global pages at index 0 and below muted and marked as the global
   // profile's, then the shown profile's pages by name; arrows wrapping,
-  // Home and End; "+" after them is not built yet (M4a-4); the shown
-  // profile's accent as a 12 px swatch with its label and `#rrggbb` at the
-  // right. Choosing a tab pins that page of the profile that owns it; the
-  // hardware page buttons page the pad only. While the pad shows another
-  // page, the pinned one's tab carries the pin glyph (#164).
+  // Home and End. A page of the shown profile that is switched off has no
+  // index: it sits muted among the shown profile's tabs in file order, is
+  // no tab, and carries a switch that turns it on again. "+" after them
+  // adds a page at the end of the shown profile; the shown profile's accent
+  // as a 12 px swatch with its label and `#rrggbb` at the right. Choosing a
+  // tab pins that page of the profile that owns it; the hardware page
+  // buttons page the pad only. While the pad shows another page, the pinned
+  // one's tab carries the pin glyph (#164).
   import { tick } from "svelte";
 
   import Icon from "./Icon.svelte";
-  import Soon from "./Soon.svelte";
   import { t } from "./lib/i18n";
-  import type { PageTab, ProfileSummary } from "./lib/profiles";
+  import { enabled, pageName, type PageTab, type ProfileSummary } from "./lib/profiles";
 
   let {
     profile,
@@ -22,6 +24,8 @@
     selected,
     pinned,
     onpage,
+    onadd,
+    onenable,
   }: {
     /** The profile whose list the tabs show. */
     profile: ProfileSummary;
@@ -36,10 +40,35 @@
     pinned?: number;
     /** Pins page `page` (from 1) of profile `profile`. */
     onpage: (profile: string, page: number) => void;
+    /** Adds a page at the end of `profile`; without it "+" is disabled. */
+    onadd?: () => void;
+    /** Switches page `page` (from 1) of `profile` on. */
+    onenable?: (page: number) => void;
   } = $props();
 
   const buttons: HTMLButtonElement[] = $state([]);
   const at = $derived(tabs.findIndex((tab) => tab.index === selected));
+
+  /** One place of the strip: a tab of the list, or a page of the shown
+   * profile that is switched off. */
+  type Item = { tab: PageTab; position: number } | { off: number };
+
+  /** The tabs with the switched-off pages of the shown profile among its
+   * own tabs after the context page, in file order. */
+  const items: Item[] = $derived.by(() => {
+    const listed = new Set(tabs.filter((tab) => tab.profile === profile.id).map((tab) => tab.page));
+    const list: Item[] = tabs.map((tab, position) => ({ tab, position }));
+    const off = profile.pages
+      .map((_, index) => index + 1)
+      .filter((page) => !listed.has(page) && !enabled(profile, page));
+    for (const page of off) {
+      const before = list.findIndex(
+        (item) => "tab" in item && item.tab.index >= 2 && item.tab.profile === profile.id && item.tab.page > page,
+      );
+      list.splice(before === -1 ? list.length : before, 0, { off: page });
+    }
+    return list;
+  });
 
   /** The label of a tab: a global one names the global profile, the
    * pinned one says so. */
@@ -79,26 +108,53 @@
 
 <div class="pages">
   <div role="tablist" aria-label={t("pad.pages")} class="tabs" tabindex="-1" onkeydown={keydown}>
-    {#each tabs as tab, position (tab.index)}
-      <button
-        bind:this={buttons[position]}
-        type="button"
-        role="tab"
-        class:global={tab.index <= 0}
-        aria-selected={tab.index === selected}
-        tabindex={position === Math.max(at, 0) ? 0 : -1}
-        aria-label={label(tab)}
-        title={label(tab)}
-        onclick={() => onpage(tab.profile, tab.page)}
-      >
-        {#if tab.index === pinned}
-          <Icon name="pin" />
-        {/if}
-        <span class="name">{tab.name}</span>
-      </button>
+    {#each items as item ("tab" in item ? `tab ${item.tab.index}` : `off ${item.off}`)}
+      {#if "tab" in item}
+        {@const tab = item.tab}
+        <button
+          bind:this={buttons[item.position]}
+          type="button"
+          role="tab"
+          class:global={tab.index <= 0}
+          aria-selected={tab.index === selected}
+          tabindex={item.position === Math.max(at, 0) ? 0 : -1}
+          aria-label={label(tab)}
+          title={label(tab)}
+          onclick={() => onpage(tab.profile, tab.page)}
+        >
+          {#if tab.index === pinned}
+            <Icon name="pin" />
+          {/if}
+          <span class="name">{tab.name}</span>
+        </button>
+      {:else}
+        {@const name = pageName(profile, item.off)}
+        <!-- A page switched off: no tab, the arrows pass it by. -->
+        <span class="off" role="presentation" title={t("pad.offPage", { page: name })}>
+          <span class="name">{name}</span>
+          <input
+            type="checkbox"
+            role="switch"
+            aria-label={t("pad.enablePage", { page: name })}
+            checked={false}
+            onchange={(event) => {
+              event.currentTarget.checked = false;
+              onenable?.(item.off);
+            }}
+          />
+        </span>
+      {/if}
     {/each}
   </div>
-  <Soon label={t("pad.addPage")} text={t("pad.add")} soon="soon.addPage" />
+  <button
+    type="button"
+    aria-label={t("pad.addPage")}
+    title={t("pad.addPage")}
+    disabled={onadd === undefined}
+    onclick={() => onadd?.()}
+  >
+    {t("pad.add")}
+  </button>
   {#if profile.accent !== undefined}
     <div class="accent">
       <span aria-hidden="true">{t("pad.accent")}</span>
@@ -154,6 +210,26 @@
     border-color: var(--kv-accent);
     background: var(--kv-bg);
     color: var(--kv-fg);
+  }
+
+  /* A page switched off: muted, its name struck through, its switch after it. */
+  .off {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 20ch;
+    padding: 0 8px;
+    border: 1px dotted var(--kv-fg-muted);
+    border-radius: var(--kv-radius);
+    background: var(--kv-bg-alt);
+    color: var(--kv-fg-muted);
+  }
+
+  .off .name {
+    overflow: hidden;
+    text-decoration: line-through;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .accent {

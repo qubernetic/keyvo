@@ -16,7 +16,9 @@ use keyvo_core::lineage::{FakeLineage, Lineage, NoLineage};
 use keyvo_core::press::PressKind;
 use keyvo_core::profile::{KeySlot, ModifierMode, Profile};
 use keyvo_core::session::Session;
-use keyvo_core::state::{ActiveModifier, KeyDown, KeyPress, Mode, PageButton, State, View};
+use keyvo_core::state::{
+    ActiveModifier, KeyDown, KeyPress, Mode, PageButton, PageEntry, State, View, page_list,
+};
 
 fn profiles() -> Profiles {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/dirs/focus");
@@ -407,6 +409,205 @@ fn walking_left_from_general_follows_the_global_pages_in_file_order() {
             (Short(Right, 3200), "app", 1, 2, AUTO),
         ],
     );
+}
+
+/// A profile `id` from the text after its `id` and `name`, matching the
+/// class `id` unless it is the global one.
+fn written(id: &str, rest: &str) -> (String, Profile) {
+    let rules = if id == "global" {
+        String::new()
+    } else {
+        format!("match = {{ class = [\"{id}\"] }}\n")
+    };
+    let text =
+        format!("schema_version = 1\n[profile]\nid = \"{id}\"\nname = \"{id}\"\n{rules}{rest}");
+    let profile = Profile::from_toml(&text, Path::new("x.toml")).unwrap();
+    (id.to_owned(), profile)
+}
+
+#[test]
+fn a_disabled_page_gets_no_index() {
+    // [-1 global media, 0 global general, 1 context, 2 debug]: the
+    // disabled global `apps` and the app's disabled `edit` are skipped.
+    let profiles = Profiles::new(BTreeMap::from([
+        written(
+            "global",
+            "[[pages]]\nname = \"context\"\n[[pages]]\nname = \"general\"\n\
+             [[pages]]\nname = \"apps\"\nenabled = false\n[[pages]]\nname = \"media\"\n",
+        ),
+        written(
+            "app",
+            "[[pages]]\nname = \"context\"\n[[pages]]\nname = \"edit\"\nenabled = false\n\
+             [[pages]]\nname = \"debug\"\n",
+        ),
+    ]));
+    run(
+        &profiles,
+        &[
+            (Focus("app", "x", 0), "global", 1, 1, AUTO),
+            (Poll(150), "app", 1, 1, AUTO),
+            (Short(Right, 200), "app", 3, 2, AUTO),
+            (Short(Right, 400), "app", 3, 2, AUTO),
+            (Short(Left, 600), "app", 1, 1, AUTO),
+            (Short(Left, 800), "global", 2, 0, AUTO),
+            (Short(Left, 1000), "global", 4, -1, AUTO),
+            (Short(Left, 1200), "global", 4, -1, AUTO),
+        ],
+    );
+}
+
+#[test]
+fn a_profile_without_the_global_pages_starts_at_its_context_page() {
+    // `global_pages = false` on `app`; `other` keeps the global pages, and
+    // the global profile ignores the field.
+    let profiles = Profiles::new(BTreeMap::from([
+        written(
+            "global",
+            "global_pages = false\n[[pages]]\nname = \"context\"\n[[pages]]\nname = \"general\"\n",
+        ),
+        written(
+            "app",
+            "global_pages = false\n[[pages]]\nname = \"context\"\n[[pages]]\nname = \"edit\"\n",
+        ),
+        shaped("other", &["context"]),
+    ]));
+    run(
+        &profiles,
+        &[
+            (Short(Left, 0), "global", 2, 0, AUTO),
+            (Focus("app", "x", 100), "global", 2, 0, AUTO),
+            (Poll(250), "app", 1, 1, AUTO),
+            (Short(Left, 300), "app", 1, 1, AUTO),
+            (Short(Right, 500), "app", 2, 2, AUTO),
+            (Focus("other", "x", 700), "app", 2, 2, AUTO),
+            (Poll(850), "other", 1, 1, AUTO),
+            (Short(Left, 900), "global", 2, 0, AUTO),
+        ],
+    );
+}
+
+#[test]
+fn the_context_page_stays_in_the_list_when_disabled() {
+    // A disabled `context` page is the context page all the same; without
+    // a `context` page the first enabled page is.
+    let profiles = Profiles::new(BTreeMap::from([
+        written(
+            "app",
+            "[[pages]]\nname = \"edit\"\n[[pages]]\nname = \"context\"\nenabled = false\n",
+        ),
+        written(
+            "unnamed",
+            "[[pages]]\nenabled = false\n[[pages]]\nname = \"a\"\n[[pages]]\nname = \"b\"\n",
+        ),
+    ]));
+    run(
+        &profiles,
+        &[
+            (Focus("app", "x", 0), "global", 1, 1, AUTO),
+            (Poll(150), "app", 2, 1, AUTO),
+            (Short(Right, 200), "app", 1, 2, AUTO),
+            (Focus("unnamed", "x", 400), "app", 1, 2, AUTO),
+            (Poll(550), "unnamed", 2, 1, AUTO),
+            (Short(Right, 600), "unnamed", 3, 2, AUTO),
+            (Short(Right, 800), "unnamed", 3, 2, AUTO),
+        ],
+    );
+}
+
+/// One profile of `tests/protocol-fixtures/editor/page-list.json`.
+#[derive(serde::Deserialize)]
+struct ListedProfile {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    pages: Vec<Option<String>>,
+    #[serde(default)]
+    disabled: Vec<usize>,
+    #[serde(default)]
+    global_pages: Option<bool>,
+}
+
+impl ListedProfile {
+    fn profile(&self, id: &str) -> (String, Profile) {
+        let header = self
+            .global_pages
+            .map(|on| format!("global_pages = {on}\n"))
+            .unwrap_or_default();
+        let pages = self
+            .pages
+            .iter()
+            .enumerate()
+            .map(|(at, name)| {
+                let name = name
+                    .as_ref()
+                    .map(|name| format!("name = \"{name}\"\n"))
+                    .unwrap_or_default();
+                let off = if self.disabled.contains(&(at + 1)) {
+                    "enabled = false\n"
+                } else {
+                    ""
+                };
+                format!("[[pages]]\n{name}{off}")
+            })
+            .collect::<Vec<_>>()
+            .concat();
+        written(id, &format!("{header}{pages}"))
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct ListCase {
+    name: String,
+    global: ListedProfile,
+    owner: ListedProfile,
+    list: Vec<PageEntry>,
+}
+
+#[test]
+fn the_page_list_follows_the_shared_fixture() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/protocol-fixtures/editor/page-list.json");
+    let text = std::fs::read_to_string(path).unwrap();
+    let cases: BTreeMap<String, Vec<ListCase>> = serde_json::from_str(&text).unwrap();
+    for case in &cases["cases"] {
+        let id = case.owner.id.as_deref().unwrap_or("app");
+        let mut by_id = BTreeMap::from([case.global.profile("global")]);
+        if id != "global" {
+            by_id.extend([case.owner.profile(id)]);
+        }
+        let profiles = Profiles::new(by_id);
+        let owner = profiles.get(id).unwrap();
+        assert_eq!(page_list(&profiles, owner), case.list, "{}", case.name);
+    }
+}
+
+#[test]
+fn a_reload_that_disables_the_shown_page_shows_the_nearest_end() {
+    let start = Instant::now();
+    let pages = |debug: &str| {
+        Profiles::new(BTreeMap::from([
+            shaped("global", &["context", "general"]),
+            written(
+                "app",
+                &format!(
+                    "[[pages]]\nname = \"context\"\n[[pages]]\nname = \"edit\"\n\
+                     [[pages]]\nname = \"debug\"\n{debug}"
+                ),
+            ),
+        ]))
+    };
+    let before = pages("");
+    let mut state = State::new(&Config::default(), &before);
+    state.focus(window("app", "x"), start, &before, &NoLineage);
+    state.poll(start + Duration::from_secs(1), &before);
+    for _ in 0..2 {
+        state.press(Right, start, &before);
+        state.release(Right, start, &before);
+    }
+    assert_eq!(state.view(&before), view("app", 3, 3, AUTO));
+    let after = pages("enabled = false\n");
+    state.reload(&Config::default(), &after);
+    assert_eq!(state.view(&after), view("app", 2, 2, AUTO));
 }
 
 #[test]

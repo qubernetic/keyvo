@@ -409,6 +409,19 @@ in T2.
 - [ ] #207 `bin/keyvo ctl press '{"key":7,"hold":true}'`, turn, `'{"key":7,"release":true}'`; then `'{"key":8}'`, turn, `'{"key":8}'`: the same routing, the `modifier` events visible in `ctl subscribe`.
 - [ ] #207 In the app, open key 8 in the Inspector: the Modifier section shows Toggle and both bindings; change the mode to Held and save: key 8 now needs to be held; change `step` to 4: the dial zooms every fourth detent.
 
+### #208: page switches, page management and per-profile global pages (#156)
+
+No example profile changes; the app's edits write your copies under
+`~/.config/keyvo/profiles/`, so keep a copy of the directory before you
+start and put it back afterwards. The daemon of this branch under the
+user unit, the app of this branch, `bin/keyvo ctl subscribe '{"events":["switched"]}'`
+in T2 for the index the pad shows.
+
+- [ ] #208 In the app, switch `apps` off on the global profile: the tab goes muted, the pad's left button skips it (`general`, then nothing), the file has `enabled = false` on that page with its keys intact. Switch it on: back.
+- [ ] #208 Set `global_pages = false` on the VS Code profile in the app: under VS Code the left button does nothing at index 1; Konsole still has the global pages.
+- [ ] #208 Add a page to the Konsole profile, rename it `tools`, move it up, delete it: the file after each step differs only in that page; the pad follows (the new page reachable with the right button).
+- [ ] #208 Try to disable or delete the only enabled page of a profile: the controls are inactive with the hint.
+
 ## 6. What to post back
 
 Every slice block of section 5: on the slice's issue, the commit under

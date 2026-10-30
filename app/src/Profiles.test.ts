@@ -14,14 +14,19 @@ import { describe, expect, it, vi } from "vitest";
 
 import Profiles from "./Profiles.svelte";
 import type { Daemon, Tile } from "./lib/daemon";
-import { editorFile, nth, profileSteps, responses } from "./lib/fixtures";
+import { editorFile, nth, pageSteps, profileSteps, responses } from "./lib/fixtures";
 import type { Pin } from "./lib/pin";
+import { mockProfiles } from "./lib/mock/profiles";
+import { Store } from "./lib/mock/store";
 import type {
+  PageEdit,
+  PageEdited,
   ProfileEdited,
   ProfileFields,
   ProfileFiles,
   ProfileSummary,
   ProfileView,
+  Restored,
 } from "./lib/profiles";
 import type { Geometry, Size, Status, View } from "./lib/protocol";
 import { layout } from "./lib/shell";
@@ -114,6 +119,14 @@ function files(overrides: Partial<ProfileFiles> = {}) {
       at = next;
       return Promise.resolve({ path, before, fields, snapshot: "/s/1-terminal.toml" });
     }),
+    editPage: vi.fn(
+      (_id: string, _edit: PageEdit): Promise<PageEdited> =>
+        Promise.reject({ message: "no page is written in this test" }),
+    ),
+    restore: vi.fn(
+      (_id: string, _snapshot: string): Promise<Restored> =>
+        Promise.reject({ message: "nothing is restored in this test" }),
+    ),
     open: vi.fn((_id: string) => Promise.resolve()),
     ...overrides,
   };
@@ -453,8 +466,15 @@ describe("the profile header", () => {
     await waitFor(() => expect(field("Name")).toHaveValue(STEPS.fields.name));
     expect(field("Accent")).toHaveValue(STEPS.fields.accent);
     for (const step of STEPS.steps) {
-      const value = step.field === "name" ? step.fields.name : (step.fields.accent ?? "");
-      await type(field(step.field === "name" ? "Name" : "Accent"), value);
+      if (step.field === "global_pages") {
+        const box = screen.getByRole("checkbox", { name: "Show the global pages" });
+        expect(box).toBeChecked();
+        await fireEvent.click(box);
+        expect(box).toHaveProperty("checked", step.fields.global_pages !== false);
+      } else {
+        const value = step.field === "name" ? step.fields.name : (step.fields.accent ?? "");
+        await type(field(step.field === "name" ? "Name" : "Accent"), value);
+      }
       await waitFor(() => expect(fake.file).toBe(editorFile(step.file)));
     }
     expect(fake.files.editProfile).toHaveBeenCalledTimes(STEPS.steps.length);
@@ -634,6 +654,195 @@ describe("the pages", () => {
     await pick(/^VS Code/);
     await fireEvent.click(screen.getByRole("button", { name: "Edit keys on the Pad" }));
     expect(props.onedit).toHaveBeenCalledWith({ profile: "code", page: 1 });
+  });
+});
+
+describe("the global pages switch", () => {
+  it("is offered on an app profile only, with what it does beside it", async () => {
+    mount();
+    const box = await screen.findByRole("checkbox", { name: "Show the global pages" });
+    expect(box).toBeChecked();
+    expect(box).toHaveAccessibleDescription("shown left of this profile's context page");
+    await pick(/^Everywhere/);
+    await waitFor(() => expect(field("Name")).toHaveValue("Everywhere"));
+    expect(screen.queryByRole("checkbox", { name: "Show the global pages" })).toBeNull();
+  });
+});
+
+/** The page fixture's profile in the mock store, its files spied on: the
+ * page rows write through the same answers keyvo_client gives. */
+function pageFiles() {
+  const store = new Store([editorFile(PAGES.file)]);
+  const mock = mockProfiles(store);
+  const spied = {
+    ...mock,
+    list: vi.fn(async () => [...(await mock.list()), ...LIST.filter((profile) => profile.id !== PAGES.profile)]),
+    editPage: vi.fn(mock.editPage),
+    restore: vi.fn(mock.restore),
+    editProfile: vi.fn(mock.editProfile),
+    open: vi.fn(mock.open),
+  };
+  return { store, files: { files: spied satisfies ProfileFiles, file: "" } };
+}
+
+const PAGES = pageSteps();
+
+function rows(): HTMLElement {
+  return screen.getByRole("list", { name: "Edit the pages" });
+}
+
+/** The page names as the rows show them, `null` for a page without one. */
+function rowNames(): (string | null)[] {
+  return within(rows())
+    .getAllByRole("textbox")
+    .map((input) => (input as HTMLInputElement).value || null);
+}
+
+/** The name a row's controls go by: its name, else "Page N". */
+function rowName(page: number): string {
+  return rowNames()[page - 1] ?? `Page ${page}`;
+}
+
+/** Does `edit` through the page rows, the way a user would. */
+async function perform(edit: PageEdit) {
+  switch (edit.op) {
+    case "add":
+      return fireEvent.click(screen.getByRole("button", { name: "Add a page" }));
+    case "rename":
+      return type(within(rows()).getByRole("textbox", { name: `Name of page ${edit.page}` }), edit.name ?? "");
+    case "move": {
+      const way = edit.to < edit.page ? "up" : "down";
+      return fireEvent.click(within(rows()).getByRole("button", { name: `Move ${rowName(edit.page)} ${way}` }));
+    }
+    case "enable":
+      return fireEvent.click(within(rows()).getByRole("switch", { name: `${rowName(edit.page)} enabled` }));
+    case "delete":
+      return fireEvent.click(within(rows()).getByRole("button", { name: `Delete ${rowName(edit.page)}` }));
+  }
+}
+
+async function mountPages() {
+  const { store, files } = pageFiles();
+  const props = mount({ files, view: { ...VIEW, profile: PAGES.profile } });
+  await waitFor(() => expect(rowNames()).toEqual(["context", "edit", "debug"]));
+  return { ...props, store, spied: files.files };
+}
+
+/** Waits for the rows to show the store's pages. */
+async function settled(store: Store) {
+  await waitFor(() => expect(rowNames()).toEqual(store.get(PAGES.profile).pages.map((page) => page.name)));
+  const off = store.get(PAGES.profile).pages.map((page) => !page.enabled);
+  await waitFor(() =>
+    expect(
+      within(rows())
+        .getAllByRole("switch")
+        .map((toggle) => !(toggle as HTMLInputElement).checked),
+    ).toEqual(off),
+  );
+}
+
+describe("the page rows", () => {
+  it("send each step of the shared page fixture and follow its answer", async () => {
+    const { spied, store } = await mountPages();
+    for (const [at, step] of PAGES.steps.entries()) {
+      await perform(step.edit);
+      await waitFor(() => expect(spied.editPage).toHaveBeenCalledTimes(at + 1));
+      expect(spied.editPage).toHaveBeenLastCalledWith(PAGES.profile, step.edit);
+      await settled(store);
+    }
+    expect(rowNames()).toEqual(["context", "edit", "debug"]);
+    expect(screen.getByRole("status", { name: "Pages result" })).toHaveTextContent(
+      new RegExp(`^Wrote the pages of konsole to ${CONFIG}/${PAGES.path} at \\d\\d:\\d\\d:\\d\\d$`),
+    );
+    // The thumbnails of the pages that are off are muted and say so.
+    expect(within(thumbnails()).getByRole("button", { name: "edit, switched off" })).toHaveClass("off");
+    expect(within(thumbnails()).getByRole("button", { name: "context" })).not.toHaveClass("off");
+  });
+
+  it("keep the context page on and the only page that is on, saying why", async () => {
+    const { spied, store } = await mountPages();
+    const context = within(rows()).getByRole("switch", { name: "context enabled" });
+    expect(context).toHaveAttribute("aria-disabled", "true");
+    expect(context).toHaveAccessibleDescription("The context page stays on.");
+    expect(within(rows()).getByRole("switch", { name: "edit enabled" })).not.toHaveAttribute("aria-disabled");
+    // Three pages are on: each one can go.
+    expect(within(rows()).getByRole("button", { name: "Delete context" })).not.toHaveAttribute("aria-disabled");
+    for (const step of PAGES.steps) {
+      await perform(step.edit);
+      await settled(store);
+    }
+    const kept = within(rows()).getByRole("button", { name: "Delete context" });
+    expect(kept).toHaveAttribute("aria-disabled", "true");
+    expect(kept).toHaveAccessibleDescription("The only page that is on cannot be deleted.");
+    const calls = spied.editPage.mock.calls.length;
+    await fireEvent.click(kept);
+    await fireEvent.click(within(rows()).getByRole("switch", { name: "context enabled" }));
+    expect(within(rows()).getByRole("switch", { name: "context enabled" })).toBeChecked();
+    expect(spied.editPage).toHaveBeenCalledTimes(calls);
+    // The refused edits of the fixture are the ones the rows keep from being sent.
+    expect(PAGES.refused.map((refused) => refused.edit)).toEqual([
+      { op: "enable", page: 1, enabled: false },
+      { op: "delete", page: 1 },
+    ]);
+  });
+
+  it("move the first page no higher and the last no lower", async () => {
+    await mountPages();
+    expect(within(rows()).getByRole("button", { name: "Move context up" })).toBeDisabled();
+    expect(within(rows()).getByRole("button", { name: "Move context down" })).toBeEnabled();
+    expect(within(rows()).getByRole("button", { name: "Move debug down" })).toBeDisabled();
+  });
+
+  it("undo a change through the edit its answer names", async () => {
+    const { spied, store } = await mountPages();
+    expect(screen.queryByRole("button", { name: "Undo the last page change" })).toBeNull();
+    await perform({ op: "rename", page: 2, name: "copy" });
+    await settled(store);
+    expect(rowNames()).toEqual(["context", "copy", "debug"]);
+    await fireEvent.click(screen.getByRole("button", { name: "Undo the last page change" }));
+    await waitFor(() => expect(spied.editPage).toHaveBeenLastCalledWith(PAGES.profile, { op: "rename", page: 2, name: "edit" }));
+    await settled(store);
+    expect(rowNames()).toEqual(["context", "edit", "debug"]);
+    expect(screen.getByRole("status", { name: "Pages result" })).toHaveTextContent(/^Undid the last page change of konsole at /);
+    expect(screen.queryByRole("button", { name: "Undo the last page change" })).toBeNull();
+  });
+
+  it("undo a delete by restoring the snapshot it took", async () => {
+    const { spied, store } = await mountPages();
+    await perform({ op: "delete", page: 2 });
+    await settled(store);
+    expect(rowNames()).toEqual(["context", "debug"]);
+    const snapshot = (await spied.editPage.mock.results[0]?.value) as PageEdited;
+    await fireEvent.click(screen.getByRole("button", { name: "Undo the last page change" }));
+    await waitFor(() => expect(spied.restore).toHaveBeenCalledWith(PAGES.profile, snapshot.snapshot));
+    await settled(store);
+    expect(rowNames()).toEqual(["context", "edit", "debug"]);
+  });
+
+  it("remove a page's name when its name is cleared", async () => {
+    const { spied, store } = await mountPages();
+    await perform({ op: "rename", page: 3 });
+    await waitFor(() => expect(spied.editPage).toHaveBeenLastCalledWith(PAGES.profile, { op: "rename", page: 3 }));
+    await settled(store);
+    expect(within(rows()).getByRole("textbox", { name: "Name of page 3" })).toHaveAttribute("placeholder", "Page 3");
+  });
+
+  it("show a refused page edit with its message", async () => {
+    mount({
+      files: files({ editPage: () => Promise.reject({ message: "the page cannot go" }) }),
+    });
+    await waitFor(() => expect(within(rows()).getAllByRole("textbox")).toHaveLength(3));
+    await fireEvent.click(within(rows()).getByRole("button", { name: "Delete general" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("the page cannot go");
+  });
+
+  it("add a page to a profile without pages", async () => {
+    const fake = files();
+    mount({ files: fake });
+    await pick(/^Notes/);
+    expect(screen.queryByRole("list", { name: "Edit the pages" })).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Add a page" }));
+    await waitFor(() => expect(fake.files.editPage).toHaveBeenCalledWith("notes", { op: "add" }));
   });
 });
 

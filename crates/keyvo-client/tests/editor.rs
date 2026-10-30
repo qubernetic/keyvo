@@ -12,7 +12,7 @@ use keyvo_client::editor::{ControlFields, Editor, EditorError, Problem};
 use keyvo_core::chord::Chord;
 use keyvo_core::dialpad::{ButtonSlot, Control};
 use keyvo_core::edit::{
-    BUILTIN_GLOBAL, ButtonFields, EditError, KeyFields, ProfileFields, RotaryFields,
+    BUILTIN_GLOBAL, ButtonFields, EditError, KeyFields, PageEdit, ProfileFields, RotaryFields,
 };
 use keyvo_core::profile::{Action, KeySlot};
 use keyvo_core::recipe::{self, Recipe};
@@ -491,6 +491,7 @@ fn renaming_the_missing_global_profile_creates_its_file() {
     let fields = ProfileFields {
         name: "Everywhere".to_owned(),
         accent: None,
+        global_pages: true,
     };
     let edited = editor.set_profile("global", &fields, at(1)).unwrap();
     assert_eq!(edited.path, config.join("profiles/global.toml"));
@@ -498,6 +499,99 @@ fn renaming_the_missing_global_profile_creates_its_file() {
         std::fs::read_to_string(&edited.path).unwrap(),
         BUILTIN_GLOBAL.replace("\"Global\"", "\"Everywhere\"")
     );
+}
+
+#[derive(Deserialize)]
+struct PageFixture {
+    profile: String,
+    file: String,
+    path: PathBuf,
+    steps: Vec<PageStep>,
+}
+
+#[derive(Deserialize)]
+struct PageStep {
+    edit: PageEdit,
+    file: String,
+    page: Option<usize>,
+    undo: Option<PageEdit>,
+}
+
+#[test]
+fn the_shared_page_steps_write_their_files_and_undo_restores_them() {
+    let steps: PageFixture = serde_json::from_str(&fixture("pages.json")).unwrap();
+    let dirs = Dirs::new(&[(&steps.profile, &fixture(&steps.file))]);
+    let editor = dirs.editor();
+    let mut previous = steps.file.clone();
+    for (n, step) in steps.steps.iter().enumerate() {
+        let ms = u64::try_from(n).unwrap() * 10;
+        let edited = editor
+            .edit_page(&steps.profile, &step.edit, at(ms))
+            .unwrap();
+        assert_eq!(edited.path, dirs.config().join(&steps.path), "step {n}");
+        assert_eq!(edited.edit, step.edit, "step {n}");
+        assert_eq!(edited.page, step.page, "step {n}");
+        assert_eq!(edited.undo, step.undo, "step {n}");
+        assert_eq!(
+            dirs.profile(&steps.profile),
+            fixture(&step.file),
+            "step {n}"
+        );
+        let snapshot = edited.snapshot.unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&snapshot).unwrap(),
+            fixture(&previous)
+        );
+        // The undo: the inverse edit, or for a delete the snapshot.
+        if let Some(undo) = &edited.undo {
+            editor.edit_page(&steps.profile, undo, at(ms + 1)).unwrap();
+        } else {
+            let restored = editor
+                .restore(&steps.profile, &snapshot, at(ms + 1))
+                .unwrap();
+            assert!(restored.snapshot.is_some(), "step {n}");
+        }
+        assert_eq!(dirs.profile(&steps.profile), fixture(&previous), "undo {n}");
+        editor
+            .edit_page(&steps.profile, &step.edit, at(ms + 2))
+            .unwrap();
+        previous = step.file.clone();
+    }
+}
+
+#[test]
+fn a_refused_page_edit_writes_nothing() {
+    let dirs = Dirs::new(&[("konsole", &fixture("pages.6.toml"))]);
+    let error = dirs
+        .editor()
+        .edit_page("konsole", &PageEdit::Delete { page: 1 }, at(1))
+        .unwrap_err();
+    assert!(
+        matches!(error, EditorError::Edit(EditError::Protected { .. })),
+        "{error:?}"
+    );
+    assert!(error.to_string().contains("only enabled page"), "{error}");
+    assert_eq!(dirs.profile("konsole"), fixture("pages.6.toml"));
+    assert_eq!(dirs.snapshots(), Vec::<PathBuf>::new());
+}
+
+#[test]
+fn only_a_snapshot_of_the_same_profile_is_restored() {
+    let dirs = Dirs::new(&[
+        ("konsole", &fixture("pages.toml")),
+        ("terminal", &fixture("terminal.toml")),
+    ]);
+    let editor = dirs.editor();
+    let edited = editor
+        .edit_page("konsole", &PageEdit::Delete { page: 3 }, at(1))
+        .unwrap();
+    let snapshot = edited.snapshot.unwrap();
+    let error = editor.restore("terminal", &snapshot, at(2)).unwrap_err();
+    assert!(matches!(error, EditorError::Fields(_)), "{error:?}");
+    let outside = dirs.config().join("profiles/terminal.toml");
+    let error = editor.restore("konsole", &outside, at(3)).unwrap_err();
+    assert!(matches!(error, EditorError::Fields(_)), "{error:?}");
+    assert_eq!(dirs.profile("terminal"), fixture("terminal.toml"));
 }
 
 #[test]

@@ -123,6 +123,7 @@ fn an_accent_added_goes_to_the_end_of_the_profile_table() {
             g: 0x22,
             b: 0x33,
         }),
+        global_pages: true,
     };
     doc.set_profile(&fields).unwrap();
     assert_eq!(
@@ -138,6 +139,7 @@ fn an_inline_profile_table_stays_inline() {
     let fields = ProfileFields {
         name: "Renamed".to_owned(),
         accent: None,
+        global_pages: true,
     };
     doc.set_profile(&fields).unwrap();
     assert_eq!(

@@ -1,0 +1,75 @@
+{
+  "cases": [
+    {
+      "name": "the global pages from general on, left of the context page",
+      "global": { "pages": ["context", "notes", "general", "apps", "media"] },
+      "owner": { "id": "app", "pages": ["edit", "context", "debug"] },
+      "list": [
+        { "index": -2, "profile": "global", "page": 5 },
+        { "index": -1, "profile": "global", "page": 4 },
+        { "index": 0, "profile": "global", "page": 3 },
+        { "index": 1, "profile": "app", "page": 2 },
+        { "index": 2, "profile": "app", "page": 1 },
+        { "index": 3, "profile": "app", "page": 3 }
+      ]
+    },
+    {
+      "name": "disabled pages get no index",
+      "global": { "pages": ["context", "general", "apps", "media"], "disabled": [3] },
+      "owner": { "id": "app", "pages": ["context", "edit", "debug"], "disabled": [2] },
+      "list": [
+        { "index": -1, "profile": "global", "page": 4 },
+        { "index": 0, "profile": "global", "page": 2 },
+        { "index": 1, "profile": "app", "page": 1 },
+        { "index": 2, "profile": "app", "page": 3 }
+      ]
+    },
+    {
+      "name": "a disabled general page leaves the pages after it",
+      "global": { "pages": ["context", "general", "apps"], "disabled": [2] },
+      "owner": { "id": "app", "pages": ["context"] },
+      "list": [
+        { "index": 0, "profile": "global", "page": 3 },
+        { "index": 1, "profile": "app", "page": 1 }
+      ]
+    },
+    {
+      "name": "a profile without the global pages starts at its context page",
+      "global": { "pages": ["context", "general", "apps"] },
+      "owner": { "id": "app", "pages": ["context", "edit"], "global_pages": false },
+      "list": [
+        { "index": 1, "profile": "app", "page": 1 },
+        { "index": 2, "profile": "app", "page": 2 }
+      ]
+    },
+    {
+      "name": "the global profile ignores global_pages",
+      "global": { "pages": ["context", "notes", "general", "apps"], "global_pages": false },
+      "owner": { "id": "global" },
+      "list": [
+        { "index": -1, "profile": "global", "page": 4 },
+        { "index": 0, "profile": "global", "page": 3 },
+        { "index": 1, "profile": "global", "page": 1 },
+        { "index": 2, "profile": "global", "page": 2 }
+      ]
+    },
+    {
+      "name": "a disabled context page is the context page all the same",
+      "global": { "pages": ["context"] },
+      "owner": { "id": "app", "pages": ["edit", "context"], "disabled": [2] },
+      "list": [
+        { "index": 1, "profile": "app", "page": 2 },
+        { "index": 2, "profile": "app", "page": 1 }
+      ]
+    },
+    {
+      "name": "without a context page the first enabled page is",
+      "global": { "pages": ["context"] },
+      "owner": { "id": "app", "pages": [null, "a", "b"], "disabled": [1] },
+      "list": [
+        { "index": 1, "profile": "app", "page": 2 },
+        { "index": 2, "profile": "app", "page": 3 }
+      ]
+    }
+  ]
+}

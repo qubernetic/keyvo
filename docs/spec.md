@@ -1088,11 +1088,28 @@ The *page list* of the shown profile (#151, decided by the owner on
 |---|---|
 | ..., -2, -1 | the global profile's pages after its `general` page, in file order: the first after `general` at -1, the next at -2 |
 | 0 | the global profile's page named `general` |
-| 1 | the shown profile's context page (its page named `context`, else its first page); for the global profile itself, its context page |
+| 1 | the shown profile's context page (its page named `context`, else its first enabled page, else its first page); for the global profile itself, its context page |
 | 2, 3, ... | the shown profile's other pages in file order; a page named `general` in an app profile is an ordinary page here; for the global profile, its pages before `general` other than the context page |
 
 A profile with one page has the list `[..., -1, 0, 1]`; without a global
 `general` page the list starts at 1.
+
+Page switches (beta, #156, the grill answers of the beta plan accepted on
+2026-10-27): a page with `enabled = false` (§7.2) is left out of the
+list: it gets no index, the page buttons skip it, the file keeps it with
+its keys. A disabled global page is left out of every profile's list,
+including a disabled `general` page itself (the global pages after it
+stay, from 0 on); `general_hint` applies only while `general` is in the
+list. The context page is in the list whether it is enabled or not; the
+app does not offer to disable it. An app profile with
+`global_pages = false` in its `[profile]` table has no global pages: its
+list starts at 1. The global profile ignores the field. A reload that
+disables the shown page shows the nearest end, as a reload that removes
+it. The bundled default global profile keeps `apps` and `general`
+enabled. The app computes the same list for its tab strip
+(`app/src/lib/profiles.ts` `pageList`); both sides pass the shared cases
+of `tests/protocol-fixtures/editor/page-list.json`
+(`keyvo_core::state::page_list`).
 
 Rendering is a **stack**: global layer < app profile < project layer <
 overlays (ADR-0009). The project layer (§7.4) is the nearest `.keyvo/`
@@ -1106,7 +1123,7 @@ top overlay's state (decided in the grill).
 As built (pre-alpha, `keyvo_core::state`, no overlays or project layer
 yet): the state machine starts in auto mode on the global profile's
 context page, index 1. A profile's *context page* is its page named
-`context`, else its first page; the *general page* is the global
+`context`, else its first enabled page, else its first page; the *general page* is the global
 profile's page named `general`. The view the daemon reports is the
 profile that owns the page, the page counted from 1 inside it, the mode
 and the `index`: at index 0 and below the profile is the global one and
@@ -1611,7 +1628,11 @@ mouse.dpi            = 1200
 - Pre-alpha subset (schema version 1 as `keyvo-core` reads it today):
   `schema_version`; `[profile]` with `id`, `name`, `match` (`class` list,
   `title` regex, checked when the file loads), `accent`, `priority`
-  (integer, default 0); `[[pages]]` with an optional `name` and
+  (integer, default 0), `global_pages` (beta, #156: bool, default
+  `true`; `false` leaves the global pages out of this profile's page
+  list, §6.1; the global profile ignores it); `[[pages]]` with an
+  optional `name`, `enabled` (beta, #156: bool, default `true`; `false`
+  leaves the page out of the page list and keeps its keys, §6.1) and
   `keys.1` to `keys.9`, each with `icon`, `label`, `color`, `action` and
   `states.<name>` (`icon`, `label`, `color`, `badge`). Colors are
   `#rrggbb`. Actions are `chord` (`keys`), `exec` (`cmd`) and `launch`
@@ -2537,8 +2558,14 @@ then subscribes with a replay of the newest 20 trace entries;
   carries its whole name in its title (#130). Arrows
   wrapping, `Home` and `End`; a tab pins its page of the profile that
   owns it, so clicking `general` edits the global profile's general page.
-  A profile with no pages adds no tab of its own. "+" (add a page), after
-  the shown profile's tabs, is disabled with its M4a-4 sentence. At the right, the profile's accent as a 12 px swatch with the
+  A profile with no pages adds no tab of its own. A page of the shown
+  profile that is switched off (`enabled = false`, §6.1; beta, #156) has
+  no index and is no tab: it sits among the shown profile's tabs in file
+  order, muted with a dotted rim and its name struck through, the arrow
+  keys skip it, and its switch turns it on again. "+" (add a page),
+  after the shown profile's tabs, adds an unnamed page at the end of the
+  shown profile through the editor and pins it (#156; disabled with its
+  M4a-4 sentence before); a refused edit shows in the result line. At the right, the profile's accent as a 12 px swatch with the
   label "Accent" and its `#rrggbb`; none when the profile has no accent.
   The hardware page buttons page the pad only.
 - **Held caption.** While the focused window is held (§6.1,
@@ -2781,8 +2808,8 @@ write of the screen.
   written; the field is marked invalid and the message under it says
   why. Priority shows as read with "higher wins the window"; Enabled
   likewise shows as read, "On", with its M4a-4 sentence beside it (the
-  schema has no `enabled` yet and the editor writes name and accent
-  only). The result
+  schema has no profile-level `enabled`; the editor writes name, accent
+  and, beta #156, `global_pages`). The result
   line under the form says what was written or opened. Header writes are
   not on the Pad's undo stack; the snapshot keeps the file before each
   one.
@@ -2803,6 +2830,27 @@ write of the screen.
   Pages heading row (#166), opens the Pad pinned to the
   profile and the selected page (`lib/pin.ts`). A newly selected profile
   starts on page 1; a profile with no pages says so.
+- **Page list** (beta, #156). Under the thumbnails each page has a row:
+  its name, edited inline (an empty name removes it), an On switch, Up
+  and Down, and Delete; "+ page" adds an unnamed page at the end. Each
+  change goes through the shell's `edit_page`
+  (`keyvo_core::edit::ProfileDocument::edit_page`, a `PageEdit` of `op`
+  `add`, `rename`, `move`, `enable` or `delete`): a snapshot, then the
+  atomic write, every byte outside the edited page kept; a moved page
+  takes its comments and keys along, a page switched on loses its
+  `enabled` line. Undo takes back the last page change: the answer's
+  inverse edit, or after a delete the shell's `restore_profile`, which
+  writes the snapshot back (`keyvo_client::editor::Editor::restore`,
+  only a snapshot of the editor's own directory and of the same
+  profile); a later header write clears it. The context page's switch
+  and Delete on the only enabled page are `aria-disabled`, the reason
+  beside them; the editor refuses both edits as well
+  (`EditError::Protected`). A file that writes `pages` as an inline
+  array can be renamed and switched, not added to, reordered or deleted
+  from (the editor's `Shape` error). An app profile's header form has a
+  "Show the global pages" checkbox, written as `global_pages = false`
+  in `[profile]` and removed when checked; the global profile does not
+  offer it.
 
 **As built (mock dev server).** `just app-dev` (a host recipe) serves the
 app on the Vite dev server at `http://localhost:1420` with
@@ -3031,6 +3079,13 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, beta slice 10 (2026-10-30)**: page switches, page management
+  and per-profile global pages (#156). §6.1 the page list without
+  disabled pages and without the global pages of a profile with
+  `global_pages = false`, the context page the first enabled one without
+  a `context` page; §7.2 `enabled` on a page and `global_pages` in
+  `[profile]`; §10 the muted tabs, the switch, and the page list of the
+  Profiles screen (add, rename, move, switch, delete with an undo).
 - **v0.3, beta slice 9 (2026-10-30)**: a key as the dial modifier, held
   or toggled (#189). §6.1 the modifier rules (held, toggle, the end
   rules, the resolution order, the page return) and the

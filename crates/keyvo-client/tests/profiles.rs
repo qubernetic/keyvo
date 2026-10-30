@@ -35,6 +35,8 @@ fn every_profile_is_listed_in_id_order_with_its_header_and_pages() {
                 title: None,
             },
             pages: konsole.pages.clone(),
+            disabled: Vec::new(),
+            global_pages: true,
             path: dir.join("profiles/konsole.toml"),
             file: true,
         }
@@ -67,7 +69,35 @@ fn a_title_rule_is_listed_as_written_and_absent_fields_are_left_out() {
     let json = serde_json::to_value(titled).unwrap();
     assert_eq!(json["match"]["class"], serde_json::json!([]));
     assert!(json.get("accent").is_none(), "{json}");
+    assert!(json.get("disabled").is_none(), "{json}");
+    assert!(json.get("global_pages").is_none(), "{json}");
     assert_eq!(json["file"], serde_json::json!(true));
+}
+
+#[test]
+fn the_disabled_pages_and_a_profile_without_the_global_pages_are_listed() {
+    let root = tempfile::tempdir().unwrap();
+    let profiles = root.path().join("profiles");
+    std::fs::create_dir(&profiles).unwrap();
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/protocol-fixtures/editor/pages.4.toml"),
+        profiles.join("konsole.toml"),
+    )
+    .unwrap();
+    std::fs::write(
+        profiles.join("code.toml"),
+        "schema_version = 1\n[profile]\nid = \"code\"\nname = \"Code\"\nglobal_pages = false\n",
+    )
+    .unwrap();
+    let loaded = layout::load(root.path()).unwrap();
+    let list = profiles::list(&loaded.profiles, root.path());
+    let konsole = list.iter().find(|p| p.id == "konsole").unwrap();
+    assert_eq!(konsole.disabled, [2]);
+    let code = serde_json::to_value(list.iter().find(|p| p.id == "code").unwrap()).unwrap();
+    assert_eq!(code["global_pages"], serde_json::json!(false));
+    let konsole = serde_json::to_value(konsole).unwrap();
+    assert_eq!(konsole["disabled"], serde_json::json!([2]));
 }
 
 #[test]

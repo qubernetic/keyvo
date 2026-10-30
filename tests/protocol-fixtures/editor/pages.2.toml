@@ -1,0 +1,32 @@
+# The profile the page fixtures edit (README.md here).
+schema_version = 1
+
+[profile]
+id   = "konsole"
+name = "Konsole"
+
+[profile.match]
+class = ["org.kde.konsole"]
+
+[[pages]]
+name = "context"
+
+[pages.keys.1]                # a new shell
+label  = "Shell"
+action = { type = "exec", cmd = "konsole" }
+
+[[pages]]
+name = "edit"                 # the page step 4 switches off
+
+[pages.keys.1]
+label  = "Copy"
+action = { type = "chord", keys = "ctrl+shift+c" }
+
+[[pages]]
+name = "debug"
+
+[[pages]]
+name = "tools"
+
+[dialpad]
+dial = { cw = "ctrl+equal", ccw = "ctrl+minus" }

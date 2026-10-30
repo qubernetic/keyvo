@@ -1,7 +1,8 @@
 <script lang="ts">
   // The Pad screen (pad screen brief §5.2, §6; screen id `home`): the
   // device drawing with the live mirror (Mirror.svelte), the page list
-  // tabs (#151; the pinned page's tab marked while the pad is away, #164),
+  // tabs (#151; the pinned page's tab marked while the pad is away, #164;
+  // "+" adding a page and a page switched off turned on again, #156),
   // the "pad moved" line led by Follow (#164), the held caption or the session
   // lock line (#158, the mirror then shows the lock page), and the pinned
   // inspector, which keeps editing the pinned page under the lock. Selecting a key pins the inspector to the pad's
@@ -50,9 +51,17 @@
     summarize,
     type PadState,
   } from "./lib/pad";
-  import type { ControlTarget, Editor, Target } from "./lib/editor";
+  import { describe, problemOf, type ControlTarget, type Editor, type Target } from "./lib/editor";
   import { difference, follow, pinOnSelect, pinPage, target, type Pinned } from "./lib/pin";
-  import { contextPage, GLOBAL, leftOfContext, pageList, type ProfileSummary } from "./lib/profiles";
+  import {
+    contextPage,
+    GLOBAL,
+    leftOfContext,
+    pageList,
+    type PageEdit,
+    type ProfileFiles,
+    type ProfileSummary,
+  } from "./lib/profiles";
   import type {
     Control,
     DeviceStatus,
@@ -70,6 +79,8 @@
     active = true,
     columns = layout(RIGHT_FROM),
     profiles = [],
+    files,
+    onprofiles,
     pinned,
     onpin,
     ondevice,
@@ -85,6 +96,12 @@
     columns?: Columns;
     /** Every profile, for the page tabs; empty until the shell has read them. */
     profiles?: ProfileSummary[];
+    /** The profile files, for the tabs' "+" and their switches; without
+     * them "+" is disabled. */
+    files?: ProfileFiles;
+    /** A page edit of the tabs was written: the shell reads the profiles
+     * again. */
+    onprofiles?: () => void;
     /** The inspector's profile and page; undefined follows the pad. */
     pinned?: Pinned;
     /** Sets the pin, which the shell holds. */
@@ -418,6 +435,22 @@
     onpin?.(pinPage(profile, page));
   }
 
+  /** Writes `edit` into the pages of the tabs' profile; an added page is
+   * pinned, so its tab is the selected one once the list has it. */
+  async function editPage(edit: PageEdit) {
+    const at = owner;
+    if (files === undefined || at === undefined) return;
+    try {
+      const edited = await files.editPage(at, edit);
+      if (edit.op === "add" && edited.page !== undefined) onpin?.(pinPage(at, edited.page));
+      result = undefined;
+      edits++;
+      onprofiles?.();
+    } catch (error) {
+      result = t("pad.pageEditFailed", { error: describe(problemOf(error)) });
+    }
+  }
+
   async function press(key: number, kind: PressKind) {
     pressed = undefined;
     try {
@@ -558,6 +591,8 @@
           selected={selectedTab}
           pinned={moved === undefined ? undefined : selectedTab}
           onpage={choosePage}
+          onadd={files === undefined ? undefined : () => void editPage({ op: "add" })}
+          onenable={(page) => void editPage({ op: "enable", page, enabled: true })}
         />
       {/if}
       {#if moved !== undefined}

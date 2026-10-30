@@ -136,8 +136,11 @@ holds, what is special in the right column.
   dashed rim, labelled as the global profile's (`general, a page of
   Global`); clicking one edits that page of the global profile and keeps
   the list. Then the shown profile's pages, `context` first, and "+",
-  which adds a page at the end of the shown profile's list (not built
-  yet, M4a-4); then the accent swatch with its label. For VS Code with a
+  which adds a page at the end of the shown profile and pins it (#156);
+  then the accent swatch with its label. A page of the shown profile
+  that is switched off (`enabled = false`) has no index and is no tab: it
+  sits muted with a dotted rim among the shown profile's tabs in file
+  order, and its switch turns it on again (#156). For VS Code with a
   second page the strip reads `apps  general  context  Page 2`. While
   the inspector follows the pad, the selected tab is the `index` the
   daemon reports and follows every page-button press; a pin selects the
@@ -288,6 +291,15 @@ own message under it. The list column sits beside the editor from
 reserved gutter and the thin scroll bar (stacked, the screen scrolls as
 one), and the shell's main area never adds a second bar beside them
 (#166). Spec §10 has the detail.
+
+**Page management (beta, #156).** Under the thumbnails each page has a
+row with its name (edited inline; empty removes it), an On switch, Up
+and Down, and Delete, and "+ page" adds one; every change is written
+through the editor after a snapshot, and Undo takes back the last page
+change (a delete by restoring its snapshot). The context page's switch
+and the only enabled page's Delete are inactive, with the reason beside
+them. An app profile's header has a "Show the global pages" checkbox
+(`global_pages`); the global profile does not offer it.
 
 ### 3.3 Behaviors
 

@@ -66,9 +66,11 @@ impl Profile {
                 r#match: Match::default(),
                 accent: None,
                 priority: 0,
+                global_pages: true,
             },
             pages: vec![Page {
                 name: Some("context".to_owned()),
+                enabled: true,
                 keys: BTreeMap::new(),
             }],
             dialpad: None,
@@ -94,6 +96,11 @@ pub struct ProfileInfo {
     /// Higher wins when several profiles match; never alphabetical.
     #[serde(default)]
     pub priority: i32,
+    /// Whether the global profile's pages from `general` on sit left of
+    /// this profile's context page (spec §6.3); the global profile ignores
+    /// it. Default `true`.
+    #[serde(default = "yes")]
+    pub global_pages: bool,
 }
 
 /// Window match rules of a profile (spec §6.2).
@@ -155,6 +162,11 @@ pub(crate) fn class_matches(rule: &str, class: &str) -> bool {
 pub struct Page {
     /// Page name, for example `context` or `general`.
     pub name: Option<String>,
+    /// Whether the page is in the page list (spec §6.3); a disabled page
+    /// keeps its keys in the file. The context page is in the list either
+    /// way. Default `true`.
+    #[serde(default = "yes")]
+    pub enabled: bool,
     /// The keys of the page by number; absent keys are blank.
     #[serde(default)]
     #[schemars(schema_with = "key_map_schema")]
