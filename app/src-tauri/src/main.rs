@@ -3,7 +3,7 @@
 //! the tested logic (spec §10: the GUI talks to the daemon only through the
 //! socket API).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
@@ -11,13 +11,14 @@ use std::time::SystemTime;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use keyvo_client::editor::{
-    ControlEdited, ControlFields, ControlView, Edited, KeyView, ProfileEdited, ProfileView,
+    ControlEdited, ControlFields, ControlView, Edited, KeyView, PageEdited, ProfileEdited,
+    ProfileView, Restored,
 };
 use keyvo_client::profiles::ProfileSummary;
 use keyvo_client::tiles::Outline;
 use keyvo_client::{Client, Editor, Problem, Tiles};
 use keyvo_core::dialpad::Control;
-use keyvo_core::edit::{KeyFields, ProfileFields};
+use keyvo_core::edit::{KeyFields, PageEdit, ProfileFields};
 use keyvo_core::press::PressKind;
 use keyvo_core::profile::KeySlot;
 use keyvo_core::render::TileSize;
@@ -173,6 +174,36 @@ fn edit_profile(profile: String, fields: Value) -> Result<ProfileEdited, Problem
         .map_err(|error| Problem::from(&error))
 }
 
+/// Applies `edit` (`keyvo_core::edit::PageEdit`: add, rename, move, enable
+/// or delete a page) to `profile`'s `[[pages]]` after a snapshot of the
+/// file (`keyvo_client::editor::PageEdited`); the daemon reloads it.
+#[tauri::command]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Tauri hands command arguments over owned"
+)]
+fn edit_page(profile: String, edit: Value) -> Result<PageEdited, Problem> {
+    let edit: PageEdit = serde_json::from_value(edit)
+        .map_err(|error| Problem::message(format!("invalid page edit: {error}")))?;
+    editor()?
+        .edit_page(&profile, &edit, SystemTime::now())
+        .map_err(|error| Problem::from(&error))
+}
+
+/// Writes the text of `snapshot`, a copy an earlier write took, back as
+/// `profile`'s file after a snapshot of the current one
+/// (`keyvo_client::editor::Restored`): the undo of a page's delete.
+#[tauri::command]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Tauri hands command arguments over owned"
+)]
+fn restore_profile(profile: String, snapshot: String) -> Result<Restored, Problem> {
+    editor()?
+        .restore(&profile, Path::new(&snapshot), SystemTime::now())
+        .map_err(|error| Problem::from(&error))
+}
+
 /// `control` (`dial`, `roller`, `button:N`) as `keyvo_core::dialpad::Control`.
 fn control_of(control: &str) -> Result<Control, Problem> {
     control.parse().map_err(Problem::message)
@@ -310,6 +341,8 @@ fn main() {
             edit_key,
             profile,
             edit_profile,
+            edit_page,
+            restore_profile,
             control,
             edit_control,
             open_profile,

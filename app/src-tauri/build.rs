@@ -16,6 +16,8 @@ fn main() {
         "edit_key",
         "profile",
         "edit_profile",
+        "edit_page",
+        "restore_profile",
         "control",
         "edit_control",
         "open_profile",
