@@ -66,3 +66,16 @@ label  = "Launch"
 # `sleep` opens no window: the class keeps the launch from claiming the
 # next window that takes the focus (#179).
 action = { type = "launch", cmd = "sleep 60", class = "sleep" }
+
+# The Dialpad (#188): the dial turns the volume, the roller switches tabs,
+# button 1 mutes. An app profile's [dialpad] table overrides a control by
+# name; the rest comes from here. The dial has 180 detents a rotation and
+# accelerates a fast turn, so the volume moves one step per 6 detents
+# (30 steps a rotation); the roller has 40, one tab per 4.
+[dialpad]
+dial   = { cw = "KEY_VOLUMEUP", ccw = "KEY_VOLUMEDOWN", step = 6, label = "Volume" }
+roller = { cw = "ctrl+tab", ccw = "ctrl+shift+tab", step = 4, label = "Tabs" }
+
+[dialpad.buttons.1]
+label  = "Mute"
+action = { type = "chord", keys = "KEY_MUTE" }
