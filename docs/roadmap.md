@@ -172,7 +172,7 @@ tags, the MX triggers (M3-3, M3-4) and desk state (M3-5).
 | 7b | #202 | `docs(hardware-notes): record the dialpad over bolt with own fixtures` | S | #187 parts 1 and 2 | #200 | in review |
 | 8 | #188 | `feat(core,daemon,app): dialpad bindings and the dialpad panel` | S | M3-1, M4a-8 | #186, #187 | in review |
 | 9 | #189 | `feat(core,daemon,app): a key as the dial modifier, held or toggled` | S | beta goal | #188 | in review |
-| 10 | #156 | `feat(core,app): page switches, page deletion and per-profile global pages` | S | #156 | #189 | open |
+| 10 | #156 | `feat(core,app): page switches, page deletion and per-profile global pages` | S | #156 | #189 | in review |
 | 11 | #190 | `test(hardware): install the flatpak on the host and use it daily` | H | M4b-2 | #182, then the chain | open, owner |
 
 Status as of 2026-10-30: `merged` is merged into `epic/180-beta`,

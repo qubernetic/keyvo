@@ -56,7 +56,7 @@ socket `press` requests name a control where a Keypad key has its number.
 **Context page**: The page of the active profile that auto mode shows while the
 matched application has focus, index 1 of its page list; overlays apply only
 here. Named `context` in the profile's `[[pages]]`; a profile without one uses
-its first page.
+its first enabled page (#156).
 
 **Desk state**: The mouse and keyboard settings a profile applies on
 activation (DPI, backlight, button remaps), stored under `[devices]` and applied
@@ -202,7 +202,10 @@ have more.
 **Page list**: The ordered pages the page buttons walk for the shown profile:
 the global profile's pages after `general` at -1, -2, ..., the general page at
 0, the shown profile's context page at 1 and its other pages from 2. It does
-not wrap. The daemon reports the position as `index`.
+not wrap. The daemon reports the position as `index`. A page with
+`enabled = false` is left out (no index, its keys kept in the file); the
+context page is in the list either way. An app profile with
+`global_pages = false` has no global pages: its list starts at 1 (#156).
 
 **Page return**: In auto mode the pad goes back to index 1 of the page list by
 itself after a time without a page-button or key press: after

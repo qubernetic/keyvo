@@ -1088,11 +1088,28 @@ The *page list* of the shown profile (#151, decided by the owner on
 |---|---|
 | ..., -2, -1 | the global profile's pages after its `general` page, in file order: the first after `general` at -1, the next at -2 |
 | 0 | the global profile's page named `general` |
-| 1 | the shown profile's context page (its page named `context`, else its first page); for the global profile itself, its context page |
+| 1 | the shown profile's context page (its page named `context`, else its first enabled page, else its first page); for the global profile itself, its context page |
 | 2, 3, ... | the shown profile's other pages in file order; a page named `general` in an app profile is an ordinary page here; for the global profile, its pages before `general` other than the context page |
 
 A profile with one page has the list `[..., -1, 0, 1]`; without a global
 `general` page the list starts at 1.
+
+Page switches (beta, #156, the grill answers of the beta plan accepted on
+2026-10-27): a page with `enabled = false` (§7.2) is left out of the
+list: it gets no index, the page buttons skip it, the file keeps it with
+its keys. A disabled global page is left out of every profile's list,
+including a disabled `general` page itself (the global pages after it
+stay, from 0 on); `general_hint` applies only while `general` is in the
+list. The context page is in the list whether it is enabled or not; the
+app does not offer to disable it. An app profile with
+`global_pages = false` in its `[profile]` table has no global pages: its
+list starts at 1. The global profile ignores the field. A reload that
+disables the shown page shows the nearest end, as a reload that removes
+it. The bundled default global profile keeps `apps` and `general`
+enabled. The app computes the same list for its tab strip
+(`app/src/lib/profiles.ts` `pageList`); both sides pass the shared cases
+of `tests/protocol-fixtures/editor/page-list.json`
+(`keyvo_core::state::page_list`).
 
 Rendering is a **stack**: global layer < app profile < project layer <
 overlays (ADR-0009). The project layer (§7.4) is the nearest `.keyvo/`
@@ -1106,7 +1123,7 @@ top overlay's state (decided in the grill).
 As built (pre-alpha, `keyvo_core::state`, no overlays or project layer
 yet): the state machine starts in auto mode on the global profile's
 context page, index 1. A profile's *context page* is its page named
-`context`, else its first page; the *general page* is the global
+`context`, else its first enabled page, else its first page; the *general page* is the global
 profile's page named `general`. The view the daemon reports is the
 profile that owns the page, the page counted from 1 inside it, the mode
 and the `index`: at index 0 and below the profile is the global one and
@@ -1611,7 +1628,11 @@ mouse.dpi            = 1200
 - Pre-alpha subset (schema version 1 as `keyvo-core` reads it today):
   `schema_version`; `[profile]` with `id`, `name`, `match` (`class` list,
   `title` regex, checked when the file loads), `accent`, `priority`
-  (integer, default 0); `[[pages]]` with an optional `name` and
+  (integer, default 0), `global_pages` (beta, #156: bool, default
+  `true`; `false` leaves the global pages out of this profile's page
+  list, §6.1; the global profile ignores it); `[[pages]]` with an
+  optional `name`, `enabled` (beta, #156: bool, default `true`; `false`
+  leaves the page out of the page list and keeps its keys, §6.1) and
   `keys.1` to `keys.9`, each with `icon`, `label`, `color`, `action` and
   `states.<name>` (`icon`, `label`, `color`, `badge`). Colors are
   `#rrggbb`. Actions are `chord` (`keys`), `exec` (`cmd`) and `launch`
@@ -3031,6 +3052,13 @@ Status of the v0.1 questions after the grill and the research.
 
 ## Changelog
 
+- **v0.3, beta slice 10 (2026-10-30)**: page switches, page management
+  and per-profile global pages (#156). §6.1 the page list without
+  disabled pages and without the global pages of a profile with
+  `global_pages = false`, the context page the first enabled one without
+  a `context` page; §7.2 `enabled` on a page and `global_pages` in
+  `[profile]`; §10 the muted tabs, the switch, and the page list of the
+  Profiles screen (add, rename, move, switch, delete with an undo).
 - **v0.3, beta slice 9 (2026-10-30)**: a key as the dial modifier, held
   or toggled (#189). §6.1 the modifier rules (held, toggle, the end
   rules, the resolution order, the page return) and the
