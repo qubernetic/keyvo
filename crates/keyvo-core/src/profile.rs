@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::chord::Chord;
 use crate::diagnostic::Diagnostic;
-use crate::dialpad::ButtonSlot;
+use crate::dialpad::{ButtonSlot, Roller};
 use crate::focus::WindowContext;
 
 /// The id of the profile that always exists and that app profiles overlay.
@@ -162,8 +162,8 @@ pub struct Page {
 }
 
 /// One LCD key.
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, Default, PartialEq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
 pub struct Key {
     /// Icon reference, for example `lucide:hammer` or `file:icons/x.png`.
     pub icon: Option<String>,
@@ -171,14 +171,110 @@ pub struct Key {
     pub label: Option<String>,
     /// Background color.
     pub color: Option<Color>,
-    /// What a press does; a key without an action only displays.
+    /// What a press does; a key without an action only displays. On a
+    /// held modifier key it runs at a release without a turn, on a toggle
+    /// key at a long press.
     pub action: Option<Action>,
     /// An action run once when `action` fails (spec §7.2); it has no
     /// `on_fail` of its own.
     pub on_fail: Option<Action>,
     /// Named looks that replace parts of the key while the state is active.
-    #[serde(default)]
+    #[schemars(default)]
     pub states: BTreeMap<String, KeyState>,
+    /// How the key takes the Dialpad's dial and roller over (spec §7.2):
+    /// `held` while it is held, the default with a `dial` or `roller`
+    /// table, or `toggle` from one short press to the next press of any
+    /// key. Needs a `dial` or `roller` table.
+    pub modifier: Option<ModifierMode>,
+    /// What the dial runs while the key is the active modifier, in place of
+    /// the profile's `[dialpad].dial`.
+    pub dial: Option<Rotary>,
+    /// What the roller runs while the key is the active modifier, in place
+    /// of the profile's `[dialpad].roller`.
+    pub roller: Option<Rotary>,
+}
+
+impl Key {
+    /// The key's modifier mode: its `modifier`, else `held` when it has a
+    /// `dial` or `roller` table; `None` for an ordinary key.
+    #[must_use]
+    pub fn modifier_mode(&self) -> Option<ModifierMode> {
+        (self.dial.is_some() || self.roller.is_some())
+            .then(|| self.modifier.unwrap_or(ModifierMode::Held))
+    }
+
+    /// The key's binding of `roller` as a modifier; `None` for an ordinary
+    /// key and a roller it leaves to the profile.
+    #[must_use]
+    pub fn rotary(&self, roller: Roller) -> Option<&Rotary> {
+        self.modifier_mode()?;
+        match roller {
+            Roller::Dial => self.dial.as_ref(),
+            Roller::Roller => self.roller.as_ref(),
+        }
+    }
+}
+
+/// The fields of a key as written; [`Key`] checks the rules between them.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct KeyFields {
+    icon: Option<String>,
+    label: Option<String>,
+    color: Option<Color>,
+    action: Option<Action>,
+    on_fail: Option<Action>,
+    #[serde(default)]
+    states: BTreeMap<String, KeyState>,
+    modifier: Option<ModifierMode>,
+    dial: Option<Rotary>,
+    roller: Option<Rotary>,
+}
+
+impl<'de> Deserialize<'de> for Key {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let fields = KeyFields::deserialize(deserializer)?;
+        // Failing after the whole table puts the diagnostic on the key.
+        if fields.modifier.is_some() && fields.dial.is_none() && fields.roller.is_none() {
+            return Err(de::Error::custom(
+                "`modifier` needs a `dial` or `roller` table next to it",
+            ));
+        }
+        Ok(Self {
+            icon: fields.icon,
+            label: fields.label,
+            color: fields.color,
+            action: fields.action,
+            on_fail: fields.on_fail,
+            states: fields.states,
+            modifier: fields.modifier,
+            dial: fields.dial,
+            roller: fields.roller,
+        })
+    }
+}
+
+/// How a modifier key takes the dial and the roller over (spec §7.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ModifierMode {
+    /// While the key is held; its action runs at a release without a turn.
+    Held,
+    /// From a short press until the next press of any key, a Dialpad
+    /// button, a page or profile change, the lock or
+    /// `[timing].modifier_timeout`; its action runs at a long press.
+    Toggle,
+}
+
+impl ModifierMode {
+    /// The name in the profile, the socket and the trace.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Held => "held",
+            Self::Toggle => "toggle",
+        }
+    }
 }
 
 /// The `[dialpad]` table (spec §7.2): the dial, the roller and the four

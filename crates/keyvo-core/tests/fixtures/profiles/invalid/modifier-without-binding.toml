@@ -1,0 +1,10 @@
+schema_version = 1
+
+[profile]
+id = "modifier"
+name = "Modifier"
+
+[[pages]]
+[pages.keys.8]
+label = "Zoom"
+modifier = "toggle"
