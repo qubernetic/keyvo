@@ -32,7 +32,7 @@ use keyvo_hid::display;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinHandle;
 
-use support::{Dial, Dials, Image, Pad, Pads, dial_startup, startup};
+use support::{Dial, Dials, Image, Pad, Pads, dial_startup, fixture, startup};
 
 /// How long a test waits for one event before it fails.
 const PATIENCE: Duration = Duration::from_secs(10);
@@ -2326,5 +2326,41 @@ async fn a_turn_does_not_hold_the_page_return_and_a_button_does() {
         "{:?}",
         start.elapsed()
     );
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sleeping_dialpad_is_reported_once_and_found_on_the_next_round() {
+    // The search finds no Dialpad (slot 3 answers connect fail), the wake
+    // reports are no arrival, the next round finds it; then the receiver
+    // loses the link and announces it again, and the diverts go out again.
+    let script = [
+        fixture("receiver-asleep.txt"),
+        dial_startup(),
+        fixture("receiver-arrival.txt"),
+        fixture("receiver-divert.txt"),
+    ]
+    .concat();
+    let dial = Dial::new(&script);
+    let injector = FakeInputInjector::new();
+    let mut daemon = dialed(
+        CONFIG,
+        Vec::new(),
+        Dials::new([dial.clone()]),
+        injector.clone(),
+    );
+    let asleep = daemon.dialpad().await;
+    assert!(!asleep.connected);
+    let waiting = "no Dialpad answers (1 no 0x4610, 2 no 0x4610, 3 silent";
+    let error = asleep.error.unwrap_or_default();
+    assert!(error.starts_with(waiting), "{error}");
+    assert_eq!(daemon.dialpad().await, connected());
+    // The turn comes after the re-divert in the device's order.
+    while !dial.script_done() {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    dial.turn(1, 1);
+    assert_eq!(daemon.dial().await, (Roller::Dial, 1, 1));
+    assert_eq!(injector.sent(), volume(true));
     daemon.stop().await;
 }
