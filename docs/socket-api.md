@@ -7,7 +7,8 @@ integrations speak it. This page is the wire contract. The Rust types are
 [`tests/protocol-fixtures/socket/`](../tests/protocol-fixtures/socket/) are
 shared by every client.
 
-Pre-alpha subset: `status`, `subscribe`, `press` (with `dry_run`), `reload`,
+Pre-alpha subset: `status`, `subscribe`, `press` (with `dry_run`; a key,
+or since the beta (#188) a Dialpad control), `reload`,
 `notify_context` and `recipes`. The other v1 commands of spec §8 (`set_key`,
 `set_badge`, `set_state`, `push_overlay`, `pop_overlay`, `switch_profile`,
 `set_mode`, `set_page`, `trace`, `project`, `setup`, `doctor`) come with
@@ -103,6 +104,7 @@ No fields. The result:
 | `version` | string | The daemon's version. |
 | `config_dir` | string | The configuration directory the daemon loads (`--config-dir` or the default, spec §7.1). A client that edits profiles (the app) edits this tree. |
 | `device` | object | `connected` (bool); `keys` (the key count) and `geometry` when connected; `error` (why not) when the daemon knows. |
+| `dialpad` | object | The Dialpad (beta, #188): `connected` (bool); `slot` (its Bolt receiver slot) and `rollers` (`[{"roller": "roller" or "dial", "increments": n}]`, increments per rotation: 40 the roller, 180 the dial) when connected; `error` (why not: no receiver, the Dialpad does not answer) when the daemon knows. A client reads it as `{"connected": false}` when absent, as from an older daemon. |
 | `view` | object | What the pad shows: `profile` (id of the profile that owns the page, the global one at index 0 and below), `page` (from 1, inside `profile`), `mode` (`auto` or `manual`), `index` (integer: the position in the shown profile's page list, spec §6.1: 1 its context page, 2 and up its other pages, 0 the global `general` page, -1 and below the global pages after it), `locked` (bool: the session is locked, spec §6.1; the pad shows the lock page over this view and blocks every press; read as `false` when absent). |
 | `context` | object, optional | The last focus report: `class`, `title`, `pid` when known, `source` (`watcher` or `notify_context`), and `held: true` when the class is in `[focus].hold_classes` (spec §6.1: the view stays that of the window before; absent otherwise). Left out before the first report. |
 | `trace` | integer | The entries in the trace ring buffer. |
@@ -143,15 +145,30 @@ should send `status` when it notices a gap.
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `key` | integer 1..9 | required | The key, row-major from the top left. |
+| `key` | integer 1..9 | `key` or `control` | The key, row-major from the top left. |
+| `control` | `dial`, `roller`, `button:1`..`button:4` | `key` or `control` | A Dialpad control (beta, #188). |
+| `delta` | nonzero integer | with `dial` and `roller` only, then required | The detents of the turn, clockwise (the roller: forward) positive. |
 | `kind` | `short` or `long` | `short` | The press kind. |
 | `dry_run` | bool | `false` | Resolve and trace, execute nothing. |
 
+Exactly one of `key` and `control` is given; `delta` goes with a turn of
+`dial` or `roller` and nothing else. Anything else is `invalid_request`.
+
+```json
+{"v":1,"id":9,"cmd":"press","control":"dial","delta":3,"dry_run":true}
+{"v":1,"id":10,"cmd":"press","control":"button:2"}
+```
+
 The press resolves on the active profile and page, as a device press does:
 a key the active app profile does not define resolves to the global
-profile's key (spec §6.1).
+profile's key (spec §6.1), a Dialpad control the profile's `[dialpad]`
+table leaves out to the global profile's control (spec §7.2).
 The result is `{"entry": <trace entry>}`, and the same entry goes to the
-ring buffer and to `trace` subscribers.
+ring buffer and to `trace` subscribers. A turn's result also carries
+`runs`, how often the action runs (`step` detents a run, the rest carried,
+at most `[dialpad].max_per_event`); its `entry` is the entry of one run,
+and a real turn traces one entry per run. A turn from a client sends no
+`dial` event.
 
 - With `"dry_run": true` (the simulator's path), the entry's `trigger`
   has `"simulated": true` and its `result` is `{"status": "dry_run"}`, or
@@ -227,11 +244,13 @@ The schema of a pack file is `schemas/recipe.schema.json`.
 
 | `event` | Fields | When |
 |---|---|---|
-| `key` | `key` (1..9), `edge` (`press` or `release`) | A key on the device went down or up. Page buttons show up as `page` and `mode` events instead. |
+| `key` | `key` (1..9) or `control` (`button:1`..`button:4`), `edge` (`press` or `release`) | A key on the Keypad or a button of the Dialpad went down or up. Page buttons show up as `page` and `mode` events instead. |
 | `profile` | `profile`, `page`, `mode`, `index`, `locked` | Another profile shows. |
 | `page` | `profile`, `page`, `mode`, `index`, `locked` | Another page shows, or another list position. |
 | `mode` | `profile`, `page`, `mode`, `index`, `locked` | The mode changed. |
 | `device` | `connected`, `keys` and `geometry`, or `error` | The Keypad was claimed or lost; the fields of `status`'s `device`. |
+| `dialpad` (class `device`) | `connected`, `slot` and `rollers`, or `error` | The Dialpad connected, is gone, or does not answer; the fields of `status`'s `dialpad`. The same error is not sent twice. |
+| `dial` (class `dial`) | `roller` (`dial` or `roller`), `delta` (clockwise positive), `actions` | The Dialpad's dial or roller turned; `actions` is how often its action ran: 0 below one `step`, without a binding, and under the lock. |
 | `context` | `class`, `title`, `pid` (optional), `source`, `held` (only when `true`) | A focus source reported a window. A report does not always switch the profile; a `held` one (a class in `[focus].hold_classes`, default the keyvo app) never does, so no `profile`, `page` or `mode` event follows it. |
 | `trace` | `entry` | A press was resolved (dry run, unbound, chord) or an `exec` ended. |
 | `config` | `reloaded`, `error` (when it failed) | The configuration directory was reloaded, or did not load. |
@@ -247,8 +266,10 @@ only the view's `locked`, so it sends `session` alone; a subscriber of
 
 The pre-alpha subset of spec §8: `timestamp_ms` (milliseconds since the
 Unix epoch), `trigger` (`press`, `simulated`), `profile` (the active
-profile), `page`, `key`, `layer` (`app` or `global`: the layer that
-supplied the key, spec §6.1; `global` for a key the active app profile does
+profile), `page`, `key` (left out for a Dialpad control), `control`
+(beta, #188: `dial`, `roller` or `button:1`..`button:4`; left out for a
+key), `layer` (`app` or `global`: the layer that
+supplied the key or control, spec §6.1; `global` for a key the active app profile does
 not define; left out when no layer defines it), `action` (the key's action
 as in the profile, or `null`; a `launch` carries `class` and `wait_focus`
 only where they differ from the defaults, no class and `true`, #179; a
@@ -271,7 +292,7 @@ way) for the key's own action and `"on_fail"` for the key's `on_fail`
 action, which the daemon runs once after the key's action ended `exited`
 with a code other than 0 or `failed` (#183). The `on_fail` entry is a
 second entry of the same press: the same `timestamp_ms`, `trigger`,
-`profile`, `page`, `key` and `layer`, its own `action` and `result`. It
+`profile`, `page`, `key` or `control` and `layer`, its own `action` and `result`. It
 follows the key's own entry; a failing `on_fail` leaves no third entry.
 
 The daemon keeps the newest `[trace].ring` entries (default 1000) in
@@ -283,6 +304,8 @@ trace|tail` come with M1-8.
 ```bash
 keyvo ctl status
 keyvo ctl press '{"key":5,"dry_run":true}'
+keyvo ctl press '{"control":"dial","delta":1,"dry_run":true}'
+keyvo ctl press '{"control":"button:2"}'
 keyvo ctl notify_context '{"class":"org.kde.konsole","title":"~"}'
 keyvo ctl recipes
 keyvo ctl subscribe '{"events":["trace","profile"],"replay":10}'

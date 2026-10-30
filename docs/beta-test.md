@@ -360,6 +360,29 @@ done
 - [ ] #205 `getfacl` on each `046d:c548` node of that list: only the node with `bInterfaceNumber` `02` lists `user:<you>`; the nodes of `00`, `01` and `03` do not. Post the four `getfacl` outputs.
 - [ ] #205 `bin/keyvo dial` runs as the user (no root) and prints events on a turn and a press (section 4, step 2).
 
+### #206: the Dialpad's bindings and the Dialpad panel (#188)
+
+This slice changes the example profiles: copy `contrib/profiles/global.toml`
+and `vscode.toml` again (section 3). Both devices connected, the receiver's
+rule of #205 installed, Solaar stopped, the daemon of this branch under
+the user unit (section 2), `bin/keyvo ctl subscribe '{"events":["dial","trace","device"]}'`
+in T2. The global profile's `[dialpad]`: the dial turns the volume
+(`KEY_VOLUMEUP`/`KEY_VOLUMEDOWN`, one step per 6 detents, 30 a rotation),
+the roller switches tabs (`ctrl+tab`/`ctrl+shift+tab`, one per 4 detents),
+button 1 mutes (`KEY_MUTE`); VS Code's indents on the dial (`ctrl+]`/`ctrl+[`,
+one per 15 detents). A detent is one increment the device reports: 180 a
+rotation on the dial, 40 on the roller.
+
+- [ ] #206 `bin/keyvo ctl status`: the line carries `"dialpad":{"connected":true,"slot":3,"rollers":[...]}` next to the Keypad's `device`.
+- [ ] #206 With the global profile (a window without a profile in front): a slow turn of the dial changes the volume a step about every 12 degrees in both directions; the roller switches tabs in Brave, forward to the right; button 1 mutes and unmutes. The app's Dialpad panel pulses the control that moved.
+- [ ] #206 VS Code focused: the dial indents and outdents the line; the roller still switches tabs (the global fallback); T2 shows `dial` events with their `actions` and `trace` entries with `"control":"dial"` and `"layer":"app"`, for the roller `"layer":"global"`.
+- [ ] #206 Set `step = 1` on the global dial (in the file or in the app) and flick the dial: T2 shows `dial` events with a `delta` above 8 and `actions` at most 8 (the cap). Add `[dialpad]` with `max_per_event = 2` to `~/.config/keyvo/config.toml`, restart the unit, flick again: `actions` at most 2. Restore the step and remove the table.
+- [ ] #206 Unplug the receiver: the pad keeps working; T2 shows a `dialpad` event with `"connected":false` and the reason; the app's panel says `No Dialpad connected`. Plug it back and touch the Dialpad: it works again within about two seconds (the next search round), T2 shows `"connected":true`.
+- [ ] #206 Lock the session, turn the dial, unlock: the volume did not change, T2 shows a `trace` entry with `"control":"dial"` and `blocked` / `session locked` and the `dial` event with `"actions":0`.
+- [ ] #206 Left page button to the global `general` page, then keep turning the dial for 15 s: the pad goes back to the context page after 10 s anyway (a turn is no pad activity); left again, press Dialpad button 2 every few seconds: the page stays.
+- [ ] #206 In the app select the dial on the Pad screen's Dialpad panel and assign `Brightness up` from the catalogue to `cw`: `global.toml` carries it in the dial's `cw` and the dial raises the brightness clockwise. Undo in the file (or set `cw` back): the dial is on the volume again.
+- [ ] #206 `bin/keyvo ctl press '{"control":"dial","delta":6,"dry_run":true}'` answers with `"runs":1` and a `dry_run` entry; the volume does not change.
+
 ## 6. What to post back
 
 Every slice block of section 5: on the slice's issue, the commit under
