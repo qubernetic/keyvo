@@ -341,6 +341,15 @@ impl State {
             .or_else(|| self.armed.as_ref().map(|armed| &armed.at))
     }
 
+    /// Every held modifier key, the first pressed first, then the armed
+    /// toggle.
+    pub fn modifier_keys(&self) -> impl Iterator<Item = &ModifierKey> {
+        self.holding
+            .iter()
+            .map(|holding| &holding.at)
+            .chain(self.armed.as_ref().map(|armed| &armed.at))
+    }
+
     /// The modifier key at `slot` of the page shown, if it is one.
     fn modifier_key(&self, slot: KeySlot, profiles: &Profiles) -> Option<ModifierKey> {
         let view = self.view(profiles);

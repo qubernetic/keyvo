@@ -60,6 +60,11 @@ action = { type = "chord", keys = "ctrl+c" }
 [pages.keys.6]
 label = "Mark"
 action = { type = "exec", cmd = "touch '@MARKER@'" }
+
+[pages.keys.7]
+label = "Brightness"
+action = { type = "chord", keys = "KEY_BRIGHTNESSUP" }
+dial = { cw = "KEY_BRIGHTNESSUP", ccw = "KEY_BRIGHTNESSDOWN" }
 "#;
 
 const TERMINAL: &str = r#"

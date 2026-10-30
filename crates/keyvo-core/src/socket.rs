@@ -78,6 +78,14 @@ pub enum Command {
         /// Resolve and trace, execute nothing: the simulator's path.
         #[serde(default)]
         dry_run: bool,
+        /// Holds a held modifier key down until a press with `release`
+        /// (spec §8); no `kind`.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        hold: bool,
+        /// Lets a key held with `hold` go: its action runs when no turn
+        /// took its binding.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        release: bool,
     },
     /// Reloads the configuration directory now.
     Reload {},
@@ -108,12 +116,15 @@ impl Command {
             delta: None,
             kind,
             dry_run,
+            hold: false,
+            release: false,
         }
     }
 
     /// The rules the fields of a command keep beyond their types: a
-    /// `press` names a key or a control, not both, and `delta`, nonzero,
-    /// goes with `dial` and `roller` alone.
+    /// `press` names a key or a control, not both, `delta`, nonzero, goes
+    /// with `dial` and `roller` alone, and `hold` or `release`, one of
+    /// them, with a key and no `kind`.
     ///
     /// # Errors
     ///
@@ -123,11 +134,25 @@ impl Command {
             key,
             control,
             delta,
+            kind,
+            hold,
+            release,
             ..
         } = self
         else {
             return Ok(());
         };
+        if *hold || *release {
+            if *hold && *release {
+                return Err("a press has `hold` or `release`, not both".into());
+            }
+            if key.is_none() || control.is_some() {
+                return Err("`hold` and `release` belong to a `key`".into());
+            }
+            if *kind == PressKind::Long {
+                return Err("`hold` and `release` take no `kind`".into());
+            }
+        }
         match (key, control, delta) {
             (Some(_), Some(_), _) => Err("a press names `key` or `control`, not both".into()),
             (None, None, _) => Err("a press needs `key` or `control`".into()),

@@ -163,6 +163,12 @@ pub enum Outcome {
         /// Why.
         reason: String,
     },
+    /// The press of a modifier key held or armed it, or let it go; no
+    /// action ran (spec §7.2).
+    Modifier {
+        /// The key has the dial and the roller now.
+        active: bool,
+    },
 }
 
 impl Outcome {

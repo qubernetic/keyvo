@@ -6,7 +6,11 @@
 //!   `[timing].render_coalesce` after the first change, so a burst becomes
 //!   one paint, and the actor writes only the keys that differ.
 //! - A key press starts the long-press timer; the release or the timer
-//!   makes it a short or long press, resolved on the active page. `chord`
+//!   makes it a short or long press, resolved on the active page. A held
+//!   modifier key has no long press: while it is held the Dialpad's turns
+//!   run its `dial` or `roller` binding, and its release runs its action
+//!   when no turn did. A toggle key's short press arms or ends its toggle;
+//!   any other key or Dialpad button press ends it. `chord`
 //!   goes through the [`InputInjector`]; `exec` runs in its own task and its
 //!   result comes back as the key's `success` or `error` look. An action
 //!   that fails runs the key's `on_fail` once, traced as a second record
@@ -14,9 +18,9 @@
 //! - The [`WindowWatcher`] reports the focused window and the page buttons
 //!   arrive as diverted controls; both go to the context state machine,
 //!   which the controller wakes at its next deadline (focus hysteresis,
-//!   page-button long press, page return; a key press restarts the page
-//!   return). A changed profile, page or mode repaints and is reported as
-//!   [`Event::Switched`]. Without a watcher the daemon runs on, without
+//!   page-button long press, page return, `[timing].modifier_timeout`; a
+//!   key press restarts the page return). A changed profile, page, mode or
+//!   modifier repaints and is reported as [`Event::Switched`]. Without a watcher the daemon runs on, without
 //!   focus switching. A `launch` key that waits for its window opens a
 //!   pending launch with its shell's pid; a failed launch drops it, and
 //!   the [`Lineage`] tells the state machine which launch a focused
@@ -62,7 +66,7 @@ use keyvo_core::socket::{
     Command as Wire, Context, ContextSource, DeviceStatus, DialpadStatus, Edge as KeyEdge,
     Geometry, Recipes, RollerStatus, Status,
 };
-use keyvo_core::state::{LaunchId, PageButton, View};
+use keyvo_core::state::{KeyDown, LaunchId, PageButton, View};
 use keyvo_core::trace::{Outcome, TraceRecord, Trigger};
 use keyvo_hid::input::{Control, Edge, InputEvent};
 use keyvo_hid::reprog::{PAGE_LEFT, PAGE_RIGHT};
@@ -552,17 +556,29 @@ impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
                             };
                             self.emit(Event::Key { key: slot, edge });
                         }
+                        let Some(slot) = KeySlot::new(key) else {
+                            return;
+                        };
+                        let before = self.engine.view();
                         match edge {
-                            Edge::Press => {
-                                self.engine.touch(now);
-                                self.presses.press(Pressable::Key(key), now);
-                            }
+                            Edge::Press => match self.engine.key_down(slot, now) {
+                                // Holding a modifier key is the gesture: no
+                                // long press.
+                                KeyDown::Held => {}
+                                KeyDown::Press => self.presses.press(Pressable::Key(key), now),
+                            },
                             Edge::Release => {
-                                if let Some(kind) = self.presses.release(Pressable::Key(key), now) {
+                                let kind = match self.engine.key_up(slot, now) {
+                                    Some(true) => Some(PressKind::Short),
+                                    Some(false) => None,
+                                    None => self.presses.release(Pressable::Key(key), now),
+                                };
+                                if let Some(kind) = kind {
                                     self.pressed(Pressable::Key(key), kind);
                                 }
                             }
                         }
+                        self.switched(&before);
                     }
                     (Control::Page(cid), edge) => {
                         let button = match cid {
@@ -628,8 +644,11 @@ impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
                             button,
                             edge: KeyEdge::Press,
                         });
-                        // A button is pad activity; a turn is not.
-                        self.engine.touch(now);
+                        // A button is pad activity, a turn is not; it ends
+                        // the armed toggle.
+                        let before = self.engine.view();
+                        self.engine.button_down(now);
+                        self.switched(&before);
                         self.presses.press(pressable, now);
                     }
                     Edge::Release => {
@@ -650,9 +669,12 @@ impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
     /// action run once per `step`, unless `simulated`; reported as a
     /// `dial` event. The entry of one run and how often it ran.
     fn turn(&mut self, roller: Roller, delta: i32, simulated: bool) -> (TraceRecord, u32) {
-        let Turn { record, runs } = self
-            .engine
-            .turn(roller, delta, simulated, SystemTime::now());
+        let Turn { record, runs } = self.engine.turn(
+            roller,
+            delta,
+            simulated,
+            (SystemTime::now(), Instant::now().into_std()),
+        );
         let ran = match (&record.result, simulated) {
             // Below one step, or nothing bound: no trace at the rate of
             // the turn reports.
@@ -778,15 +800,48 @@ impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
     /// follows as a trace event. An action that fails runs the key's
     /// `on_fail` once.
     fn press(&mut self, slot: KeySlot, trigger: Trigger) -> TraceRecord {
-        let record = self.engine.press(slot, trigger, SystemTime::now());
+        let before = self.engine.view();
+        let record = self.engine.press(
+            slot,
+            trigger,
+            (SystemTime::now(), Instant::now().into_std()),
+        );
         let on_fail = self.engine.on_fail(slot);
+        self.switched(&before);
         self.run(record, on_fail)
+    }
+
+    /// A client's `press` with `hold` or `release` of `slot`: a held
+    /// modifier key goes down or up as on the device; a release without a
+    /// turn runs the key's action.
+    fn hold(&mut self, slot: KeySlot, release: bool, simulated: bool) -> Answer {
+        let before = self.engine.view();
+        let at = (SystemTime::now(), Instant::now().into_std());
+        let resolved = if release {
+            self.engine.release(slot, simulated, at)
+        } else {
+            self.engine.hold(slot, simulated, at)
+        };
+        self.switched(&before);
+        match resolved {
+            Ok(record) => {
+                let on_fail = self.engine.on_fail(slot);
+                Answer::Pressed(self.run(record, on_fail))
+            }
+            Err(message) => Answer::Invalid(message),
+        }
     }
 
     /// Resolves a press of Dialpad button `button` like a key's and runs
     /// it the same way.
     fn button(&mut self, button: ButtonSlot, trigger: Trigger) -> TraceRecord {
-        let record = self.engine.button(button, trigger, SystemTime::now());
+        let before = self.engine.view();
+        let record = self.engine.button(
+            button,
+            trigger,
+            (SystemTime::now(), Instant::now().into_std()),
+        );
+        self.switched(&before);
         let on_fail = self.engine.button_on_fail(button);
         self.run(record, on_fail)
     }
@@ -1014,6 +1069,8 @@ impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
                 delta,
                 kind,
                 dry_run,
+                hold,
+                release,
             } => {
                 let trigger = Trigger {
                     press: kind,
@@ -1021,6 +1078,7 @@ impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
                 };
                 // `Request::parse` checked the fields (`Command::check`).
                 match (key, control, delta) {
+                    (Some(key), ..) if hold || release => self.hold(key, release, dry_run),
                     (Some(key), ..) => Answer::Pressed(self.press(key, trigger)),
                     (None, Some(DialControl::Button(button)), _) => {
                         Answer::Pressed(self.button(button, trigger))
@@ -1037,6 +1095,8 @@ impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
                             delta,
                             kind,
                             dry_run,
+                            hold,
+                            release,
                         }
                         .check()
                         .err()

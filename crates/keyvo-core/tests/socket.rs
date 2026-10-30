@@ -78,6 +78,8 @@ fn every_response_round_trips_its_fixture() {
             "error",
             "error",
             "status",
+            "pressed",
+            "pressed",
             "pressed"
         ]
     );
@@ -371,6 +373,8 @@ fn left_out_fields_take_their_defaults() {
             delta: Some(-2),
             kind: PressKind::Short,
             dry_run: false,
+            hold: false,
+            release: false,
         }
     );
     let request = Request::parse(r#"{"v":1,"cmd":"subscribe"}"#).unwrap();
@@ -419,7 +423,7 @@ fn a_bad_request_is_rejected_with_its_id_and_a_code() {
         (
             Some(Value::from(8)),
             ErrorCode::InvalidRequest,
-            "unknown field `dryrun`, expected one of `key`, `control`, `delta`, `kind`, `dry_run`"
+            "unknown field `dryrun`, expected one of `key`, `control`, `delta`, `kind`, `dry_run`, `hold`, `release`"
                 .into()
         )
     );
@@ -470,6 +474,18 @@ fn a_press_names_a_key_or_a_control_and_a_turn_its_delta() {
         (
             r#"{"v":1,"id":1,"cmd":"press","control":"button:2","delta":1}"#,
             "`button:2` takes no `delta`",
+        ),
+        (
+            r#"{"v":1,"id":1,"cmd":"press","key":7,"hold":true,"release":true}"#,
+            "a press has `hold` or `release`, not both",
+        ),
+        (
+            r#"{"v":1,"id":1,"cmd":"press","control":"dial","delta":1,"hold":true}"#,
+            "`hold` and `release` belong to a `key`",
+        ),
+        (
+            r#"{"v":1,"id":1,"cmd":"press","key":7,"release":true,"kind":"long"}"#,
+            "`hold` and `release` take no `kind`",
         ),
     ] {
         assert_eq!(

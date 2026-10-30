@@ -17,7 +17,7 @@ use keyvo_core::focus::{FakeWindowWatcher, WindowContext};
 use keyvo_core::inject::FakeInputInjector;
 use keyvo_core::lineage::{Lineage, NoLineage};
 use keyvo_core::press::PressKind;
-use keyvo_core::profile::{Action, KeySlot, Profile};
+use keyvo_core::profile::{Action, KeySlot, ModifierMode, Profile};
 use keyvo_core::render::{self, Canvas, KeyPlace, KeySpec, Renderer};
 use keyvo_core::session::{FakeSessionWatcher, Session};
 use keyvo_core::socket::{
@@ -25,7 +25,7 @@ use keyvo_core::socket::{
     Status,
 };
 use keyvo_core::stack::Layer;
-use keyvo_core::state::{Mode, View};
+use keyvo_core::state::{ActiveModifier, Mode, View};
 use keyvo_core::trace::{Branch, Outcome, TraceRecord};
 use keyvo_daemon::daemon::{self, Answer, Devices, Event, Request, Sources};
 use keyvo_hid::display;
@@ -2034,6 +2034,8 @@ impl Daemon {
             delta: Some(delta),
             kind: PressKind::Short,
             dry_run,
+            hold: false,
+            release: false,
         };
         match self.ask(command).await {
             Answer::Turned { entry, runs } => (entry, runs),
@@ -2240,6 +2242,8 @@ async fn a_dry_run_turn_resolves_without_running() {
         delta: None,
         kind: PressKind::Short,
         dry_run: true,
+        hold: false,
+        release: false,
     };
     match daemon.ask(command).await {
         Answer::Pressed(entry) => {
@@ -2363,5 +2367,209 @@ async fn a_sleeping_dialpad_is_reported_once_and_found_on_the_next_round() {
     dial.turn(1, 1);
     assert_eq!(daemon.dial().await, (Roller::Dial, 1, 1));
     assert_eq!(injector.sent(), volume(true));
+    daemon.stop().await;
+}
+
+/// [`DIALED`] with a held modifier key 7 (Brightness) and a toggle key 8
+/// (Zoom) on the context page.
+fn modifiers() -> String {
+    DIALED.replace(
+        "[pages.keys.1]\nlabel = \"Build\"\n",
+        "[pages.keys.1]\nlabel = \"Build\"\n\n\
+         [pages.keys.7]\nlabel = \"Brightness\"\n\
+         action = { type = \"chord\", keys = \"KEY_F7\" }\n\
+         dial = { cw = \"KEY_BRIGHTNESSUP\", ccw = \"KEY_BRIGHTNESSDOWN\" }\n\n\
+         [pages.keys.8]\nlabel = \"Zoom\"\nmodifier = \"toggle\"\n\
+         dial = { cw = \"ctrl+equal\", ccw = \"ctrl+minus\" }\n",
+    )
+}
+
+fn modifier_daemon(config: &str, pad: &Pad, dial: &Dial, injector: &FakeInputInjector) -> Daemon {
+    Daemon::start_with_dials(
+        config,
+        &[("global", &modifiers())],
+        vec![pad.clone()],
+        Dials::new([dial.clone()]),
+        injector.clone(),
+        Sources {
+            window: FakeWindowWatcher::failing("no focus source"),
+            session: FakeSessionWatcher::new(),
+            lineage: NoLineage,
+        },
+    )
+}
+
+fn chord_events(keys: &str) -> Vec<keyvo_core::chord::KeyEvent> {
+    Chord::parse(keys).unwrap().events()
+}
+
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "compared with `View::modifier` as it is"
+)]
+fn active(key: u8, mode: ModifierMode) -> Option<ActiveModifier> {
+    Some(ActiveModifier {
+        key: KeySlot::new(key).unwrap(),
+        mode,
+    })
+}
+
+impl Daemon {
+    /// The modifier of the next switched view.
+    async fn modifier(&mut self) -> Option<ActiveModifier> {
+        self.switched().await.modifier
+    }
+
+    async fn pressed(&self, command: Command) -> TraceRecord {
+        match self.ask(command).await {
+            Answer::Pressed(record) => record,
+            other => panic!("not a press: {other:?}"),
+        }
+    }
+}
+
+fn holding(key: u8, hold: bool, release: bool, dry_run: bool) -> Command {
+    Command::Press {
+        key: KeySlot::new(key),
+        control: None,
+        delta: None,
+        kind: PressKind::Short,
+        dry_run,
+        hold,
+        release,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_held_modifier_key_takes_the_dial_and_its_release_after_a_turn_runs_nothing() {
+    let pad = Pad::new(&startup());
+    let dial = Dial::new(&dial_startup());
+    let injector = FakeInputInjector::new();
+    let mut daemon = modifier_daemon(CONFIG, &pad, &dial, &injector);
+    daemon.dialpad().await;
+    daemon.painted().await;
+
+    pad.hold(&[7]);
+    assert_eq!(daemon.modifier().await, active(7, ModifierMode::Held));
+    // The ring is painted on key 7.
+    assert!(daemon.painted().await.contains(&7));
+    dial.turn(1, 2);
+    let record = daemon.trace().await;
+    assert_eq!(
+        (record.key, record.control, record.modifier, record.layer),
+        (
+            KeySlot::new(7),
+            Some(DialControl::Dial),
+            Some(ModifierMode::Held),
+            Some(Layer::Global)
+        )
+    );
+    assert_eq!(daemon.dial().await, (Roller::Dial, 2, 2));
+    let up = chord_events("KEY_BRIGHTNESSUP");
+    assert_eq!(injector.sent(), [up.clone(), up].concat());
+    // Held past `long_press` and released: no long press, no action.
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    pad.hold(&[]);
+    assert_eq!(daemon.modifier().await, None);
+    // The dial is back on the volume.
+    dial.turn(1, 1);
+    assert_eq!(daemon.dial().await, (Roller::Dial, 1, 1));
+    assert!(injector.sent().ends_with(&volume(true)));
+    assert_eq!(injector.sent().len(), 3 * volume(true).len());
+
+    // A hold without a turn runs the key's action once at the release.
+    pad.hold(&[7]);
+    assert_eq!(daemon.modifier().await, active(7, ModifierMode::Held));
+    pad.hold(&[]);
+    let record = daemon.trace().await;
+    assert_eq!(record.key, KeySlot::new(7));
+    assert_eq!(record.trigger.press, PressKind::Short);
+    assert!(injector.sent().ends_with(&chord_events("KEY_F7")));
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_toggle_key_takes_the_dial_until_the_modifier_timeout() {
+    let pad = Pad::new(&startup());
+    let dial = Dial::new(&dial_startup());
+    let injector = FakeInputInjector::new();
+    let config = format!("{CONFIG}modifier_timeout = 300\n");
+    let mut daemon = modifier_daemon(&config, &pad, &dial, &injector);
+    daemon.dialpad().await;
+    daemon.painted().await;
+
+    pad.hold(&[8]);
+    pad.hold(&[]);
+    assert_eq!(daemon.modifier().await, active(8, ModifierMode::Toggle));
+    let armed = daemon.trace().await;
+    assert_eq!(armed.result, Outcome::Modifier { active: true });
+    dial.turn(1, -1);
+    let record = daemon.trace().await;
+    assert_eq!(record.modifier, Some(ModifierMode::Toggle));
+    assert_eq!(injector.sent(), chord_events("ctrl+minus"));
+    // The daemon wakes at the timeout: the modifier event reads null.
+    let start = tokio::time::Instant::now();
+    assert_eq!(daemon.modifier().await, None);
+    assert!(
+        start.elapsed() >= Duration::from_millis(200),
+        "{:?}",
+        start.elapsed()
+    );
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_client_holds_and_toggles_a_modifier_key_and_a_dry_run_changes_nothing() {
+    let pad = Pad::new(&startup());
+    let dial = Dial::new(&dial_startup());
+    let injector = FakeInputInjector::new();
+    let mut daemon = modifier_daemon(CONFIG, &pad, &dial, &injector);
+    daemon.dialpad().await;
+
+    // Held: hold, turn, release.
+    let dry = daemon.pressed(holding(7, true, false, true)).await;
+    assert_eq!(
+        (dry.result, dry.modifier),
+        (Outcome::DryRun, Some(ModifierMode::Held))
+    );
+    assert_eq!(daemon.status().await.view.modifier, None);
+    let held = daemon.pressed(holding(7, true, false, false)).await;
+    assert_eq!(held.result, Outcome::Modifier { active: true });
+    assert_eq!(daemon.modifier().await, active(7, ModifierMode::Held));
+    let (entry, runs) = daemon.turned(DialControl::Dial, 1, false).await;
+    assert_eq!((entry.key, runs), (KeySlot::new(7), 1));
+    let released = daemon.pressed(holding(7, false, true, false)).await;
+    assert_eq!(released.result, Outcome::Modifier { active: false });
+    assert_eq!(daemon.modifier().await, None);
+    assert_eq!(injector.sent(), chord_events("KEY_BRIGHTNESSUP"));
+    // Only a held modifier key can be held, only a held one released.
+    for command in [
+        holding(8, true, false, false),
+        holding(7, false, true, false),
+    ] {
+        assert!(matches!(daemon.ask(command).await, Answer::Invalid(_)));
+    }
+
+    // Toggle: a plain press arms, a dry run leaves it, the next ends it.
+    let armed = daemon.press(8, false).await;
+    assert_eq!(armed.result, Outcome::Modifier { active: true });
+    assert_eq!(daemon.modifier().await, active(8, ModifierMode::Toggle));
+    let dry = daemon.press(8, true).await;
+    assert_eq!(dry.result, Outcome::DryRun);
+    assert_eq!(
+        daemon.status().await.view.modifier,
+        active(8, ModifierMode::Toggle)
+    );
+    let (entry, _) = daemon.turned(DialControl::Dial, 1, false).await;
+    assert_eq!(entry.modifier, Some(ModifierMode::Toggle));
+    let ended = daemon.press(8, false).await;
+    assert_eq!(ended.result, Outcome::Modifier { active: false });
+    assert_eq!(daemon.modifier().await, None);
+    // A Dialpad button ends an armed toggle too.
+    daemon.press(8, false).await;
+    assert_eq!(daemon.modifier().await, active(8, ModifierMode::Toggle));
+    dial.hold(&[2]);
+    dial.hold(&[]);
+    assert_eq!(daemon.modifier().await, None);
     daemon.stop().await;
 }
