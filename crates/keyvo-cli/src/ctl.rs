@@ -143,6 +143,25 @@ mod tests {
     }
 
     #[test]
+    fn a_press_holds_and_releases_a_modifier_key_as_the_daemon_reads_it() {
+        use keyvo_core::socket::{Command, Request};
+
+        for (json, held, released) in [
+            (r#"{"key":7,"hold":true}"#, true, false),
+            (r#"{"key":7,"release":true,"dry_run":true}"#, false, true),
+        ] {
+            let line = request_line("press", Some(json)).unwrap();
+            let Command::Press { hold, release, .. } = Request::parse(&line).unwrap().command
+            else {
+                panic!("{line}: not a press");
+            };
+            assert_eq!((hold, release), (held, released), "{line}");
+        }
+        let both = request_line("press", Some(r#"{"key":7,"hold":true,"release":true}"#));
+        assert!(Request::parse(&both.unwrap()).is_err());
+    }
+
+    #[test]
     fn a_given_version_is_kept() {
         assert_eq!(
             serde_json::from_str::<Value>(&request_line("status", Some(r#"{"v":2}"#)).unwrap())
