@@ -8,7 +8,8 @@
 //! `exec_timeout` and past the daemon.
 //!
 //! Pre-alpha environment: `KEYVO_KEY` (`KEYVO_CONTROL` for a Dialpad
-//! control: `dial`, `roller`, `button:N`), `KEYVO_PROFILE`, `KEYVO_PAGE`,
+//! control: `dial`, `roller`, `button:N`; both for a turn a modifier key
+//! took), `KEYVO_PROFILE`, `KEYVO_PAGE`,
 //! `KEYVO_PRESS`, `KEYVO_LAYER` and `KEYVO_SOCKET`; a key's `on_fail` run
 //! also gets `KEYVO_FAILED_CODE`. The window and project variables come
 //! with their slices.
@@ -35,13 +36,13 @@ pub fn env(record: &TraceRecord, socket: &Path) -> Vec<(&'static str, String)> {
     } else {
         Layer::App
     });
-    let source = match (record.key, record.control) {
-        (Some(key), _) => Some(("KEYVO_KEY", key.get().to_string())),
-        (None, Some(control)) => Some(("KEYVO_CONTROL", control.to_string())),
-        (None, None) => None,
-    };
-    source
-        .into_iter()
+    // A turn taken by a modifier key names both.
+    let key = record.key.map(|key| ("KEYVO_KEY", key.get().to_string()));
+    let control = record
+        .control
+        .map(|control| ("KEYVO_CONTROL", control.to_string()));
+    key.into_iter()
+        .chain(control)
         .chain([
             ("KEYVO_PROFILE", record.profile.clone()),
             ("KEYVO_PAGE", record.page.to_string()),
@@ -309,6 +310,16 @@ mod tests {
         assert_eq!(env.len(), 6);
         turned.control = None;
         assert_eq!(env_of(&turned)[0].0, "KEYVO_PROFILE");
+    }
+
+    #[test]
+    fn a_turn_under_a_modifier_key_names_the_key_and_the_control() {
+        let mut turned = record("code", Layer::Global, PressKind::Short);
+        turned.control = Some(Control::Roller);
+        let env = env(&turned, Path::new(SOCKET));
+        assert_eq!(env[0], ("KEYVO_KEY", "7".to_owned()));
+        assert_eq!(env[1], ("KEYVO_CONTROL", "roller".to_owned()));
+        assert_eq!(env.len(), 7);
     }
 
     fn env_of(record: &TraceRecord) -> Vec<(&'static str, String)> {
