@@ -11,7 +11,7 @@ use std::time::SystemTime;
 use keyvo_core::diagnostic::Diagnostic;
 use keyvo_core::dialpad::Control;
 use keyvo_core::edit::{
-    BUILTIN_GLOBAL, ButtonFields, EditError, KeyFields, ProfileDocument, ProfileFields,
+    BUILTIN_GLOBAL, ButtonFields, EditError, KeyFields, PageEdit, ProfileDocument, ProfileFields,
     RotaryFields,
 };
 use keyvo_core::layout::SNAPSHOTS;
@@ -162,6 +162,36 @@ pub struct ProfileEdited {
     pub fields: ProfileFields,
     /// The copy of the file taken before the write; none when nothing was
     /// written or the file did not exist yet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<PathBuf>,
+}
+
+/// What a page edit did.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PageEdited {
+    /// The profile file.
+    pub path: PathBuf,
+    /// The edit.
+    pub edit: PageEdit,
+    /// The edited page's number after the edit; none after a delete.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page: Option<usize>,
+    /// The edit that undoes it; none after a delete, whose undo is
+    /// [`Editor::restore`] of `snapshot`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub undo: Option<PageEdit>,
+    /// The copy of the file taken before the write; none when the file did
+    /// not exist yet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<PathBuf>,
+}
+
+/// What a restore did.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Restored {
+    /// The profile file.
+    pub path: PathBuf,
+    /// The copy of the file taken before the write.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snapshot: Option<PathBuf>,
 }
@@ -429,6 +459,70 @@ impl Editor {
             fields: fields.clone(),
             snapshot,
         })
+    }
+
+    /// Applies `edit` to the pages of profile `id` like [`Editor::set_key`]
+    /// writes a key: a snapshot of the file, then the edited text written
+    /// atomically.
+    ///
+    /// # Errors
+    ///
+    /// As [`Editor::set_key`], and [`EditError::Protected`] for disabling
+    /// the context page or deleting the only enabled page.
+    pub fn edit_page(
+        &self,
+        id: &str,
+        edit: &PageEdit,
+        now: SystemTime,
+    ) -> Result<PageEdited, EditorError> {
+        let (path, mut doc) = self.open(id)?;
+        let done = doc.edit_page(edit)?;
+        let snapshot = self.write(&path, &doc, now)?;
+        Ok(PageEdited {
+            path,
+            edit: edit.clone(),
+            page: done.page,
+            undo: done.undo,
+            snapshot,
+        })
+    }
+
+    /// Writes the text of `snapshot`, a copy this editor took, back as the
+    /// file of profile `id`, after a snapshot of the file as it is: the
+    /// undo of a page delete.
+    ///
+    /// # Errors
+    ///
+    /// [`EditorError::Fields`] when `snapshot` is not in the snapshot
+    /// directory, [`EditorError::Io`] when it cannot be read, else as
+    /// [`Editor::set_key`]; nothing is written for a snapshot that is not a
+    /// valid profile `id`.
+    pub fn restore(
+        &self,
+        id: &str,
+        snapshot: &Path,
+        now: SystemTime,
+    ) -> Result<Restored, EditorError> {
+        let path = self.path(id)?;
+        if snapshot.parent() != Some(self.snapshots.as_path()) {
+            return Err(EditorError::Fields(format!(
+                "{} is not a snapshot of the editor",
+                snapshot.display()
+            )));
+        }
+        let text = std::fs::read_to_string(snapshot).map_err(|source| EditorError::Io {
+            path: snapshot.to_path_buf(),
+            source,
+        })?;
+        let doc = ProfileDocument::parse(&text, &path)?;
+        if doc.profile().profile.id != id {
+            return Err(EditorError::Fields(format!(
+                "{} is not a snapshot of profile `{id}`",
+                snapshot.display()
+            )));
+        }
+        let snapshot = self.write(&path, &doc, now)?;
+        Ok(Restored { path, snapshot })
     }
 
     /// The file of profile `id`, whether it exists or not.
