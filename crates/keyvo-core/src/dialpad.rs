@@ -20,7 +20,8 @@ use serde::{Deserialize, Serialize, Serializer};
 use crate::layout::Profiles;
 use crate::press::PressKind;
 use crate::profile::{DialButton, Profile, Rotary};
-use crate::stack::Layer;
+use crate::stack::{Layer, Stack};
+use crate::state::ModifierKey;
 use crate::trace::{Outcome, TraceRecord, Trigger};
 
 /// One of the Dialpad's two rollers.
@@ -338,14 +339,53 @@ pub fn turn(
     max: u32,
 ) -> Turn {
     let (trigger, at) = turn;
-    let mut record = record(
+    let record = record(
         &bindings.profile().profile.id,
         page,
         roller.into(),
         trigger,
         at,
     );
-    let found = bindings.rotary(roller);
+    resolve(record, bindings.rotary(roller), (roller, delta), turns, max)
+}
+
+/// Resolves a turn of `roller` by `delta` on the binding of the modifier
+/// key `taker` (spec §7.2), like [`turn`]: the record names the key, the
+/// control, the mode and the layer that supplied the key, on the page the
+/// key was pressed on. Nothing is bound when the key no longer resolves or
+/// has no table for `roller`.
+#[must_use]
+pub fn modifier_turn(
+    profiles: &Profiles,
+    taker: &ModifierKey,
+    roller: Roller,
+    delta: i32,
+    turn: (Trigger, SystemTime),
+    turns: &mut Turns,
+    max: u32,
+) -> Turn {
+    let (trigger, at) = turn;
+    let mut record = record(&taker.profile, taker.page, roller.into(), trigger, at);
+    record.key = Some(taker.key);
+    record.modifier = Some(taker.mode);
+    let found = profiles
+        .get(&taker.profile)
+        .and_then(|profile| Stack::new(profiles, profile, taker.page).ok())
+        .and_then(|stack| stack.key(taker.key))
+        .and_then(|(key, layer)| Some((key.rotary(roller)?, layer)));
+    resolve(record, found, (roller, delta), turns, max)
+}
+
+/// Fills `record` with the binding `found` of a turn of `roller` by
+/// `delta`: the action of its direction, how often it runs.
+fn resolve(
+    mut record: TraceRecord,
+    found: Option<(&Rotary, Layer)>,
+    (roller, delta): (Roller, i32),
+    turns: &mut Turns,
+    max: u32,
+) -> Turn {
+    let trigger = record.trigger;
     record.layer = found.map(|(_, layer)| layer);
     let action = found.and_then(|(rotary, _)| match Direction::of(delta)? {
         Direction::Cw => rotary.cw.clone(),

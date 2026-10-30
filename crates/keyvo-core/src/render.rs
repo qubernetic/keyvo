@@ -266,6 +266,10 @@ pub struct Theme {
     pub success: Color,
     /// Badge of [`Look::Error`].
     pub error: Color,
+    /// Stroke width of the [`Look::Modifier`] ring along the key's edge;
+    /// the ring and its dial badge take the accent, else
+    /// [`Theme::spinner`].
+    pub modifier_ring: f32,
 }
 
 impl Default for Theme {
@@ -300,6 +304,7 @@ impl Default for Theme {
             running: Color::rgb(0xf0, 0x8c, 0x00),
             success: Color::rgb(0x2f, 0x9e, 0x44),
             error: Color::rgb(0xe0, 0x31, 0x31),
+            modifier_ring: 0.045,
         }
     }
 }
@@ -551,6 +556,17 @@ impl Renderer {
         {
             fill_rounded(&mut pixmap, rect, self.theme.radius * height, background);
         }
+        if spec.look == Look::Modifier
+            && let Some(ring) = self.modifier_ring(width, height)
+        {
+            stroke_rounded(
+                &mut pixmap,
+                ring,
+                self.theme.radius * height,
+                self.theme.modifier_ring * height,
+                spec.accent.unwrap_or(self.theme.spinner),
+            );
+        }
         if let Some(accent) = spec.accent {
             let bar_width = self.theme.accent_width * height;
             let bar_height = self.theme.accent_height * height;
@@ -620,7 +636,45 @@ impl Renderer {
             }
         }
         self.draw_badge(&mut pixmap, spec, size);
+        if spec.look == Look::Modifier {
+            self.draw_dial_badge(&mut pixmap, spec, size);
+        }
         Ok(Tile { pixmap })
+    }
+
+    /// The rectangle the modifier ring's stroke centers on: the tile inset
+    /// by half the stroke.
+    fn modifier_ring(&self, width: f32, height: f32) -> Option<Rect> {
+        let inset = self.theme.modifier_ring * height / 2.0;
+        Rect::from_xywh(inset, inset, width - 2.0 * inset, height - 2.0 * inset)
+    }
+
+    /// The modifier's dial badge in the top left corner, opposite the
+    /// corner badge, so a key's own badge stays.
+    fn draw_dial_badge(&self, pixmap: &mut Pixmap, spec: &KeySpec, size: TileSize) {
+        let height = f32::from(size.height);
+        let color = spec.accent.unwrap_or(self.theme.spinner);
+        let diameter = self.theme.badge_size * height;
+        let margin = self.theme.badge_margin * height;
+        let (cx, cy) = (margin + diameter / 2.0, margin + diameter / 2.0);
+        if let Some(circle) = PathBuilder::from_circle(cx, cy, diameter / 2.0) {
+            pixmap.fill_path(
+                &circle,
+                &paint(color),
+                FillRule::Winding,
+                Transform::identity(),
+                None,
+            );
+        }
+        let extent = BADGE_ICON * diameter;
+        draw_icon(
+            pixmap,
+            DIAL_ICON,
+            self.theme.foreground(color),
+            cx - extent / 2.0,
+            cy - extent / 2.0,
+            extent,
+        );
     }
 
     /// The corner badge: the look's color and symbol, the spec's text in
@@ -630,8 +684,10 @@ impl Renderer {
             Look::RunningLong => (self.theme.running, "lucide:refresh-cw"),
             Look::Success => (self.theme.success, "lucide:check"),
             Look::Error => (self.theme.error, "lucide:x"),
-            Look::Idle | Look::Running if spec.badge.is_some() => (self.theme.badge, ""),
-            Look::Idle | Look::Running => return,
+            Look::Idle | Look::Running | Look::Modifier if spec.badge.is_some() => {
+                (self.theme.badge, "")
+            }
+            Look::Idle | Look::Running | Look::Modifier => return,
         };
         let (width, height) = (f32::from(size.width), f32::from(size.height));
         let diameter = self.theme.badge_size * height;
@@ -882,6 +938,8 @@ const CAP_HEIGHT: f32 = 0.727;
 const BADGE_TEXT: f32 = 0.62;
 /// Badge symbol size as a fraction of the badge diameter.
 const BADGE_ICON: f32 = 0.62;
+/// The symbol of the [`Look::Modifier`] badge.
+const DIAL_ICON: &str = "lucide:circle-gauge";
 
 /// `a` moved toward `b` by `t` (0 is `a`, 1 is `b`).
 fn mix(a: Color, b: Color, t: f32) -> Color {
@@ -975,6 +1033,31 @@ fn draw_icon(pixmap: &mut Pixmap, reference: &str, color: Color, left: f32, top:
 
 /// Fills `rect` with corners of `radius`, clamped to half its sides.
 fn fill_rounded(pixmap: &mut Pixmap, rect: Rect, radius: f32, color: Color) {
+    if let Some(path) = rounded(rect, radius) {
+        pixmap.fill_path(
+            &path,
+            &paint(color),
+            FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+    }
+}
+
+/// Strokes the outline of `rect` with corners of `radius` `width` wide.
+fn stroke_rounded(pixmap: &mut Pixmap, rect: Rect, radius: f32, width: f32, color: Color) {
+    if let Some(path) = rounded(rect, radius) {
+        let stroke = Stroke {
+            width,
+            ..Stroke::default()
+        };
+        pixmap.stroke_path(&path, &paint(color), &stroke, Transform::identity(), None);
+    }
+}
+
+/// The outline of `rect` with corners of `radius`, clamped to half its
+/// sides.
+fn rounded(rect: Rect, radius: f32) -> Option<tiny_skia::Path> {
     // Control point distance of a cubic that approximates a quarter circle.
     const KAPPA: f32 = 0.552_284_8;
     let radius = radius
@@ -1008,15 +1091,7 @@ fn fill_rounded(pixmap: &mut Pixmap, rect: Rect, radius: f32, color: Color) {
     path.line_to(left, top + radius);
     path.cubic_to(left, top + inset, left + inset, top, left + radius, top);
     path.close();
-    if let Some(path) = path.finish() {
-        pixmap.fill_path(
-            &path,
-            &paint(color),
-            FillRule::Winding,
-            Transform::identity(),
-            None,
-        );
-    }
+    path.finish()
 }
 
 #[cfg(test)]

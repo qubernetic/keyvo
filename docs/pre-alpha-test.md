@@ -122,7 +122,7 @@ The profiles live in [`contrib/profiles/`](../contrib/profiles/):
 |---|---|---|---|
 | `global.toml` | no app profile matches | blue `#4e8bd6` | 1 Notify (exec, `notify-send`), 2 Fail (exec, `exit 1`), 3 Type (chord `shift+k, e, y`), 4 Slow (exec, `sleep 15`), 5 OK (exec, `true`); page `general` key 1 General, page `third` key 1 Third, key 2 Launch (launch, `sleep 60`) |
 | `konsole.toml` | `org.kde.konsole`, `konsole` | green `#3fae5a` | 1 New tab (chord `ctrl+shift+t`), 2 Find (chord `ctrl+shift+f`), 4 OK, 5 Fail, 6 Slow |
-| `vscode.toml` | `code`, `com.visualstudio.code` | orange `#e0a83b` | 1 Palette (chord `ctrl+shift+p`), 2 Save (chord `ctrl+s`), 7 OK, 8 Fail, 9 Slow; page `files` key 1 Open (chord `ctrl+p`), key 2 Sidebar (chord `ctrl+b`) |
+| `vscode.toml` | `code`, `com.visualstudio.code` | orange `#e0a83b` | 1 Palette (chord `ctrl+shift+p`), 2 Save (chord `ctrl+s`), 4 OK, 5 Fail, 6 Slow (7 OK, 8 Fail, 9 Slow before #189); page `files` key 1 Open (chord `ctrl+p`), key 2 Sidebar (chord `ctrl+b`) |
 
 If `~/.config/keyvo` exists already, move it aside first
 (`mv ~/.config/keyvo ~/.config/keyvo.before-test`) and move it back after
@@ -230,7 +230,7 @@ is for `keyvo ctl`, T3 for the app.
    1 (page 1) in auto mode`.
 
 5. **Editor switch.** Focus VS Code. Expected: orange bars, Palette,
-   Save, and OK, Fail, Slow on keys 7 to 9; the log names `vscode`. Focus
+   Save, and OK, Fail, Slow on keys 4 to 6 (7 to 9 before #189); the log names `vscode`. Focus
    Dolphin again: back to the blue global profile.
 
 6. **Chord key.** Focus Konsole and press key 1 (New tab): a new tab

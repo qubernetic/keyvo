@@ -278,6 +278,7 @@ fn tiles(
         // The tiles depend on the profile, the page and the lock alone.
         index: 1,
         locked: locked.unwrap_or(false),
+        modifier: None,
     };
     let summaries =
         keyvo_client::tiles::keys(&profiles, &view, keys).map_err(|error| error.to_string())?;

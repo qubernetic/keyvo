@@ -4,9 +4,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use keyvo_client::Mirror;
-use keyvo_core::profile::KeySlot;
+use keyvo_core::profile::{KeySlot, ModifierMode};
 use keyvo_core::socket::{Event, Reply, Response, ServerMessage};
-use keyvo_core::state::{Mode, View};
+use keyvo_core::state::{ActiveModifier, Mode, View};
 use keyvo_core::trace::TraceRecord;
 
 macro_rules! fixture {
@@ -46,6 +46,7 @@ fn view(profile: &str, page: usize, index: isize, mode: Mode) -> View {
         mode,
         index,
         locked: false,
+        modifier: None,
     }
 }
 
@@ -89,7 +90,7 @@ fn subscribed_sets_the_view_and_a_press_adds_its_entry() {
 
 #[test]
 fn every_fixture_event_lands_in_the_mirror() {
-    let mut mirror = Mirror::new(10);
+    let mut mirror = Mirror::new(20);
     let events = events();
     let mut changed = Vec::new();
     for event in &events {
@@ -212,4 +213,29 @@ fn the_trace_keeps_the_newest_entries() {
         })
         .collect();
     assert_eq!(kept, expected);
+}
+
+#[test]
+fn a_modifier_event_sets_the_known_views_modifier() {
+    let mut mirror = Mirror::new(10);
+    let held = Event::Modifier {
+        modifier: Some(ActiveModifier {
+            key: KeySlot::new(7).unwrap(),
+            mode: ModifierMode::Held,
+        }),
+    };
+    assert!(!mirror.apply(&held), "no view yet");
+    mirror.answer(&reply(2));
+    assert!(mirror.apply(&held));
+    assert_eq!(
+        mirror
+            .view()
+            .unwrap()
+            .modifier
+            .map(|modifier| modifier.key.get()),
+        Some(7)
+    );
+    assert!(!mirror.apply(&held));
+    assert!(mirror.apply(&Event::Modifier { modifier: None }));
+    assert_eq!(mirror.view(), Some(&view("global", 1, 1, Mode::Auto)));
 }

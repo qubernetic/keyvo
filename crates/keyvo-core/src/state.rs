@@ -47,12 +47,14 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{Config, Focus};
+use crate::dialpad::Roller;
 use crate::focus::WindowContext;
 use crate::layout::Profiles;
 use crate::lineage::Lineage;
 use crate::press::{PressDetector, PressKind};
-use crate::profile::{GLOBAL_ID, Profile, class_matches};
+use crate::profile::{GLOBAL_ID, KeySlot, ModifierMode, Profile, class_matches};
 use crate::session::Session;
+use crate::stack::Stack;
 
 /// Names one pending launch ([`State::launched`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -128,6 +130,104 @@ pub struct View {
     /// daemon before the session lock.
     #[serde(default)]
     pub locked: bool,
+    /// The key that has the dial and the roller, held or toggled; absent
+    /// when none has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modifier: Option<ActiveModifier>,
+}
+
+/// The key that has the dial and the roller (spec §6.1): a held modifier
+/// key, the last pressed of several, else the armed toggle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActiveModifier {
+    /// The key, 1 to 9, on the page the view shows.
+    #[serde(deserialize_with = "crate::profile::slot_number")]
+    pub key: KeySlot,
+    /// Held or toggled.
+    pub mode: ModifierMode,
+}
+
+/// The active modifier and where its key is: the page of the profile it
+/// was pressed on, which resolves it over the global layer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModifierKey {
+    /// The key.
+    pub key: KeySlot,
+    /// Held or toggled.
+    pub mode: ModifierMode,
+    /// The id of the profile shown at the press.
+    pub profile: String,
+    /// The page shown at the press, counted from 1.
+    pub page: usize,
+}
+
+impl ModifierKey {
+    /// The key and the mode.
+    #[must_use]
+    pub const fn active(&self) -> ActiveModifier {
+        ActiveModifier {
+            key: self.key,
+            mode: self.mode,
+        }
+    }
+
+    /// Whether it is still a modifier key of `mode` in `profiles`.
+    fn resolves(&self, profiles: &Profiles) -> bool {
+        modifier_of(profiles, &self.profile, self.page, self.key) == Some(self.mode)
+    }
+}
+
+/// What a key going down is ([`State::key_down`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyDown {
+    /// An ordinary key or a toggle key: its release or its long press makes
+    /// a press ([`State::key_press`]).
+    Press,
+    /// A held modifier key: it has no long press, its release tells
+    /// whether its action runs ([`State::key_up`]).
+    Held,
+}
+
+/// What a press of a key does ([`State::key_press`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyPress {
+    /// The key's action runs, as of an ordinary key.
+    Run,
+    /// A short press of a toggle key: the toggle is on (`true`) or off now,
+    /// or would be for a simulated press; no action runs.
+    Toggle(bool),
+}
+
+/// The modifier mode of key `slot` on page `page` of the profile `profile`
+/// over the global layer; `None` for an ordinary key or none at all.
+fn modifier_of(
+    profiles: &Profiles,
+    profile: &str,
+    page: usize,
+    slot: KeySlot,
+) -> Option<ModifierMode> {
+    let profile = profiles.get(profile)?;
+    Stack::new(profiles, profile, page)
+        .ok()?
+        .key(slot)?
+        .0
+        .modifier_mode()
+}
+
+/// A held modifier key.
+#[derive(Debug, Clone)]
+struct Holding {
+    at: ModifierKey,
+    /// A turn took its binding or another's during the hold.
+    used: bool,
+}
+
+/// The armed toggle.
+#[derive(Debug, Clone)]
+struct Armed {
+    at: ModifierKey,
+    /// The arm or the last turn, for `[timing].modifier_timeout`.
+    since: Instant,
 }
 
 /// The mode and page state of the pad.
@@ -164,6 +264,14 @@ pub struct State {
     buttons: PressDetector<PageButton>,
     /// The session is locked.
     locked: bool,
+    modifier_timeout: Duration,
+    /// The held modifier keys, the first pressed first.
+    holding: Vec<Holding>,
+    /// The armed toggle.
+    armed: Option<Armed>,
+    /// The armed toggle key went down again and ended it: its short
+    /// release does not arm it again.
+    disarming: Option<KeySlot>,
 }
 
 impl State {
@@ -192,6 +300,10 @@ impl State {
             held: BTreeSet::new(),
             buttons: PressDetector::new(timing.long_press),
             locked: false,
+            modifier_timeout: timing.modifier_timeout,
+            holding: Vec::new(),
+            armed: None,
+            disarming: None,
         }
     }
 
@@ -215,7 +327,203 @@ impl State {
             mode: self.mode,
             index,
             locked: self.locked,
+            modifier: self.modifier().map(ModifierKey::active),
         }
+    }
+
+    /// The key that has the dial and the roller: the last pressed held
+    /// modifier key, else the armed toggle.
+    #[must_use]
+    pub fn modifier(&self) -> Option<&ModifierKey> {
+        self.holding
+            .last()
+            .map(|holding| &holding.at)
+            .or_else(|| self.armed.as_ref().map(|armed| &armed.at))
+    }
+
+    /// Every held modifier key, the first pressed first, then the armed
+    /// toggle.
+    pub fn modifier_keys(&self) -> impl Iterator<Item = &ModifierKey> {
+        self.holding
+            .iter()
+            .map(|holding| &holding.at)
+            .chain(self.armed.as_ref().map(|armed| &armed.at))
+    }
+
+    /// The modifier key at `slot` of the page shown, if it is one.
+    fn modifier_key(&self, slot: KeySlot, profiles: &Profiles) -> Option<ModifierKey> {
+        let view = self.view(profiles);
+        let mode = modifier_of(profiles, &view.profile, view.page, slot)?;
+        Some(ModifierKey {
+            key: slot,
+            mode,
+            profile: view.profile,
+            page: view.page,
+        })
+    }
+
+    /// Ends the armed toggle at `now`, which starts the page return over.
+    fn disarm(&mut self, now: Instant) {
+        if self.armed.take().is_some() {
+            self.last_use = Some(now);
+        }
+    }
+
+    /// Key `slot` went down at `now`: the page return starts over and the
+    /// armed toggle ends, this press otherwise acting as usual; the armed
+    /// key's own press only ends it. A held modifier key takes the dial and
+    /// the roller until its release. Nothing changes while the session is
+    /// locked.
+    pub fn key_down(&mut self, slot: KeySlot, now: Instant, profiles: &Profiles) -> KeyDown {
+        if self.locked {
+            return KeyDown::Press;
+        }
+        self.touch(now);
+        if let Some(armed) = &self.armed {
+            if armed.at.key == slot {
+                self.disarming = Some(slot);
+            }
+            self.disarm(now);
+        }
+        match self.modifier_key(slot, profiles) {
+            Some(at) if at.mode == ModifierMode::Held => {
+                self.holding.retain(|holding| holding.at.key != slot);
+                self.holding.push(Holding { at, used: false });
+                KeyDown::Held
+            }
+            _ => KeyDown::Press,
+        }
+    }
+
+    /// Key `slot` came up at `now`: for a held modifier key whether its
+    /// action runs (no turn took a binding during the hold); `None` for any
+    /// other key, whose press the caller's detector makes.
+    pub fn key_up(&mut self, slot: KeySlot, now: Instant) -> Option<bool> {
+        let at = self
+            .holding
+            .iter()
+            .position(|holding| holding.at.key == slot)?;
+        let holding = self.holding.remove(at);
+        self.last_use = Some(now);
+        Some(!holding.used)
+    }
+
+    /// A press of key `slot` of `kind` at `now`, from the device or a
+    /// client: a short press of a toggle key arms it, or ends it when it is
+    /// armed; any other press ends the armed toggle of another key and runs
+    /// as usual, a toggle key's long press its action. A `simulated` press
+    /// changes nothing and tells what it would do.
+    pub fn key_press(
+        &mut self,
+        slot: KeySlot,
+        kind: PressKind,
+        simulated: bool,
+        now: Instant,
+        profiles: &Profiles,
+    ) -> KeyPress {
+        if self.locked {
+            return KeyPress::Run;
+        }
+        let at = self
+            .modifier_key(slot, profiles)
+            .filter(|at| at.mode == ModifierMode::Toggle);
+        let armed = self
+            .armed
+            .as_ref()
+            .is_some_and(|armed| armed.at.key == slot);
+        if simulated {
+            return match (at, kind) {
+                (Some(_), PressKind::Short) => KeyPress::Toggle(!armed),
+                _ => KeyPress::Run,
+            };
+        }
+        let disarming = self.disarming == Some(slot);
+        if disarming {
+            self.disarming = None;
+        }
+        if let (Some(at), PressKind::Short) = (at, kind)
+            && !disarming
+            && !armed
+        {
+            self.armed = Some(Armed { at, since: now });
+            return KeyPress::Toggle(true);
+        }
+        self.disarm(now);
+        if kind == PressKind::Short && (disarming || armed) {
+            KeyPress::Toggle(false)
+        } else {
+            KeyPress::Run
+        }
+    }
+
+    /// A button of the Dialpad was pressed at `now`: the armed toggle ends.
+    pub fn button(&mut self, now: Instant) {
+        self.disarm(now);
+    }
+
+    /// A turn of `roller` at `now`: the active modifier key, when it binds
+    /// `roller`, else the held one before it that does; `None` leaves the
+    /// turn to the profile's `[dialpad]` table. A turn taken marks the
+    /// held keys used and starts `[timing].modifier_timeout` over, unless
+    /// it is `simulated`.
+    pub fn modifier_turn(
+        &mut self,
+        roller: Roller,
+        simulated: bool,
+        now: Instant,
+        profiles: &Profiles,
+    ) -> Option<ModifierKey> {
+        let binds = |at: &ModifierKey| {
+            profiles
+                .get(&at.profile)
+                .and_then(|profile| Stack::new(profiles, profile, at.page).ok())
+                .and_then(|stack| stack.key(at.key))
+                .and_then(|(key, _)| key.rotary(roller))
+                .is_some()
+        };
+        let taker = self
+            .holding
+            .iter()
+            .rev()
+            .map(|holding| &holding.at)
+            .chain(self.armed.as_ref().map(|armed| &armed.at))
+            .find(|at| binds(at))
+            .cloned()?;
+        if !simulated {
+            for holding in &mut self.holding {
+                holding.used = true;
+            }
+            if let Some(armed) = &mut self.armed {
+                armed.since = now;
+            }
+        }
+        Some(taker)
+    }
+
+    /// Ends the toggle when the page shown is no longer the one it was
+    /// armed on, at `now`.
+    fn settle(&mut self, now: Instant, profiles: &Profiles) {
+        if self.off_page(profiles) {
+            self.disarm(now);
+        }
+    }
+
+    /// Whether the armed toggle's page no longer shows.
+    fn off_page(&self, profiles: &Profiles) -> bool {
+        let view = self.view(profiles);
+        self.armed
+            .as_ref()
+            .is_some_and(|armed| armed.at.profile != view.profile || armed.at.page != view.page)
+    }
+
+    /// When the armed toggle ends without a turn.
+    fn timeout_at(&self) -> Option<Instant> {
+        if self.modifier_timeout.is_zero() {
+            return None;
+        }
+        self.armed
+            .as_ref()
+            .map(|armed| armed.since + self.modifier_timeout)
     }
 
     /// Whether the session is locked.
@@ -235,6 +543,10 @@ impl State {
         self.locked = locked;
         self.held.clear();
         self.buttons = PressDetector::new(self.long_press);
+        // The lock ends every modifier; a key held through it is forgotten.
+        self.holding.clear();
+        self.armed = None;
+        self.disarming = None;
         true
     }
 
@@ -328,7 +640,7 @@ impl State {
 
     /// `button` went down at `now`. The second button held escapes. Nothing
     /// while the session is locked.
-    pub fn press(&mut self, button: PageButton, now: Instant, _profiles: &Profiles) {
+    pub fn press(&mut self, button: PageButton, now: Instant, profiles: &Profiles) {
         if self.locked {
             return;
         }
@@ -339,6 +651,7 @@ impl State {
         } else {
             self.buttons.press(button, now);
         }
+        self.settle(now, profiles);
     }
 
     /// `button` came up at `now`: a short press pages, a long one not yet
@@ -354,6 +667,7 @@ impl State {
             Some(PressKind::Long) => self.toggle_mode(),
             None => {}
         }
+        self.settle(now, profiles);
     }
 
     /// A key on the pad went down at `now`: the page return starts over.
@@ -380,16 +694,25 @@ impl State {
         for _ in self.buttons.poll(now) {
             self.toggle_mode();
         }
+        if self.timeout_at().is_some_and(|at| at <= now) {
+            self.disarm(now);
+        }
+        self.settle(now, profiles);
     }
 
     /// When [`State::poll`] has something to do next.
     #[must_use]
     pub fn next_deadline(&self) -> Option<Instant> {
         let focus = self.pending.as_ref().map(|pending| pending.at);
-        [focus, self.buttons.next_deadline(), self.return_at()]
-            .into_iter()
-            .flatten()
-            .min()
+        [
+            focus,
+            self.buttons.next_deadline(),
+            self.return_at(),
+            self.timeout_at(),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
     }
 
     /// The configuration and profiles were reloaded: the page return times
@@ -403,6 +726,7 @@ impl State {
         self.page_return_global = config.timing.page_return_global;
         self.page_return_own = config.timing.page_return_own;
         self.launch_focus = config.timing.launch_focus;
+        self.modifier_timeout = config.timing.modifier_timeout;
         self.selected = self.window.as_ref().map_or_else(
             || GLOBAL_ID.to_owned(),
             |window| profiles.select(window).profile.id.clone(),
@@ -417,6 +741,17 @@ impl State {
             }
         }
         self.index = PageList::of(profiles, self.shown(profiles)).clamp(self.index);
+        // A modifier key the reload dropped or changed ends, and so does a
+        // toggle whose page no longer shows.
+        self.holding.retain(|holding| holding.at.resolves(profiles));
+        if self
+            .armed
+            .as_ref()
+            .is_some_and(|armed| !armed.at.resolves(profiles))
+            || self.off_page(profiles)
+        {
+            self.armed = None;
+        }
     }
 
     /// The shown profile in `profiles`, the global one when it is gone.
@@ -434,7 +769,8 @@ impl State {
             index if index < 1 => self.page_return_global,
             _ => self.page_return_own,
         };
-        if self.mode != Mode::Auto || after.is_zero() {
+        // A held or armed modifier is pad activity.
+        if self.mode != Mode::Auto || after.is_zero() || self.modifier().is_some() {
             return None;
         }
         self.last_use.map(|used| used + after)

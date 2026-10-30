@@ -7,3 +7,5 @@
 {"v":1,"id":6,"cmd":"notify_context","class":"org.kde.konsole","title":"~ : bash"}
 {"v":1,"id":9,"cmd":"press","control":"dial","delta":3,"kind":"short","dry_run":true}
 {"v":1,"id":10,"cmd":"press","control":"button:2","kind":"long","dry_run":false}
+{"v":1,"id":11,"cmd":"press","key":7,"kind":"short","dry_run":false,"hold":true}
+{"v":1,"id":12,"cmd":"press","key":7,"kind":"short","dry_run":false,"release":true}

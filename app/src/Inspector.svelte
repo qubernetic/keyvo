@@ -17,21 +17,31 @@
   // carries a preset (lib/catalogue.ts recipeOf) shows its "What it does"
   // select above the Action; another variant rewrites the action. With a
   // Dialpad control selected on the Pad's panel (#188) it is the control
-  // editor (ControlEditor.svelte) instead; the key's history stays.
+  // editor (ControlEditor.svelte) instead; the key's history stays. Under
+  // the Action, the Modifier section (#189): its Mode (Off, Held, Toggle)
+  // and, unless off, the dial and the roller the key binds while it has
+  // the dial, each with a label and the rotary fields of the control
+  // editor (RotaryFields.svelte). Off writes neither; a mode with neither
+  // bound writes an empty dial. An entry the actions catalogue assigns
+  // while the focus was last in a direction of these goes to that
+  // direction, as the control editor's does.
   import { untrack, type Snippet } from "svelte";
 
   import ActionFields from "./ActionFields.svelte";
   import ControlEditor from "./ControlEditor.svelte";
   import IconPicker from "./IconPicker.svelte";
   import Notice from "./Notice.svelte";
+  import RotaryFields from "./RotaryFields.svelte";
   import {
     applied,
+    appliedToControl,
     catalogueOf,
     recipeOf,
     withVariant,
     type CatalogueEntry,
   } from "./lib/catalogue";
   import type { Tile } from "./lib/daemon";
+  import { controlName } from "./lib/dialpad";
   import {
     actionForm,
     afterRedo,
@@ -42,11 +52,13 @@
     fromForm,
     problemOf,
     recorded,
+    ROTARIES,
     sameFields,
     sameTarget,
     toForm,
     summaryOf,
     viewOf,
+    type ActionPart,
     type ActionType,
     type Change,
     type Edited,
@@ -56,13 +68,18 @@
     type History,
     type KeyFields,
     type KeyView,
+    type ModifierChoice,
     type Problem,
     type Target,
     type ControlTarget,
   } from "./lib/editor";
   import { t, type MessageKey } from "./lib/i18n";
   import { clock } from "./lib/pad";
-  import type { Recipe } from "./lib/protocol";
+  import type { Recipe, Roller } from "./lib/protocol";
+
+  type Direction = "cw" | "ccw";
+  /** A direction of a modifier rotary, where the catalogue assigns. */
+  type Aim = { rotary: Roller; direction: Direction };
 
   let {
     editor,
@@ -81,6 +98,7 @@
     control,
     assignControl,
     ondirection,
+    onaim,
   }: {
     editor: Editor;
     /** The key to edit: the selected key of the pinned page; none until
@@ -103,8 +121,9 @@
     /** Called after every write. */
     onedited?: () => void;
     /** A catalogue entry, by its key, assigned to `target`; a new `seq`
-     * applies it once the key is read. */
-    assign?: { entry: string; target: Target; seq: number };
+     * applies it once the key is read. With `aim`, to that direction of a
+     * modifier rotary while the mode is on. */
+    assign?: { entry: string; target: Target; seq: number; aim?: Aim };
     /** The catalogue's entries for the Action select, while its column is
      * collapsed. */
     entries?: readonly CatalogueEntry[];
@@ -121,6 +140,9 @@
     assignControl?: { entry: string; target: ControlTarget; seq: number };
     /** The direction of a rotary the catalogue assigns to now. */
     ondirection?: (direction: "cw" | "ccw") => void;
+    /** The direction of a modifier rotary of the key the catalogue
+     * assigns to now; none for the key's action. */
+    onaim?: (aim: Aim | undefined) => void;
   } = $props();
 
   const uid = $props.id();
@@ -160,7 +182,40 @@
   const ids = {
     heading: `kv-inspector-${uid}`,
     color: `kv-inspector-${uid}-color`,
+    modifierHint: `kv-inspector-${uid}-modifier-hint`,
   };
+
+  const MODES: readonly { mode: ModifierChoice; label: MessageKey }[] = [
+    { mode: "off", label: "inspector.modifierOff" },
+    { mode: "held", label: "inspector.modifierHeld" },
+    { mode: "toggle", label: "inspector.modifierToggle" },
+  ];
+
+  /** Where the catalogue assigns: a direction of a modifier rotary, the
+   * one the focus was last in, or none for the key's action. */
+  let aim: Aim | undefined;
+
+  function aimAt(next: Aim | undefined) {
+    if (aim?.rotary === next?.rotary && aim?.direction === next?.direction) return;
+    aim = next;
+    onaim?.(next);
+  }
+
+  /** The focus entered the form outside the Modifier section: the
+   * catalogue assigns to the key's action again. */
+  function focused(event: FocusEvent) {
+    if (!(event.target instanceof Element) || event.target.closest(".modifier") === null) {
+      aimAt(undefined);
+    }
+  }
+
+  /** The message of `invalid` when it belongs under a field of `rotary`. */
+  function invalidOf(rotary: Roller): { message: string; field: Direction | "step" } | undefined {
+    const [owner, field] = invalid?.field.split(".") ?? [];
+    return invalid === undefined || owner !== rotary
+      ? undefined
+      : { message: invalid.message, field: field as Direction | "step" };
+  }
 
   /** The time of a result, 24 h. */
   function now(): string {
@@ -181,7 +236,9 @@
       a.actionType === b.actionType &&
       a.action === b.action &&
       a.windowClass === b.windowClass &&
-      a.waitFocus === b.waitFocus
+      a.waitFocus === b.waitFocus &&
+      a.modifier === b.modifier &&
+      JSON.stringify([a.dial, a.roller]) === JSON.stringify([b.dial, b.roller])
     );
   }
 
@@ -190,15 +247,21 @@
   /** The key `view` was read for. */
   let readAt: Target | undefined;
   /** An assigned catalogue entry waiting for its key to be read. */
-  let pending: { entry: CatalogueEntry; target: Target } | undefined;
+  let pending: { entry: CatalogueEntry; target: Target; aim?: Aim } | undefined;
   /** The `seq` of the last assignment taken. */
   let assigned = 0;
 
-  /** Applies the pending entry once its key is the one the form shows. */
+  /** Applies the pending entry once its key is the one the form shows: to
+   * the direction of a modifier rotary it aims at while the mode is on,
+   * else to the key. */
   function settle() {
     if (pending === undefined || view === undefined || !sameTarget(readAt, pending.target)) return;
-    const entry = pending.entry;
-    form = applied(entry, form);
+    const { entry, aim: at } = pending;
+    if (at !== undefined && form.modifier !== "off") {
+      form = { ...form, [at.rotary]: appliedToControl(entry, at.rotary, at.direction, form[at.rotary]) };
+    } else {
+      form = applied(entry, form);
+    }
     invalid = undefined;
     pending = undefined;
     if (entry.kind === "recipe") commit();
@@ -212,7 +275,11 @@
       (candidate) => candidate.key === next.entry,
     );
     if (entry === undefined) return;
-    pending = { entry, target: { ...next.target } };
+    pending = {
+      entry,
+      target: { ...next.target },
+      ...(next.aim === undefined ? {} : { aim: { ...next.aim } }),
+    };
     untrack(settle);
   });
 
@@ -246,6 +313,7 @@
     const at = untrack(() => target);
     if (at === undefined) {
       view = undefined;
+      untrack(() => aimAt(undefined));
       return;
     }
     // An assignment for a key the user left is dropped.
@@ -256,6 +324,7 @@
     if (!again) {
       invalid = undefined;
       note = undefined;
+      untrack(() => aimAt(undefined));
     }
     void read({ ...at }, again);
   });
@@ -344,6 +413,33 @@
     if (carried === undefined) return;
     form = withVariant(carried.recipe, variant, form);
     commit();
+  }
+
+  /** Another Mode: off writes no modifier, a mode with nothing bound an
+   * empty dial; the rotaries the form holds come back with a mode. */
+  function moded(value: string) {
+    form = { ...form, modifier: value as ModifierChoice };
+    if (form.modifier === "off") aimAt(undefined);
+    commit();
+  }
+
+  /** The select of `direction` of `rotary` chose `value`, as the control
+   * editor's does. */
+  function switchedRotary(rotary: Roller, direction: Direction, value: string) {
+    const preset = entries?.find((entry) => entry.kind === "recipe" && entry.key === value);
+    form = {
+      ...form,
+      [rotary]:
+        preset !== undefined
+          ? appliedToControl(preset, rotary, direction, form[rotary])
+          : { ...form[rotary], [direction]: { ...actionForm(undefined), actionType: value as ActionType } },
+    };
+    if (preset !== undefined) invalid = undefined;
+    commit();
+  }
+
+  function editedRotary(rotary: Roller, direction: Direction, part: ActionPart) {
+    form = { ...form, [rotary]: { ...form[rotary], [direction]: part } };
   }
 
   function pickIcon(value: string) {
@@ -474,7 +570,7 @@
       <Notice kind="error">{describe(problem)}</Notice>
     {/if}
     {#if view !== undefined}
-      <form onsubmit={(event) => event.preventDefault()}>
+      <form onsubmit={(event) => event.preventDefault()} onfocusin={focused}>
         <div class="tile">
           {#if tile !== undefined}
             <img src={tile.image} alt={t("inspector.tile", { key: target.key })} />
@@ -553,6 +649,55 @@
             {t("inspector.onFailWhen")}
           </p>
         {/if}
+        <fieldset class="modifier">
+          <legend>{t("inspector.modifier")}</legend>
+          <label>
+            {t("inspector.modifierMode")}
+            <select
+              aria-label={t("inspector.modifierMode")}
+              aria-describedby={form.modifier === "off" ? undefined : ids.modifierHint}
+              value={form.modifier}
+              onchange={(event) => moded(event.currentTarget.value)}
+            >
+              {#each MODES as { mode, label } (mode)}
+                <option value={mode}>{t(label)}</option>
+              {/each}
+            </select>
+          </label>
+          {#if form.modifier !== "off"}
+            <p id={ids.modifierHint} class="hint">
+              {t(form.modifier === "held" ? "inspector.modifierHeldHint" : "inspector.modifierToggleHint")}
+            </p>
+            {#each ROTARIES as rotary (rotary)}
+              {@const name = controlName(rotary)}
+              {@const labelName = t("inspector.fieldOf", { direction: name, field: t("inspector.label") })}
+              <div class="rotary" role="group" aria-label={name}>
+                <label>
+                  {labelName}
+                  <input
+                    type="text"
+                    aria-label={labelName}
+                    value={form[rotary].label}
+                    oninput={(event) =>
+                      (form = { ...form, [rotary]: { ...form[rotary], label: event.currentTarget.value } })}
+                    onchange={commit}
+                  />
+                </label>
+                <RotaryFields
+                  form={form[rotary]}
+                  {name}
+                  invalid={invalidOf(rotary)}
+                  {entries}
+                  onstep={(step) => (form = { ...form, [rotary]: { ...form[rotary], step } })}
+                  onedit={(direction, part) => editedRotary(rotary, direction, part)}
+                  onswitch={(direction, value) => switchedRotary(rotary, direction, value)}
+                  oncommit={commit}
+                  onfocus={(direction) => aimAt({ rotary, direction })}
+                />
+              </div>
+            {/each}
+          {/if}
+        </fieldset>
       </form>
     {/if}
   {/if}
@@ -654,6 +799,26 @@
   .colour {
     display: flex;
     gap: 8px;
+  }
+
+  /* The Modifier section: a group like the form, its legend a label. */
+  .modifier,
+  .rotary {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .modifier legend {
+    margin-bottom: 8px;
+    padding: 0;
+    background: var(--kv-bg);
+    color: var(--kv-fg);
+    font-weight: 600;
   }
 
   .colour input[type="color"] {

@@ -8,12 +8,13 @@ use keyvo_core::diagnostic::{Diagnostic, Position};
 use std::time::SystemTime;
 
 use keyvo_core::dialpad::{
-    Bindings, ButtonSlot, Control, Roller, Turns, blocked, press, turn, turn_trigger,
+    Bindings, ButtonSlot, Control, Roller, Turns, blocked, modifier_turn, press, turn, turn_trigger,
 };
 use keyvo_core::edit::{ButtonFields, ProfileDocument, RotaryFields};
 use keyvo_core::layout::Profiles;
-use keyvo_core::profile::{Action, Profile};
+use keyvo_core::profile::{Action, KeySlot, ModifierMode, Profile};
 use keyvo_core::stack::Layer;
+use keyvo_core::state::ModifierKey;
 use keyvo_core::trace::{Outcome, Trigger};
 
 const HEAD: &str = "schema_version = 1\n[profile]\nid = \"code\"\nname = \"Code\"\n";
@@ -493,4 +494,53 @@ fn a_control_is_written_dial_roller_or_button_n() {
     assert_eq!(Roller::from_id(2), None);
     assert_eq!(Control::from(Roller::Dial).roller(), Some(Roller::Dial));
     assert_eq!(Control::Button(button(1)).roller(), None);
+}
+
+#[test]
+fn a_turn_under_a_modifier_runs_the_keys_binding_with_its_step() {
+    let global = format!(
+        "{GLOBAL}\n[[pages]]\n[pages.keys.7]\n\
+         dial = {{ cw = \"KEY_BRIGHTNESSUP\", ccw = \"KEY_BRIGHTNESSDOWN\", step = 2 }}\n"
+    );
+    let profiles = profiles(&[&global, &format!("{CODE}\n[[pages]]\n")]);
+    let taker = ModifierKey {
+        key: KeySlot::new(7).unwrap(),
+        mode: ModifierMode::Held,
+        profile: "code".into(),
+        page: 1,
+    };
+    let mut turns = Turns::default();
+    let up = modifier_turn(&profiles, &taker, Roller::Dial, 5, real(), &mut turns, 8);
+    assert_eq!(up.runs, 2);
+    assert_eq!(up.record.action, Some(chord("KEY_BRIGHTNESSUP")));
+    assert_eq!(
+        (up.record.key, up.record.control),
+        (KeySlot::new(7), Some(Control::Dial))
+    );
+    // `code` lacks key 7: the global layer supplied it.
+    assert_eq!(up.record.layer, Some(Layer::Global));
+    assert_eq!(up.record.modifier, Some(ModifierMode::Held));
+    assert_eq!((up.record.profile.as_str(), up.record.page), ("code", 1));
+    assert_eq!(up.record.result, Outcome::Pending);
+    // The detent left over carries.
+    let next = modifier_turn(&profiles, &taker, Roller::Dial, 1, real(), &mut turns, 8);
+    assert_eq!(next.runs, 1);
+    let dry = modifier_turn(
+        &profiles,
+        &taker,
+        Roller::Dial,
+        -4,
+        (turn_trigger(true), SystemTime::UNIX_EPOCH),
+        &mut turns,
+        8,
+    );
+    assert_eq!((dry.runs, dry.record.result), (2, Outcome::DryRun));
+    assert_eq!(dry.record.action, Some(chord("KEY_BRIGHTNESSDOWN")));
+    // The key has no roller table: nothing bound on it.
+    let roller = modifier_turn(&profiles, &taker, Roller::Roller, 3, real(), &mut turns, 8);
+    assert_eq!((roller.runs, roller.record.result), (0, Outcome::Unbound));
+    assert_eq!(
+        serde_json::to_value(&up.record).unwrap()["modifier"],
+        serde_json::json!("held")
+    );
 }

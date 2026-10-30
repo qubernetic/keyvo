@@ -233,6 +233,12 @@ pub struct Timing {
     #[serde(with = "millis")]
     #[schemars(with = "u64")]
     pub slot_probe: Duration,
+    /// An armed toggle modifier key ends after this long without a turn
+    /// of the dial or the roller (spec §6.1); 0 keeps it until the next
+    /// press. Default 0 (off).
+    #[serde(with = "millis")]
+    #[schemars(with = "u64")]
+    pub modifier_timeout: Duration,
 }
 
 impl Default for Timing {
@@ -259,6 +265,7 @@ impl Default for Timing {
             claim_splash_timeout: Duration::from_millis(10_000),
             doctor_reply: Duration::from_millis(1000),
             slot_probe: Duration::from_millis(1000),
+            modifier_timeout: Duration::ZERO,
         }
     }
 }

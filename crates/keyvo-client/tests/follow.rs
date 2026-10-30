@@ -99,6 +99,7 @@ fn follow_hands_on_the_view_then_every_event_then_why_it_ended() {
             mode: Mode::Auto,
             index: 1,
             locked: false,
+            modifier: None,
         },
     }];
     expected.extend(
@@ -126,7 +127,7 @@ fn follow_subscribes_to_every_class_with_the_replay() {
             "v": 1,
             "id": 1,
             "cmd": "subscribe",
-            "events": ["key", "profile", "page", "mode", "device", "context", "trace", "config", "session", "dial"],
+            "events": ["key", "profile", "page", "mode", "device", "context", "trace", "config", "session", "dial", "modifier"],
             "replay": 20,
         })
     );

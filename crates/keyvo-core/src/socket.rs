@@ -18,7 +18,7 @@ use crate::press::PressKind;
 use crate::profile::KeySlot;
 use crate::recipe::{Catalogue, Recipe};
 use crate::render::{Panel, TileSize};
-use crate::state::View;
+use crate::state::{ActiveModifier, View};
 use crate::trace::TraceRecord;
 
 /// The protocol version this build speaks.
@@ -78,6 +78,14 @@ pub enum Command {
         /// Resolve and trace, execute nothing: the simulator's path.
         #[serde(default)]
         dry_run: bool,
+        /// Holds a held modifier key down until a press with `release`
+        /// (spec §8); no `kind`.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        hold: bool,
+        /// Lets a key held with `hold` go: its action runs when no turn
+        /// took its binding.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        release: bool,
     },
     /// Reloads the configuration directory now.
     Reload {},
@@ -108,12 +116,15 @@ impl Command {
             delta: None,
             kind,
             dry_run,
+            hold: false,
+            release: false,
         }
     }
 
     /// The rules the fields of a command keep beyond their types: a
-    /// `press` names a key or a control, not both, and `delta`, nonzero,
-    /// goes with `dial` and `roller` alone.
+    /// `press` names a key or a control, not both, `delta`, nonzero, goes
+    /// with `dial` and `roller` alone, and `hold` or `release`, one of
+    /// them, with a key and no `kind`.
     ///
     /// # Errors
     ///
@@ -123,11 +134,25 @@ impl Command {
             key,
             control,
             delta,
+            kind,
+            hold,
+            release,
             ..
         } = self
         else {
             return Ok(());
         };
+        if *hold || *release {
+            if *hold && *release {
+                return Err("a press has `hold` or `release`, not both".into());
+            }
+            if key.is_none() || control.is_some() {
+                return Err("`hold` and `release` belong to a `key`".into());
+            }
+            if *kind == PressKind::Long {
+                return Err("`hold` and `release` take no `kind`".into());
+            }
+        }
         match (key, control, delta) {
             (Some(_), Some(_), _) => Err("a press names `key` or `control`, not both".into()),
             (None, None, _) => Err("a press needs `key` or `control`".into()),
@@ -625,11 +650,13 @@ pub enum EventClass {
     Session,
     /// A turn of the Dialpad's dial or roller.
     Dial,
+    /// Another key has the dial and the roller, or none.
+    Modifier,
 }
 
 impl EventClass {
     /// Every class, in protocol order.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Key,
         Self::Profile,
         Self::Page,
@@ -640,6 +667,7 @@ impl EventClass {
         Self::Config,
         Self::Session,
         Self::Dial,
+        Self::Modifier,
     ];
 }
 
@@ -697,6 +725,13 @@ pub enum Event {
         /// The session is locked now.
         locked: bool,
     },
+    /// A modifier key took the dial and the roller, or the last one let
+    /// them go (`null`).
+    Modifier {
+        /// The key and the mode; `null` when the profile's `[dialpad]`
+        /// table has them again.
+        modifier: Option<ActiveModifier>,
+    },
 }
 
 impl Event {
@@ -714,12 +749,13 @@ impl Event {
             Self::Trace { .. } => EventClass::Trace,
             Self::Config(_) => EventClass::Config,
             Self::Session { .. } => EventClass::Session,
+            Self::Modifier { .. } => EventClass::Modifier,
         }
     }
 
     /// The events of a change from `before` to `after`: one per changed
     /// class, the view classes each with the whole new view, a lock or
-    /// unlock as `session` last.
+    /// unlock as `session`, then a `modifier`.
     #[must_use]
     pub fn switched(before: &View, after: &View) -> Vec<Self> {
         let mut events = Vec::new();
@@ -735,6 +771,11 @@ impl Event {
         if before.locked != after.locked {
             events.push(Self::Session {
                 locked: after.locked,
+            });
+        }
+        if before.modifier != after.modifier {
+            events.push(Self::Modifier {
+                modifier: after.modifier,
             });
         }
         events

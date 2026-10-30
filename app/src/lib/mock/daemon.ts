@@ -5,9 +5,12 @@
 // app (held, as `[focus].hold_classes` holds it), VS Code and a window no
 // profile matches, and the trace replays the fixture's entries. The Dialpad
 // is the fixture's connected one, its dial and roller turning on a timer.
+// The modifier keys of the contrib profiles (#189) take the dial on a timer
+// too: global key 7 held, then key 8 toggled, each for one step; a press,
+// a dry run, changes no modifier, as the daemon's does not.
 import type { Daemon, Outline, Tile, Update } from "../daemon";
-import type { KeyFields } from "../editor";
-import type { Context, DialpadStatus, Event, Layer, TraceRecord, View } from "../protocol";
+import { modifierOf, type KeyFields } from "../editor";
+import type { Context, DialpadStatus, Event, Layer, Modifier, TraceRecord, View } from "../protocol";
 import { fixtureDialpad, fixtureRecipes, fixtureStatus, fixtureTrace, SNAPSHOTS } from "./data";
 import { attempt } from "./profiles";
 import type { MockProfile, Store } from "./store";
@@ -19,8 +22,20 @@ export const FOCUS_MS = 10_000;
 /** How often the mock's connected Dialpad turns a rotary, the dial and
  * the roller in turn, so the panel's pulse shows. */
 export const DIAL_MS = 3_000;
+/** How often the mock's modifier moves to the next step of MODIFIERS. */
+export const MODIFIER_MS = 5_000;
 /** The trace ring buffer's size (the daemon's `[trace].ring` default). */
 const RING = 200;
+
+/** The modifier steps in turn: key 7 held, none, key 8 toggled, none. A
+ * step whose key is no modifier key of that mode on the shown page is
+ * none. */
+const MODIFIERS: readonly (Modifier | null)[] = [
+  { key: 7, mode: "held" },
+  null,
+  { key: 8, mode: "toggle" },
+  null,
+];
 
 /** The turns the Dialpad makes in turn: two detents of the dial
  * clockwise, one of the roller back. */
@@ -82,6 +97,9 @@ export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemo
   let replayed = 0;
   /** The time of the last replayed press, which its on_fail run keeps. */
   let pressedAt = 0;
+  /** The modifier key that has the dial; none until the timer gives one. */
+  let modifier: Modifier | null = null;
+  let modified = 0;
 
   function context(): Context {
     return { ...(FOCUS[focus] ?? { class: "", title: "" }), source: "watcher" };
@@ -102,6 +120,8 @@ export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemo
       mode: "auto",
       index: 1,
       locked: options.locked === true,
+      // Absent while no key has the dial, as the daemon writes it.
+      ...(modifier === null ? {} : { modifier: { ...modifier } }),
     };
   }
 
@@ -194,7 +214,10 @@ export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemo
           return blocked;
         }
         const found = resolve(profile, page, key);
-        const action = found?.[0].action;
+        // A short press of a toggle key arms or ends it and runs nothing;
+        // a dry run only says so.
+        const toggle = kind === "short" && found !== undefined && modifierOf(found[0]) === "toggle";
+        const action = toggle ? undefined : found?.[0].action;
         const entry: TraceRecord = {
           timestamp_ms: Date.now(),
           trigger: { press: kind, simulated: true },
@@ -202,8 +225,9 @@ export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemo
           page,
           key,
           ...(found === undefined ? {} : { layer: found[1] }),
+          ...(toggle ? { modifier: "toggle" as const } : {}),
           action: action === undefined ? null : structuredClone(action),
-          result: { status: action === undefined ? "unbound" : "dry_run" },
+          result: { status: action === undefined && !toggle ? "unbound" : "dry_run" },
         };
         record(entry);
         return entry;
@@ -229,8 +253,23 @@ export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemo
         // A held window leaves the view as it is: no profile event.
         if (FOCUS[focus]?.held === true) return;
         selecting = focus;
+        // Another profile ends the modifier.
+        modifier = null;
         send({ event: "profile", ...view() });
       }, FOCUS_MS);
+      const modifierTimer = setInterval(() => {
+        const step = MODIFIERS[modified++ % MODIFIERS.length] ?? null;
+        const { profile, page } = view();
+        const found = step === null ? undefined : resolve(profile, page, step.key);
+        // Under the lock no key takes the dial.
+        const next =
+          options.locked !== true && found !== undefined && modifierOf(found[0]) === step?.mode
+            ? step
+            : null;
+        if (next === null && modifier === null) return;
+        modifier = next;
+        send({ event: "modifier", modifier: next === null ? null : { ...next } });
+      }, MODIFIER_MS);
       const dialTimer = dialpad.connected
         ? setInterval(() => {
             const turn = TURNS[turned++ % TURNS.length];
@@ -240,6 +279,7 @@ export function mockDaemon(store: Store, options: MockDaemonOptions = {}): Daemo
       return Promise.resolve(() => {
         clearInterval(traceTimer);
         clearInterval(focusTimer);
+        clearInterval(modifierTimer);
         clearInterval(dialTimer);
       });
     },

@@ -3,7 +3,7 @@
   // the Pad's Dialpad panel, in its profile's `[dialpad]` table. The dial
   // and the roller have a label, a step (detents per run, empty for 1) and
   // the two directions, each the key editor's action fields
-  // (ActionFields.svelte); a button has a label and the action, and its
+  // (RotaryFields.svelte, ActionFields.svelte); a button has a label and the action, and its
   // `on_fail` read-only as a key's. Every change is written at once after
   // a snapshot, one write after the other, with undo and redo for the
   // session, like the key editor. A control the profile does not bind and
@@ -16,6 +16,7 @@
 
   import ActionFields from "./ActionFields.svelte";
   import Notice from "./Notice.svelte";
+  import RotaryFields from "./RotaryFields.svelte";
   import { appliedToControl, catalogueOf, type CatalogueEntry } from "./lib/catalogue";
   import { bound, controlName, isRoller } from "./lib/dialpad";
   import {
@@ -108,12 +109,6 @@
     launch: "inspector.kind.launch",
   };
 
-  /** A rotary's directions, each with the label of its Action select. */
-  const DIRECTIONS: readonly { part: Direction; label: string }[] = [
-    { part: "cw", label: t("inspector.clockwise") },
-    { part: "ccw", label: t("inspector.counterClockwise") },
-  ];
-
   const rotary = $derived(isRoller(target.control));
   const name = $derived(controlName(target.control));
   /** The profile does not bind the control and the global one does. */
@@ -130,11 +125,7 @@
           kind: t(KINDS[shown?.fields.action?.type ?? "none"]),
         }),
   );
-  const ids = {
-    heading: `kv-control-${uid}`,
-    step: `kv-control-${uid}-step`,
-    stepHint: `kv-control-${uid}-step-hint`,
-  };
+  const ids = { heading: `kv-control-${uid}` };
 
   function now(): string {
     return clock(Date.now());
@@ -414,39 +405,19 @@
         <input type="text" aria-label={t("inspector.label")} bind:value={form.label} onchange={commit} />
       </label>
       {#if rotary}
-        <div class="field">
-          <label for={ids.step}>{t("inspector.step")}</label>
-          <input
-            id={ids.step}
-            type="text"
-            inputmode="numeric"
-            aria-label={t("inspector.step")}
-            placeholder={t("editor.stepExample")}
-            aria-invalid={invalid?.field === "step" ? true : undefined}
-            aria-describedby={ids.stepHint}
-            bind:value={form.step}
-            onchange={commit}
-          />
-          {#if invalid?.field === "step"}
-            <p role="alert" class="invalid">{invalid.message}</p>
-          {/if}
-          <p id={ids.stepHint} class="hint">{t("inspector.stepHint")}</p>
-        </div>
-        {#each DIRECTIONS as { part, label } (part)}
-          <div class="part" onfocusin={() => focusDirection(part)}>
-            <ActionFields
-              part={form[part]}
-              {label}
-              direction={label}
-              invalid={invalid?.field === part ? invalid.message : undefined}
-              {entries}
-              browse={part === "cw" ? browse : undefined}
-              onedit={(next) => edited(part, next)}
-              onswitch={(value) => switched(part, value)}
-              oncommit={commit}
-            />
-          </div>
-        {/each}
+        <RotaryFields
+          {form}
+          invalid={invalid === undefined || invalid.field === "action"
+            ? undefined
+            : { message: invalid.message, field: invalid.field }}
+          {entries}
+          {browse}
+          onstep={(step) => (form.step = step)}
+          onedit={edited}
+          onswitch={switched}
+          oncommit={commit}
+          onfocus={focusDirection}
+        />
       {:else}
         <ActionFields
           part={form.action}
@@ -515,8 +486,7 @@
     gap: 8px;
   }
 
-  form,
-  .part {
+  form {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -524,19 +494,14 @@
   }
 
   /* The Inspector's field vocabulary: the label above its field, muted at
-     0.85 em, 2 px between them; a label inside a field sized once. */
-  label,
-  .field {
+     0.85 em, 2 px between them. */
+  label {
     display: flex;
     flex-direction: column;
     gap: 2px;
     background: var(--kv-bg);
     color: var(--kv-fg-muted);
     font-size: 0.85em;
-  }
-
-  .field label {
-    font-size: 1em;
   }
 
   .hint {
@@ -561,7 +526,6 @@
     color: var(--kv-fg);
   }
 
-  .invalid,
   .result {
     margin: 0;
     background: var(--kv-bg);

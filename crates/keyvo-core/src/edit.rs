@@ -14,7 +14,7 @@ use toml_edit::{Document, DocumentMut, InlineTable, Item, Table, TableLike, Valu
 
 use crate::diagnostic::Diagnostic;
 use crate::dialpad::{ButtonSlot, Roller};
-use crate::profile::{Action, Color, DialButton, Key, KeySlot, Profile, Rotary};
+use crate::profile::{Action, Color, DialButton, Key, KeySlot, ModifierMode, Profile, Rotary};
 
 /// The text of [`Profile::builtin_global`], the file the editor starts
 /// from when `profiles/global.toml` does not exist yet.
@@ -31,7 +31,8 @@ name = \"context\"
 
 /// The fields of a key the editor changes; `on_fail`, `states` and anything
 /// else in the key's table are kept as they are. An absent field is removed from
-/// the file.
+/// the file; a `dial` or `roller` without fields stays as an empty table,
+/// which makes the key a modifier with nothing bound.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct KeyFields {
@@ -47,6 +48,16 @@ pub struct KeyFields {
     /// What a press does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub action: Option<Action>,
+    /// The modifier mode as written; absent for the default (`held` with a
+    /// `dial` or `roller`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modifier: Option<ModifierMode>,
+    /// The dial's binding while the key is the active modifier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dial: Option<RotaryFields>,
+    /// The roller's binding while the key is the active modifier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roller: Option<RotaryFields>,
 }
 
 impl KeyFields {
@@ -58,6 +69,18 @@ impl KeyFields {
             label: key.label.clone(),
             color: key.color,
             action: key.action.clone(),
+            modifier: key.modifier,
+            dial: key.dial.as_ref().map(RotaryFields::of),
+            roller: key.roller.as_ref().map(RotaryFields::of),
+        }
+    }
+
+    /// The fields with every `step` of 1 written as absent.
+    fn normalized(&self) -> Self {
+        Self {
+            dial: self.dial.as_ref().map(RotaryFields::normalized),
+            roller: self.roller.as_ref().map(RotaryFields::normalized),
+            ..self.clone()
         }
     }
 }
@@ -298,11 +321,12 @@ impl ProfileDocument {
         fields: &KeyFields,
     ) -> Result<KeyFields, EditError> {
         let before = self.key(page, slot)?;
+        let fields = &fields.normalized();
         if before == *fields {
             return Ok(before);
         }
         let mut doc = self.doc.clone();
-        let key = self.key_table(&mut doc, page, slot)?;
+        let (key, inline) = self.key_table(&mut doc, page, slot)?;
         if before.icon != fields.icon {
             set_value(key, "icon", fields.icon.as_deref().map(Value::from));
         }
@@ -319,6 +343,31 @@ impl ProfileDocument {
                 before.action.as_ref(),
                 fields.action.as_ref(),
             );
+        }
+        if before.modifier != fields.modifier {
+            set_value(
+                key,
+                "modifier",
+                fields.modifier.map(|mode| mode.as_str().into()),
+            );
+        }
+        for (name, before, after) in [
+            ("dial", &before.dial, &fields.dial),
+            ("roller", &before.roller, &fields.roller),
+        ] {
+            if before == after {
+                continue;
+            }
+            let Some(after) = after else {
+                key.remove(name);
+                continue;
+            };
+            let shape = || EditError::Shape {
+                path: self.path.clone(),
+                what: format!("page {page} key {} {name}", slot.get()),
+            };
+            let before = before.clone().unwrap_or_default();
+            write_rotary(key, inline, name, &before, after, true).ok_or_else(shape)?;
         }
         self.commit(doc)?;
         Ok(before)
@@ -388,41 +437,12 @@ impl ProfileDocument {
         let mut doc = self.doc.clone();
         let (dialpad, inline) = self.dialpad_table(&mut doc)?;
         let name = roller.as_str();
-        if !dialpad.contains_key(name) {
-            dialpad.insert(name, Item::Value(Value::InlineTable(InlineTable::new())));
-        }
-        let shape = || EditError::Shape {
-            path: self.path.clone(),
-            what: format!("dialpad {name}"),
-        };
-        let is_inline = inline || dialpad.get(name).is_some_and(Item::is_inline_table);
-        let table = dialpad
-            .get_mut(name)
-            .and_then(Item::as_table_like_mut)
-            .ok_or_else(shape)?;
-        let end = is_inline.then(|| inline_end(table)).flatten();
-        if before.cw != fields.cw {
-            set_action(table, "cw", before.cw.as_ref(), fields.cw.as_ref());
-        }
-        if before.ccw != fields.ccw {
-            set_action(table, "ccw", before.ccw.as_ref(), fields.ccw.as_ref());
-        }
-        if before.label != fields.label {
-            set_value(table, "label", fields.label.as_deref().map(Value::from));
-        }
-        if before.step != fields.step {
-            set_value(
-                table,
-                "step",
-                fields.step.map(|step| i64::from(step).into()),
-            );
-        }
-        if let Some(end) = end {
-            end.restore(table);
-        }
-        if table.is_empty() {
-            dialpad.remove(name);
-        }
+        write_rotary(dialpad, inline, name, &before, &fields, false).ok_or_else(|| {
+            EditError::Shape {
+                path: self.path.clone(),
+                what: format!("dialpad {name}"),
+            }
+        })?;
         drop_empty_dialpad(&mut doc);
         self.commit(doc)?;
         Ok(before)
@@ -529,13 +549,13 @@ impl ProfileDocument {
     }
 
     /// The table of key `slot` on page `page` in `doc`, created when the
-    /// page has none.
+    /// page has none, and whether it is inline.
     fn key_table<'d>(
         &self,
         doc: &'d mut DocumentMut,
         page: usize,
         slot: KeySlot,
-    ) -> Result<&'d mut dyn TableLike, EditError> {
+    ) -> Result<(&'d mut dyn TableLike, bool), EditError> {
         let shape = |what: String| EditError::Shape {
             path: self.path.clone(),
             what,
@@ -557,9 +577,7 @@ impl ProfileDocument {
         let (keys, inline) = child(page_table, inline, "keys", true)
             .ok_or_else(|| shape(format!("page {page} keys")))?;
         let name = slot.get().to_string();
-        child(keys, inline, &name, false)
-            .map(|(key, _)| key)
-            .ok_or_else(|| shape(format!("page {page} key {name}")))
+        child(keys, inline, &name, false).ok_or_else(|| shape(format!("page {page} key {name}")))
     }
 }
 
@@ -635,6 +653,50 @@ fn launch_values(action: &Action) -> [(&'static str, Option<Value>); 2] {
         Action::Chord { .. } | Action::Exec { .. } => (None, None),
     };
     [("class", class), ("wait_focus", wait_focus)]
+}
+
+/// Writes the binding `name` (`dial` or `roller`) of `parent`, an inline
+/// table when `inline`, from `before` to `fields`: only what differs is
+/// touched, a short-form chord stays short while it stays a chord, a new
+/// binding is an inline table. A binding left without fields is removed,
+/// unless `keep_empty`. `None` when `name` is there and not a table.
+fn write_rotary(
+    parent: &mut dyn TableLike,
+    inline: bool,
+    name: &str,
+    before: &RotaryFields,
+    fields: &RotaryFields,
+    keep_empty: bool,
+) -> Option<()> {
+    if !parent.contains_key(name) {
+        parent.insert(name, Item::Value(Value::InlineTable(InlineTable::new())));
+    }
+    let is_inline = inline || parent.get(name).is_some_and(Item::is_inline_table);
+    let table = parent.get_mut(name).and_then(Item::as_table_like_mut)?;
+    let end = is_inline.then(|| inline_end(table)).flatten();
+    if before.cw != fields.cw {
+        set_action(table, "cw", before.cw.as_ref(), fields.cw.as_ref());
+    }
+    if before.ccw != fields.ccw {
+        set_action(table, "ccw", before.ccw.as_ref(), fields.ccw.as_ref());
+    }
+    if before.label != fields.label {
+        set_value(table, "label", fields.label.as_deref().map(Value::from));
+    }
+    if before.step != fields.step {
+        set_value(
+            table,
+            "step",
+            fields.step.map(|step| i64::from(step).into()),
+        );
+    }
+    if let Some(end) = end {
+        end.restore(table);
+    }
+    if table.is_empty() && !keep_empty {
+        parent.remove(name);
+    }
+    Some(())
 }
 
 /// `[dialpad]` without anything in it is removed.

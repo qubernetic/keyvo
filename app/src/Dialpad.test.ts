@@ -8,10 +8,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import Dialpad from "./Dialpad.svelte";
 import { PULSE_MS } from "./lib/dialpad";
-import type { ControlFields, ControlTarget, Editor } from "./lib/editor";
+import type { ControlFields, ControlTarget, Editor, KeyFields, Target } from "./lib/editor";
 import { eventsOf, nth } from "./lib/fixtures";
 import { t } from "./lib/i18n";
-import type { Control, DialpadStatus } from "./lib/protocol";
+import type { Control, DialpadStatus, ModifierMode } from "./lib/protocol";
 
 const CONNECTED: DialpadStatus = (() => {
   const { event: _, ...status } = nth(eventsOf("dialpad"), 0);
@@ -31,10 +31,25 @@ const GLOBAL: Partial<Record<Control, ControlFields>> = {
   "button:1": { label: "Mute", action: { type: "chord", keys: "KEY_MUTE" } },
 };
 
-/** An editor whose profiles bind `bindings`, by profile then control. */
+/** The contrib profiles' modifier keys on the global context page (#189). */
+const KEYS: Record<number, KeyFields> = {
+  7: {
+    label: "Brightness",
+    dial: { cw: { type: "exec", cmd: "brightnessctl set +5%" }, step: 6 },
+    roller: { cw: { type: "chord", keys: "KEY_BRIGHTNESSUP" }, label: "Fine" },
+  },
+  8: { label: "Zoom", modifier: "toggle", dial: { cw: { type: "chord", keys: "ctrl+equal" } } },
+};
+
+/** An editor whose profiles bind `bindings`, by profile then control, and
+ * whose global context page holds KEYS. */
 function editor(bindings: Record<string, Partial<Record<Control, ControlFields>>> = { global: GLOBAL }) {
   return {
-    key: () => Promise.reject(new Error("the panel reads no key")),
+    key: vi.fn(({ profile, key }: Target) =>
+      profile === "global" && KEYS[key] !== undefined
+        ? Promise.resolve({ path: "/c/profiles/global.toml", fields: KEYS[key] })
+        : Promise.reject(new Error(`no key ${key} in ${profile}`)),
+    ),
     editKey: () => Promise.reject(new Error("the panel writes no key")),
     control: vi.fn(({ profile, control }: ControlTarget) =>
       Promise.resolve({ path: `/c/profiles/${profile}.toml`, fields: bindings[profile]?.[control] ?? {} }),
@@ -48,12 +63,15 @@ interface Props {
   profile?: string;
   selected?: Control;
   bindings?: Record<string, Partial<Record<Control, ControlFields>>>;
+  modifier?: { key: Target; mode: ModifierMode };
 }
 
-function panel({ status = CONNECTED, profile = "vscode", selected, bindings }: Props = {}) {
+function panel({ status = CONNECTED, profile = "vscode", selected, bindings, modifier }: Props = {}) {
   const onselect = vi.fn<(control: Control) => void>();
   const keys = editor(bindings);
-  const result = render(Dialpad, { props: { editor: keys, status, profile, selected, onselect } });
+  const result = render(Dialpad, {
+    props: { editor: keys, status, profile, selected, modifier, onselect },
+  });
   return { onselect, editor: keys, ...result };
 }
 
@@ -149,5 +167,35 @@ describe("the Dialpad panel", () => {
     await waitFor(() => expect(control("Dial")).not.toHaveClass("pulse"), { timeout: 4 * PULSE_MS });
     await rerender({ pulse: { control: "dial", seq: 2 } });
     expect(control("Dial")).toHaveClass("pulse");
+  });
+
+  it("shows a held modifier key's dial and roller, each labelled with (held)", async () => {
+    panel({ modifier: { key: { profile: "global", page: 1, key: 7 }, mode: "held" } });
+    await waitFor(() => expect(within(control("Dial")).getByText("Brightness (held)")).toBeInTheDocument());
+    // The roller's own label goes before the key's.
+    expect(within(control("Roller")).getByText("Fine (held)")).toBeInTheDocument();
+    expect(control("Dial")).toHaveAccessibleName(
+      "Dial: Brightness (held), clockwise exec brightnessctl set +5%, counter-clockwise unbound, from key 7",
+    );
+    expect(control("Dial")).toHaveClass("modifier");
+    expect(control("Dial")).not.toHaveClass("fallen");
+    // A button stays the profile's.
+    expect(within(control("Button 1")).getByText("Mute")).toBeInTheDocument();
+  });
+
+  it("keeps the profile's roller when a toggled key binds only the dial, and its labels once it ends", async () => {
+    const { rerender } = panel({ modifier: { key: { profile: "global", page: 1, key: 8 }, mode: "toggle" } });
+    await waitFor(() => expect(within(control("Dial")).getByText("Zoom (toggled)")).toBeInTheDocument());
+    expect(within(control("Roller")).getByText("Tabs")).toBeInTheDocument();
+    expect(control("Roller")).not.toHaveClass("modifier");
+    await rerender({ modifier: undefined });
+    await waitFor(() => expect(within(control("Dial")).getByText("Volume")).toBeInTheDocument());
+    expect(control("Dial")).not.toHaveClass("modifier");
+  });
+
+  it("keeps the profile's labels when the modifier key cannot be read", async () => {
+    const { editor } = panel({ modifier: { key: { profile: "vscode", page: 1, key: 7 }, mode: "held" } });
+    await waitFor(() => expect(editor.key).toHaveBeenCalledWith({ profile: "vscode", page: 1, key: 7 }));
+    await waitFor(() => expect(within(control("Dial")).getByText("Volume")).toBeInTheDocument());
   });
 });

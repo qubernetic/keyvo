@@ -6,7 +6,9 @@
   // and the arrows select, Space presses the selected key short and
   // Shift+Space long, as dry runs. The selected tile has the accent
   // outline, a key held down on the device its mark, and a key that falls
-  // through from the global layer is dimmed with a corner mark. Every cell
+  // through from the global layer is dimmed with a corner mark. The modifier
+  // key that has the dial (#189) has the accent ring and a dial badge, as
+  // the pad draws it. Every cell
   // is a drop target for an entry dragged from the actions catalogue.
   // Without a geometry (no pad has reported one) it draws the device with
   // nine empty wells and the caption "No pad", nothing to select (#165).
@@ -17,7 +19,7 @@
   import type { Tile } from "./lib/daemon";
   import { t } from "./lib/i18n";
   import { describeAction, grid, moved, phrase } from "./lib/pad";
-  import type { Geometry, PressKind } from "./lib/protocol";
+  import type { Geometry, Modifier, PressKind } from "./lib/protocol";
   import { GLOBAL } from "./lib/profiles";
 
   let {
@@ -25,6 +27,7 @@
     tiles,
     profile,
     held,
+    modifier,
     selected,
     name,
     onselect,
@@ -39,6 +42,8 @@
     profile: string | undefined;
     /** The keys held down on the device. */
     held: number[];
+    /** The modifier key that has the dial; none while no key has it. */
+    modifier?: Modifier | null;
     /** The selected key; none until the user selects one. */
     selected?: number;
     /** The grid's accessible name. */
@@ -62,6 +67,9 @@
       tile?.label,
       describeAction(tile?.action) ?? t("home.unbound"),
       tile?.layer === undefined ? undefined : t("layer", { layer: tile.layer }),
+      modifier?.key !== key
+        ? undefined
+        : t(modifier.mode === "held" ? "home.modifierHeld" : "home.modifierToggled"),
     ]);
     return t("home.key", { key, parts });
   }
@@ -141,6 +149,7 @@
             class:selected={key === selected}
             class:held={held.includes(key)}
             class:fallen={fallen(key)}
+            class:modifier={modifier?.key === key}
             class:over={key === over}
             tabindex={key === (selected ?? 1) ? 0 : -1}
             aria-label={label(key)}
@@ -150,6 +159,9 @@
               <img src={tiles[key - 1]?.image} alt="" />
               {#if fallen(key)}
                 <span class="layer" aria-hidden="true">{t("home.globalMark")}</span>
+              {/if}
+              {#if modifier?.key === key}
+                <span class="badge" aria-hidden="true">{t("home.dialMark")}</span>
               {/if}
             {:else}
               <span aria-hidden="true">{key}</span>
@@ -232,6 +244,16 @@
     outline-offset: -6px;
   }
 
+  /* The modifier key's ring, over the image, inside the selection border. */
+  .key.modifier::after {
+    position: absolute;
+    inset: 0;
+    border: 3px solid var(--kv-accent);
+    border-radius: inherit;
+    content: "";
+    pointer-events: none;
+  }
+
   .key.fallen img {
     opacity: 0.5;
   }
@@ -246,6 +268,18 @@
     position: absolute;
     top: 4px;
     inset-inline-start: 4px;
+    padding: 0 4px;
+    border-radius: var(--kv-radius);
+    background: var(--kv-bg-alt);
+    color: var(--kv-fg);
+    font-size: 0.75em;
+  }
+
+  /* The dial badge, in the top corner the global mark leaves free. */
+  .key .badge {
+    position: absolute;
+    top: 4px;
+    inset-inline-end: 4px;
     padding: 0 4px;
     border-radius: var(--kv-radius);
     background: var(--kv-bg-alt);

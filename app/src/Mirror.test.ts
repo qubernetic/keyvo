@@ -12,7 +12,7 @@ import { DRAG_TYPE } from "./lib/catalogue";
 import type { Tile } from "./lib/daemon";
 import { nth, responses } from "./lib/fixtures";
 import { t } from "./lib/i18n";
-import type { Geometry, PressKind, Status } from "./lib/protocol";
+import type { Geometry, Modifier, PressKind, Status } from "./lib/protocol";
 
 const GEOMETRY = (responses()[0] as Status).device.geometry as Geometry;
 
@@ -30,6 +30,7 @@ const TILES: Tile[] = Array.from({ length: 9 }, (_, index) => ({
 interface Props {
   selected?: number;
   held?: number[];
+  modifier?: Modifier | null;
   profile?: string;
   tiles?: Tile[];
 }
@@ -196,6 +197,29 @@ describe("the mirror", () => {
     mirror({ held: [5] });
     expect(key(5)).toHaveClass("held");
     expect(key(4)).not.toHaveClass("held");
+  });
+
+  it("rings the modifier key that has the dial in the accent, with its dial badge", () => {
+    mirror({ modifier: { key: 4, mode: "held" } });
+    expect(key(4)).toHaveClass("modifier");
+    expect(key(4)).toHaveAccessibleName("Key 4: Palette, chord ctrl+p, app layer, has the dial, held");
+    expect(within(key(4)).getByText("dial")).toBeInTheDocument();
+    expect(key(3)).not.toHaveClass("modifier");
+    expect(within(key(3)).queryByText("dial")).toBeNull();
+    // The ring is the accent, drawn over the image.
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "Mirror.svelte"), "utf8");
+    const rule = /\.key\.modifier::after \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toMatch(/border: 3px solid var\(--kv-accent\)/);
+  });
+
+  it("moves the ring with the modifier and drops it when none has the dial", async () => {
+    const { rerender } = mirror({ modifier: { key: 3, mode: "toggle" } });
+    expect(key(3)).toHaveAccessibleName("Key 3: Type, chord shift+k, global layer, has the dial, toggled");
+    await rerender({ modifier: { key: 5, mode: "held" } });
+    expect(key(5)).toHaveClass("modifier");
+    expect(key(3)).not.toHaveClass("modifier");
+    await rerender({ modifier: null });
+    expect(screen.getByRole("grid").querySelectorAll(".modifier")).toHaveLength(0);
   });
 });
 

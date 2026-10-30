@@ -60,6 +60,11 @@ action = { type = "chord", keys = "ctrl+c" }
 [pages.keys.6]
 label = "Mark"
 action = { type = "exec", cmd = "touch '@MARKER@'" }
+
+[pages.keys.7]
+label = "Brightness"
+action = { type = "chord", keys = "KEY_BRIGHTNESSUP" }
+dial = { cw = "KEY_BRIGHTNESSUP", ccw = "KEY_BRIGHTNESSDOWN" }
 "#;
 
 const TERMINAL: &str = r#"
@@ -699,7 +704,7 @@ async fn device_key_and_failed_reload_events_reach_a_subscriber_of_everything() 
     let running = Running::start().await;
     let mut subscriber = running.client().await;
     let response = subscriber.ask(r#"{"v":1,"cmd":"subscribe"}"#).await;
-    assert_eq!(response["result"]["events"].as_array().unwrap().len(), 10);
+    assert_eq!(response["result"]["events"].as_array().unwrap().len(), 11);
 
     running.pad.hold(&[5]);
     assert_eq!(

@@ -130,11 +130,15 @@
       "properties": {
         "action": {
           "$ref": "#/$defs/Action",
-          "description": "What a press does; a key without an action only displays."
+          "description": "What a press does; a key without an action only displays. On a\nheld modifier key it runs at a release without a turn, on a toggle\nkey at a long press."
         },
         "color": {
           "$ref": "#/$defs/Color",
           "description": "Background color."
+        },
+        "dial": {
+          "$ref": "#/$defs/Rotary",
+          "description": "What the dial runs while the key is the active modifier, in place of\nthe profile's `[dialpad].dial`."
         },
         "icon": {
           "description": "Icon reference, for example `lucide:hammer` or `file:icons/x.png`.",
@@ -144,9 +148,17 @@
           "description": "Text drawn on the key.",
           "type": "string"
         },
+        "modifier": {
+          "$ref": "#/$defs/ModifierMode",
+          "description": "How the key takes the Dialpad's dial and roller over (spec §7.2):\n`held` while it is held, the default with a `dial` or `roller`\ntable, or `toggle` from one short press to the next press of any\nkey. Needs a `dial` or `roller` table."
+        },
         "on_fail": {
           "$ref": "#/$defs/Action",
           "description": "An action run once when `action` fails (spec §7.2); it has no\n`on_fail` of its own."
+        },
+        "roller": {
+          "$ref": "#/$defs/Rotary",
+          "description": "What the roller runs while the key is the active modifier, in place\nof the profile's `[dialpad].roller`."
         },
         "states": {
           "additionalProperties": {
@@ -199,6 +211,21 @@
         }
       },
       "type": "object"
+    },
+    "ModifierMode": {
+      "description": "How a modifier key takes the dial and the roller over (spec §7.2).",
+      "oneOf": [
+        {
+          "const": "held",
+          "description": "While the key is held; its action runs at a release without a turn.",
+          "type": "string"
+        },
+        {
+          "const": "toggle",
+          "description": "From a short press until the next press of any key, a Dialpad\nbutton, a page or profile change, the lock or\n`[timing].modifier_timeout`; its action runs at a long press.",
+          "type": "string"
+        }
+      ]
     },
     "Page": {
       "additionalProperties": false,

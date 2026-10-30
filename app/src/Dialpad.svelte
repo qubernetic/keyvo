@@ -9,17 +9,29 @@
   // the mirror). The panel collapses on its heading; it starts collapsed
   // while no Dialpad is connected and neither profile binds a control, and
   // says "No Dialpad connected" while none is, open or not. A control the
-  // device turned or pressed pulses for PULSE_MS.
+  // device turned or pressed pulses for PULSE_MS. While a modifier key has
+  // the dial (#189), the dial and the roller it binds show the key's
+  // binding instead, labelled "(held)" or "(toggled)"; a rotary the key
+  // leaves out keeps the profile's.
   import { untrack } from "svelte";
 
   import dialpadSvg from "./assets/device/dialpad.svg?raw";
   import { controlPlaces, DEVICE_COLOURS, drawing, inline } from "./lib/device";
-  import { binding, bound, CONTROLS, controlName, isRoller, PULSE_MS, type Binding } from "./lib/dialpad";
-  import { problemOf, describe, type Editor } from "./lib/editor";
+  import {
+    binding,
+    bound,
+    CONTROLS,
+    controlName,
+    isRoller,
+    modifierBinding,
+    PULSE_MS,
+    type Binding,
+  } from "./lib/dialpad";
+  import { problemOf, describe, type Editor, type KeyFields, type Target } from "./lib/editor";
   import { t } from "./lib/i18n";
   import { describeAction, phrase } from "./lib/pad";
   import { GLOBAL } from "./lib/profiles";
-  import type { Control, DialpadStatus } from "./lib/protocol";
+  import type { Control, DialpadStatus, ModifierMode } from "./lib/protocol";
 
   let {
     editor,
@@ -27,6 +39,7 @@
     profile,
     selected,
     pulse,
+    modifier,
     revision = 0,
     onselect,
   }: {
@@ -40,6 +53,10 @@
     selected?: Control;
     /** The control the device last turned or pressed; a new `seq` pulses it. */
     pulse?: { control: Control; seq: number };
+    /** The modifier key that has the dial, as the pad resolves it: the
+     * view's page, or the global context page under a key it lacks; none
+     * while no key has the dial. */
+    modifier?: { key: Target; mode: ModifierMode };
     /** Bumped when the files may have changed: a reload or a write. */
     revision?: number;
     onselect: (control: Control) => void;
@@ -100,6 +117,51 @@
     );
   });
 
+  /** The fields of the modifier key; none while no key has the dial. */
+  let modifierFields: KeyFields | undefined = $state.raw();
+  /** Derived, so the same key handed again reads nothing. */
+  const modifierId = $derived(
+    modifier === undefined
+      ? ""
+      : `${modifier.key.profile}\n${modifier.key.page}\n${modifier.key.key}`,
+  );
+  let modifierReads = 0;
+
+  $effect(() => {
+    void seenRevision;
+    void modifierId;
+    const at = untrack(() => modifier?.key);
+    const mine = ++modifierReads;
+    if (at === undefined) {
+      modifierFields = undefined;
+      return;
+    }
+    untrack(() => editor.key({ ...at })).then(
+      (view) => {
+        if (mine === modifierReads) modifierFields = view.fields;
+      },
+      () => {
+        // The panel keeps the profile's bindings when the key cannot be read.
+        if (mine === modifierReads) modifierFields = undefined;
+      },
+    );
+  });
+
+  /** What each control shows: the modifier key's binding of a rotary it
+   * binds, else the profile's. */
+  const shown = $derived.by(() => {
+    if (modifier === undefined || modifierFields === undefined) return bindings;
+    const fields = modifierFields;
+    const { key, mode } = modifier;
+    return new Map(
+      CONTROLS.map((control): [Control, Binding] => [
+        control,
+        (isRoller(control) ? modifierBinding(fields, control, key.key, mode) : undefined) ??
+          bindings.get(control) ?? { fields: {} },
+      ]),
+    );
+  });
+
   /** The control pulsing now, and the pulse it shows. */
   let pulsing: { control: Control; seq: number } | undefined = $state();
 
@@ -126,18 +188,19 @@
   }
 
   function label(control: Control): string {
-    const found = bindings.get(control);
+    const found = shown.get(control);
     const parts = phrase([
       found?.fields.label,
       does(control, found),
       found?.layer === undefined ? undefined : t("layer", { layer: found.layer }),
+      found?.modifier === undefined ? undefined : t("dialpad.fromKey", { key: found.modifier }),
     ]);
     return t("dialpad.control", { control: controlName(control), parts });
   }
 
   /** A global control under an app profile (spec §7.2). */
   function fallen(control: Control): boolean {
-    return bindings.get(control)?.layer === "global" && profile !== GLOBAL;
+    return shown.get(control)?.layer === "global" && profile !== GLOBAL;
   }
 
   function placed(control: Control): string {
@@ -197,6 +260,7 @@
             class:round={places.get(control)?.round === true}
             class:selected={control === selected}
             class:fallen={fallen(control)}
+            class:modifier={shown.get(control)?.modifier !== undefined}
             class:pulse={pulsing?.control === control}
             style={placed(control)}
             aria-label={label(control)}
@@ -206,8 +270,8 @@
             {#key pulsing?.control === control ? pulsing.seq : 0}
               <span class="ring" aria-hidden="true"></span>
             {/key}
-            {#if bindings.get(control)?.fields.label !== undefined}
-              <span class="label">{bindings.get(control)?.fields.label}</span>
+            {#if shown.get(control)?.fields.label !== undefined}
+              <span class="label">{shown.get(control)?.fields.label}</span>
             {/if}
           </button>
         {/each}
@@ -343,5 +407,10 @@
 
   .control.fallen .label {
     opacity: 0.7;
+  }
+
+  /* A rotary a modifier key has: its label in the accent ring of the key. */
+  .control.modifier .label {
+    box-shadow: 0 0 0 2px var(--kv-accent);
   }
 </style>

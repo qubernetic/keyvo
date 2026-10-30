@@ -189,16 +189,16 @@ impl Recipe {
 
 impl Recipe {
     /// The fields of a key after applying variant `variant`: its action,
-    /// the recipe's label and icon; the color stays `key`'s. `None` when
-    /// the recipe has no such variant.
+    /// the recipe's label and icon; the color and the modifier with its
+    /// bindings stay `key`'s. `None` when the recipe has no such variant.
     #[must_use]
     pub fn apply(&self, variant: &str, key: &KeyFields) -> Option<KeyFields> {
         let variant = self.variants.iter().find(|v| v.id == variant)?;
         Some(KeyFields {
             icon: Some(self.icon.clone()),
             label: Some(self.label.clone()),
-            color: key.color,
             action: Some(variant.action.clone()),
+            ..key.clone()
         })
     }
 }

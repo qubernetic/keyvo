@@ -64,6 +64,10 @@ function key(value: unknown): KeyFields {
   if (label !== undefined) out.label = label;
   if (color !== undefined) out.color = color;
   if (act !== undefined) out.action = act;
+  // A modifier key (#189): its mode and the rotaries it binds.
+  if (fields.modifier === "held" || fields.modifier === "toggle") out.modifier = fields.modifier;
+  if (fields.dial !== undefined) out.dial = control(fields.dial, true);
+  if (fields.roller !== undefined) out.roller = control(fields.roller, true);
   return out;
 }
 

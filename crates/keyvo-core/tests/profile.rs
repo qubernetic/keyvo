@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use keyvo_core::chord::Chord;
 use keyvo_core::diagnostic::{Diagnostic, Position};
-use keyvo_core::profile::{Action, Color, KeySlot, Profile, derived_class};
+use keyvo_core::profile::{Action, Color, KeySlot, ModifierMode, Profile, derived_class};
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -105,6 +105,12 @@ const INVALID: &[(&str, usize, usize, &str)] = &[
         "invalid value: string \"10\", expected a key number from 1 to 9",
     ),
     ("missing-name.toml", 3, 1, "missing field `name`"),
+    (
+        "modifier-without-binding.toml",
+        8,
+        1,
+        "`modifier` needs a `dial` or `roller` table",
+    ),
     (
         "nested-on-fail.toml",
         10,
@@ -421,4 +427,49 @@ fn a_flatpak_launch_derives_its_class_from_the_app_id() {
     assert_eq!(own.launch_class().as_deref(), Some("kcalc"));
     assert_eq!(Action::launch("kcalc").launch_class(), None);
     assert_eq!(Action::Exec { cmd: "x".into() }.launch_class(), None);
+}
+
+fn key_of(fields: &str) -> Result<keyvo_core::profile::Key, Diagnostic> {
+    let text = format!(
+        "schema_version = 1\n[profile]\nid = \"t\"\nname = \"T\"\n[[pages]]\n[pages.keys.7]\n{fields}"
+    );
+    Profile::from_toml(&text, Path::new("t.toml"))
+        .map(|profile| profile.pages[0].keys[&slot(7)].clone())
+}
+
+#[test]
+fn a_key_with_a_dial_or_roller_table_is_a_held_modifier_unless_it_toggles() {
+    let held = key_of(
+        "action = { type = \"exec\", cmd = \"brightnessctl set 50%\" }\n\
+         dial = { cw = { type = \"exec\", cmd = \"up\" }, ccw = \"KEY_BRIGHTNESSDOWN\", step = 2 }\n",
+    )
+    .unwrap();
+    assert_eq!(held.modifier_mode(), Some(ModifierMode::Held));
+    assert_eq!(held.modifier, None);
+    let dial = held.dial.as_ref().unwrap();
+    assert_eq!(dial.step.get(), 2);
+    assert_eq!(dial.cw, Some(Action::Exec { cmd: "up".into() }));
+    assert!(held.roller.is_none());
+
+    let toggle =
+        key_of("modifier = \"toggle\"\nroller = { cw = \"KEY_ZOOMIN\", ccw = \"KEY_ZOOMOUT\" }\n")
+            .unwrap();
+    assert_eq!(toggle.modifier_mode(), Some(ModifierMode::Toggle));
+    assert_eq!(toggle.roller.as_ref().unwrap().step.get(), 1);
+    assert_eq!(
+        key_of("modifier = \"held\"\ndial = {}\n")
+            .unwrap()
+            .modifier_mode(),
+        Some(ModifierMode::Held)
+    );
+
+    // A key with neither table is no modifier.
+    assert_eq!(key_of("label = \"x\"\n").unwrap().modifier_mode(), None);
+    let unknown = key_of("modifier = \"sticky\"\ndial = {}\n").unwrap_err();
+    assert!(
+        unknown
+            .message
+            .starts_with("unknown variant `sticky`, expected `held` or `toggle`"),
+        "{unknown}"
+    );
 }

@@ -708,6 +708,61 @@ mod looks {
         assert!(in_corner(&dirty, Theme::default().badge) > 100);
     }
 
+    /// Pixels close to `color` in the top left corner, where the modifier's
+    /// dial badge goes, and on the left edge below it, where only the ring
+    /// is.
+    fn modifier_pixels(spec: &KeySpec, color: Color) -> (usize, usize) {
+        let picture = decoded(&Renderer::new().tile(spec, KEY).unwrap().jpeg().unwrap());
+        let near = |x: std::ops::Range<u32>, y: std::ops::Range<u32>| {
+            picture
+                .enumerate_pixels()
+                .filter(|(px, py, p)| {
+                    x.contains(px) && y.contains(py) && super::close(**p, rgb(color))
+                })
+                .count()
+        };
+        (near(0..38, 0..38), near(0..4, 50..90))
+    }
+
+    #[test]
+    fn the_modifier_look_rings_the_key_in_the_accent_with_a_dial_badge() {
+        let theme = Theme::default();
+        let modifier = spec(Look::Modifier);
+        assert_eq!(Look::Modifier.state(), Some("modifier"));
+        let (badge, ring) = modifier_pixels(&modifier, ACCENT);
+        assert!(badge > 100, "{badge}");
+        assert!(ring > 40, "{ring}");
+        assert_eq!(modifier_pixels(&spec(Look::Idle), ACCENT), (0, 0));
+        // The icon and label stay as they are, unlike a running key's.
+        assert_eq!(in_corner(&modifier, theme.badge), 0);
+        let tile = Renderer::new().tile(&modifier, KEY).unwrap();
+        insta::assert_binary_snapshot!("modifier.png", tile.png().unwrap());
+        // Without an accent the ring takes the spinner color.
+        let plain = KeySpec::from_key(Some(&build_key()), None)
+            .with_look(Some(&build_key()), Look::Modifier);
+        let (badge, ring) = modifier_pixels(&plain, theme.spinner);
+        assert!(badge > 100 && ring > 40, "{badge} {ring}");
+    }
+
+    #[test]
+    fn a_key_badge_keeps_its_corner_under_the_modifier_look() {
+        let mut key = build_key();
+        key.states.insert(
+            "modifier".to_owned(),
+            KeyState {
+                badge: Some("Z".to_owned()),
+                ..KeyState::default()
+            },
+        );
+        let modifier =
+            KeySpec::from_key(Some(&key), Some(ACCENT)).with_look(Some(&key), Look::Modifier);
+        assert_eq!(modifier.badge.as_deref(), Some("Z"));
+        assert!(in_corner(&modifier, Theme::default().badge) > 100);
+        assert!(modifier_pixels(&modifier, ACCENT).0 > 100);
+        let tile = Renderer::new().tile(&modifier, KEY).unwrap();
+        insta::assert_binary_snapshot!("modifier-badge.png", tile.png().unwrap());
+    }
+
     #[test]
     fn a_running_key_without_an_icon_or_accent_still_spins() {
         let label_only = Key {

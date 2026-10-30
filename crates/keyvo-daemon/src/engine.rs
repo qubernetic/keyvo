@@ -10,7 +10,9 @@
 //!
 //! The Dialpad's turns and button presses resolve on the active profile's
 //! `[dialpad]` table over the global one (`keyvo_core::dialpad`); its
-//! controls have no display and no look.
+//! controls have no display and no look. While a modifier key is held or
+//! armed (`keyvo_core::state`), a turn resolves on that key's `dial` or
+//! `roller` table instead, and the key shows the `modifier` look.
 
 use std::collections::BTreeMap;
 use std::time::{Instant, SystemTime};
@@ -22,12 +24,15 @@ use keyvo_core::focus::WindowContext;
 use keyvo_core::layout::Loaded;
 use keyvo_core::lineage::Lineage;
 use keyvo_core::press;
-use keyvo_core::profile::{Action, Key, KeySlot, Profile};
+use keyvo_core::press::PressKind;
+use keyvo_core::profile::{Action, Key, KeySlot, ModifierMode, Profile};
 use keyvo_core::render::{self, KeySpec};
 use keyvo_core::session::Session;
 use keyvo_core::stack::{Layer, Stack};
-use keyvo_core::state::{LaunchId, PageButton, State, View};
-use keyvo_core::trace::{TraceRecord, Trigger};
+use keyvo_core::state::{
+    ActiveModifier, KeyDown, KeyPress, LaunchId, ModifierKey, PageButton, State, View,
+};
+use keyvo_core::trace::{Outcome, TraceRecord, Trigger};
 
 /// The reason of a press blocked while the session is locked.
 pub const BLOCKED_LOCKED: &str = "session locked";
@@ -44,6 +49,9 @@ pub struct Engine {
     feedback: BTreeMap<KeyId, Feedback>,
     /// The detents below one `step` each roller carries.
     turns: Turns,
+    /// The modifier key whose binding the carry belongs to; `None` for the
+    /// profile's `[dialpad]` table.
+    turns_for: Option<ActiveModifier>,
 }
 
 impl Engine {
@@ -61,6 +69,7 @@ impl Engine {
             keys: 0,
             feedback: BTreeMap::new(),
             turns: Turns::default(),
+            turns_for: None,
         }
     }
 
@@ -168,9 +177,31 @@ impl Engine {
         self.state.session(session)
     }
 
-    /// A key on the pad went down at `now`: the page return starts over.
-    pub const fn touch(&mut self, now: Instant) {
+    /// Key `slot` went down at `now`: the page return starts over, the
+    /// armed toggle ends, a held modifier key takes the dial and the roller
+    /// ([`State::key_down`]).
+    pub fn key_down(&mut self, slot: KeySlot, now: Instant) -> KeyDown {
+        self.state.key_down(slot, now, &self.loaded.profiles)
+    }
+
+    /// Key `slot` came up at `now`: for a held modifier key whether its
+    /// action runs ([`State::key_up`]).
+    pub fn key_up(&mut self, slot: KeySlot, now: Instant) -> Option<bool> {
+        self.state.key_up(slot, now)
+    }
+
+    /// The modifier mode of key `slot` on the active page; `None` for an
+    /// ordinary key.
+    #[must_use]
+    pub fn modifier_mode(&self, slot: KeySlot) -> Option<ModifierMode> {
+        self.key(slot).and_then(|(key, _)| key.modifier_mode())
+    }
+
+    /// A Dialpad button went down at `now`: pad activity, and the end of
+    /// the armed toggle.
+    pub fn button_down(&mut self, now: Instant) {
         self.state.touch(now);
+        self.state.button(now);
     }
 
     /// Applies a focus change, a page-button long press or the page return
@@ -210,15 +241,24 @@ impl Engine {
             || vec![KeySpec::default(); usize::from(self.keys)],
             |stack| render::page(&stack, self.keys),
         );
+        // The modifier key shows its look on the page it was pressed on.
+        let modifier = self
+            .state
+            .modifier()
+            .filter(|at| at.profile == profile.profile.id && at.page == page)
+            .map(|at| at.key);
         (1..=self.keys)
             .filter_map(KeySlot::new)
             .zip(specs)
             .map(|(slot, spec)| {
                 let id = (profile.profile.id.clone(), page, slot);
-                let look = self
-                    .feedback
-                    .get(&id)
-                    .map_or(Look::Idle, |feedback| feedback.look(now));
+                let look = if modifier == Some(slot) {
+                    Look::Modifier
+                } else {
+                    self.feedback
+                        .get(&id)
+                        .map_or(Look::Idle, |feedback| feedback.look(now))
+                };
                 if look == Look::Idle {
                     spec
                 } else {
@@ -255,13 +295,20 @@ impl Engine {
         Bindings::new(&self.loaded.profiles, self.active())
     }
 
-    /// Resolves a turn of `roller` by `delta` detents on the active
+    /// Resolves a turn of `roller` by `delta` detents at `now` on the
+    /// binding of the held or armed modifier key, else on the active
     /// profile, a roller the profile leaves out on the global one: the
     /// action of the direction and how often it runs (`step` detents a run,
     /// the rest carried, at most `[dialpad].max_per_event`). A turn is no
     /// pad activity: the page return keeps running. While the session is
     /// locked nothing is resolved: [`BLOCKED_LOCKED`], no run.
-    pub fn turn(&mut self, roller: Roller, delta: i32, simulated: bool, at: SystemTime) -> Turn {
+    pub fn turn(
+        &mut self,
+        roller: Roller,
+        delta: i32,
+        simulated: bool,
+        (at, now): (SystemTime, Instant),
+    ) -> Turn {
         let trigger = dialpad::turn_trigger(simulated);
         let page = self.page();
         if self.state.locked() {
@@ -278,8 +325,28 @@ impl Engine {
             };
         }
         let max = self.loaded.config.dialpad.max_per_event.get();
-        let view = self.state.view(&self.loaded.profiles);
+        let taker = self
+            .state
+            .modifier_turn(roller, simulated, now, &self.loaded.profiles);
+        let owner = taker.as_ref().map(ModifierKey::active);
+        if !simulated && owner != self.turns_for {
+            // Another binding takes the turns: nothing carries over.
+            self.turns.clear();
+            self.turns_for = owner;
+        }
         let profiles = &self.loaded.profiles;
+        if let Some(taker) = taker {
+            return dialpad::modifier_turn(
+                profiles,
+                &taker,
+                roller,
+                delta,
+                (trigger, at),
+                &mut self.turns,
+                max,
+            );
+        }
+        let view = self.state.view(profiles);
         let active = profiles
             .get(&view.profile)
             .unwrap_or_else(|| profiles.global());
@@ -296,8 +363,18 @@ impl Engine {
 
     /// Resolves a press of Dialpad button `slot` like a key's: the active
     /// profile's button, else the global one; [`BLOCKED_LOCKED`] under the
-    /// lock.
-    pub fn button(&mut self, slot: ButtonSlot, trigger: Trigger, at: SystemTime) -> TraceRecord {
+    /// lock. A client's press ends the armed toggle at `now` as the
+    /// device's does at the button's press ([`Engine::button_down`]),
+    /// unless it is simulated.
+    pub fn button(
+        &mut self,
+        slot: ButtonSlot,
+        trigger: Trigger,
+        (at, now): (SystemTime, Instant),
+    ) -> TraceRecord {
+        if !trigger.simulated {
+            self.state.button(now);
+        }
         let page = self.page();
         if self.state.locked() {
             return dialpad::blocked(
@@ -321,12 +398,19 @@ impl Engine {
             .and_then(|(button, _)| button.on_fail.clone())
     }
 
-    /// Resolves a press of `slot` on the active profile and page, a key the
-    /// profile lacks on the global layer; an error or success look of the
-    /// key ends, unless the press is simulated. While the session is
-    /// locked nothing is resolved: the press is [`BLOCKED_LOCKED`] and the
-    /// look stays.
-    pub fn press(&mut self, slot: KeySlot, trigger: Trigger, at: SystemTime) -> TraceRecord {
+    /// Resolves a press of `slot` at `now` on the active profile and page,
+    /// a key the profile lacks on the global layer; an error or success
+    /// look of the key ends, unless the press is simulated. A short press
+    /// of a toggle key arms or ends the toggle and runs nothing
+    /// ([`Outcome::Modifier`]); any other press ends the armed toggle of
+    /// another key. While the session is locked nothing is resolved: the
+    /// press is [`BLOCKED_LOCKED`] and the look stays.
+    pub fn press(
+        &mut self,
+        slot: KeySlot,
+        trigger: Trigger,
+        (at, now): (SystemTime, Instant),
+    ) -> TraceRecord {
         if self.state.locked() {
             return press::blocked(
                 &self.active().profile.id,
@@ -337,15 +421,125 @@ impl Engine {
                 BLOCKED_LOCKED,
             );
         }
-        let record = self.stack().map_or_else(
+        // The record names the page the press was made on, before a toggle
+        // changes anything.
+        let mut record = self.stack().map_or_else(
             || press::unbound(&self.active().profile.id, self.page(), slot, trigger, at),
             |stack| press::resolve(&stack, slot, trigger, at),
         );
+        let decision = self.state.key_press(
+            slot,
+            trigger.press,
+            trigger.simulated,
+            now,
+            &self.loaded.profiles,
+        );
+        if let KeyPress::Toggle(active) = decision {
+            record.action = None;
+            record.modifier = Some(ModifierMode::Toggle);
+            record.result = if trigger.simulated {
+                Outcome::DryRun
+            } else {
+                Outcome::Modifier { active }
+            };
+            return record;
+        }
         if !trigger.simulated
             && let Some(feedback) = self.feedback(&record)
         {
             feedback.pressed();
         }
+        record
+    }
+
+    /// A client holds key `slot` down at `now` (`press` with `hold`): a
+    /// held modifier key takes the dial and the roller until
+    /// [`Engine::release`]. A simulated hold changes nothing. The record of
+    /// the hold, [`Outcome::Modifier`]; an error for a key that is not a
+    /// held modifier key on the active page.
+    ///
+    /// # Errors
+    ///
+    /// What is wrong, for the client.
+    pub fn hold(
+        &mut self,
+        slot: KeySlot,
+        simulated: bool,
+        (at, now): (SystemTime, Instant),
+    ) -> Result<TraceRecord, String> {
+        let trigger = Trigger {
+            press: PressKind::Short,
+            simulated,
+        };
+        if self.state.locked() {
+            return Ok(self.press(slot, trigger, (at, now)));
+        }
+        if self.modifier_mode(slot) != Some(ModifierMode::Held) {
+            return Err(format!(
+                "key {} is not a held modifier key on this page",
+                slot.get()
+            ));
+        }
+        let mut record = self.modifier_record(slot, trigger, at);
+        record.result = if simulated {
+            Outcome::DryRun
+        } else {
+            self.state.key_down(slot, now, &self.loaded.profiles);
+            Outcome::Modifier { active: true }
+        };
+        Ok(record)
+    }
+
+    /// A client lets key `slot` go at `now` (`press` with `release`): the
+    /// key's action runs when no turn took its binding, else the record of
+    /// the release, [`Outcome::Modifier`]. A simulated release changes
+    /// nothing; an error for a key not held.
+    ///
+    /// # Errors
+    ///
+    /// What is wrong, for the client.
+    pub fn release(
+        &mut self,
+        slot: KeySlot,
+        simulated: bool,
+        (at, now): (SystemTime, Instant),
+    ) -> Result<TraceRecord, String> {
+        let trigger = Trigger {
+            press: PressKind::Short,
+            simulated,
+        };
+        if self.state.locked() {
+            return Ok(self.press(slot, trigger, (at, now)));
+        }
+        let held = self
+            .state
+            .modifier_keys()
+            .any(|at| at.key == slot && at.mode == ModifierMode::Held);
+        if !held {
+            return Err(format!("key {} is not held", slot.get()));
+        }
+        if simulated {
+            let mut record = self.modifier_record(slot, trigger, at);
+            record.result = Outcome::DryRun;
+            return Ok(record);
+        }
+        if self.state.key_up(slot, now) == Some(true) {
+            return Ok(self.press(slot, trigger, (at, now)));
+        }
+        let mut record = self.modifier_record(slot, trigger, at);
+        record.result = Outcome::Modifier { active: false };
+        Ok(record)
+    }
+
+    /// The record of a hold or release of the held modifier key `slot`:
+    /// the key resolved, no action.
+    fn modifier_record(&self, slot: KeySlot, trigger: Trigger, at: SystemTime) -> TraceRecord {
+        let mut record = self.stack().map_or_else(
+            || press::unbound(&self.active().profile.id, self.page(), slot, trigger, at),
+            |stack| press::resolve(&stack, slot, trigger, at),
+        );
+        record.action = None;
+        record.modifier = Some(ModifierMode::Held);
         record
     }
 
@@ -527,7 +721,8 @@ action = { type = "exec", cmd = "true" }
                 page: 2,
                 mode: Mode::Auto,
                 index: 0,
-                locked: false
+                locked: false,
+                modifier: None
             }
         );
         assert_eq!(engine.specs(now)[0].label.as_deref(), Some("Play"));
@@ -544,11 +739,11 @@ action = { type = "exec", cmd = "true" }
         // `code` has no key 2: the global "Copy", with the code accent.
         assert_eq!(specs[1].label.as_deref(), Some("Copy"));
         assert_eq!(specs[1].accent, engine.active().profile.accent);
-        let record = engine.press(slot(2), short(), SystemTime::UNIX_EPOCH);
+        let record = engine.press(slot(2), short(), (SystemTime::UNIX_EPOCH, Instant::now()));
         assert_eq!(record.profile, "code");
         assert_eq!(record.layer, Some(Layer::Global));
         assert!(matches!(record.action, Some(Action::Chord { .. })));
-        let own = engine.press(slot(1), short(), SystemTime::UNIX_EPOCH);
+        let own = engine.press(slot(1), short(), (SystemTime::UNIX_EPOCH, Instant::now()));
         assert_eq!(own.layer, Some(Layer::App));
     }
 
@@ -586,7 +781,7 @@ action = { type = "exec", cmd = "true" }
         engine.set_key_count(9);
         let now = Instant::now();
         focus_code(&mut engine, now);
-        let mut record = engine.press(slot(3), short(), SystemTime::UNIX_EPOCH);
+        let mut record = engine.press(slot(3), short(), (SystemTime::UNIX_EPOCH, Instant::now()));
         assert_eq!(record.layer, Some(Layer::Global));
         record.finish(Outcome::Failed { error: "x".into() });
         engine.finished(&record, now);
@@ -602,7 +797,7 @@ action = { type = "exec", cmd = "true" }
         let mut engine = Engine::new(loaded_with(&[GLOBAL, CODE]));
         engine.set_key_count(9);
         let now = Instant::now();
-        let record = engine.press(slot(1), short(), SystemTime::UNIX_EPOCH);
+        let record = engine.press(slot(1), short(), (SystemTime::UNIX_EPOCH, Instant::now()));
         engine.started(&record, now);
         assert_eq!(engine.specs(now)[0].look, Look::Running);
         focus_code(&mut engine, now);
@@ -618,7 +813,7 @@ action = { type = "exec", cmd = "true" }
         let mut engine = Engine::new(loaded(GLOBAL));
         engine.set_key_count(9);
         let now = Instant::now();
-        let mut record = engine.press(slot(1), short(), SystemTime::UNIX_EPOCH);
+        let mut record = engine.press(slot(1), short(), (SystemTime::UNIX_EPOCH, Instant::now()));
         assert_eq!(record.result, Outcome::Pending);
         assert!(matches!(record.action, Some(Action::Exec { .. })));
         engine.started(&record, now);
@@ -633,7 +828,7 @@ action = { type = "exec", cmd = "true" }
         assert_eq!(spec.label.as_deref(), Some("Broken"));
         assert_eq!(engine.next_change(now), None);
         // The next press of the key ends the error look.
-        engine.press(slot(1), short(), SystemTime::UNIX_EPOCH);
+        engine.press(slot(1), short(), (SystemTime::UNIX_EPOCH, Instant::now()));
         assert_eq!(engine.specs(now)[0].look, Look::Idle);
     }
 
@@ -642,14 +837,14 @@ action = { type = "exec", cmd = "true" }
         let mut engine = Engine::new(loaded(GLOBAL));
         engine.set_key_count(9);
         let now = Instant::now();
-        let mut record = engine.press(slot(1), short(), SystemTime::UNIX_EPOCH);
+        let mut record = engine.press(slot(1), short(), (SystemTime::UNIX_EPOCH, Instant::now()));
         record.finish(Outcome::Failed { error: "x".into() });
         engine.finished(&record, now);
         let simulated = Trigger {
             press: PressKind::Short,
             simulated: true,
         };
-        let dry = engine.press(slot(1), simulated, SystemTime::UNIX_EPOCH);
+        let dry = engine.press(slot(1), simulated, (SystemTime::UNIX_EPOCH, Instant::now()));
         assert_eq!(dry.result, Outcome::DryRun);
         assert_eq!(engine.specs(now)[0].look, Look::Error);
     }
@@ -660,7 +855,7 @@ action = { type = "exec", cmd = "true" }
         engine.set_key_count(9);
         let now = Instant::now();
         let hold = engine.config().render.feedback_hold;
-        let mut record = engine.press(slot(1), short(), SystemTime::UNIX_EPOCH);
+        let mut record = engine.press(slot(1), short(), (SystemTime::UNIX_EPOCH, Instant::now()));
         engine.started(&record, now);
         assert_eq!(
             engine.next_change(now),
@@ -698,7 +893,7 @@ action = { type = "exec", cmd = "true" }
         let mut engine = Engine::new(loaded(GLOBAL));
         engine.set_key_count(9);
         let now = Instant::now();
-        let mut record = engine.press(slot(1), short(), SystemTime::UNIX_EPOCH);
+        let mut record = engine.press(slot(1), short(), (SystemTime::UNIX_EPOCH, Instant::now()));
         record.finish(Outcome::Failed { error: "x".into() });
         engine.finished(&record, now);
         engine.session(Session::Locked);
@@ -709,7 +904,7 @@ action = { type = "exec", cmd = "true" }
                 ..short()
             },
         ] {
-            let blocked = engine.press(slot(1), trigger, SystemTime::UNIX_EPOCH);
+            let blocked = engine.press(slot(1), trigger, (SystemTime::UNIX_EPOCH, Instant::now()));
             assert_eq!(
                 blocked.result,
                 Outcome::Blocked {
@@ -736,17 +931,25 @@ action = { type = "exec", cmd = "true" }
         let now = Instant::now();
         focus_code(&mut engine, now);
         let at = SystemTime::UNIX_EPOCH;
-        let turn = engine.turn(Roller::Dial, 5, false, at);
+        let turn = engine.turn(Roller::Dial, 5, false, (at, Instant::now()));
         assert_eq!((turn.runs, turn.record.layer), (2, Some(Layer::Global)));
         assert_eq!(turn.record.profile, "code");
         // The detent left over carries.
-        assert_eq!(engine.turn(Roller::Dial, 1, false, at).runs, 1);
         assert_eq!(
-            engine.turn(Roller::Roller, 3, false, at).record.result,
+            engine
+                .turn(Roller::Dial, 1, false, (at, Instant::now()))
+                .runs,
+            1
+        );
+        assert_eq!(
+            engine
+                .turn(Roller::Roller, 3, false, (at, Instant::now()))
+                .record
+                .result,
             Outcome::Unbound
         );
         let button = ButtonSlot::new(1).unwrap();
-        let press = engine.button(button, short(), at);
+        let press = engine.button(button, short(), (at, Instant::now()));
         assert!(matches!(press.action, Some(Action::Exec { .. })));
         assert!(engine.button_on_fail(button).is_some());
         // A button has no look; its run leaves the keys alone.
@@ -760,7 +963,7 @@ action = { type = "exec", cmd = "true" }
         let mut engine = Engine::new(loaded(&format!("{GLOBAL}{DIALPAD}")));
         engine.session(Session::Locked);
         let at = SystemTime::UNIX_EPOCH;
-        let turn = engine.turn(Roller::Dial, 4, false, at);
+        let turn = engine.turn(Roller::Dial, 4, false, (at, Instant::now()));
         assert_eq!(turn.runs, 0);
         assert_eq!(
             turn.record.result,
@@ -768,11 +971,16 @@ action = { type = "exec", cmd = "true" }
                 reason: BLOCKED_LOCKED.into()
             }
         );
-        let button = engine.button(ButtonSlot::new(1).unwrap(), short(), at);
+        let button = engine.button(ButtonSlot::new(1).unwrap(), short(), (at, Instant::now()));
         assert_eq!((button.action, button.layer), (None, None));
         engine.session(Session::Unlocked);
         // Nothing carried from the turn under the lock.
-        assert_eq!(engine.turn(Roller::Dial, 1, false, at).runs, 0);
+        assert_eq!(
+            engine
+                .turn(Roller::Dial, 1, false, (at, Instant::now()))
+                .runs,
+            0
+        );
     }
 
     #[test]
@@ -782,7 +990,7 @@ action = { type = "exec", cmd = "true" }
         ));
         engine.set_key_count(9);
         assert_eq!(engine.specs(Instant::now()), vec![KeySpec::default(); 9]);
-        let record = engine.press(slot(3), short(), SystemTime::UNIX_EPOCH);
+        let record = engine.press(slot(3), short(), (SystemTime::UNIX_EPOCH, Instant::now()));
         assert_eq!(record.result, Outcome::Unbound);
     }
 
@@ -791,7 +999,7 @@ action = { type = "exec", cmd = "true" }
         let mut engine = Engine::new(loaded(GLOBAL));
         engine.set_key_count(9);
         let now = Instant::now();
-        let mut record = engine.press(slot(1), short(), SystemTime::UNIX_EPOCH);
+        let mut record = engine.press(slot(1), short(), (SystemTime::UNIX_EPOCH, Instant::now()));
         record.finish(Outcome::Failed { error: "x".into() });
         engine.finished(&record, now);
         engine.reload(loaded(&GLOBAL.replace("\"Copy\"", "\"Paste\"")));

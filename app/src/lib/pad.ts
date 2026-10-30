@@ -167,6 +167,7 @@ export function apply(state: PadState, update: Update, now = Date.now()): PadSta
         mode: event.mode,
         index: event.index,
         locked: event.locked,
+        modifier: event.modifier,
       });
     case "device": {
       const { event: _, ...device } = event;
@@ -200,6 +201,8 @@ export function apply(state: PadState, update: Update, now = Date.now()): PadSta
       };
     case "session":
       return state.view === undefined ? state : { ...state, view: { ...state.view, locked: event.locked } };
+    case "modifier":
+      return state.view === undefined ? state : { ...state, view: { ...state.view, modifier: event.modifier } };
   }
 }
 
@@ -265,6 +268,8 @@ export function traceResult(entry: TraceRecord): string {
       return t("trace.failed", { error: String(result.error) });
     case "blocked":
       return t("trace.blocked", { reason: String(result.reason) });
+    case "modifier":
+      return t(result.active === true ? "trace.modifierOn" : "trace.modifierOff");
     default:
       return result.status;
   }
@@ -280,9 +285,9 @@ export function onFailLine(entry: TraceRecord): string {
   return t("trace.onFail", { action: describeAction(entry.action) ?? "", result: traceResult(entry) });
 }
 
-/** One line: the key, how it was pressed, the layer that supplied it, the
- * action and what came of it, and the press's `onFail` run after it. An
- * `on_fail` entry alone says it is one. */
+/** One line: the key, how it was pressed, the modifier key that took a
+ * turn, the layer that supplied it, the action and what came of it, and the
+ * press's `onFail` run after it. An `on_fail` entry alone says it is one. */
 export function summarize(entry: TraceRecord, onFail?: TraceRecord): string {
   const long = entry.trigger.press === "long";
   const head = phrase([
@@ -290,6 +295,9 @@ export function summarize(entry: TraceRecord, onFail?: TraceRecord): string {
       ? t(long ? "trace.keyLong" : "trace.key", { key: entry.key ?? "" })
       : t(long ? "trace.controlLong" : "trace.control", { control: controlName(entry.control) }),
     entry.trigger.simulated ? t("trace.simulated") : undefined,
+    entry.control === undefined || entry.key === undefined || entry.modifier === undefined
+      ? undefined
+      : t(entry.modifier === "held" ? "trace.modifierHeld" : "trace.modifierToggled", { key: entry.key }),
     entry.layer === undefined ? undefined : t("layer", { layer: entry.layer }),
   ]);
   const body =

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use keyvo_core::config::Focus;
 use keyvo_core::focus::WindowContext;
 use keyvo_core::layout::{Loaded, load};
-use keyvo_core::profile::{Action, Key, Profile};
+use keyvo_core::profile::{Action, Key, KeySlot, ModifierMode, Profile};
 use keyvo_core::recipe::{self, Group, Recipe, Source};
 use keyvo_core::render::icon;
 
@@ -517,5 +517,30 @@ fn the_dialpad_turns_the_volume_switches_tabs_mutes_and_indents_in_vs_code() {
             "{}",
             profile.profile.id
         );
+    }
+}
+
+#[test]
+fn the_global_context_page_has_a_held_and_a_toggled_dial_modifier_no_app_profile_hides() {
+    let loaded = loaded();
+    let context = &loaded.profiles.global().pages[0];
+    let key = |n: u8| &context.keys[&KeySlot::new(n).unwrap()];
+    let brightness = key(7);
+    assert_eq!(brightness.modifier_mode(), Some(ModifierMode::Held));
+    assert!(brightness.action.is_some() && brightness.roller.is_some());
+    let zoom = key(8);
+    assert_eq!(zoom.modifier_mode(), Some(ModifierMode::Toggle));
+    assert_eq!(zoom.action, None);
+    // Every app profile leaves keys 7 and 8 to the global layer.
+    for profile in loaded.profiles.iter().filter(|p| p.profile.id != "global") {
+        for page in &profile.pages {
+            for n in [7, 8] {
+                assert!(
+                    !page.keys.contains_key(&KeySlot::new(n).unwrap()),
+                    "{} defines key {n}",
+                    profile.profile.id
+                );
+            }
+        }
     }
 }

@@ -121,6 +121,7 @@ mod resolution {
                 key: Some(slot(2)),
                 control: None,
                 layer: Some(Layer::App),
+                modifier: None,
                 action: Some(Action::Chord {
                     keys: Chord::parse("ctrl+shift+g").unwrap()
                 }),
@@ -203,6 +204,7 @@ mod resolution {
                     key: Some(slot(1)),
                     control: None,
                     layer: None,
+                    modifier: None,
                     action: None,
                     result: Outcome::Blocked {
                         reason: "locked".to_owned()

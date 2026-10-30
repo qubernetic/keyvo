@@ -17,7 +17,8 @@ export type EventClass =
   | "trace"
   | "config"
   | "session"
-  | "dial";
+  | "dial"
+  | "modifier";
 
 export const EVENT_CLASSES: readonly EventClass[] = [
   "key",
@@ -30,6 +31,7 @@ export const EVENT_CLASSES: readonly EventClass[] = [
   "config",
   "session",
   "dial",
+  "modifier",
 ];
 
 /** Every event name: the classes, and `dialpad`, an event of class
@@ -53,6 +55,19 @@ export interface View {
   /** The session is locked: the pad shows the lock page over this view and
    * blocks every press. Absent from a daemon before the session lock. */
   locked?: boolean;
+  /** The key that has the dial and the roller, while one does; absent or
+   * null when none does (spec §7.2). */
+  modifier?: Modifier | null;
+}
+
+/** How a modifier key has the dial: while held, or from a tap to the next
+ * press of any key. */
+export type ModifierMode = "held" | "toggle";
+
+/** The modifier key that has the dial and the roller. */
+export interface Modifier {
+  key: number;
+  mode: ModifierMode;
 }
 
 /** A rotary control of the Dialpad: `dial` the large knob, `roller` the
@@ -78,7 +93,16 @@ export function controlOf(text: string): Control | undefined {
 export type Command =
   | { cmd: "status" }
   | { cmd: "subscribe"; events?: EventClass[]; replay?: number }
-  | { cmd: "press"; key: number; kind?: PressKind; dry_run?: boolean }
+  | {
+      cmd: "press";
+      key: number;
+      kind?: PressKind;
+      dry_run?: boolean;
+      /** Holds a modifier key down until a press with `release`; only one
+       * of the two, written only when true. */
+      hold?: boolean;
+      release?: boolean;
+    }
   | {
       cmd: "press";
       control: Control;
@@ -196,6 +220,9 @@ export interface TraceRecord {
   control?: Control;
   /** Absent when no layer defines the key. */
   layer?: Layer;
+  /** The mode of the modifier key that took a turn, or whose press armed
+   * or ended it; absent otherwise. */
+  modifier?: ModifierMode;
   action: Action | null;
   result: { status: string; [field: string]: unknown };
   /** `on_fail` for the run of the key's `on_fail` after its action failed,
@@ -280,7 +307,8 @@ export type Event =
   | ({ event: "context" } & Context)
   | { event: "trace"; entry: TraceRecord }
   | { event: "config"; reloaded: boolean; error?: string }
-  | { event: "session"; locked: boolean };
+  | { event: "session"; locked: boolean }
+  | { event: "modifier"; modifier: Modifier | null };
 
 /** A line from the daemon. */
 export type ServerMessage =

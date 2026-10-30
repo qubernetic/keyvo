@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use keyvo_core::chord::Chord;
 use keyvo_core::diagnostic::Diagnostic;
-use keyvo_core::edit::KeyFields;
-use keyvo_core::profile::{Action, Color};
+use keyvo_core::edit::{KeyFields, RotaryFields};
+use keyvo_core::profile::{Action, Color, ModifierMode};
 use keyvo_core::recipe::{self, Group, Recipe, Source, Variant};
 
 fn fixture(name: &str) -> PathBuf {
@@ -283,6 +283,9 @@ fn applying_a_variant_sets_icon_label_and_action_and_keeps_the_color() {
         label: Some("Old".into()),
         color: Some(Color::rgb(1, 2, 3)),
         action: None,
+        modifier: Some(ModifierMode::Toggle),
+        dial: Some(RotaryFields::default()),
+        roller: None,
     };
     assert_eq!(
         recipe.apply("key", &key),
@@ -293,6 +296,10 @@ fn applying_a_variant_sets_icon_label_and_action_and_keeps_the_color() {
             action: Some(Action::Chord {
                 keys: Chord::parse("print").unwrap()
             }),
+            // The modifier and its bindings stay.
+            modifier: Some(ModifierMode::Toggle),
+            dial: Some(RotaryFields::default()),
+            roller: None,
         })
     );
     assert_eq!(recipe.apply("nope", &key), None);

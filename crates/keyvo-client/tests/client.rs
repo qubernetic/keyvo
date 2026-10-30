@@ -81,6 +81,7 @@ fn status_sends_the_fixture_request_and_returns_the_fixture_answer() {
             mode: Mode::Auto,
             index: 1,
             locked: false,
+            modifier: None,
         }
     );
     let written = String::from_utf8(client.into_inner().written).unwrap();

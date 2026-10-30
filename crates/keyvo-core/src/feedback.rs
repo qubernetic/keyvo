@@ -24,6 +24,9 @@ pub enum Look {
     Success,
     /// It failed: a red badge.
     Error,
+    /// The key has the dial and the roller (spec §9): a ring in the accent
+    /// and a dial badge in the top left corner, held or toggled.
+    Modifier,
 }
 
 impl Look {
@@ -36,6 +39,7 @@ impl Look {
             Self::Running | Self::RunningLong => Some("running"),
             Self::Success => Some("success"),
             Self::Error => Some("error"),
+            Self::Modifier => Some("modifier"),
         }
     }
 }
