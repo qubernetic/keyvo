@@ -186,6 +186,16 @@ holds, what is special in the right column.
   48ch. Every change writes through
   `toml_edit` immediately (§4.1), the result line with a time stamp under
   the fields. Empty: "Select a key to edit it."
+  As built (beta, #189): below the action a **Modifier** section with a
+  Mode select (Off, Held, Toggle) and a hint per mode; Held and Toggle
+  show a Dial and a Roller group (Label, Step, Clockwise,
+  Counter-clockwise, the fields of the control editor, shared as
+  `RotaryFields.svelte`), Off hides them and writes none of `modifier`,
+  `dial` and `roller`. Choosing Held or Toggle with nothing bound writes
+  an empty `dial` table; `toggle` is written, `held` stays absent (the
+  default). A catalogue click goes to the direction last focused in the
+  section ("Assign to the Dial of key 4, counter-clockwise."); a drop on a
+  tile always sets the key's action.
 - **Actions catalogue** (right, from a 1200 px window; below it the
   entries collapse into the inspector's Action select): a search field
   (`/`, "Search actions", empty: "No action matches"), then the groups,
@@ -347,6 +357,14 @@ control's own. The catalogue assigns to the selected control: a button's
 action and label, the last-focused direction of the dial or the roller
 (clockwise until another field is focused), with the hint naming the
 target. Selecting a control pins the profile as selecting a key does.
+
+As built (beta, #189): while the view carries a `modifier`, the mirror
+draws that key with an accent ring and a dial badge in the corner opposite
+the global mark, and its accessible name adds "has the dial, held" or
+"toggled"; the Dialpad panel shows the key's binding on the dial and the
+roller it binds, labelled with the table's label, else the key's label,
+else "Key N", followed by "(held)" or "(toggled)", and the profile's
+labels again when the modifier ends.
 
 ### 3.4 Projects
 

@@ -2333,8 +2333,11 @@ the rest of the system must provide.
   `modifier`, the mirror draws the ring on that key, and the Dialpad
   panel shows the key's labels on the dial and the roller it binds (the
   table's `label`, else the key's) with `(held)` or `(toggled)` in place
-  of the profile's. The mock daemon serves the contrib profiles' held key
-  7 and toggle key 8.
+  of the profile's. The mock daemon reads the three fields from the
+  contrib profiles and, as its presses are dry runs that change nothing,
+  gives the dial to the held key 7, then the toggled key 8, on a 5 s
+  timer. The app's `Daemon` interface has no `hold` or `release` yet (the
+  Tauri `press` command takes a key and a kind).
 - Tray icon from the GUI in v1. `keyvo profile export|import` in the header
   menu.
 - Flatpak (M4b, as built in #182): exactly `--share=ipc`,
