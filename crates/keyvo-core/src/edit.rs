@@ -6,15 +6,19 @@
 //!
 //! Writing the text to disk is [`crate::store`]'s job.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use toml_edit::{Document, DocumentMut, InlineTable, Item, Table, TableLike, Value};
+use toml_edit::{ArrayOfTables, Document, DocumentMut, InlineTable, Item, Table, TableLike, Value};
 
 use crate::diagnostic::Diagnostic;
 use crate::dialpad::{ButtonSlot, Roller};
-use crate::profile::{Action, Color, DialButton, Key, KeySlot, ModifierMode, Profile, Rotary};
+use crate::profile::{
+    Action, Color, DialButton, Key, KeySlot, ModifierMode, Page, Profile, Rotary,
+};
+use crate::state::context_page;
 
 /// The text of [`Profile::builtin_global`], the file the editor starts
 /// from when `profiles/global.toml` does not exist yet.
@@ -87,7 +91,8 @@ impl KeyFields {
 
 /// The fields of the `[profile]` table the editor changes
 /// (`docs/design/gui-ux.md` §3.2); the id, the match rules and the priority
-/// are kept as they are. An absent accent is removed from the file.
+/// are kept as they are. An absent accent is removed from the file, and so
+/// is `global_pages` at its default `true`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProfileFields {
@@ -96,6 +101,9 @@ pub struct ProfileFields {
     /// Accent color.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accent: Option<Color>,
+    /// Whether the global pages sit left of the context page (spec §6.3).
+    #[serde(default = "yes", skip_serializing_if = "is_yes")]
+    pub global_pages: bool,
 }
 
 impl ProfileFields {
@@ -105,8 +113,71 @@ impl ProfileFields {
         Self {
             name: profile.profile.name.clone(),
             accent: profile.profile.accent,
+            global_pages: profile.profile.global_pages,
         }
     }
+}
+
+const fn yes() -> bool {
+    true
+}
+
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if passes a reference"
+)]
+const fn is_yes(value: &bool) -> bool {
+    *value
+}
+
+/// One change to the pages of a profile (spec §10): every page counted
+/// from 1. Written as JSON with the `op` tag.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "lowercase", deny_unknown_fields)]
+pub enum PageEdit {
+    /// A new page at the end, named `name` or without a name.
+    Add {
+        /// The page name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    },
+    /// Page `page` named `name`; no name removes it.
+    Rename {
+        /// The page.
+        page: usize,
+        /// The new name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    },
+    /// Page `page` moved to position `to`, the pages between shifted.
+    Move {
+        /// The page.
+        page: usize,
+        /// Its position after the move.
+        to: usize,
+    },
+    /// Page `page` switched on or off; on is written as absent.
+    Enable {
+        /// The page.
+        page: usize,
+        /// Whether it is in the page list.
+        enabled: bool,
+    },
+    /// Page `page` removed with its keys.
+    Delete {
+        /// The page.
+        page: usize,
+    },
+}
+
+/// What a [`PageEdit`] did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PageEdited {
+    /// The edited page's number after the edit; `None` after a delete.
+    pub page: Option<usize>,
+    /// The edit that undoes it; `None` after a delete, whose undo is the
+    /// file before it.
+    pub undo: Option<PageEdit>,
 }
 
 /// The fields of the dial or the roller the editor changes (spec §7.2). An
@@ -200,6 +271,20 @@ pub enum EditError {
         path: PathBuf,
         /// The part, for example `page 1 keys`.
         what: String,
+    },
+    /// The edit would leave the profile without a page in its page list:
+    /// the context page cannot be disabled, the only enabled page cannot be
+    /// deleted.
+    #[error("{}: page {page} of profile `{profile}` {why}", path.display())]
+    Protected {
+        /// The profile file.
+        path: PathBuf,
+        /// The profile id.
+        profile: String,
+        /// The page, counted from 1.
+        page: usize,
+        /// Why, for example `is the context page`.
+        why: &'static str,
     },
     /// The edited text is not a valid profile.
     #[error(transparent)]
@@ -378,7 +463,9 @@ impl ProfileDocument {
     fn commit(&mut self, doc: DocumentMut) -> Result<(), EditError> {
         let text = doc.to_string();
         self.profile = Profile::from_toml(&text, &self.path)?;
-        self.doc = doc;
+        // Parsed again, a table the edit added gets its place in the text,
+        // which a later move of its page needs.
+        self.doc = text.parse().unwrap_or(doc);
         Ok(())
     }
 
@@ -544,8 +631,177 @@ impl ProfileDocument {
         if before.accent != fields.accent {
             set_value(table, "accent", fields.accent.map(|c| c.to_string().into()));
         }
+        if before.global_pages != fields.global_pages {
+            set_value(
+                table,
+                "global_pages",
+                (!fields.global_pages).then(|| false.into()),
+            );
+        }
         self.commit(doc)?;
         Ok(before)
+    }
+
+    /// Applies `edit` to the pages; every byte outside the edited page stays
+    /// as it was, a moved page takes its comments and keys along. Returns
+    /// where the page is now and the edit that undoes it.
+    ///
+    /// # Errors
+    ///
+    /// [`EditError::NoPage`] for a page or position the profile does not
+    /// have, [`EditError::Protected`] for disabling the context page or
+    /// deleting the only enabled page, [`EditError::Shape`] when `pages` is
+    /// not an array of `[[pages]]` tables (an inline array can be renamed
+    /// and switched, not added to, moved in or deleted from), and
+    /// [`EditError::Invalid`] when the edited text does not validate; the
+    /// document is unchanged after an error.
+    pub fn edit_page(&mut self, edit: &PageEdit) -> Result<PageEdited, EditError> {
+        let mut doc = self.doc.clone();
+        let done = match edit {
+            PageEdit::Add { name } => {
+                let pages = self.page_array(&mut doc)?;
+                let mut table = Table::new();
+                if let Some(name) = name {
+                    table.insert("name", toml_edit::value(name.as_str()));
+                }
+                pages.push(table);
+                let page = pages.len();
+                PageEdited {
+                    page: Some(page),
+                    undo: Some(PageEdit::Delete { page }),
+                }
+            }
+            PageEdit::Rename { page, name } => {
+                let before = self.page(*page)?.name.clone();
+                set_value(
+                    self.page_table(&mut doc, *page)?,
+                    "name",
+                    name.as_deref().map(Value::from),
+                );
+                PageEdited {
+                    page: Some(*page),
+                    undo: Some(PageEdit::Rename {
+                        page: *page,
+                        name: before,
+                    }),
+                }
+            }
+            PageEdit::Move { page, to } => {
+                self.page(*page)?;
+                self.page(*to)?;
+                let pages = self.page_array(&mut doc)?;
+                move_page(pages, page - 1, to - 1);
+                PageEdited {
+                    page: Some(*to),
+                    undo: Some(PageEdit::Move {
+                        page: *to,
+                        to: *page,
+                    }),
+                }
+            }
+            PageEdit::Enable { page, enabled } => {
+                let before = self.page(*page)?.enabled;
+                if !enabled && *page == context_page(&self.profile) {
+                    return Err(self.protected(*page, "is the context page"));
+                }
+                set_value(
+                    self.page_table(&mut doc, *page)?,
+                    "enabled",
+                    (!enabled).then(|| false.into()),
+                );
+                PageEdited {
+                    page: Some(*page),
+                    undo: Some(PageEdit::Enable {
+                        page: *page,
+                        enabled: before,
+                    }),
+                }
+            }
+            PageEdit::Delete { page } => {
+                self.page(*page)?;
+                if self.only_enabled(*page) {
+                    return Err(self.protected(*page, "is the only enabled page"));
+                }
+                self.page_array(&mut doc)?.remove(page - 1);
+                PageEdited {
+                    page: None,
+                    undo: None,
+                }
+            }
+        };
+        self.commit(doc)?;
+        Ok(done)
+    }
+
+    /// Page `page` (from 1) of the profile.
+    fn page(&self, page: usize) -> Result<&Page, EditError> {
+        let pages = &self.profile.pages;
+        page.checked_sub(1)
+            .and_then(|index| pages.get(index))
+            .ok_or_else(|| EditError::NoPage {
+                path: self.path.clone(),
+                profile: self.profile.profile.id.clone(),
+                page,
+                pages: pages.len(),
+            })
+    }
+
+    /// Whether page `page` is the context page and no other page is
+    /// enabled: the one page the list would have left.
+    fn only_enabled(&self, page: usize) -> bool {
+        page == context_page(&self.profile)
+            && !self
+                .profile
+                .pages
+                .iter()
+                .enumerate()
+                .any(|(at, other)| at + 1 != page && other.enabled)
+    }
+
+    fn protected(&self, page: usize, why: &'static str) -> EditError {
+        EditError::Protected {
+            path: self.path.clone(),
+            profile: self.profile.profile.id.clone(),
+            page,
+            why,
+        }
+    }
+
+    /// The `[[pages]]` array of `doc`, created when the file has no page.
+    fn page_array<'d>(&self, doc: &'d mut DocumentMut) -> Result<&'d mut ArrayOfTables, EditError> {
+        doc.entry("pages")
+            .or_insert_with(|| Item::ArrayOfTables(ArrayOfTables::new()))
+            .as_array_of_tables_mut()
+            .ok_or_else(|| EditError::Shape {
+                path: self.path.clone(),
+                what: "pages".into(),
+            })
+    }
+
+    /// The table of page `page` (from 1) in `doc`, a `[[pages]]` table or
+    /// an inline one.
+    fn page_table<'d>(
+        &self,
+        doc: &'d mut DocumentMut,
+        page: usize,
+    ) -> Result<&'d mut dyn TableLike, EditError> {
+        let shape = |what: String| EditError::Shape {
+            path: self.path.clone(),
+            what,
+        };
+        let index = page - 1;
+        match doc.get_mut("pages").ok_or_else(|| shape("pages".into()))? {
+            Item::ArrayOfTables(pages) => pages
+                .get_mut(index)
+                .map(|t| t as &mut dyn TableLike)
+                .ok_or_else(|| shape(format!("page {page}"))),
+            Item::Value(Value::Array(pages)) => pages
+                .get_mut(index)
+                .and_then(Value::as_inline_table_mut)
+                .map(|t| t as &mut dyn TableLike)
+                .ok_or_else(|| shape(format!("page {page}"))),
+            _ => Err(shape("pages".into())),
+        }
     }
 
     /// The table of key `slot` on page `page` in `doc`, created when the
@@ -611,6 +867,73 @@ fn child<'p>(
     let item = parent.get_mut(name)?;
     let inline = item.is_inline_table();
     item.as_table_like_mut().map(|table| (table, inline))
+}
+
+/// Moves page `from` of `pages` to `to` (both from 0), one neighbour at a
+/// time.
+fn move_page(pages: &mut ArrayOfTables, from: usize, to: usize) {
+    let mut at = from;
+    while at < to {
+        swap_pages(pages, at);
+        at += 1;
+    }
+    while at > to {
+        swap_pages(pages, at - 1);
+        at -= 1;
+    }
+}
+
+/// Swaps pages `at` and `at + 1`. The text follows the place of each table
+/// in the file, not the array, so the two pages' tables trade their places:
+/// the second page's tables take the first places of the pair, in their
+/// order, the first page's the rest.
+fn swap_pages(pages: &mut ArrayOfTables, at: usize) {
+    let (Some(first), Some(second)) = (
+        pages.get_mut(at).map(places),
+        pages.get_mut(at + 1).map(places),
+    ) else {
+        return;
+    };
+    let mut slots: Vec<isize> = first.iter().chain(&second).copied().collect();
+    slots.sort_unstable();
+    let (low, high) = slots.split_at(second.len());
+    for (index, own, new) in [(at + 1, &second, low), (at, &first, high)] {
+        let mut own = own.clone();
+        own.sort_unstable();
+        let moved: BTreeMap<isize, isize> = own.into_iter().zip(new.iter().copied()).collect();
+        if let Some(table) = pages.get_mut(index) {
+            visit_tables(table, &mut |table| {
+                if let Some(place) = table.position().and_then(|old| moved.get(&old)) {
+                    table.set_position(Some(*place));
+                }
+            });
+        }
+    }
+    let table = pages.remove(at + 1);
+    pages.insert(at, table);
+}
+
+/// The places in the file of `page`'s tables that have one.
+fn places(page: &mut Table) -> Vec<isize> {
+    let mut places = Vec::new();
+    visit_tables(page, &mut |table| places.extend(table.position()));
+    places
+}
+
+/// Calls `f` on `table` and every table under it.
+fn visit_tables(table: &mut Table, f: &mut dyn FnMut(&mut Table)) {
+    f(table);
+    for (_, item) in table.iter_mut() {
+        match item {
+            Item::Table(child) => visit_tables(child, f),
+            Item::ArrayOfTables(children) => {
+                for child in children.iter_mut() {
+                    visit_tables(child, f);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Sets `name` in `table` to `value` keeping the whitespace and comments

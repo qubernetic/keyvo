@@ -1,0 +1,45 @@
+{
+  "profile": "konsole",
+  "file": "pages.toml",
+  "path": "profiles/konsole.toml",
+  "steps": [
+    {
+      "edit": { "op": "add" },
+      "file": "pages.1.toml",
+      "page": 4,
+      "undo": { "op": "delete", "page": 4 }
+    },
+    {
+      "edit": { "op": "rename", "page": 4, "name": "tools" },
+      "file": "pages.2.toml",
+      "page": 4,
+      "undo": { "op": "rename", "page": 4 }
+    },
+    {
+      "edit": { "op": "move", "page": 4, "to": 3 },
+      "file": "pages.3.toml",
+      "page": 3,
+      "undo": { "op": "move", "page": 3, "to": 4 }
+    },
+    {
+      "edit": { "op": "enable", "page": 2, "enabled": false },
+      "file": "pages.4.toml",
+      "page": 2,
+      "undo": { "op": "enable", "page": 2, "enabled": true }
+    },
+    {
+      "edit": { "op": "delete", "page": 3 },
+      "file": "pages.5.toml"
+    },
+    {
+      "edit": { "op": "enable", "page": 3, "enabled": false },
+      "file": "pages.6.toml",
+      "page": 3,
+      "undo": { "op": "enable", "page": 3, "enabled": true }
+    }
+  ],
+  "refused": [
+    { "edit": { "op": "enable", "page": 1, "enabled": false }, "reason": "context" },
+    { "edit": { "op": "delete", "page": 1 }, "reason": "only" }
+  ]
+}
