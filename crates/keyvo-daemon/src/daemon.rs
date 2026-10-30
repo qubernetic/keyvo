@@ -49,6 +49,7 @@ use std::time::SystemTime;
 
 use keyvo_core::chord::Chord;
 use keyvo_core::config::Config;
+use keyvo_core::dialpad::{ButtonSlot, Control as DialControl, Roller, Turn};
 use keyvo_core::focus::{WindowContext, WindowWatcher};
 use keyvo_core::inject::InputInjector;
 use keyvo_core::layout::{self, Loaded, Profiles};
@@ -58,8 +59,8 @@ use keyvo_core::profile::{Action, KeySlot};
 use keyvo_core::recipe;
 use keyvo_core::session::{Session, SessionWatcher};
 use keyvo_core::socket::{
-    Command as Wire, Context, ContextSource, DeviceStatus, Edge as KeyEdge, Geometry, Recipes,
-    Status,
+    Command as Wire, Context, ContextSource, DeviceStatus, DialpadStatus, Edge as KeyEdge,
+    Geometry, Recipes, RollerStatus, Status,
 };
 use keyvo_core::state::{LaunchId, PageButton, View};
 use keyvo_core::trace::{Outcome, TraceRecord, Trigger};
@@ -69,6 +70,7 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::time::Instant;
 
 use crate::device::{self, Command, Connector, Frame};
+use crate::dialpad::{self, DialpadConnector};
 use crate::engine::Engine;
 use crate::exec;
 
@@ -98,6 +100,24 @@ pub enum Event {
         key: KeySlot,
         /// Which way.
         edge: KeyEdge,
+    },
+    /// The Dialpad connected or is gone.
+    Dialpad(DialpadStatus),
+    /// A Dialpad button went down or up.
+    Button {
+        /// The button.
+        button: ButtonSlot,
+        /// Which way.
+        edge: KeyEdge,
+    },
+    /// The Dialpad's dial or roller turned.
+    Dial {
+        /// Which one.
+        roller: Roller,
+        /// Detents, clockwise positive.
+        delta: i32,
+        /// How often its action ran.
+        actions: u32,
     },
     /// A focus source reported a window.
     Context(Context),
@@ -140,10 +160,20 @@ pub enum Answer {
     },
     /// `press`: the entry as resolved; an `exec` is still pending.
     Pressed(TraceRecord),
+    /// `press` of the dial or the roller: the entry of one run and how
+    /// often it runs.
+    Turned {
+        /// The entry of one run.
+        entry: TraceRecord,
+        /// How often the action runs.
+        runs: u32,
+    },
     /// `reload`: whether the directory loaded, else every problem.
     Reloaded(Result<(), String>),
     /// `recipes`: the catalogue as read now.
     Recipes(Recipes),
+    /// A command whose fields break [`Wire::check`].
+    Invalid(String),
     /// `notify_context`: taken.
     Noted,
 }
@@ -170,8 +200,19 @@ pub struct Sources<W, S, L> {
     pub lineage: L,
 }
 
+/// The devices the daemon drives, each by its own actor: the Keypad and the
+/// Dialpad.
+#[derive(Debug, Clone)]
+pub struct Devices<C, D> {
+    /// Opens the Keypad.
+    pub keypad: C,
+    /// Opens the Dialpad's receiver or node.
+    pub dialpad: D,
+}
+
 /// Runs the daemon on the configuration in `paths.config_dir` until
-/// `shutdown` completes. `sources.window` reports the focused window; one
+/// `shutdown` completes, the Keypad and the Dialpad of `devices` each on
+/// its own thread. `sources.window` reports the focused window; one
 /// that does not start is logged and the daemon runs without focus
 /// switching. `sources.session` reports the session lock; one that does
 /// not start is logged once and the daemon runs without lock detection.
@@ -180,10 +221,10 @@ pub struct Sources<W, S, L> {
 ///
 /// # Errors
 ///
-/// When the device actor's thread cannot be started or ends in a panic.
-pub async fn run<C, I, W, S, L>(
+/// When a device actor's thread cannot be started or ends in a panic.
+pub async fn run<C, D, I, W, S, L>(
     paths: &Paths,
-    connector: C,
+    devices: Devices<C, D>,
     injector: I,
     sources: Sources<W, S, L>,
     events: broadcast::Sender<Event>,
@@ -192,6 +233,7 @@ pub async fn run<C, I, W, S, L>(
 ) -> io::Result<()>
 where
     C: Connector,
+    D: DialpadConnector,
     I: InputInjector + Send + 'static,
     W: WindowWatcher,
     S: SessionWatcher,
@@ -213,16 +255,9 @@ where
     let engine = Engine::new(loaded);
     let timing = engine.config().timing;
 
-    let settings = device::Settings::from_timing(&timing);
-    let (commands, inbox) = std_mpsc::channel();
-    let (outbox, mut device_events) = mpsc::unbounded_channel();
-    let actor = std::thread::Builder::new()
-        .name("keyvo-device".into())
-        .spawn(move || {
-            device::run(connector, &settings, &inbox, |event| {
-                let _ = outbox.send(event);
-            });
-        })?;
+    let (commands, mut device_events, actor) = start_keypad(devices.keypad, &timing)?;
+    let (dialpad_stop, mut dialpad_events, dialpad_actor) =
+        start_dialpad(devices.dialpad, &timing)?;
 
     let (focused, mut focus) = mpsc::unbounded_channel::<WindowContext>();
     if let Err(error) = watcher.start(Box::new(move |window| {
@@ -256,6 +291,7 @@ where
             geometry: None,
             error: None,
         },
+        dialpad: DialpadStatus::default(),
         context: None,
         ring: VecDeque::new(),
         lineage,
@@ -273,6 +309,7 @@ where
         tokio::select! {
             () = &mut shutdown => break,
             Some(event) = device_events.recv() => controller.device(event),
+            Some(event) = dialpad_events.recv() => controller.dialpad(event),
             Some(window) = focus.recv() => controller.focus(window, ContextSource::Watcher),
             Some(session) = sessions.recv() => controller.session(session),
             Some(request) = requests.recv() => controller.request(request),
@@ -291,10 +328,61 @@ where
     drop(session_watcher);
 
     let _ = commands.send(Command::Stop);
+    drop(dialpad_stop);
     tokio::task::spawn_blocking(move || actor.join())
         .await
         .map_err(io::Error::other)?
-        .map_err(|_| io::Error::other("the device actor panicked"))
+        .map_err(|_| io::Error::other("the device actor panicked"))?;
+    tokio::task::spawn_blocking(move || dialpad_actor.join())
+        .await
+        .map_err(io::Error::other)?
+        .map_err(|_| io::Error::other("the Dialpad actor panicked"))
+}
+
+/// The Keypad's device actor on its own thread: its commands, its events,
+/// its thread.
+fn start_keypad<C: Connector>(
+    connector: C,
+    timing: &keyvo_core::config::Timing,
+) -> io::Result<(
+    std_mpsc::Sender<Command>,
+    mpsc::UnboundedReceiver<device::Event>,
+    std::thread::JoinHandle<()>,
+)> {
+    let settings = device::Settings::from_timing(timing);
+    let (commands, inbox) = std_mpsc::channel();
+    let (outbox, events) = mpsc::unbounded_channel();
+    let actor = std::thread::Builder::new()
+        .name("keyvo-device".into())
+        .spawn(move || {
+            device::run(connector, &settings, &inbox, |event| {
+                let _ = outbox.send(event);
+            });
+        })?;
+    Ok((commands, events, actor))
+}
+
+/// The Dialpad actor on its own thread: the sender whose drop stops it, its
+/// events, its thread.
+fn start_dialpad<D: DialpadConnector>(
+    connector: D,
+    timing: &keyvo_core::config::Timing,
+) -> io::Result<(
+    std_mpsc::Sender<()>,
+    mpsc::UnboundedReceiver<dialpad::Event>,
+    std::thread::JoinHandle<()>,
+)> {
+    let settings = dialpad::Settings::from_timing(timing);
+    let (stop, stopped) = std_mpsc::channel::<()>();
+    let (outbox, events) = mpsc::unbounded_channel();
+    let actor = std::thread::Builder::new()
+        .name("keyvo-dialpad".into())
+        .spawn(move || {
+            dialpad::run(connector, &settings, &stopped, |event| {
+                let _ = outbox.send(event);
+            });
+        })?;
+    Ok((stop, events, actor))
 }
 
 /// What a directory that does not load leaves: its `config.toml` when that
@@ -362,6 +450,15 @@ struct Done {
     on_fail: Option<Action>,
 }
 
+/// What can be held for a long press: a Keypad key or a Dialpad button.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Pressable {
+    /// A key, 1-based.
+    Key(u8),
+    /// A Dialpad button.
+    Button(ButtonSlot),
+}
+
 struct Controller<'a, I, L> {
     config_dir: &'a Path,
     socket: &'a Path,
@@ -369,12 +466,13 @@ struct Controller<'a, I, L> {
     injector: I,
     events: broadcast::Sender<Event>,
     commands: std_mpsc::Sender<Command>,
-    presses: PressDetector<u8>,
+    presses: PressDetector<Pressable>,
     flush_at: Option<Instant>,
     reload_at: Option<Instant>,
     /// Where a finished `exec` or `launch` reports.
     done: mpsc::UnboundedSender<Done>,
     device: DeviceStatus,
+    dialpad: DialpadStatus,
     /// The last focus report.
     context: Option<Context>,
     /// The newest `[trace].ring` trace entries, oldest first.
@@ -457,11 +555,11 @@ impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
                         match edge {
                             Edge::Press => {
                                 self.engine.touch(now);
-                                self.presses.press(key, now);
+                                self.presses.press(Pressable::Key(key), now);
                             }
                             Edge::Release => {
-                                if let Some(kind) = self.presses.release(key, now) {
-                                    self.pressed(key, kind);
+                                if let Some(kind) = self.presses.release(Pressable::Key(key), now) {
+                                    self.pressed(Pressable::Key(key), kind);
                                 }
                             }
                         }
@@ -485,6 +583,101 @@ impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
                 }
             }
         }
+    }
+
+    fn dialpad(&mut self, event: dialpad::Event) {
+        match event {
+            dialpad::Event::Connected { slot, rollers } => {
+                self.dialpad = DialpadStatus {
+                    connected: true,
+                    slot,
+                    rollers: rollers
+                        .iter()
+                        .filter_map(|roller| {
+                            Some(RollerStatus {
+                                roller: Roller::from_id(roller.id)?,
+                                increments: roller.increments,
+                            })
+                        })
+                        .collect(),
+                    error: None,
+                };
+                self.emit(Event::Dialpad(self.dialpad.clone()));
+            }
+            dialpad::Event::Disconnected { error } => {
+                self.dialpad = DialpadStatus {
+                    error: Some(error),
+                    ..DialpadStatus::default()
+                };
+                self.emit(Event::Dialpad(self.dialpad.clone()));
+            }
+            dialpad::Event::Rotate { roller, delta } => {
+                if let Some(roller) = Roller::from_id(roller) {
+                    self.turn(roller, i32::from(delta), false);
+                }
+            }
+            dialpad::Event::Button { button, edge } => {
+                let Some(button) = ButtonSlot::new(button) else {
+                    return;
+                };
+                let now = Instant::now().into_std();
+                let pressable = Pressable::Button(button);
+                match edge {
+                    Edge::Press => {
+                        self.emit(Event::Button {
+                            button,
+                            edge: KeyEdge::Press,
+                        });
+                        // A button is pad activity; a turn is not.
+                        self.engine.touch(now);
+                        self.presses.press(pressable, now);
+                    }
+                    Edge::Release => {
+                        self.emit(Event::Button {
+                            button,
+                            edge: KeyEdge::Release,
+                        });
+                        if let Some(kind) = self.presses.release(pressable, now) {
+                            self.pressed(pressable, kind);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// A turn of `roller` by `delta`: resolved on the active profile, its
+    /// action run once per `step`, unless `simulated`; reported as a
+    /// `dial` event. The entry of one run and how often it ran.
+    fn turn(&mut self, roller: Roller, delta: i32, simulated: bool) -> (TraceRecord, u32) {
+        let Turn { record, runs } = self
+            .engine
+            .turn(roller, delta, simulated, SystemTime::now());
+        let ran = match (&record.result, simulated) {
+            // Below one step, or nothing bound: no trace at the rate of
+            // the turn reports.
+            (Outcome::Unbound | Outcome::Pending, false) if runs == 0 => 0,
+            (Outcome::Pending, false) => {
+                for _ in 0..runs {
+                    self.run(record.clone(), None);
+                }
+                runs
+            }
+            _ => {
+                self.emit(Event::Trace(record.clone()));
+                0
+            }
+        };
+        // A client's turn has no device event, as a client's press has
+        // none.
+        if !simulated {
+            self.emit(Event::Dial {
+                roller,
+                delta,
+                actions: ran,
+            });
+        }
+        (record, runs)
     }
 
     /// `source` reports the focused `window`.
@@ -557,21 +750,26 @@ impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
     }
 
     fn long_presses(&mut self) {
-        for key in self.presses.poll(Instant::now().into_std()) {
-            self.pressed(key, PressKind::Long);
+        for held in self.presses.poll(Instant::now().into_std()) {
+            self.pressed(held, PressKind::Long);
         }
     }
 
-    /// Resolves and runs a device press of `key`.
-    fn pressed(&mut self, key: u8, press: PressKind) {
-        if let Some(slot) = KeySlot::new(key) {
-            self.press(
-                slot,
-                Trigger {
-                    press,
-                    simulated: false,
-                },
-            );
+    /// Resolves and runs a device press of a key or a Dialpad button.
+    fn pressed(&mut self, held: Pressable, press: PressKind) {
+        let trigger = Trigger {
+            press,
+            simulated: false,
+        };
+        match held {
+            Pressable::Key(key) => {
+                if let Some(slot) = KeySlot::new(key) {
+                    self.press(slot, trigger);
+                }
+            }
+            Pressable::Button(button) => {
+                self.button(button, trigger);
+            }
         }
     }
 
@@ -580,14 +778,30 @@ impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
     /// follows as a trace event. An action that fails runs the key's
     /// `on_fail` once.
     fn press(&mut self, slot: KeySlot, trigger: Trigger) -> TraceRecord {
-        let mut record = self.engine.press(slot, trigger, SystemTime::now());
-        if trigger.simulated || matches!(record.result, Outcome::Blocked { .. }) {
+        let record = self.engine.press(slot, trigger, SystemTime::now());
+        let on_fail = self.engine.on_fail(slot);
+        self.run(record, on_fail)
+    }
+
+    /// Resolves a press of Dialpad button `button` like a key's and runs
+    /// it the same way.
+    fn button(&mut self, button: ButtonSlot, trigger: Trigger) -> TraceRecord {
+        let record = self.engine.button(button, trigger, SystemTime::now());
+        let on_fail = self.engine.button_on_fail(button);
+        self.run(record, on_fail)
+    }
+
+    /// Runs the action `record` resolved to, unless it is simulated or
+    /// blocked, with `on_fail` for when it fails; the entry as resolved.
+    fn run(&mut self, mut record: TraceRecord, on_fail: Option<Action>) -> TraceRecord {
+        if record.trigger.simulated || matches!(record.result, Outcome::Blocked { .. }) {
             self.emit(Event::Trace(record.clone()));
             return record;
         }
         // A press ends the key's error or success look.
-        self.dirty();
-        let on_fail = self.engine.on_fail(slot);
+        if record.key.is_some() {
+            self.dirty();
+        }
         match record.action.clone() {
             None => self.emit(Event::Trace(record.clone())),
             Some(Action::Chord { keys }) => {
@@ -637,8 +851,11 @@ impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
     /// `on_fail` of its own; a `launch` opens no pending launch.
     fn on_fail(&mut self, failed: &TraceRecord, action: Action) {
         tracing::info!(
-            "key {} failed, running its on_fail: {}",
-            failed.key.get(),
+            "{} failed, running its on_fail: {}",
+            failed.key.map_or_else(
+                || failed.control.map_or_else(String::new, |c| c.to_string()),
+                |key| format!("key {}", key.get())
+            ),
             action.summary()
         );
         let mut record = failed.on_fail(action.clone());
@@ -776,6 +993,7 @@ impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
                 version: keyvo_core::VERSION.to_owned(),
                 config_dir: self.config_dir.to_string_lossy().into_owned(),
                 device: self.device.clone(),
+                dialpad: self.dialpad.clone(),
                 view: self.engine.view(),
                 context: self.context.clone(),
                 trace: self.ring.len(),
@@ -790,13 +1008,42 @@ impl<I: InputInjector, L: Lineage> Controller<'_, I, L> {
                     .collect(),
                 events: self.events.subscribe(),
             },
-            Wire::Press { key, kind, dry_run } => Answer::Pressed(self.press(
+            Wire::Press {
                 key,
-                Trigger {
+                control,
+                delta,
+                kind,
+                dry_run,
+            } => {
+                let trigger = Trigger {
                     press: kind,
                     simulated: dry_run,
-                },
-            )),
+                };
+                // `Request::parse` checked the fields (`Command::check`).
+                match (key, control, delta) {
+                    (Some(key), ..) => Answer::Pressed(self.press(key, trigger)),
+                    (None, Some(DialControl::Button(button)), _) => {
+                        Answer::Pressed(self.button(button, trigger))
+                    }
+                    (None, Some(control), Some(delta)) => {
+                        let roller = control.roller().unwrap_or(Roller::Dial);
+                        let (entry, runs) = self.turn(roller, delta, dry_run);
+                        Answer::Turned { entry, runs }
+                    }
+                    _ => Answer::Invalid(
+                        Wire::Press {
+                            key,
+                            control,
+                            delta,
+                            kind,
+                            dry_run,
+                        }
+                        .check()
+                        .err()
+                        .unwrap_or_default(),
+                    ),
+                }
+            }
             Wire::Reload {} => Answer::Reloaded(self.reload()),
             Wire::Recipes {} => Answer::Recipes(self.recipes()),
             Wire::NotifyContext { class, title } => {

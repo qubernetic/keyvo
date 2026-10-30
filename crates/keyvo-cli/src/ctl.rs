@@ -115,6 +115,34 @@ mod tests {
     }
 
     #[test]
+    fn a_press_drives_a_dialpad_control_as_the_daemon_reads_it() {
+        use keyvo_core::dialpad::{ButtonSlot, Control};
+        use keyvo_core::socket::{Command, Request};
+
+        let line = request_line(
+            "press",
+            Some(r#"{"control":"dial","delta":1,"dry_run":true}"#),
+        )
+        .unwrap();
+        let request = Request::parse(&line).unwrap();
+        assert!(matches!(
+            request.command,
+            Command::Press {
+                control: Some(Control::Dial),
+                delta: Some(1),
+                dry_run: true,
+                ..
+            }
+        ));
+        let line = request_line("press", Some(r#"{"control":"button:2"}"#)).unwrap();
+        let button = ButtonSlot::new(2).map(Control::Button);
+        assert!(matches!(
+            Request::parse(&line).unwrap().command,
+            Command::Press { control, .. } if control == button
+        ));
+    }
+
+    #[test]
     fn a_given_version_is_kept() {
         assert_eq!(
             serde_json::from_str::<Value>(&request_line("status", Some(r#"{"v":2}"#)).unwrap())

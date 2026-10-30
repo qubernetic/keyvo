@@ -13,12 +13,14 @@ use keyvo_core::hid::TransportError;
 use keyvo_core::inject::{InjectError, InputInjector};
 use keyvo_core::lineage::Lineage;
 use keyvo_core::session::SessionWatcher;
+use keyvo_hid::dialpad::Link;
 use keyvo_hid::hidraw::HidrawTransport;
 use keyvo_hid::sysfs;
 use tokio::sync::{broadcast, mpsc};
 
-use crate::daemon::{self, Event, Sources};
+use crate::daemon::{self, Devices, Event, Sources};
 use crate::device::Connector;
+use crate::dialpad::DialpadConnector;
 use crate::socket::{Limits, Server};
 
 /// Name of the virtual keyboard keyvo creates.
@@ -27,7 +29,8 @@ const UINPUT_NAME: &str = "keyvo";
 const EVENT_BACKLOG: usize = 256;
 
 /// Runs the daemon on this machine until `shutdown`: the Keypad at
-/// `device` or found under sysfs, chords on uinput, the focused window and
+/// `devices.keypad` or found under sysfs, the Dialpad at `devices.dialpad`
+/// or on the Bolt receiver found under sysfs, chords on uinput, the focused window and
 /// the session lock and the process lineage from `sources` (the binary passes
 /// [`crate::kwin::KWinWatcher`], [`crate::logind::LogindSessionWatcher`] and
 /// [`crate::lineage::ProcLineage`]),
@@ -40,7 +43,7 @@ const EVENT_BACKLOG: usize = 256;
 /// is not private), and the errors of [`daemon::run`].
 pub async fn serve(
     config_dir: &Path,
-    device: Option<PathBuf>,
+    devices: Devices<Option<PathBuf>, Option<PathBuf>>,
     socket: &Path,
     sources: Sources<impl WindowWatcher, impl SessionWatcher, impl Lineage>,
     shutdown: impl Future<Output = ()>,
@@ -67,7 +70,10 @@ pub async fn serve(
     };
     let result = daemon::run(
         &paths,
-        HidrawConnector::new(device),
+        Devices {
+            keypad: HidrawConnector::new(devices.keypad),
+            dialpad: ReceiverConnector::new(devices.dialpad),
+        },
         Injector::open(),
         sources,
         events,
@@ -126,6 +132,73 @@ impl Connector for HidrawConnector {
             }
         };
         HidrawTransport::open(&path)
+    }
+}
+
+/// Opens the Dialpad's node: the given one, else the Bolt receiver's HID++
+/// node searched under sysfs on every attempt. A given node sysfs knows as
+/// a Bluetooth Dialpad is reached directly, any other as a receiver.
+#[derive(Debug, Clone)]
+pub struct ReceiverConnector {
+    device: Option<PathBuf>,
+    class_dir: PathBuf,
+    dev_dir: PathBuf,
+}
+
+impl ReceiverConnector {
+    /// Opens `device`, or searches the system's sysfs without one.
+    #[must_use]
+    pub fn new(device: Option<PathBuf>) -> Self {
+        Self::with_dirs(
+            device,
+            Path::new(sysfs::SYSFS_HIDRAW),
+            Path::new(sysfs::DEV_DIR),
+        )
+    }
+
+    /// As [`ReceiverConnector::new`], searching the hidraw class directory
+    /// `class_dir` with device files in `dev_dir`.
+    #[must_use]
+    pub fn with_dirs(device: Option<PathBuf>, class_dir: &Path, dev_dir: &Path) -> Self {
+        Self {
+            device,
+            class_dir: class_dir.to_path_buf(),
+            dev_dir: dev_dir.to_path_buf(),
+        }
+    }
+
+    /// The node to open and how the Dialpad is reached on it.
+    fn node(&self) -> Result<(PathBuf, Link), TransportError> {
+        let io = |error: sysfs::SysfsError| TransportError::Io(error.to_string());
+        if let Some(path) = &self.device {
+            let bluetooth = sysfs::node_at(&self.class_dir, &self.dev_dir, path)
+                .map_err(io)?
+                .is_some_and(|node| node.is_bluetooth_dialpad());
+            let link = if bluetooth {
+                Link::Direct
+            } else {
+                Link::Receiver
+            };
+            return Ok((path.clone(), link));
+        }
+        let node = sysfs::find_receiver(&self.class_dir, &self.dev_dir)
+            .map_err(io)?
+            .ok_or_else(|| {
+                TransportError::Io("no Bolt receiver node (046d:c548 with reports 10 11)".into())
+            })?;
+        Ok((node.path, Link::Receiver))
+    }
+}
+
+impl DialpadConnector for ReceiverConnector {
+    type Transport = HidrawTransport;
+
+    fn connect(&mut self) -> Result<(HidrawTransport, Link), TransportError> {
+        let (path, link) = self.node()?;
+        let transport = HidrawTransport::open(&path).map_err(|error| {
+            TransportError::Io(format!("cannot open {}: {error}", path.display()))
+        })?;
+        Ok((transport, link))
     }
 }
 
@@ -232,6 +305,44 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_dialpad_connector_finds_the_receiver_or_reaches_a_bluetooth_dialpad() {
+        let root = tempfile::tempdir().unwrap();
+        for (node, id) in [
+            ("hidraw3", "0005:0000046D:0000BC00"),
+            ("hidraw9", "0003:0000046D:0000C548"),
+        ] {
+            let device = root.path().join("class").join(node).join("device");
+            std::fs::create_dir_all(&device).unwrap();
+            std::fs::write(device.join("uevent"), format!("HID_ID={id}\n")).unwrap();
+            std::fs::write(device.join("report_descriptor"), [0x85, 0x10, 0x85, 0x11]).unwrap();
+        }
+        let class = root.path().join("class");
+        let dev = Path::new("/dev");
+        let node = |device: Option<&str>| {
+            ReceiverConnector::with_dirs(device.map(PathBuf::from), &class, dev).node()
+        };
+        assert_eq!(
+            node(None),
+            Ok((PathBuf::from("/dev/hidraw9"), Link::Receiver))
+        );
+        assert_eq!(
+            node(Some("/dev/hidraw3")),
+            Ok((PathBuf::from("/dev/hidraw3"), Link::Direct))
+        );
+        assert_eq!(
+            node(Some("/dev/hidraw7")),
+            Ok((PathBuf::from("/dev/hidraw7"), Link::Receiver))
+        );
+        let error = ReceiverConnector::with_dirs(None, Path::new("/absent"), dev)
+            .connect()
+            .unwrap_err();
+        assert_eq!(
+            error,
+            TransportError::Io("no Bolt receiver node (046d:c548 with reports 10 11)".into())
+        );
+    }
+
     #[tokio::test]
     async fn serve_runs_until_shutdown_without_a_keypad() {
         let dir = tempfile::tempdir().unwrap();
@@ -259,7 +370,10 @@ mod tests {
             client,
             serve(
                 dir.path(),
-                Some(absent),
+                Devices {
+                    keypad: Some(absent.clone()),
+                    dialpad: Some(absent),
+                },
                 &socket,
                 Sources {
                     window: watcher.clone(),
@@ -283,7 +397,10 @@ mod tests {
         let _first = Server::bind(&socket).unwrap();
         let error = serve(
             dir.path(),
-            None,
+            Devices {
+                keypad: None,
+                dialpad: None,
+            },
             &socket,
             Sources {
                 window: FakeWindowWatcher::new(),

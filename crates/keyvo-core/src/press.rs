@@ -155,6 +155,15 @@ pub fn unbound(
     at: SystemTime,
 ) -> TraceRecord {
     TraceRecord {
+        key: Some(key),
+        ..nothing(profile, page, trigger, at)
+    }
+}
+
+/// A record of page `page` of the profile `profile` that names no key or
+/// control yet: no layer, no action, [`Outcome::Unbound`].
+pub(crate) fn nothing(profile: &str, page: usize, trigger: Trigger, at: SystemTime) -> TraceRecord {
+    TraceRecord {
         timestamp_ms: at
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_or(0, |since| {
@@ -163,7 +172,8 @@ pub fn unbound(
         trigger,
         profile: profile.to_owned(),
         page,
-        key,
+        key: None,
+        control: None,
         layer: None,
         action: None,
         result: Outcome::Unbound,

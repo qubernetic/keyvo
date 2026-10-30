@@ -4,6 +4,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use keyvo_core::dialpad::Control;
 use keyvo_core::press::PressKind;
 use keyvo_core::profile::KeySlot;
 use keyvo_core::render::{KeyPlace, Panel, TileSize};
@@ -75,7 +76,9 @@ fn every_response_round_trips_its_fixture() {
             "error",
             "error",
             "error",
-            "error"
+            "error",
+            "status",
+            "pressed"
         ]
     );
 }
@@ -355,8 +358,15 @@ fn left_out_fields_take_their_defaults() {
     assert_eq!(request.id, None);
     assert_eq!(
         request.command,
+        Command::press(KeySlot::new(3).unwrap(), PressKind::Short, false)
+    );
+    let request = Request::parse(r#"{"v":1,"cmd":"press","control":"roller","delta":-2}"#).unwrap();
+    assert_eq!(
+        request.command,
         Command::Press {
-            key: KeySlot::new(3).unwrap(),
+            key: None,
+            control: Some(Control::Roller),
+            delta: Some(-2),
             kind: PressKind::Short,
             dry_run: false,
         }
@@ -407,7 +417,8 @@ fn a_bad_request_is_rejected_with_its_id_and_a_code() {
         (
             Some(Value::from(8)),
             ErrorCode::InvalidRequest,
-            "unknown field `dryrun`, expected one of `key`, `kind`, `dry_run`".into()
+            "unknown field `dryrun`, expected one of `key`, `control`, `delta`, `kind`, `dry_run`"
+                .into()
         )
     );
     // A typo must never turn a dry run into a real press, nor reach a
@@ -429,6 +440,51 @@ fn a_bad_request_is_rejected_with_its_id_and_a_code() {
         ErrorCode::InvalidRequest
     );
     assert_eq!(rejected(r#"{"v":1}"#).1, ErrorCode::InvalidRequest);
+}
+
+#[test]
+fn a_press_names_a_key_or_a_control_and_a_turn_its_delta() {
+    for (line, message) in [
+        (
+            r#"{"v":1,"id":1,"cmd":"press","key":1,"control":"dial","delta":1}"#,
+            "a press names `key` or `control`, not both",
+        ),
+        (
+            r#"{"v":1,"id":1,"cmd":"press"}"#,
+            "a press needs `key` or `control`",
+        ),
+        (
+            r#"{"v":1,"id":1,"cmd":"press","key":2,"delta":1}"#,
+            "`delta` belongs to a turn of `dial` or `roller`",
+        ),
+        (
+            r#"{"v":1,"id":1,"cmd":"press","control":"dial"}"#,
+            "a turn of `dial` needs a nonzero `delta`",
+        ),
+        (
+            r#"{"v":1,"id":1,"cmd":"press","control":"roller","delta":0}"#,
+            "a turn of `roller` needs a nonzero `delta`",
+        ),
+        (
+            r#"{"v":1,"id":1,"cmd":"press","control":"button:2","delta":1}"#,
+            "`button:2` takes no `delta`",
+        ),
+    ] {
+        assert_eq!(
+            rejected(line),
+            (
+                Some(Value::from(1)),
+                ErrorCode::InvalidRequest,
+                message.into()
+            ),
+            "{line}"
+        );
+    }
+    assert_eq!(
+        rejected(r#"{"v":1,"cmd":"press","control":"button:5"}"#).1,
+        ErrorCode::InvalidRequest
+    );
+    assert!(Request::parse(r#"{"v":1,"cmd":"press","control":"button:4"}"#).is_ok());
 }
 
 #[test]

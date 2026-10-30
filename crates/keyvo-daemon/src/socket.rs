@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use keyvo_core::config::Config;
+use keyvo_core::dialpad::Control;
 use keyvo_core::socket::{
     ConfigStatus, DeviceStatus, ErrorCode, Event as Wire, EventClass, Pressed, Reply, Request,
     Response, Subscribed,
@@ -248,7 +249,26 @@ impl Subscription {
                 error: Some(error),
             })],
             Event::Painted { .. } => Vec::new(),
-            Event::Key { key, edge } => vec![Wire::Key { key, edge }],
+            Event::Key { key, edge } => vec![Wire::Key {
+                key: Some(key),
+                control: None,
+                edge,
+            }],
+            Event::Button { button, edge } => vec![Wire::Key {
+                key: None,
+                control: Some(Control::Button(button)),
+                edge,
+            }],
+            Event::Dialpad(status) => vec![Wire::Dialpad(status)],
+            Event::Dial {
+                roller,
+                delta,
+                actions,
+            } => vec![Wire::Dial {
+                roller,
+                delta,
+                actions,
+            }],
             Event::Context(context) => vec![Wire::Context(context)],
             Event::Trace(entry) => vec![Wire::Trace { entry }],
             Event::Switched(view) => {
@@ -408,7 +428,15 @@ async fn answer(
                 }),
             )
         }
-        Answer::Pressed(entry) => Response::ok(id, Reply::Pressed(Pressed { entry })),
+        Answer::Pressed(entry) => Response::ok(id, Reply::Pressed(Pressed { entry, runs: None })),
+        Answer::Turned { entry, runs } => Response::ok(
+            id,
+            Reply::Pressed(Pressed {
+                entry,
+                runs: Some(runs),
+            }),
+        ),
+        Answer::Invalid(message) => Response::error(id, ErrorCode::InvalidRequest, &message),
         Answer::Recipes(recipes) => Response::ok(id, Reply::Recipes(recipes)),
         Answer::Reloaded(Ok(())) | Answer::Noted => Response::ok(id, Reply::Done {}),
         Answer::Reloaded(Err(error)) => Response::error(id, ErrorCode::ReloadFailed, &error),

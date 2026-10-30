@@ -17,6 +17,11 @@ struct Cli {
     /// connection attempt.
     #[arg(long, value_name = "PATH")]
     device: Option<PathBuf>,
+    /// Hidraw node of the Dialpad: the Bolt receiver's HID++ node, or a
+    /// Bluetooth Dialpad's own; default: the receiver searched under sysfs
+    /// on every connection attempt.
+    #[arg(long, value_name = "PATH")]
+    dialpad_device: Option<PathBuf>,
     /// Control socket; default `$KEYVO_SOCKET`, else
     /// `$XDG_RUNTIME_DIR/keyvo/keyvo.sock`.
     #[arg(long, value_name = "PATH")]
@@ -53,7 +58,11 @@ async fn main() -> anyhow::Result<()> {
         session: keyvo_daemon::logind::LogindSessionWatcher::system(),
         lineage: keyvo_daemon::lineage::ProcLineage::new(),
     };
-    keyvo_daemon::linux::serve(&config_dir, cli.device, &socket, sources, shutdown()).await?;
+    let devices = keyvo_daemon::daemon::Devices {
+        keypad: cli.device,
+        dialpad: cli.dialpad_device,
+    };
+    keyvo_daemon::linux::serve(&config_dir, devices, &socket, sources, shutdown()).await?;
     Ok(())
 }
 
@@ -99,18 +108,22 @@ mod tests {
     fn the_config_dir_device_and_socket_are_optional() {
         let cli = Cli::try_parse_from(["keyvo-daemon"]).unwrap();
         assert!(cli.config_dir.is_none() && cli.device.is_none() && cli.socket.is_none());
+        assert!(cli.dialpad_device.is_none());
         let cli = Cli::try_parse_from([
             "keyvo-daemon",
             "--config-dir",
             "/c",
             "--device",
             "/dev/hidraw2",
+            "--dialpad-device",
+            "/dev/hidraw9",
             "--socket",
             "/s.sock",
         ])
         .unwrap();
         assert_eq!(cli.config_dir, Some(PathBuf::from("/c")));
         assert_eq!(cli.device, Some(PathBuf::from("/dev/hidraw2")));
+        assert_eq!(cli.dialpad_device, Some(PathBuf::from("/dev/hidraw9")));
         assert_eq!(cli.socket, Some(PathBuf::from("/s.sock")));
     }
 

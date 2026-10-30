@@ -118,7 +118,8 @@ mod resolution {
                 trigger: REAL_SHORT,
                 profile: "demo".to_owned(),
                 page: 1,
-                key: slot(2),
+                key: Some(slot(2)),
+                control: None,
                 layer: Some(Layer::App),
                 action: Some(Action::Chord {
                     keys: Chord::parse("ctrl+shift+g").unwrap()
@@ -199,7 +200,8 @@ mod resolution {
                     trigger,
                     profile: "demo".to_owned(),
                     page: 1,
-                    key: slot(1),
+                    key: Some(slot(1)),
+                    control: None,
                     layer: None,
                     action: None,
                     result: Outcome::Blocked {

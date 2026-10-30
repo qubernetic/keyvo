@@ -80,6 +80,50 @@
       "pattern": "^#[0-9a-fA-F]{6}$",
       "type": "string"
     },
+    "DialButton": {
+      "additionalProperties": false,
+      "description": "A Dialpad button: a key without an icon or a colour.",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/Action",
+          "description": "What a press does."
+        },
+        "label": {
+          "description": "What the app's Dialpad panel shows.",
+          "type": "string"
+        },
+        "on_fail": {
+          "$ref": "#/$defs/Action",
+          "description": "An action run once when `action` fails."
+        }
+      },
+      "type": "object"
+    },
+    "Dialpad": {
+      "additionalProperties": false,
+      "description": "The `[dialpad]` table (spec §7.2): the dial, the roller and the four\nbuttons of the MX Creative Dialpad.",
+      "properties": {
+        "buttons": {
+          "additionalProperties": false,
+          "description": "The buttons by number, 1 to 4 in CID order.",
+          "patternProperties": {
+            "^[1-4]$": {
+              "$ref": "#/$defs/DialButton"
+            }
+          },
+          "type": "object"
+        },
+        "dial": {
+          "$ref": "#/$defs/Rotary",
+          "description": "The large dial."
+        },
+        "roller": {
+          "$ref": "#/$defs/Rotary",
+          "description": "The small roller."
+        }
+      },
+      "type": "object"
+    },
     "Key": {
       "additionalProperties": false,
       "description": "One LCD key.",
@@ -211,6 +255,50 @@
       ],
       "type": "object"
     },
+    "Rotary": {
+      "additionalProperties": false,
+      "description": "The binding of the dial or the roller.",
+      "properties": {
+        "ccw": {
+          "anyOf": [
+            {
+              "description": "A chord, for example `ctrl+]`.",
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/Action"
+            }
+          ],
+          "default": null,
+          "description": "What a counter-clockwise turn runs (the roller: back); a string is a\nchord."
+        },
+        "cw": {
+          "anyOf": [
+            {
+              "description": "A chord, for example `ctrl+]`.",
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/Action"
+            }
+          ],
+          "default": null,
+          "description": "What a clockwise turn runs (the roller: forward); a string is a\nchord."
+        },
+        "label": {
+          "description": "What the app's Dialpad panel shows.",
+          "type": "string"
+        },
+        "step": {
+          "default": 1,
+          "description": "Detents per run of the action; a fast turn's larger delta counts as\nthat many detents. Default 1.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "TitleRegex": {
       "description": "A regular expression (Rust regex syntax) searched in the window title.",
       "format": "regex",
@@ -221,6 +309,10 @@
   "additionalProperties": false,
   "description": "A whole profile file.",
   "properties": {
+    "dialpad": {
+      "$ref": "#/$defs/Dialpad",
+      "description": "The Dialpad's bindings; the global profile's table fills in every\ncontrol an app profile leaves out."
+    },
     "pages": {
       "description": "The pages of the profile, in order.",
       "items": {

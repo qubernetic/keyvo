@@ -10,10 +10,13 @@ use std::time::SystemTime;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use keyvo_client::editor::{Edited, KeyView, ProfileEdited, ProfileView};
+use keyvo_client::editor::{
+    ControlEdited, ControlFields, ControlView, Edited, KeyView, ProfileEdited, ProfileView,
+};
 use keyvo_client::profiles::ProfileSummary;
 use keyvo_client::tiles::Outline;
 use keyvo_client::{Client, Editor, Problem, Tiles};
+use keyvo_core::dialpad::Control;
 use keyvo_core::edit::{KeyFields, ProfileFields};
 use keyvo_core::press::PressKind;
 use keyvo_core::profile::KeySlot;
@@ -170,6 +173,41 @@ fn edit_profile(profile: String, fields: Value) -> Result<ProfileEdited, Problem
         .map_err(|error| Problem::from(&error))
 }
 
+/// `control` (`dial`, `roller`, `button:N`) as `keyvo_core::dialpad::Control`.
+fn control_of(control: &str) -> Result<Control, Problem> {
+    control.parse().map_err(Problem::message)
+}
+
+/// The file and the fields of the Dialpad `control` in `profile`'s
+/// `[dialpad]` table, for the control editor
+/// (`keyvo_client::editor::ControlView`).
+#[tauri::command]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Tauri hands command arguments over owned"
+)]
+fn control(profile: String, control: String) -> Result<ControlView, Problem> {
+    editor()?
+        .control(&profile, control_of(&control)?)
+        .map_err(|error| Problem::from(&error))
+}
+
+/// Writes `fields` (`keyvo_client::editor::ControlFields` of the control's
+/// kind) into the Dialpad `control` of `profile` after a snapshot of the
+/// file (`keyvo_client::editor::ControlEdited`); the daemon reloads it.
+#[tauri::command]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Tauri hands command arguments over owned"
+)]
+fn edit_control(profile: String, control: String, fields: Value) -> Result<ControlEdited, Problem> {
+    let control = control_of(&control)?;
+    let fields = ControlFields::parse(control, fields).map_err(Problem::message)?;
+    editor()?
+        .set_control(&profile, control, &fields, SystemTime::now())
+        .map_err(|error| Problem::from(&error))
+}
+
 /// Opens `profile`'s file in the desktop's application for it
 /// (`keyvo_client::profiles::opener`); the path comes from the id, never
 /// from the frontend.
@@ -271,6 +309,8 @@ fn main() {
             edit_key,
             profile,
             edit_profile,
+            control,
+            edit_control,
             open_profile,
             profile_list
         ])

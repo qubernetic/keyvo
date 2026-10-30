@@ -18,6 +18,7 @@ use keyvo_core::profile::KeySlot;
 use keyvo_core::session::{FakeSessionWatcher, Session};
 use keyvo_core::socket::{DeviceStatus, Edge, Event, Reply, Response, ServerMessage};
 use keyvo_daemon::daemon;
+use keyvo_daemon::dialpad::NoDialpad;
 use keyvo_daemon::socket::{Limits, Server};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
@@ -125,7 +126,10 @@ impl Running {
         let daemon = tokio::spawn(async move {
             daemon::run(
                 &paths,
-                pads,
+                daemon::Devices {
+                    keypad: pads,
+                    dialpad: NoDialpad,
+                },
                 daemon_injector,
                 daemon::Sources {
                     window: FakeWindowWatcher::new(),
@@ -589,7 +593,10 @@ async fn a_subscriber_gets_the_events_of_its_classes() {
     let Event::Trace { entry } = watcher.event().await else {
         panic!("not a trace event");
     };
-    assert_eq!((entry.profile.as_str(), entry.key.get()), ("terminal", 2));
+    assert_eq!(
+        (entry.profile.as_str(), entry.key.map(KeySlot::get)),
+        ("terminal", Some(2))
+    );
 
     other.ask(r#"{"v":1,"cmd":"reload"}"#).await;
     let Event::Config(status) = watcher.event().await else {
@@ -617,7 +624,7 @@ async fn subscribe_replays_trace_entries_before_the_stream() {
     let Event::Trace { entry } = subscriber.event().await else {
         panic!("not a trace event");
     };
-    assert_eq!(entry.key.get(), 4);
+    assert_eq!(entry.key.map(KeySlot::get), Some(4));
     // A subscription without the trace class replays nothing.
     let mut other = running.client().await;
     other
@@ -692,13 +699,14 @@ async fn device_key_and_failed_reload_events_reach_a_subscriber_of_everything() 
     let running = Running::start().await;
     let mut subscriber = running.client().await;
     let response = subscriber.ask(r#"{"v":1,"cmd":"subscribe"}"#).await;
-    assert_eq!(response["result"]["events"].as_array().unwrap().len(), 9);
+    assert_eq!(response["result"]["events"].as_array().unwrap().len(), 10);
 
     running.pad.hold(&[5]);
     assert_eq!(
         subscriber.event().await,
         Event::Key {
-            key: KeySlot::new(5).unwrap(),
+            key: KeySlot::new(5),
+            control: None,
             edge: Edge::Press
         }
     );
@@ -778,7 +786,7 @@ async fn a_subscriber_that_lags_loses_the_oldest_events_and_goes_on() {
             panic!("not a trace event");
         };
         received += 1;
-        if entry.key.get() == 9 {
+        if entry.key.map(KeySlot::get) == Some(9) {
             break;
         }
     }

@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::chord::KeyEvent;
+use crate::dialpad::Control;
 use crate::press::PressKind;
 use crate::profile::{Action, KeySlot};
 use crate::stack::Layer;
@@ -38,9 +39,17 @@ pub struct TraceRecord {
     pub profile: String,
     /// The active page, counted from 1.
     pub page: usize,
-    /// The pressed key.
-    #[serde(deserialize_with = "crate::profile::slot_number")]
-    pub key: KeySlot,
+    /// The pressed key; absent for a Dialpad control.
+    #[serde(
+        default,
+        deserialize_with = "crate::profile::optional_slot_number",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub key: Option<KeySlot>,
+    /// The Dialpad control turned or pressed (`dial`, `roller`,
+    /// `button:N`); absent for a key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control: Option<Control>,
     /// The layer that supplied the key (spec §6.1): the active profile's
     /// own, or the global one under it; `None` when no layer defines it.
     #[serde(default, skip_serializing_if = "Option::is_none")]

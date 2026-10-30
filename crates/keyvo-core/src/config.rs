@@ -1,5 +1,6 @@
 //! `config.toml`: the `[timing]` and `[focus]` (spec §6.1), `[render]`
-//! (spec §9), `[trace]` and `[daemon]` (spec §8) tables, pre-alpha subset. Durations are integer milliseconds; a key left
+//! (spec §9), `[trace]` and `[daemon]` (spec §8) and `[dialpad]` (spec
+//! §7.2) tables, pre-alpha subset. Durations are integer milliseconds; a key left
 //! out keeps its documented default; unknown keys are errors.
 
 use std::num::NonZeroUsize;
@@ -26,6 +27,8 @@ pub struct Config {
     pub daemon: Daemon,
     /// Which focused windows switch the context (spec §6.1).
     pub focus: Focus,
+    /// How the Dialpad's turns run actions (spec §7.2).
+    pub dialpad: DialpadConfig,
 }
 
 impl Config {
@@ -302,6 +305,26 @@ pub struct Trace {
 impl Default for Trace {
     fn default() -> Self {
         Self { ring: 1000 }
+    }
+}
+
+/// The `[dialpad]` table (spec §5.8, §7.2): how the Dialpad's turns run
+/// actions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct DialpadConfig {
+    /// The most action runs one turn report starts; a fast turn's larger
+    /// delta runs a binding up to this often, the rest is dropped. At
+    /// least 1. Default 8: a slow turn of the dial reports 1 to 6 detents,
+    /// a fast one up to 18 (#187).
+    pub max_per_event: std::num::NonZeroU32,
+}
+
+impl Default for DialpadConfig {
+    fn default() -> Self {
+        Self {
+            max_per_event: std::num::NonZeroU32::MIN.saturating_add(8 - 1),
+        }
     }
 }
 

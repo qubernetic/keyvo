@@ -13,6 +13,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::dialpad::{Control, Roller};
 use crate::press::PressKind;
 use crate::profile::KeySlot;
 use crate::recipe::{Catalogue, Recipe};
@@ -52,11 +53,25 @@ pub enum Command {
         #[serde(default)]
         replay: usize,
     },
-    /// A press of `key` on the active page, as from the device.
+    /// A press of `key` on the active page, a turn of the Dialpad's dial or
+    /// roller by `delta` detents, or a press of one of its buttons, as from
+    /// the device; exactly one of `key` and `control`
+    /// ([`Command::check`]).
     Press {
         /// The key, 1 to 9.
-        #[serde(deserialize_with = "crate::profile::slot_number")]
-        key: KeySlot,
+        #[serde(
+            default,
+            deserialize_with = "crate::profile::optional_slot_number",
+            skip_serializing_if = "Option::is_none"
+        )]
+        key: Option<KeySlot>,
+        /// The Dialpad control: `dial`, `roller`, `button:1` to `button:4`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        control: Option<Control>,
+        /// The detents of a turn of `dial` or `roller`, clockwise
+        /// positive.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        delta: Option<i32>,
         /// Short (the default) or long.
         #[serde(default)]
         kind: PressKind,
@@ -81,6 +96,53 @@ pub enum Command {
 
 fn all_classes() -> Vec<EventClass> {
     EventClass::ALL.to_vec()
+}
+
+impl Command {
+    /// A press of `key`.
+    #[must_use]
+    pub const fn press(key: KeySlot, kind: PressKind, dry_run: bool) -> Self {
+        Self::Press {
+            key: Some(key),
+            control: None,
+            delta: None,
+            kind,
+            dry_run,
+        }
+    }
+
+    /// The rules the fields of a command keep beyond their types: a
+    /// `press` names a key or a control, not both, and `delta`, nonzero,
+    /// goes with `dial` and `roller` alone.
+    ///
+    /// # Errors
+    ///
+    /// What is wrong, for an [`ErrorCode::InvalidRequest`].
+    pub fn check(&self) -> Result<(), String> {
+        let Self::Press {
+            key,
+            control,
+            delta,
+            ..
+        } = self
+        else {
+            return Ok(());
+        };
+        match (key, control, delta) {
+            (Some(_), Some(_), _) => Err("a press names `key` or `control`, not both".into()),
+            (None, None, _) => Err("a press needs `key` or `control`".into()),
+            (Some(_), None, Some(_)) => {
+                Err("`delta` belongs to a turn of `dial` or `roller`".into())
+            }
+            (None, Some(control), delta) => match (control.roller(), delta) {
+                (Some(_), Some(delta)) if *delta != 0 => Ok(()),
+                (Some(_), _) => Err(format!("a turn of `{control}` needs a nonzero `delta`")),
+                (None, Some(_)) => Err(format!("`{control}` takes no `delta`")),
+                (None, None) => Ok(()),
+            },
+            (Some(_), None, None) => Ok(()),
+        }
+    }
 }
 
 /// Why a line is not a request, or why the daemon could not carry it out.
@@ -187,6 +249,9 @@ impl Request {
         let id = map.remove("id");
         let command = Command::deserialize(Value::Object(map)).map_err(|error| {
             ProtocolError::new(id.clone(), ErrorCode::InvalidRequest, error.to_string())
+        })?;
+        command.check().map_err(|message| {
+            ProtocolError::new(id.clone(), ErrorCode::InvalidRequest, message)
         })?;
         Ok(Self { id, command })
     }
@@ -326,6 +391,10 @@ pub struct Status {
     pub config_dir: String,
     /// The Keypad.
     pub device: DeviceStatus,
+    /// The Dialpad; not connected when absent, as from a daemon before the
+    /// Dialpad.
+    #[serde(default)]
+    pub dialpad: DialpadStatus,
     /// What the pad shows.
     pub view: View,
     /// The focused window as last reported, if any.
@@ -349,8 +418,12 @@ pub struct Subscribed {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Pressed {
     /// The press's trace entry; an `exec` is still `pending`, its result
-    /// follows as a `trace` event.
+    /// follows as a `trace` event. For a turn, the entry of one run.
     pub entry: TraceRecord,
+    /// For a turn: how often the action runs (0 below one `step`);
+    /// absent for a press.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runs: Option<u32>,
 }
 
 /// The `recipes` result.
@@ -387,6 +460,31 @@ pub struct DeviceStatus {
     /// Why there is none, when the daemon knows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+/// The Dialpad's connection (spec §5.8).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DialpadStatus {
+    /// A Dialpad answers and its controls are diverted.
+    pub connected: bool,
+    /// Its Bolt receiver slot, when connected through a receiver.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot: Option<u8>,
+    /// Its rollers, when connected.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rollers: Vec<RollerStatus>,
+    /// Why there is none, when the daemon knows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// One roller of the Dialpad as it reports itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RollerStatus {
+    /// Which one.
+    pub roller: Roller,
+    /// Increments (detents) per rotation: 180 the dial, 40 the roller.
+    pub increments: u8,
 }
 
 /// The Keypad's display as the device publishes it (spec §5.4): what a
@@ -525,11 +623,13 @@ pub enum EventClass {
     Config,
     /// The session was locked or unlocked.
     Session,
+    /// A turn of the Dialpad's dial or roller.
+    Dial,
 }
 
 impl EventClass {
     /// Every class, in protocol order.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Key,
         Self::Profile,
         Self::Page,
@@ -539,6 +639,7 @@ impl EventClass {
         Self::Trace,
         Self::Config,
         Self::Session,
+        Self::Dial,
     ];
 }
 
@@ -546,13 +647,32 @@ impl EventClass {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Event {
-    /// A key on the device went down or up.
+    /// A key on the Keypad or a button of the Dialpad went down or up.
     Key {
-        /// The key, 1 to 9.
-        #[serde(deserialize_with = "crate::profile::slot_number")]
-        key: KeySlot,
+        /// The key, 1 to 9; absent for a Dialpad button.
+        #[serde(
+            default,
+            deserialize_with = "crate::profile::optional_slot_number",
+            skip_serializing_if = "Option::is_none"
+        )]
+        key: Option<KeySlot>,
+        /// The Dialpad button, `button:1` to `button:4`; absent for a key.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        control: Option<Control>,
         /// Which way.
         edge: Edge,
+    },
+    /// The Dialpad connected or disconnected (class `device`).
+    Dialpad(DialpadStatus),
+    /// The Dialpad's dial or roller turned.
+    Dial {
+        /// Which one.
+        roller: Roller,
+        /// The detents of the turn, clockwise positive.
+        delta: i32,
+        /// How often its action runs: 0 below one `step`, without a
+        /// binding and under the lock.
+        actions: u32,
     },
     /// Another profile shows; the whole view.
     Profile(View),
@@ -588,7 +708,8 @@ impl Event {
             Self::Profile(_) => EventClass::Profile,
             Self::Page(_) => EventClass::Page,
             Self::Mode(_) => EventClass::Mode,
-            Self::Device(_) => EventClass::Device,
+            Self::Device(_) | Self::Dialpad(_) => EventClass::Device,
+            Self::Dial { .. } => EventClass::Dial,
             Self::Context(_) => EventClass::Context,
             Self::Trace { .. } => EventClass::Trace,
             Self::Config(_) => EventClass::Config,

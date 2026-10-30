@@ -11,6 +11,7 @@ use std::time::{Duration, SystemTime};
 
 use keyvo_client::Editor;
 use keyvo_core::chord::Chord;
+use keyvo_core::dialpad::{ButtonSlot, Control as DialControl, Roller};
 use keyvo_core::feedback::Look;
 use keyvo_core::focus::{FakeWindowWatcher, WindowContext};
 use keyvo_core::inject::FakeInputInjector;
@@ -19,16 +20,19 @@ use keyvo_core::press::PressKind;
 use keyvo_core::profile::{Action, KeySlot, Profile};
 use keyvo_core::render::{self, Canvas, KeyPlace, KeySpec, Renderer};
 use keyvo_core::session::{FakeSessionWatcher, Session};
-use keyvo_core::socket::{Command, Context, ContextSource, DeviceStatus, Edge, Geometry, Status};
+use keyvo_core::socket::{
+    Command, Context, ContextSource, DeviceStatus, DialpadStatus, Edge, Geometry, RollerStatus,
+    Status,
+};
 use keyvo_core::stack::Layer;
 use keyvo_core::state::{Mode, View};
 use keyvo_core::trace::{Branch, Outcome, TraceRecord};
-use keyvo_daemon::daemon::{self, Answer, Event, Request, Sources};
+use keyvo_daemon::daemon::{self, Answer, Devices, Event, Request, Sources};
 use keyvo_hid::display;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinHandle;
 
-use support::{Image, Pad, Pads, startup};
+use support::{Dial, Dials, Image, Pad, Pads, dial_startup, startup};
 
 /// How long a test waits for one event before it fails.
 const PATIENCE: Duration = Duration::from_secs(10);
@@ -151,6 +155,20 @@ impl Daemon {
         injector: FakeInputInjector,
         sources: Sources<FakeWindowWatcher, FakeSessionWatcher, impl Lineage + Send + 'static>,
     ) -> Self {
+        Self::start_with_dials(config, profiles, pads, Dials::new([]), injector, sources)
+    }
+
+    /// A daemon on `config` and the profiles `(id, text)`, the Keypads
+    /// `pads` and the receivers `dials` handed out in order, focus and
+    /// session reported by `sources`.
+    fn start_with_dials(
+        config: &str,
+        profiles: &[(&str, &str)],
+        pads: Vec<Pad>,
+        dials: Dials,
+        injector: FakeInputInjector,
+        sources: Sources<FakeWindowWatcher, FakeSessionWatcher, impl Lineage + Send + 'static>,
+    ) -> Self {
         let session = sources.session.clone();
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("config.toml"), config).unwrap();
@@ -168,7 +186,10 @@ impl Daemon {
         let task = tokio::spawn(async move {
             daemon::run(
                 &paths,
-                Pads::new(pads),
+                Devices {
+                    keypad: Pads::new(pads),
+                    dialpad: dials,
+                },
                 injector,
                 sources,
                 sender,
@@ -208,11 +229,7 @@ impl Daemon {
 
     /// The trace entry a client `press` returns.
     async fn press(&self, key: u8, dry_run: bool) -> TraceRecord {
-        let command = Command::Press {
-            key: KeySlot::new(key).unwrap(),
-            kind: PressKind::Short,
-            dry_run,
-        };
+        let command = Command::press(KeySlot::new(key).unwrap(), PressKind::Short, dry_run);
         match self.ask(command).await {
             Answer::Pressed(record) => record,
             other => panic!("not a press: {other:?}"),
@@ -1120,7 +1137,10 @@ async fn a_locked_session_paints_the_lock_and_blocks_every_press() {
         pad.hold(&[key]);
         pad.hold(&[]);
         let record = daemon.trace().await;
-        assert_eq!((record.key.get(), record.result), (key, blocked()));
+        assert_eq!(
+            (record.key.map(KeySlot::get), record.result),
+            (Some(key), blocked())
+        );
         assert_eq!(record.action, None);
     }
     // The page buttons do nothing: no switch comes before the next trace.
@@ -1607,7 +1627,7 @@ async fn a_dry_run_press_is_traced_as_simulated_and_executes_nothing() {
     let record = daemon.press(1, true).await;
     assert!(record.trigger.simulated);
     assert_eq!(record.result, Outcome::DryRun);
-    assert_eq!(record.key, KeySlot::new(1).unwrap());
+    assert_eq!(record.key, KeySlot::new(1));
     assert!(record.action.is_some());
     // The same entry goes to the subscribers and the ring buffer.
     assert_eq!(daemon.trace().await, record);
@@ -1926,5 +1946,385 @@ async fn subscribe_replays_the_newest_ring_entries_then_streams() {
         panic!("not subscribed");
     };
     assert_eq!(backlog, [later]);
+    daemon.stop().await;
+}
+
+/// The global profile with Dialpad bindings: volume on the dial, one
+/// detent a run; tabs on the roller, two detents a run; button 1 runs an
+/// `exec` that writes `mark` into the configuration directory (the socket
+/// path lies in it); button 2 is a chord.
+const DIALED: &str = r#"
+schema_version = 1
+
+[profile]
+id = "global"
+name = "Global"
+
+[[pages]]
+name = "context"
+[pages.keys.1]
+label = "Build"
+
+[[pages]]
+name = "general"
+[pages.keys.1]
+label = "Play"
+
+[dialpad]
+dial = { cw = "KEY_VOLUMEUP", ccw = "KEY_VOLUMEDOWN", label = "Volume" }
+roller = { cw = "ctrl+tab", ccw = "ctrl+shift+tab", step = 2 }
+
+[dialpad.buttons.1]
+label = "Mark"
+action = { type = "exec", cmd = 'echo pressed > "${KEYVO_SOCKET%/run/keyvo.sock}/mark"' }
+
+[dialpad.buttons.2]
+action = { type = "chord", keys = "KEY_MUTE" }
+"#;
+
+/// A daemon on [`DIALED`] with `pads` and the receivers of `dials`, on
+/// `config`.
+fn dialed(config: &str, pads: Vec<Pad>, dials: Dials, injector: FakeInputInjector) -> Daemon {
+    Daemon::start_with_dials(
+        config,
+        &[("global", DIALED)],
+        pads,
+        dials,
+        injector,
+        Sources {
+            window: FakeWindowWatcher::failing("no focus source"),
+            session: FakeSessionWatcher::new(),
+            lineage: NoLineage,
+        },
+    )
+}
+
+impl Daemon {
+    /// The file [`DIALED`]'s button 1 writes: `mark` in the configuration
+    /// directory, which the socket path is in.
+    fn mark(&self) -> std::path::PathBuf {
+        self.dir.path().join("mark")
+    }
+
+    async fn dialpad(&mut self) -> DialpadStatus {
+        self.until(|event| match event {
+            Event::Dialpad(status) => Some(status.clone()),
+            _ => None,
+        })
+        .await
+    }
+
+    async fn dial(&mut self) -> (Roller, i32, u32) {
+        self.until(|event| match event {
+            Event::Dial {
+                roller,
+                delta,
+                actions,
+            } => Some((*roller, *delta, *actions)),
+            _ => None,
+        })
+        .await
+    }
+
+    async fn turned(&self, control: DialControl, delta: i32, dry_run: bool) -> (TraceRecord, u32) {
+        let command = Command::Press {
+            key: None,
+            control: Some(control),
+            delta: Some(delta),
+            kind: PressKind::Short,
+            dry_run,
+        };
+        match self.ask(command).await {
+            Answer::Turned { entry, runs } => (entry, runs),
+            other => panic!("not a turn: {other:?}"),
+        }
+    }
+}
+
+fn volume(up: bool) -> Vec<keyvo_core::chord::KeyEvent> {
+    Chord::parse(if up { "KEY_VOLUMEUP" } else { "KEY_VOLUMEDOWN" })
+        .unwrap()
+        .events()
+}
+
+/// The Dialpad as it connects on slot 3.
+fn connected() -> DialpadStatus {
+    DialpadStatus {
+        connected: true,
+        slot: Some(3),
+        rollers: vec![
+            RollerStatus {
+                roller: Roller::Roller,
+                increments: 40,
+            },
+            RollerStatus {
+                roller: Roller::Dial,
+                increments: 180,
+            },
+        ],
+        error: None,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dial_turn_sends_its_chord_once_per_detent_and_the_roller_per_step() {
+    let dial = Dial::new(&dial_startup());
+    let injector = FakeInputInjector::new();
+    let mut daemon = dialed(
+        CONFIG,
+        Vec::new(),
+        Dials::new([dial.clone()]),
+        injector.clone(),
+    );
+    assert_eq!(daemon.dialpad().await, connected());
+    dial.turn(1, 3);
+    // One trace entry per run, then the `dial` event.
+    let record = daemon.trace().await;
+    assert_eq!(record.control, Some(DialControl::Dial));
+    assert_eq!((record.key, record.layer), (None, Some(Layer::Global)));
+    assert_eq!(daemon.dial().await, (Roller::Dial, 3, 3));
+    assert_eq!(
+        injector.sent(),
+        [volume(true), volume(true), volume(true)].concat()
+    );
+    // The roller runs once per two detents; the third carries.
+    dial.turn(0, -3);
+    assert_eq!(daemon.dial().await, (Roller::Roller, -3, 1));
+    dial.turn(0, -1);
+    assert_eq!(daemon.dial().await, (Roller::Roller, -1, 1));
+    let tabs = Chord::parse("ctrl+shift+tab").unwrap().events();
+    assert!(injector.sent().ends_with(&[tabs.clone(), tabs].concat()));
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_fast_turn_runs_at_most_max_per_event() {
+    let dial = Dial::new(&dial_startup());
+    let injector = FakeInputInjector::new();
+    let config = format!("{CONFIG}\n[dialpad]\nmax_per_event = 2\n");
+    let mut daemon = dialed(
+        &config,
+        Vec::new(),
+        Dials::new([dial.clone()]),
+        injector.clone(),
+    );
+    daemon.dialpad().await;
+    dial.turn(1, -18);
+    assert_eq!(daemon.dial().await, (Roller::Dial, -18, 2));
+    assert_eq!(injector.sent(), [volume(false), volume(false)].concat());
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dialpad_button_runs_its_exec_and_is_a_key_event() {
+    let dial = Dial::new(&dial_startup());
+    let mut daemon = dialed(
+        CONFIG,
+        Vec::new(),
+        Dials::new([dial.clone()]),
+        FakeInputInjector::new(),
+    );
+    daemon.dialpad().await;
+    dial.hold(&[1]);
+    dial.hold(&[]);
+    let button = DialControl::Button(ButtonSlot::new(1).unwrap());
+    let pressed = daemon
+        .until(|event| match event {
+            Event::Button { button, edge } => Some((*button, *edge)),
+            _ => None,
+        })
+        .await;
+    assert_eq!(pressed, (ButtonSlot::new(1).unwrap(), Edge::Press));
+    let record = loop {
+        let record = daemon.trace().await;
+        if !matches!(record.result, Outcome::Pending) {
+            break record;
+        }
+    };
+    assert_eq!(record.control, Some(button));
+    assert!(
+        matches!(record.result, Outcome::Exited { code: Some(0), .. }),
+        "{record:?}"
+    );
+    assert_eq!(std::fs::read_to_string(daemon.mark()).unwrap(), "pressed\n");
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_dialpad_turns_while_the_keypad_is_unplugged() {
+    let pad = Pad::new(&startup());
+    let dial = Dial::new(&dial_startup());
+    let injector = FakeInputInjector::new();
+    let mut daemon = dialed(
+        CONFIG,
+        vec![pad.clone()],
+        Dials::new([dial.clone()]),
+        injector.clone(),
+    );
+    // Both connect, in either order.
+    let (mut keypad, mut dialpad) = (false, false);
+    while !(keypad && dialpad) {
+        daemon
+            .until(|event| match event {
+                Event::Connected { .. } => {
+                    keypad = true;
+                    Some(())
+                }
+                Event::Dialpad(status) if status.connected => {
+                    dialpad = true;
+                    Some(())
+                }
+                _ => None,
+            })
+            .await;
+    }
+    pad.unplug();
+    daemon
+        .until(|event| matches!(event, Event::Disconnected { .. }).then_some(()))
+        .await;
+    dial.turn(1, 1);
+    assert_eq!(daemon.dial().await, (Roller::Dial, 1, 1));
+    assert_eq!(injector.sent(), volume(true));
+    let status = daemon.status().await;
+    assert!(!status.device.connected);
+    assert_eq!(status.dialpad, connected());
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_receiver_that_comes_later_is_found_and_the_keypad_runs_meanwhile() {
+    let pad = Pad::new(&startup());
+    let dial = Dial::new(&dial_startup());
+    // The Dialpad's next try comes after 300 ms, the Keypad needs no retry.
+    let config = CONFIG.replace("reconnect_interval = 20", "reconnect_interval = 300");
+    let mut daemon = dialed(
+        &config,
+        vec![pad.clone()],
+        Dials::after(2, dial.clone()),
+        FakeInputInjector::new(),
+    );
+    let absent = daemon.dialpad().await;
+    assert!(!absent.connected);
+    assert_eq!(absent.error.as_deref(), Some("no receiver"));
+    // The Keypad does not wait for the Dialpad.
+    assert_eq!(daemon.painted().await, (1..=9).collect::<Vec<_>>());
+    let status = daemon.status().await;
+    assert!(status.device.connected && !status.dialpad.connected);
+    // The second miss is the same error and not reported again.
+    assert_eq!(daemon.dialpad().await, connected());
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dry_run_turn_resolves_without_running() {
+    let dial = Dial::new(&dial_startup());
+    let injector = FakeInputInjector::new();
+    let mut daemon = dialed(CONFIG, Vec::new(), Dials::new([dial]), injector.clone());
+    daemon.dialpad().await;
+    let (entry, runs) = daemon.turned(DialControl::Dial, 4, true).await;
+    assert_eq!((entry.result, runs), (Outcome::DryRun, 4));
+    assert_eq!(
+        entry.action,
+        Some(Action::Chord {
+            keys: Chord::parse("KEY_VOLUMEUP").unwrap()
+        })
+    );
+    let (entry, runs) = daemon.turned(DialControl::Roller, 1, true).await;
+    assert_eq!((entry.result, runs), (Outcome::DryRun, 0));
+    assert!(injector.sent().is_empty());
+    let button = DialControl::Button(ButtonSlot::new(2).unwrap());
+    let command = Command::Press {
+        key: None,
+        control: Some(button),
+        delta: None,
+        kind: PressKind::Short,
+        dry_run: true,
+    };
+    match daemon.ask(command).await {
+        Answer::Pressed(entry) => {
+            assert_eq!(
+                (entry.control, entry.result),
+                (Some(button), Outcome::DryRun)
+            );
+        }
+        other => panic!("not a press: {other:?}"),
+    }
+    assert!(injector.sent().is_empty());
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_turn_under_the_lock_is_blocked_and_runs_nothing() {
+    let dial = Dial::new(&dial_startup());
+    let injector = FakeInputInjector::new();
+    let mut daemon = dialed(
+        CONFIG,
+        Vec::new(),
+        Dials::new([dial.clone()]),
+        injector.clone(),
+    );
+    daemon.dialpad().await;
+    daemon.session.report(Session::Locked);
+    daemon
+        .until(|event| matches!(event, Event::Switched(view) if view.locked).then_some(()))
+        .await;
+    dial.turn(1, 2);
+    let record = daemon.trace().await;
+    assert_eq!(record.control, Some(DialControl::Dial));
+    assert_eq!(
+        record.result,
+        Outcome::Blocked {
+            reason: "session locked".into()
+        }
+    );
+    assert_eq!(daemon.dial().await, (Roller::Dial, 2, 0));
+    assert!(injector.sent().is_empty());
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_turn_does_not_hold_the_page_return_and_a_button_does() {
+    let pad = Pad::new(&startup());
+    let dial = Dial::new(&dial_startup());
+    let config = format!("{CONFIG}page_return_global = 400\n");
+    let mut daemon = dialed(
+        &config,
+        vec![pad.clone()],
+        Dials::new([dial.clone()]),
+        FakeInputInjector::new(),
+    );
+    daemon.dialpad().await;
+    daemon.painted().await;
+    let left = |pad: &Pad| {
+        pad.buttons(&[0x01a1]);
+        pad.buttons(&[]);
+    };
+    // Turns: the general page goes back after its 400 ms.
+    left(&pad);
+    let start = tokio::time::Instant::now();
+    assert_eq!(daemon.switched().await.index, 0);
+    for _ in 0..3 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        dial.turn(1, 1);
+    }
+    assert_eq!(daemon.switched().await.index, 1);
+    assert!(
+        start.elapsed() < Duration::from_millis(650),
+        "{:?}",
+        start.elapsed()
+    );
+    // A button press 300 ms in starts the 400 ms over.
+    left(&pad);
+    let start = tokio::time::Instant::now();
+    assert_eq!(daemon.switched().await.index, 0);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    dial.hold(&[2]);
+    dial.hold(&[]);
+    assert_eq!(daemon.switched().await.index, 1);
+    assert!(
+        start.elapsed() >= Duration::from_millis(650),
+        "{:?}",
+        start.elapsed()
+    );
     daemon.stop().await;
 }
